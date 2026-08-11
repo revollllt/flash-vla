@@ -164,3 +164,7 @@ before the dependency was dropped; what remains in-tree is the fused-vs-unfused
 regression gate (`python -m tilelang_infer.bench parity`).
 
 Source commit of the parent repository: `a53bcf9`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
