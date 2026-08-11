@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tilelang-pi0-infer"
+version = "0.1.0"
+description = "TileLang kernels and a single-CUDA-graph runtime for Pi0 vision-language-action inference on H100"
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["tilelang", "cuda", "hopper", "gpu-kernels", "vla", "pi0", "inference"]
+
+# TileLang is pinned: the kernels depend on documented lowering behaviour of this
+# release (fragment layouts, the pipelined-body inlining rule, the combine-tile
+# limit in FlashDecoding). Torch is deliberately unpinned so the CUDA build can be
+# chosen to match the driver; developed against 2.11.0+cu130.
+dependencies = [
+    "tilelang==0.1.11",
+    "torch>=2.4",
+]
+
+[project.optional-dependencies]
+bench = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
