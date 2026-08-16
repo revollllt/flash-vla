@@ -7,10 +7,10 @@ warp-specialization setting, which is why some kernels appear here twice through
 two variants.
 
 Every config below came from a sweep at the call site's real shape, measured
-inside a CUDA graph with cold weights (`bench.autotune`). They are not defaults
+inside a CUDA graph with cold weights (`benchmarks.autotune`). They are not defaults
 and not guesses: three of them were wrong in ways an eager benchmark could not
 see, costing 2.4x on one kernel. Re-tune with
-`python -m tilelang_infer.bench` after any shape change, and re-check
+`python -m benchmarks` after any shape change, and re-check
 correctness, not just time -- `kernels.tl_scaled_gate` in particular is
 numerically sensitive to its tiling.
 
@@ -25,8 +25,9 @@ import contextlib
 
 import torch
 
-from . import kernels
-from .buffers import ScratchPool
+from tilelang_infer.runtime.cuda import ScratchPool
+
+from .kernels import base as kernels
 
 _CACHE: dict = {}
 _POOL = ScratchPool()

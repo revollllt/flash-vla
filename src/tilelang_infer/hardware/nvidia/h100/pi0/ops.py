@@ -1,6 +1,6 @@
 """The operation table the forward pass is written against.
 
-`pi0_infer` calls operations by attribute (`ops.decoder_attention(...)`) rather
+`pipeline` calls operations by attribute (`ops.decoder_attention(...)`) rather
 than importing them, so swapping the fused decoder for the unfused one is a
 different table, not different control flow. The table is built once and passed
 down explicitly -- no global dispatch state, which matters because a benchmark

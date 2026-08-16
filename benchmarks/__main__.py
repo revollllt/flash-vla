@@ -1,9 +1,9 @@
-"""CLI entry point: python -m tilelang_infer.bench <command> [options]."""
+"""CLI entry point: python -m benchmarks <command> [options]."""
 from __future__ import annotations
 
 import sys
 
-COMMANDS = {"e2e": "e2e", "profile": "profile", "parity": "parity"}
+COMMANDS = {"e2e": "e2e", "profile": "profile"}
 
 
 def main(argv=None) -> int:
@@ -11,7 +11,7 @@ def main(argv=None) -> int:
     if not argv or argv[0] not in COMMANDS:
         print(__doc__)
         print(f"commands: {', '.join(COMMANDS)}")
-        print("run `python -m tilelang_infer.bench <command> --help` for options")
+        print("run `python -m benchmarks <command> --help` for options")
         return 1 if argv else 0
     from importlib import import_module
 

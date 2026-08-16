@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tilelang-pi0-infer"
 version = "0.1.0"
-description = "TileLang kernels and a single-CUDA-graph runtime for Pi0 vision-language-action inference on H100"
+description = "Hardware-specialized VLA inference targets built with TileLang and CUDA Graphs"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

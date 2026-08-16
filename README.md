@@ -28,15 +28,15 @@ actions = engine.forward(images, state, noise)
 ```
 
 `random_checkpoint()` fabricates weights so the pipeline can be run and timed
-without a trained model. For real weights, pass a dict with the same keys and
-shapes (`inference._weight_shapes` lists them).
+without a trained model. For real weights, pass a dict matching
+`tilelang_infer.models.pi0.spec.weight_shapes()`.
 
 ## Benchmarks
 
 ```
-python -m tilelang_infer.bench e2e --prompt-len 0    # full-pipeline wall clock
-python -m tilelang_infer.bench profile --compare     # per-kernel GPU time, fused vs unfused
-python -m tilelang_infer.bench parity --steps 1      # numerical regression gate
+python -m benchmarks e2e --prompt-len 0
+python -m benchmarks profile --compare
+python -m eval.correctness.pi0.fused_vs_unfused --steps 1
 ```
 
 All three need a GPU. On a Slurm cluster, submit them rather than running on a
@@ -45,22 +45,22 @@ at compile time.
 
 ## Layout
 
-| file | |
+| path | responsibility |
 |---|---|
-| `kernels.py` | TileLang kernel definitions |
-| `fused_norm_kernels.py` | kernels that absorb the RMS norm into the following GEMM |
-| `wrappers.py` | one wrapper per call site, owning its tile config |
-| `fused_wrappers.py` | the fused decoder alternatives, same signatures |
-| `ops.py` | the operation table the forward pass is written against |
-| `pi0_infer.py` | the forward pass |
-| `inference.py` | weights, buffers, graph capture |
-| `attention.py` | vision and encoder attention, in torch |
-| `buffers.py` | scratch pool for graph-safe temporaries |
-| `bench/` | timing, profiling, parity, autotune |
+| `src/tilelang_infer/models/pi0/` | hardware-independent checkpoint schema |
+| `src/tilelang_infer/runtime/cuda/` | graph-safe runtime mechanisms |
+| `src/tilelang_infer/hardware/nvidia/h100/pi0/` | complete H100/Pi0 execution target |
+| `src/tilelang_infer/hardware/nvidia/h100/pi0/kernels/` | target-owned kernels and fusions |
+| `benchmarks/` | timing, profiling, and autotune harnesses |
+| `eval/` | numerical correctness and policy-quality evaluation |
+
+The target is the atomic performance unit: hardware, model, shape profile, and
+precision jointly own the pipeline, buffers, fusion boundaries, and kernels.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the dependency and promotion rules.
 
 Selecting the fused decoder is a different operation table, not different
 control flow: `op_table(fused=True)` overlays three entries onto the standard
-map, and `pi0_infer` calls whatever it is handed.
+map, and the target pipeline calls whatever it is handed.
 
 ## Measured
 
@@ -161,7 +161,8 @@ Extracted from a larger H100 megakernel research repository, where this pipeline
 was developed as a port of the Triton kernels in the realtime-vla Pi0 inference
 implementation. Every kernel was validated op-by-op against that implementation
 before the dependency was dropped; what remains in-tree is the fused-vs-unfused
-regression gate (`python -m tilelang_infer.bench parity`).
+regression gate
+(`python -m eval.correctness.pi0.fused_vs_unfused --steps 1`).
 
 Source commit of the parent repository: `a53bcf9`.
 

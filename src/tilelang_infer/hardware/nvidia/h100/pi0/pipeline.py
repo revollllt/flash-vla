@@ -11,11 +11,11 @@ decoder 18 layers at 51 rows, repeated for each of the 10 diffusion steps.
 """
 from __future__ import annotations
 
-from .attention import encoder_attention, vision_attention
+from tilelang_infer.models.pi0.spec import ENCODER_LAYERS, HEAD_DIM, VISION_LAYERS
 
-VISION_LAYERS = 27
-ENCODER_LAYERS = 18
-DECODER_HEAD_DIM = 256
+from .kernels.attention import encoder_attention, vision_attention
+
+DECODER_HEAD_DIM = HEAD_DIM
 
 
 def vision_encoder(ops, weights, buffers, num_views):

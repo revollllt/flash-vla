@@ -1,0 +1,1 @@
+"""Hardware-independent model contracts."""

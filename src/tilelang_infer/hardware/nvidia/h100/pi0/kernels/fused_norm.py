@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import tilelang.language as T
 
-from .kernels import _gelu, kernel
+from .base import _gelu, kernel
 
 
 @kernel

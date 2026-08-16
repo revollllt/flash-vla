@@ -23,10 +23,10 @@ import json
 
 import torch
 
-from .. import pi0_infer
-from ..ops import op_table
-from .metrics import diff_stats, require_cuda
-from .synthetic import decoder_buffers, decoder_weights, encoder_seq_len
+from tilelang_infer.hardware.nvidia.h100.pi0 import pipeline
+from tilelang_infer.hardware.nvidia.h100.pi0.ops import op_table
+from benchmarks.metrics import diff_stats, require_cuda
+from benchmarks.synthetic import decoder_buffers, decoder_weights, encoder_seq_len
 
 TOLERANCE = 5e-1
 
@@ -41,8 +41,8 @@ def run(num_views: int = 3, prompt_len: int = 0, chunk_size: int = 50, steps: in
 
     def run_once(fused: bool) -> dict:
         buffers = {k: v.clone() for k, v in base.items()}
-        pi0_infer.transformer_decoder(op_table(fused), weights, buffers, enc_len,
-                                      steps=steps, layers=layers)
+        pipeline.transformer_decoder(op_table(fused), weights, buffers, enc_len,
+                                     steps=steps, layers=layers)
         torch.cuda.synchronize()
         return buffers
 

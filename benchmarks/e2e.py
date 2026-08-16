@@ -10,8 +10,8 @@ encoder M=768 and decoder keys=819, the shape every kernel was tuned at;
 prompt=256 gives M=1024 and keys=1075, which is about a third more encoder work.
 Numbers from the two are not comparable.
 
-Timing runs at `--steps 10`. Parity is read separately and at steps=1
-(`bench.parity`).
+Timing runs at `--steps 10`. Numerical parity is read separately and at steps=1
+(`eval.correctness.pi0.fused_vs_unfused`).
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ import statistics
 
 import torch
 
-from ..inference import Pi0Inference, random_checkpoint
+from tilelang_infer import Pi0Inference, random_checkpoint
 from .metrics import diff_stats, require_cuda
 
 CONFIGS = {"fused": True, "unfused": False}
@@ -85,7 +85,7 @@ def run(num_views: int = 3, chunk_size: int = 50, prompt_len: int = 0, steps: in
               f"{diff_stats(results['unfused']['out'], results['fused']['out'])}")
         if steps > 1:
             print("NOTE: output deviation at steps>1 is diffusion-loop chaos on random weights, "
-                  "not a correctness signal -- read parity at steps=1 (bench.parity).")
+                  "not a correctness signal -- run the Pi0 correctness gate at steps=1.")
     return results
 
 

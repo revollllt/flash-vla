@@ -29,7 +29,8 @@ from __future__ import annotations
 
 import torch
 
-from . import fused_norm_kernels, kernels
+from .kernels import base as kernels
+from .kernels import fused_norm as fused_norm_kernels
 from .wrappers import _compiled, scratch
 
 _FUSED_GATE = dict(BLOCK_M=64, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128, PRO_K=64)

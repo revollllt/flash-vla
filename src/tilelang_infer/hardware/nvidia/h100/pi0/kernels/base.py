@@ -554,7 +554,7 @@ def tl_scaled_matmul_bias_res(A, F, B, Bias, R, BLOCK_M: int, BLOCK_N: int, BLOC
                               NUM_STAGES: int, THREADS: int):
     """C = R + bias + (A * F) @ B, the decoder's RMS + out-projection + residual.
 
-    Superseded on the default path by `fused_norm_kernels.tl_fused_rms_matmul_bias_res`;
+    Superseded on the default path by `fused_norm.tl_fused_rms_matmul_bias_res`;
     kept as the two-kernel reference that matches Triton bit-for-bit.
     """
     M, N, K = T.const("M, N, K")

@@ -1,17 +1,17 @@
 """Synthetic decoder weights and buffers for the decoder-only benchmarks.
 
-The full-pipeline benchmark uses `inference.random_checkpoint` instead; this
+The full-pipeline benchmark uses the public `random_checkpoint` helper instead; this
 module covers the decoder in isolation, where there is no vision/encoder stage
 to produce the KV cache, so K/V are filled with noise directly.
 
 `wscale` defaults to 0.05 because unscaled random weights make the 10-step
-diffusion loop diverge numerically -- see the parity note in `bench.parity`.
+diffusion loop diverge numerically -- see the Pi0 fused-vs-unfused correctness check.
 """
 from __future__ import annotations
 
 import torch
 
-from ..inference import rope_table
+from tilelang_infer.hardware.nvidia.h100.pi0.buffers import rope_table
 
 LAYERS = 18
 HEAD_DIM = 256
@@ -19,7 +19,7 @@ NUM_HEADS = 8
 
 
 def decoder_weights(seed: int = 0, wscale: float = 0.05, device: str = "cuda") -> dict:
-    """The 13 weight tensors `pi0_infer.transformer_decoder` reads."""
+    """The 13 weight tensors the H100/Pi0 decoder pipeline reads."""
     gen = torch.Generator(device=device).manual_seed(seed)
 
     def rb(*shape):

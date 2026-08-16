@@ -18,10 +18,10 @@ import argparse
 import torch
 from torch.profiler import ProfilerActivity, profile as torch_profile
 
-from .. import pi0_infer, wrappers
-from ..buffers import ScratchPool
-from ..inference import Pi0Inference, random_checkpoint
-from ..ops import op_table
+from tilelang_infer import Pi0Inference, random_checkpoint
+from tilelang_infer.hardware.nvidia.h100.pi0 import pipeline, wrappers
+from tilelang_infer.hardware.nvidia.h100.pi0.ops import op_table
+from tilelang_infer.runtime.cuda import ScratchPool
 from .metrics import capture, require_cuda
 from .synthetic import decoder_buffers, decoder_weights, encoder_seq_len
 
@@ -60,7 +60,8 @@ def _decoder_graph(fused: bool, weights, buffers, enc_len, steps, layers):
 
     def run():
         with wrappers.use_pool(pool):
-            pi0_infer.transformer_decoder(ops, weights, buffers, enc_len, steps=steps, layers=layers)
+            pipeline.transformer_decoder(ops, weights, buffers, enc_len,
+                                         steps=steps, layers=layers)
 
     graph = capture(run)
     pool.freeze()
