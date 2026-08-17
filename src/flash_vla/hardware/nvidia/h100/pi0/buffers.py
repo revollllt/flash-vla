@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from tilelang_infer.models.pi0.spec import (
+from flash_vla.models.pi0.spec import (
     DECODER_HEADS,
     ENCODER_LAYERS,
     HEAD_DIM,

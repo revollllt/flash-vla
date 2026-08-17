@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tilelang-pi0-infer"
+name = "flash-vla"
 version = "0.1.0"
 description = "Hardware-specialized VLA inference targets built with TileLang and CUDA Graphs"
 readme = "README.md"

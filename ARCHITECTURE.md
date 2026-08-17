@@ -17,14 +17,20 @@ including its pipeline, static buffer plan, call-site wrappers, kernel source,
 fusion boundaries, and selected tuning. Workload-specific kernels are not
 placed in a global architecture-only kernel directory.
 
+The target is implementation-strategy agnostic. Each call site resolves to a
+backend through `ops.op_table(plan=...)`; TileLang is the current main line — a
+performance/effort trade-off for agile development — and hand-written CUDA is
+planned for the remaining performance. A single pipeline may mix backends per
+call site without the pipeline knowing which is which.
+
 ## Repository layout
 
 ```text
-src/tilelang_infer/
+src/flash_vla/
   models/                         hardware-independent model contracts
     pi0/                          checkpoint schema and weight helpers
   runtime/
-    cuda/                         graph-safe runtime mechanisms
+    cuda/                         graph-safe runtime mechanisms (ScratchPool)
   hardware/
     nvidia/
       h100/
@@ -32,10 +38,12 @@ src/tilelang_infer/
           engine.py               weights, capture, and public forward
           pipeline.py             in-place execution plan
           buffers.py              target-specific static buffer plan
-          ops.py                  call-site implementation binding
-          wrappers.py             call-site configs and launch wrappers
-          fused_wrappers.py       fused call-site alternatives
-          kernels/                H100/Pi0 workload-specific kernels
+          ops.py                  per-call-site backend binding
+          backends/               backend registry (one module per strategy)
+            tilelang/             TileLang backend (current main line)
+              wrappers.py          call-site configs and launch wrappers
+              fused_wrappers.py    fused call-site alternatives
+              kernels/             H100/Pi0 workload-specific TileLang kernels
 
 eval/                             numerical and policy-quality evaluation
 benchmarks/                       performance measurement and profiling
@@ -45,16 +53,18 @@ benchmarks/                       performance measurement and profiling
 
 ```text
 eval / benchmarks -> public engine API
-hardware target   -> models + runtime + target-local kernels
+hardware target   -> models + runtime + target-local backends
 models            -> no hardware target
 runtime           -> no model or hardware target
-target kernels    -> TileLang / CUDA and their own target
+backend kernels   -> their backend and its own toolchain (TileLang / CUDA)
 ```
 
-Production targets must not import official baselines or evaluation suites.
-One target must not import another target's private kernels. If two targets
-eventually use the same implementation without model/device branches, extract
-the proven common part then; do not generalize a kernel in anticipation.
+A backend module registers `ALL_WRAPPERS` / `FUSED_WRAPPERS` in
+`hardware/.../pi0/backends/`; the target pipeline consumes whatever the op table
+hands it. Production targets must not import official baselines or evaluation
+suites. One target must not import another target's private kernels. If two
+targets eventually use the same implementation without model/device branches,
+extract the proven common part then; do not generalize a kernel in anticipation.
 
 ## Specialization rules
 

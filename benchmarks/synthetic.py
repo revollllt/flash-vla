@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import torch
 
-from tilelang_infer.hardware.nvidia.h100.pi0.buffers import rope_table
+from flash_vla.hardware.nvidia.h100.pi0.buffers import rope_table
 
 LAYERS = 18
 HEAD_DIM = 256

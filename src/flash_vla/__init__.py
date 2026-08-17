@@ -1,6 +1,6 @@
 """A TileLang implementation of Pi0 vision-language-action inference.
 
-    from tilelang_infer import Pi0Inference, random_checkpoint
+    from flash_vla import Pi0Inference, random_checkpoint
 
     engine = Pi0Inference(random_checkpoint(), num_views=3, chunk_size=50)
     actions = engine.forward(images, state, noise)

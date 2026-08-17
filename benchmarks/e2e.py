@@ -20,7 +20,7 @@ import statistics
 
 import torch
 
-from tilelang_infer import Pi0Inference, random_checkpoint
+from flash_vla import Pi0Inference, random_checkpoint
 from .metrics import diff_stats, require_cuda
 
 CONFIGS = {"fused": True, "unfused": False}

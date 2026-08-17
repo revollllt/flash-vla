@@ -25,7 +25,7 @@ import contextlib
 
 import torch
 
-from tilelang_infer.runtime.cuda import ScratchPool
+from flash_vla.runtime.cuda import ScratchPool
 
 from .kernels import base as kernels
 

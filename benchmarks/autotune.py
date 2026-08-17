@@ -25,7 +25,7 @@ import itertools
 
 import tilelang
 
-from tilelang_infer.hardware.nvidia.h100.pi0.kernels import base as kernels
+from flash_vla.hardware.nvidia.h100.pi0.kernels import base as kernels
 from .metrics import graph_time_cold
 
 

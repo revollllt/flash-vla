@@ -1,11 +1,33 @@
-# tilelang_infer
+# flash-vla
 
-A TileLang implementation of Pi0 vision-language-action inference for H100.
+Extreme-latency-optimized vision-language-action (VLA) inference, built as a
+hardware/model co-design.
 
-The whole forward pass — 27 vision layers, 18 prefix-encoder layers, and 18
-decoder layers per diffusion step — runs as TileLang kernels captured into a
-single CUDA graph. `forward()` copies three inputs into static buffers and
-replays.
+The whole Pi0 forward pass — 27 vision layers, 18 prefix-encoder layers, and 18
+decoder layers per diffusion step — runs as kernels captured into a single CUDA
+graph. `forward()` copies three inputs into static buffers and replays.
+
+## Design philosophy
+
+This is not a general-purpose inference framework. The atomic production unit is
+a *target*:
+
+> Target = device profile × model revision × shape profile × precision policy
+
+A target owns its pipeline, static buffer plan, per-call-site kernel bindings,
+fusion boundaries, and tuning results. Everything is specialized to a fixed
+workload and measured inside the CUDA graph, at the real shape, with cold
+weights — the only regime these latency numbers mean anything in.
+
+**TileLang is the current main line, not the destination.** It is a
+performance/efficiency trade-off for agile development. To reach the remaining
+performance on a given device, the project will also use hand-written CUDA and
+other means. The `backends/` layout is designed for exactly that: each backend
+exposes the same wrapper registry, and a single pipeline can mix kernels from
+different backends per call site (`op_table(plan={...})`).
+
+The co-design ethos extends to the hardware roadmap: the H100 × Pi0 target is
+the first deployment, with RTX 5090 / RTX 4090 targets planned.
 
 ## Install
 
@@ -21,7 +43,7 @@ H100 SXM5 with driver 610.43.02.
 ## Use
 
 ```python
-from tilelang_infer import Pi0Inference, random_checkpoint
+from flash_vla import Pi0Inference, random_checkpoint
 
 engine = Pi0Inference(random_checkpoint(), num_views=3, chunk_size=50)
 actions = engine.forward(images, state, noise)
@@ -29,7 +51,7 @@ actions = engine.forward(images, state, noise)
 
 `random_checkpoint()` fabricates weights so the pipeline can be run and timed
 without a trained model. For real weights, pass a dict matching
-`tilelang_infer.models.pi0.spec.weight_shapes()`.
+`flash_vla.models.pi0.spec.weight_shapes()`.
 
 ## Benchmarks
 
@@ -47,10 +69,11 @@ at compile time.
 
 | path | responsibility |
 |---|---|
-| `src/tilelang_infer/models/pi0/` | hardware-independent checkpoint schema |
-| `src/tilelang_infer/runtime/cuda/` | graph-safe runtime mechanisms |
-| `src/tilelang_infer/hardware/nvidia/h100/pi0/` | complete H100/Pi0 execution target |
-| `src/tilelang_infer/hardware/nvidia/h100/pi0/kernels/` | target-owned kernels and fusions |
+| `src/flash_vla/models/pi0/` | hardware-independent checkpoint schema |
+| `src/flash_vla/runtime/cuda/` | graph-safe runtime mechanisms |
+| `src/flash_vla/hardware/nvidia/h100/pi0/` | complete H100/Pi0 execution target |
+| `.../pi0/backends/` | backend registry: one module per implementation strategy |
+| `.../pi0/backends/tilelang/` | TileLang backend: wrappers, fusions, and kernels |
 | `benchmarks/` | timing, profiling, and autotune harnesses |
 | `eval/` | numerical correctness and policy-quality evaluation |
 
@@ -58,9 +81,21 @@ The target is the atomic performance unit: hardware, model, shape profile, and
 precision jointly own the pipeline, buffers, fusion boundaries, and kernels.
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the dependency and promotion rules.
 
+**Backend mixing.** Each backend exposes `ALL_WRAPPERS` / `FUSED_WRAPPERS` —
+flat dicts of call-site wrappers with identical signatures. `ops.op_table()`
+builds the table the pipeline runs against, selecting a backend per call site:
+
+```python
+# tilelang for everything, fused decoder on
+ops = op_table(fused=True, backend="tilelang")
+
+# tilelang everywhere except decoder attention, which a future CUDA backend owns
+ops = op_table(fused=True, plan={"decoder_attention": "cuda"})
+```
+
 Selecting the fused decoder is a different operation table, not different
-control flow: `op_table(fused=True)` overlays three entries onto the standard
-map, and the target pipeline calls whatever it is handed.
+control flow: `op_table(fused=True)` overlays the fused entries onto the
+standard map, and the target pipeline calls whatever it is handed.
 
 ## Measured
 

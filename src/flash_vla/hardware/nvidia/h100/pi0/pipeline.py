@@ -11,9 +11,9 @@ decoder 18 layers at 51 rows, repeated for each of the 10 diffusion steps.
 """
 from __future__ import annotations
 
-from tilelang_infer.models.pi0.spec import ENCODER_LAYERS, HEAD_DIM, VISION_LAYERS
+from flash_vla.models.pi0.spec import ENCODER_LAYERS, HEAD_DIM, VISION_LAYERS
 
-from .kernels.attention import encoder_attention, vision_attention
+from .backends.tilelang.kernels.attention import encoder_attention, vision_attention
 
 DECODER_HEAD_DIM = HEAD_DIM
 

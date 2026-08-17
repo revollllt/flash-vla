@@ -18,10 +18,11 @@ import argparse
 import torch
 from torch.profiler import ProfilerActivity, profile as torch_profile
 
-from tilelang_infer import Pi0Inference, random_checkpoint
-from tilelang_infer.hardware.nvidia.h100.pi0 import pipeline, wrappers
-from tilelang_infer.hardware.nvidia.h100.pi0.ops import op_table
-from tilelang_infer.runtime.cuda import ScratchPool
+from flash_vla import Pi0Inference, random_checkpoint
+from flash_vla.hardware.nvidia.h100.pi0 import pipeline
+from flash_vla.hardware.nvidia.h100.pi0.backends.tilelang import wrappers
+from flash_vla.hardware.nvidia.h100.pi0.ops import op_table
+from flash_vla.runtime.cuda import ScratchPool
 from .metrics import capture, require_cuda
 from .synthetic import decoder_buffers, decoder_weights, encoder_seq_len
 

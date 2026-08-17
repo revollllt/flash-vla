@@ -23,8 +23,8 @@ import json
 
 import torch
 
-from tilelang_infer.hardware.nvidia.h100.pi0 import pipeline
-from tilelang_infer.hardware.nvidia.h100.pi0.ops import op_table
+from flash_vla.hardware.nvidia.h100.pi0 import pipeline
+from flash_vla.hardware.nvidia.h100.pi0.ops import op_table
 from benchmarks.metrics import diff_stats, require_cuda
 from benchmarks.synthetic import decoder_buffers, decoder_weights, encoder_seq_len
 

@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import torch
 
-from tilelang_infer.models.pi0.spec import weight_shapes
-from tilelang_infer.runtime.cuda import ScratchPool
+from flash_vla.models.pi0.spec import weight_shapes
+from flash_vla.runtime.cuda import ScratchPool
 
-from . import pipeline, wrappers
+from . import pipeline
+from .backends.tilelang import wrappers
 from .buffers import allocate_static_buffers
 from .ops import op_table
 
