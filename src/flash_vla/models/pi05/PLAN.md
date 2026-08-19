@@ -364,6 +364,97 @@ softmaxes to uniform rather than NaN. Keep that.
 
 ---
 
+### 2.4 Kernel inventory, and what v1 does not attempt
+
+Surveyed against the 19 call sites in `hardware/nvidia/h100/pi0/ops.py`.
+
+| stage | call sites | Pi0.5 |
+|---|---|---|
+| vision | all 5 | **untouched** — same weights, same M=768; not even a re-tune |
+| encoder | all 5 | kernels untouched, M 768 → 968; **re-tune only** |
+| decoder | `decoder_state_proj`, `decoder_action_mlp` | **deleted** (no state token, no `action_time_mlp`) |
+| | `decoder_action_in_proj` | existing `tl_matmul_bias` at M=50, K=32, N=1024; Pi0.5's `action_in_proj` has no activation and no time term |
+| | `decoder_action_out_proj` | **unchanged kernel** — `tl_fused_rms_matmul_bias_res` already computes `R + Bias + rms(A) @ B`, which is exactly the folded form; it just indexes `W'[s]`/`b'[s]` per step |
+| | `decoder_norm_qkv_rope`, `decoder_norm_gated_ffn`, `decoder_out_proj_residual`, `decoder_ffn_down_residual`, `decoder_attention` | need new kernel variants |
+
+Three things that look like kernels and are not: the prefix padding mask (2 KB
+H2D), the data-dependent decoder RoPE table (25 KB H2D), and the embed gather
+(`torch.index_select(out=)` plus an in-place scale, which captures fine). With
+the two-graph split of §3.2 the host computes all three behind the vision
+tower, so **§4.2 needs no kernel at all**.
+
+#### Which axis each folded term lands on
+
+This is the whole reason one of the three is hard. `scale`, `shift` and `gate`
+are per-*hidden-channel* and broadcast across all 50 action tokens
+(`models/gemma.py:129`, where the `[:, None, :]` inserts the token axis). In
+the consuming GEMM that puts them on three different axes:
+
+| term | axis | vs the K reduction | cost |
+|---|---|---|---|
+| `rstd` | M (token, A's rows) | outside | epilogue — this is the existing lazy-RMS trick |
+| `(1 + scale)` | **K (hidden, A's columns)** | **inside** | cannot be moved out |
+| `shift @ W` | N (output) | after | epilogue add, free |
+| `gate` | N (output) | after | epilogue multiply, free |
+
+`sum_k A[i,k] * s[k] * W[k,n]` — `s[k]` sits inside the sum. Equivalently it is
+a row scaling of W (`diag(s) @ W`), which is what the final norm actually does
+(`W_out` is 1024x32, so ten copies cost 0.65 MB); for qkv that would be 944 MB
+and for the FFN 3.0 GB, so there it has to ride on A.
+
+#### The one collision, and the v1 decision
+
+Only `tl_fused_rms_gate` collides. Its mainloop accumulates
+`Pow[i,j] += A_shared[i,j]**2` from the *same* tile `T.gemm` consumes, and the
+RMS needs x unscaled while the GEMM needs x scaled — with the gemms ahead of
+the accumulation, in-place scaling is wrong on either side of it.
+`tl_qkv_gemm_rope` does not collide (F arrives as a parameter, no accumulation
+in its mainloop) and `tl_fused_rms_matmul_bias_res` does not need a scale at
+all.
+
+**Decision: v1 falls back to the separate `tl_rms_factor` for that site.** Pi0
+already has that path unfused — `_rms_factor` then `tl_scaled_gate`, which
+takes F as a parameter — so the Pi0.5 variant is built on `tl_scaled_gate`, not
+on `tl_fused_rms_gate`.
+
+That buys a uniform design rather than two. Both remaining GEMM variants become
+the same change applied twice: *take F as a parameter, scale the A tile by a
+1024-entry K-vector, add an N-bias in the epilogue.*
+
+v1 kernel list:
+
+1. `tl_ada_qkv_gemm_rope` — from `tl_qkv_gemm_rope`. The bias goes in **between
+   the F multiply and the rotation**: the folded form is
+   `q = rstd * ((x*s) @ W_q) + shift @ W_q`, then `RoPE(q)`. Adding it after the
+   rotation is a silent error. Bias applies to all three of Q/K/V; RoPE only to
+   Q/K.
+2. `tl_ada_scaled_gate` — from `tl_scaled_gate`. Two N-biases, both inside,
+   before the gelu.
+3. `tl_matmul_gated_res` — from `tl_matmul_res`, one per-N multiply in the
+   epilogue. `decoder_out_proj_residual` and `decoder_ffn_down_residual` share it.
+4. `tl_fd_flat_split` mask variant — Pi0's `(gi >= NUM_HEADS) | (j <= ENC_LEN)`
+   predicate exists only to stop the state token attending to the action block
+   and is dead in Pi0.5. It is replaced by an additive mask vector, because the
+   padding is a hole in the middle of the key range (`[768+n_tok, 968)`, with
+   the suffix at `[968, 1018)`), not a suffix of it.
+
+The scale vector is 1024 bf16 = 2 KB, loaded once at kernel entry rather than
+per mainloop iteration (`_DEC_QKV` runs 8 iterations at BLOCK_K=128,
+`tl_scaled_gate` 4 at BLOCK_K=256).
+
+**Cost of the fallback, to be measured not assumed.** The decoder goes from 7
+graph nodes per layer to 8, i.e. 1260 → 1440 nodes over 18 layers x 10 steps.
+Every decoder kernel is under one wave and latency-bound, so the marginal cost
+is the added kernel's own latency and not just node overhead; `tl_rms_factor`
+at M=50, K=1024 touches 100 KB. Record the per-stage split before and after so
+v2 has a number to beat.
+
+**What v2 revisits.** Whether `tl_fused_rms_gate` can feed an unscaled `Pow` and
+a scaled `gemm` from one tile — a second BLOCK_M x BLOCK_K shared buffer for the
+scaled copy (32 KB single-buffered at `_FUSED_GATE`, consumed in the same
+iteration), or reordering to Pow → scale → gemm and paying the serialization.
+Shared-memory budget and occupancy decide it, with numbers, in the dataflow spec.
+
 ## 3. Tokenization: measurements and the three options
 
 The `state` is inside the prompt, so tokenization runs **per inference**, on the
@@ -493,16 +584,57 @@ re-discovered as a new idea.
   times; host latency 15.9 us table vs 45.5 us SentencePiece.
 - **Gate:** engine constructs and captures on random weights.
 
-### 4.2 Prefix path — do this first
-It changes the engine API and the buffer plan, so everything else sits on top.
-- [x] Host table tokenizer + `set_task()` / per-episode head cache
-  (`models/pi05/tokenize.py`).
-- `vocab_embeddings` residency + embed-gather kernel (`×sqrt(2048)`, zero-fill).
-- Prefix padding mask vector; encoder + decoder attention consume it.
-- Data-dependent `decoder_rope_weights`; static encoder rope table.
-- Two-graph split (§3.2).
-- **Gate:** prefix prefill parity against `PI0Pytorch(Pi0Config(pi05=True))` —
-  compare `past_key_values` per layer, at the same `max_token_len = 200`.
+### 4.2 Prefix path — **landed**
+
+`hardware/nvidia/h100/pi05/` now covers vision, the prompt embedding gather, and
+the 18 encoder layers that build the KV cache. The backend is Pi0's, copied per
+the target-isolation rule; only `attention.py` changed, to take a mask.
+
+- [x] Host table tokenizer + `set_task()` / per-episode head cache.
+- [x] `vocab_embeddings` residency + embed gather. Two torch nodes rather than a
+      kernel: `prompt_embed_scale` carries `sqrt(width)` on valid rows and zero
+      on padding, so one multiply both applies the embedder scale and zeroes the
+      padding.
+- [x] Prefix padding mask vector; encoder attention consumes it. Because the
+      whole prefix is bidirectional the mask is per-key and query-independent —
+      one additive vector, not a 2-D structure.
+- [x] Data-dependent `decoder_rope_weights`; static encoder rope table.
+- [x] Two-graph split. `forward` copies images, replays the vision graph,
+      tokenizes on the host while it runs, copies 27 KB of prompt inputs, replays
+      the prefix graph.
+- **Gate (passing):**
+  ```
+  CMD='-m eval.correctness.pi05.prefix_parity --layers 18' \
+  PYTHON=<openpi venv> PALIGEMMA_TOKENIZER=<tokenizer> \
+      sbatch --export=ALL sbatch/run.sbatch
+  ```
+  Layer 0 cosine 0.99994, deepest 0.99728, worst per-layer step 0.00022, padded
+  rows finite. Read layer 0: it carries no accumulated error, so a structural
+  bug shows there at full size. The drift to 0.9973 is 45 bfloat16 layers on
+  random weights compounding, which `fused_vs_unfused.py` already documents as
+  the amplifier; the smooth step is what rules out a bug at any single layer.
+
+Three things this shook out, all worth keeping:
+
+1. **OpenPI's rotary frequencies are bfloat16.**
+   `to_bfloat16_for_selected_params` casts the whole module, and `inv_freq` is a
+   registered buffer, so `10000**(-1/128)` becomes 0.9296875 instead of
+   0.9305720. Phase is frequency times position, so at prefix position 900 the
+   reference is several radians out and its K is simply a different rotation.
+   This cost most of the debugging: it presents as *our* bug, with error zero at
+   position 0 and growing linearly, norms preserved, and un-rotating with the
+   correct phase not helping. `openpi05.restore_rope_precision` recomputes the
+   frequencies; note re-*casting* is not enough, since the forward pass already
+   widens to float32 and the quantization happened at construction.
+   Pi0 is exposed to the same thing at position ≤ 818 and reads it through ten
+   denoising steps rather than directly; not investigated here.
+2. **Uninitialized index buffers are a crash, not a wrong number.** `prompt_token_ids`
+   is `torch.empty` and warmup runs before the first `forward`, so `index_select`
+   trapped on an out-of-range id and poisoned the context. Buffers the host
+   rewrites per call are now zeroed at allocation.
+3. **`M = 968` is not a multiple of any tuned `BLOCK_M`.** Checked explicitly:
+   TileLang bounds-checks the scalar stores in `tl_rope_scatter_bf16`, so nothing
+   is written past `encoder_seq_len`. Worth re-checking for any new kernel.
 
 ### 4.3 AdaRMS
 - [x] Adapter-side fold: `weights.fold` builds the per-step tables (§2.1) from
@@ -511,13 +643,10 @@ It changes the engine API and the buffer plan, so everything else sits on top.
 - [ ] **Kernels go through the tile-dataflow gate.** Write the tile-level
   dataflow spec first — CTA tiling, mainloop, stage depth, warp specialisation,
   per-instruction mma iters — and get it reviewed before any kernel code. The
-  open design question is where `(1 + scale)` is applied: on the A tile inside
-  the consuming GEMM's mainloop, or fused into the producing residual kernel's
-  epilogue (which also has the full 1024-wide row and could emit the RMS
-  reduction directly). Do not pick this in code.
-  The other two folded terms need no new kernel shape: `shift @ W` is the
-  `Bias_local[j]` pattern already in `kernels/fused_norm.py`, and `gate` is a
-  per-N multiply in the residual epilogue.
+  v1 kernel list, the axis argument, and the decision to fall back to a separate
+  `tl_rms_factor` for the gated FFN are in §2.4; because of that fallback all
+  four variants share one design, so write **one** spec with four
+  instantiations rather than four specs of the same trade-off.
 - **Gate:** `eval/correctness/pi05/fused_vs_unfused.py`, then suffix parity
   against openpi with `--steps 1` and `--layers` bisection.
 
