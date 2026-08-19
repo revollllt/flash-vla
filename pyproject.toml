@@ -9,7 +9,7 @@ description = "Hardware-specialized VLA inference targets built with TileLang an
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-keywords = ["tilelang", "cuda", "hopper", "gpu-kernels", "vla", "pi0", "inference"]
+keywords = ["tilelang", "cuda", "hopper", "gpu-kernels", "vla", "pi0", "pi05", "inference"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -28,6 +28,8 @@ dependencies = [
 
 [project.optional-dependencies]
 bench = []
+# Pi0.5 puts the state in the prompt, so its prompt path needs a tokenizer.
+pi05 = ["sentencepiece", "numpy"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
