@@ -862,6 +862,62 @@ site, never from the CTA count alone.
 Recorded winners live in `wrappers.py` next to each config, with the sweep that
 found them cited. `NUM_SPLIT=8`, `_DEC_QKV` BLOCK_K=256.
 
+### 4.9 Roofline: MFU and MBU per kernel
+
+`python -m benchmarks roofline-pi05`. Each decoder kernel timed in isolation,
+cold, at its real shape; MFU against the 989 TFLOP/s bf16 peak, MBU against the
+3.35 TB/s HBM3 peak, ridge point 295 FLOP/byte. Validated two ways: the isolated
+times are within 0.89–1.15x of the in-graph profile (slightly conservative, as
+expected without L2 residency between calls), and the isolated split of the
+blended `matmul_gated_res` (o_proj + ffn_down = 7.26 us) matches the profiler's
+aggregate 7.02 us.
+
+| decoder kernel | us | intensity | bound | MFU | MBU | SM | above BW floor |
+|---|---:|---:|---|---:|---:|---:|---:|
+| `ada_scaled_gate` | 14.25 | 48 | memory | 5.9 % | **36 %** | 0.97 | 2.8x |
+| `matmul_gated_res` ffn_down | 9.10 | 47 | memory | 4.7 % | 30 % | 0.97 | 3.4x |
+| `matmul_gated_res` o_proj | 5.42 | 46 | memory | 3.9 % | 25 % | 0.97 | 3.9x |
+| `ada_qkv_gemm_rope` | 10.44 | 47 | memory | 2.5 % | 16 % | 0.61 | 6.2x |
+| `fd_attention` | 10.06 | 145 | memory | 4.2 % | 9 % | 0.42 | — |
+| `action_out_proj` | 3.70 | 19 | memory | 0.1 % | 1 % | 0.03 | — |
+| `action_in_proj` | 1.93 | 19 | memory | 0.2 % | 3 % | 0.48 | — |
+
+**The whole decoder is memory-bound** — every intensity is far below the 295
+ridge, so no decoder kernel is helped by faster math. MFU is single digits and
+that is correct, not a defect: a memory-bound kernel is supposed to leave the
+tensor cores idle.
+
+**But it is memory-*latency*-bound, not bandwidth-bound, and that is the real
+finding.** Even the three kernels at full CTA occupancy (0.97 SM) top out at
+25–36 % MBU — 2.8–3.9x above their pure-streaming floor. They are not at the
+bandwidth wall. The cause is warp occupancy, which `sm_used` hides: `scaled_gate`
+is shared-memory-bound to one 4-warp CTA per SM, so ~4 warps of the SM's 64-warp
+capacity are resident, and four warps cannot keep enough loads in flight to hide
+HBM latency. The CTA count says 0.97; the warp occupancy is ~6 %.
+
+**Wave quantization compounds it for two kernels but is the smaller effect.**
+`qkv` (0.61 SM, 16 % MBU) and `fd_attention` (0.42 SM, 9 %) leave SMs entirely
+idle on top of the per-SM latency problem. §4.8 already found the reachable part
+of that is small.
+
+**The prefix's dominant kernel is the mirror image: compute-bound at 59 % MFU.**
+`tl_matmul_gate`, the encoder gated FFN at M=968, N=16384, is 765 FLOP/byte —
+well past the ridge — and hits 587 TFLOP/s, 59 % of peak. Its M is large enough
+to feed the tensor cores, so it is near the practical MFU ceiling. That number,
+derived here independently, matches the ~60 % the Pi0 README recorded, which
+validates the whole methodology.
+
+**What it means for optimization.** The decoder's 1.88 ms bandwidth floor (§1.2)
+is unreachable by tiling, because the decoder never gets close to the bandwidth
+wall in the first place — it is latency-bound at M=50. Lowering it needs more
+warps resident per SM to hide the latency, and for `scaled_gate` the 193.5 KB
+shared-memory footprint blocks that at one CTA per SM. This is why the decoder
+sits at 4.5x its floor and did not move with the occupancy re-tune. The genuine
+levers are: shrink the per-CTA shared memory so more CTAs (hence warps) co-reside
+(a v2 kernel change), or reduce weight traffic per step (a different fold or
+quantization, out of scope for v1). The encoder FFN, already compute-bound at
+59 % MFU, is not worth tiling further.
+
 ### 4.6 Packaging
 - `hardware/.../pi05/README.md` with the measured profile; sbatch example.
 - **Delete this file.**
