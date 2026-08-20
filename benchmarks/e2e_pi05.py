@@ -12,10 +12,14 @@ individually, back to back, and timed separately -- which is only possible
 because the engine keeps them apart -- so each stage can be read against the
 analytic floor in `models/pi05/PLAN.md` §1.2.
 
-Timing is CUDA-event based and covers device work. That undercounts `forward()`
-by whatever host time is *not* hidden behind the vision replay, so the wall
-clock is also measured with `perf_counter` around a synchronized call and both
-are printed. The gap between them is the honest cost of the host tokenizer.
+`forward()` interleaves a host section -- tokenize plus copies -- between the
+vision and prefix replays, so a CUDA event spanning the whole call measures host
+stalls, not GPU time: on a contended node its median balloons while the GPU work
+is unchanged (watch `forward_device.stdev`). So the headline is the wall clock,
+which is stable and is what a caller waits for; `forward_device.min` is the
+uncontended device floor; and the per-stage graph replays, which contain no host
+gap, are the clean per-stage signal. The `forward_device` median is kept only to
+make its own unreliability visible.
 
 Unlike Pi0's `e2e`, there is no fused/unfused axis: Pi0.5 v1 has exactly one
 implementation per call site. Numerical parity is read separately
@@ -128,10 +132,17 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
 
     total = sum(report["stages"][s]["median_ms"] for s in report["stages"])
     report["stage_sum_ms"] = round(total, 3)
-    report["launch_overhead_ms"] = round(report["forward_device"]["median_ms"] - total, 3)
+    # forward() interleaves a host section (tokenize + copies) between two graph
+    # replays, so a CUDA event spanning it measures host stalls, not GPU time --
+    # its median balloons on a contended node (watch forward_device.stdev). The
+    # uncontended floor is forward_device.min, and the wall clock is what a
+    # caller actually waits for. Derive the derived numbers from those two.
+    report["launch_overhead_ms"] = round(report["forward_device"]["min_ms"] - total, 3)
+    report["forward_device_median_note"] = (
+        "unreliable: spans the host tokenize gap; use min_ms or forward_wall")
     floor = sum(FLOOR_MS.values())
     report["roofline_ms"] = round(floor, 2)
-    report["above_roofline"] = round(report["forward_device"]["median_ms"] / floor, 2)
+    report["above_roofline"] = round(report["forward_wall"]["median_ms"] / floor, 2)
     print(json.dumps(report, indent=2))
     return report
 

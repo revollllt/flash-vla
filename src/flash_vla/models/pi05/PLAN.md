@@ -740,10 +740,17 @@ Pi0's, carried over unchanged.
 | vision | 2.494 ms | 0.66 | 3.78x |
 | prefix | 7.933 ms | 3.88 | 2.04x |
 | decoder | 8.635 ms | 1.88 | 4.59x |
-| **forward()** | **19.241 ms** | 6.42 | **3.00x** |
+| **forward() wall** | **19.07 ms** | 6.42 | **2.97x** |
 
-Launch overhead — three graph launches plus the input copies — is 0.179 ms,
-0.9 % of the pass, so the stage sum accounts for the whole number.
+Launch overhead — three graph launches plus the input copies — is 0.15 ms
+(device min 18.95 ms minus the 18.80 ms stage sum), under 1 % of the pass.
+
+The headline is wall clock, not a CUDA event around `forward()`: that event
+spans the host tokenize gap between the vision and prefix replays, so on a
+contended node its median balloons to ~30 ms while the wall clock holds at 19.07
+and the GPU work is unchanged. The benchmark now derives its ratios from wall
+clock and device-min, and keeps the device median only to expose its own
+unreliability (stdev ~5.7 ms).
 
 **The host tokenizer is fully hidden, as designed.** It costs 0.152 ms on the
 compute node (an order of magnitude more than the 16 us measured on the login
@@ -761,6 +768,10 @@ a stage whose floor did not move.
 
 Vision at 3.78x is Pi0's number unchanged (Pi0: ~2.41 ms) on identical work, so
 it is a Pi0 debt inherited, not something Pi0.5 introduced.
+
+After the first NUM_SPLIT + qkv re-tune (§4.8), the decoder stage went 8.635 ->
+8.430 ms and the stage sum 19.06 -> 18.80 ms. Modest, and exactly what the
+corrected wave analysis predicts.
 
 Not comparable to Pi0's 15.18 ms headline: that is prompt 0, encoder M=768,
 decoder keys 819. Pi0.5's prefix is 26 % longer by construction.
@@ -819,6 +830,37 @@ Correcting an earlier estimate in this file: the encoder attention was flagged a
 0.32–0.64 ms of avoidable score-matrix traffic. Measured, the whole attention is
 0.59 ms (softmax 0.241 + two GEMMs 0.350), so a flash-style MQA kernel is worth
 at most ~0.35 ms, not the ~0.6 ms implied. It drops below both decoder items.
+
+#### What the sweep actually recovered
+
+The naive model above -- idle SMs times kernel time -- **over-predicts, badly.**
+Two call sites were swept (`autotune.sweep_decoder_attention`,
+`sweep_decoder_qkv`), each measured cold and correctness-checked:
+
+- **Attention split.** `NUM_SPLIT` 6 -> 8 is the win: 11.04 -> 10.25 us for the
+  split+combine pair, ~0.14 ms over 180 calls. But it is **7 %, not the 3x the
+  idle-SM model implied.** More splits do not help past 8: NUM_SPLIT 8 (56 CTAs,
+  0.42 SM) beat both 16 (112 CTAs) and 32 (224 CTAs, full occupancy). A
+  split-reduction kernel pays a combine tax and re-reads Q per split, so filling
+  the machine with splits makes it slower, not faster. The pair has to be swept
+  together for exactly this reason, which `sweep_decoder_attention` does.
+- **QKV occupancy is unreachable.** `BLOCK_N=16` would double the CTA count to
+  160 and fill the machine -- and it does not compile. A 16-wide bf16 W tile is
+  32 B per row, below TMA's 64 B swizzle minimum, so `W_shared` fails to lower
+  (`unsupported shared swizzle layout`). The sweep compiled only `BLOCK_N=32`;
+  the win there was `BLOCK_K` 128 -> 256, ~3 %. Past 80 CTAs needs split-K or a
+  TMA-disabled W load, both v2.
+
+So the two "worth ~1.8 ms" items were worth **~0.26 ms** in total (decoder
+stage 8.635 -> 8.430 ms), and the ceiling on the rest is low: the two largest
+kernels are already at 0.97 SM. **The lesson is the method, not the number:**
+idle-SM headroom is an upper bound that assumes linear occupancy scaling and a
+compilable fix, and for split-reduction kernels and TMA-constrained tiles it is
+not close. Re-derive from a cold, correctness-checked sweep of the actual call
+site, never from the CTA count alone.
+
+Recorded winners live in `wrappers.py` next to each config, with the sweep that
+found them cited. `NUM_SPLIT=8`, `_DEC_QKV` BLOCK_K=256.
 
 ### 4.6 Packaging
 - `hardware/.../pi05/README.md` with the measured profile; sbatch example.

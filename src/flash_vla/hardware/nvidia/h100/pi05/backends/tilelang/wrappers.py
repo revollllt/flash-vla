@@ -305,13 +305,30 @@ PROMPT_WRAPPERS = {
 # big tiles.
 # ---------------------------------------------------------------------------
 _DEC_ACTION_IN = dict(BLOCK_M=16, BLOCK_N=64, BLOCK_K=32, NUM_STAGES=2, THREADS=128)
-_DEC_QKV = dict(BLOCK_M=64, BLOCK_N=32, BLOCK_K=128, NUM_STAGES=4, THREADS=128)
+# Swept at M=50, N=2560, K=1024. BLOCK_K 128 -> 256 is worth 3%; BLOCK_N below
+# 32 does not compile in TileLang 0.1.11 ("unsupported shared swizzle layout"),
+# which is what closes the only lever that would raise this kernel's 61% SM
+# coverage. warp_spec must stay on: the AdaRMS A-tile scale is a second write to
+# A_shared, which the no-WS pipeline planner rejects -- a constraint the
+# unscaled tl_qkv_gemm_rope did not have.
+# BLOCK_N is stuck at 32. Halving it to 16 would double the CTA count (80 -> 160)
+# and fill the machine, but TileLang 0.1.11 rejects it: a 16-wide bf16 W tile is
+# 32 B per row and TMA's swizzle needs >= 64 B, so the W_shared copy fails to
+# lower ("unsupported shared swizzle layout"). Measured, not assumed -- a sweep
+# of BLOCK_N in (8, 16, 32) compiled only 32. BLOCK_K went 128 -> 256, a 3% edge
+# over the Pi0 inheritance. Getting past 80 CTAs needs split-K or a TMA-disabled
+# W load, both v2.
+_DEC_QKV = dict(BLOCK_M=64, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=4, THREADS=128)
 _DEC_RESIDUAL = dict(BLOCK_M=16, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=4, THREADS=128)
 _DEC_GATE = dict(BLOCK_M=64, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128)
 _DEC_OUT_PROJ = dict(BLOCK_M=16, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128, PRO_K=128)
 _DEC_RMS = dict(BLOCK_M=2, BLOCK_K=256, THREADS=128)
 
-_FD_SPLIT = dict(BLOCK_M=64, BLOCK_N=64, NUM_SPLIT=7, NUM_STAGES=1, THREADS=128)
+# NUM_SPLIT is a request, not the realized count -- `_num_splits` shrinks it.
+# Pi0's 7 realizes as 6 at Pi0.5's 1018 keys; 8 realizes as 8 and measured
+# fastest (10.25 us against 11.04 us) in a sweep of the split/combine pair, which
+# has to be swept together because more splits speeds up one and slows the other.
+_FD_SPLIT = dict(BLOCK_M=64, BLOCK_N=64, NUM_SPLIT=8, NUM_STAGES=1, THREADS=128)
 _FD_COMBINE_BLOCK_M = 2
 _LOG2E = 1.4426950408889634
 
