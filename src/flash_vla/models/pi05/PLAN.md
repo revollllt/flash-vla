@@ -768,6 +768,58 @@ decoder keys 819. Pi0.5's prefix is 26 % longer by construction.
 These are latency numbers; §4.4's suffix parity is what makes them mean
 anything, and it now passes end to end at cosine 0.99998.
 
+### 4.8 Profile and wave quantization
+
+`python -m benchmarks profile-pi05`. Per-kernel self-device-time inside a graph
+replay, plus the grid each decoder call site launches, derived from the live
+configs in `wrappers.py` rather than restated.
+
+**Wave quantization is severe, and it is the largest tuning target.** At M=50 the
+decoder cannot fill the machine by tiling M -- one m-tile of 64 covers the whole
+chunk -- so the CTA count is set almost entirely by `N / BLOCK_N`. Two kernels
+carrying 37.3 % of decoder time run on a third to two thirds of the SMs:
+
+| kernel | CTAs | SMs used | self | share | floor at full occupancy |
+|---|---:|---:|---:|---:|---:|
+| `tl_matmul_gated_res` | 128 | 0.97 | 2.527 ms | 28.4 % | 2.450 ms |
+| `tl_ada_scaled_gate` | 128 | 0.97 | 2.238 ms | 25.2 % | 2.170 ms |
+| **`tl_fd_flat_split_mask`** | **42** | **0.32** | 1.693 ms | 19.0 % | **0.539 ms** |
+| **`tl_ada_qkv_gemm_rope`** | **80** | **0.61** | 1.629 ms | 18.3 % | **0.987 ms** |
+| `tl_rms_factor` | 25 | 0.19 | 0.477 ms | 5.4 % | 0.090 ms |
+| `tl_fd_flat_combine` | 200 | 1.00 | 0.268 ms | 3.0 % | — |
+| `action_out_proj` | 4 | 0.03 | 0.042 ms | 0.5 % | — |
+
+Ranked by what a fix is worth:
+
+1. **`tl_fd_flat_split_mask`, ~1.15 ms.** The grid is 7 m-blocks × `NUM_SPLIT`,
+   and `NUM_SPLIT` is 6 because `_FD_SPLIT` requests 7 — a Pi0 constant tuned at
+   819 keys. At `BLOCK_N=64` the guard admits up to **16** splits (112 CTAs,
+   0.85 SM); at `BLOCK_N=32` up to **32** (224 CTAs, full). Nothing about the
+   kernel changes, only the requested split count.
+2. **`tl_ada_qkv_gemm_rope`, ~0.64 ms.** `BLOCK_N=32` gives 2560/32 = 80 CTAs.
+   `BLOCK_N=16` gives 160, and at 85 KB of smem two CTAs fit per SM, so all 160
+   are resident — full coverage. `BLOCK_N=8` gives 320 at 75 KB, three per SM.
+3. **`tl_rms_factor`, ~0.39 ms**, but the real fix is deleting it, not tiling it:
+   1.33 us per call across 360 calls is launch latency, not work.
+
+**What the v1 AdaRMS fallback actually cost: ~0.24 ms**, not the 0.72 ms
+estimated from a 2 us-per-launch guess. Half of `tl_rms_factor`'s 360 calls are
+new — Pi0 already ran one per layer for its qkv site — so the fallback is 180
+launches at 1.33 us. Cheaper than assumed, which lowers the priority of the v2
+fusion relative to the two wave-quantization items above.
+
+The two kernels already at 0.97 SM carry 53.6 % of the decoder between them and
+have almost no wave headroom. Whatever is left in them is not occupancy.
+
+**Prefix.** `tl_matmul_gate` alone is 3.763 ms, 49.6 % of the stage — the
+encoder gated FFN, which Pi0's README already records as compute-bound at 60 %
+MFU. The embed gather is 5 us, negligible as predicted.
+
+Correcting an earlier estimate in this file: the encoder attention was flagged as
+0.32–0.64 ms of avoidable score-matrix traffic. Measured, the whole attention is
+0.59 ms (softmax 0.241 + two GEMMs 0.350), so a flash-style MQA kernel is worth
+at most ~0.35 ms, not the ~0.6 ms implied. It drops below both decoder items.
+
 ### 4.6 Packaging
 - `hardware/.../pi05/README.md` with the measured profile; sbatch example.
 - **Delete this file.**
