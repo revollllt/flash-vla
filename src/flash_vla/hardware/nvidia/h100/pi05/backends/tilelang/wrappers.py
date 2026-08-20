@@ -28,7 +28,9 @@ import torch
 
 from flash_vla.runtime.cuda import ScratchPool
 
+from .kernels import adarms as ada_kernels
 from .kernels import base as kernels
+from .kernels import fused_norm as fused_norm_kernels
 
 _CACHE: dict = {}
 _POOL = ScratchPool()
@@ -186,6 +188,7 @@ _ENC_GATE = dict(BLOCK_M=128, BLOCK_N=128, BLOCK_K=128, NUM_STAGES=2, THREADS=25
 _ENC_FFN_DOWN = dict(BLOCK_M=128, BLOCK_N=128, BLOCK_K=128, NUM_STAGES=3, THREADS=256, SWIZZLE=8)
 
 ENCODER_DIM = 2048
+DECODER_HEADS = 8
 
 
 def encoder_projector(x, norm_w, norm_b, proj_w, proj_b, out, x_norm):
@@ -286,4 +289,170 @@ PROMPT_WRAPPERS = {
 }
 
 
-ALL_WRAPPERS = {**VISION_WRAPPERS, **ENCODER_WRAPPERS, **PROMPT_WRAPPERS}
+# ---------------------------------------------------------------------------
+# Decoder (18 layers x 10 flow steps, M = chunk = 50 -- Pi0 had 51, the extra
+# row being the state token Pi0.5 moved into the prompt)
+#
+# Implements specs/tile/pi05-adarms-decoder.md. Every config is Pi0's, carried
+# over unchanged and NOT re-tuned: changing the tiling and the AdaRMSNorm maths
+# in one step would make a numerical failure un-bisectable, and
+# `kernels.tl_scaled_gate` is documented as tiling-dependent for correctness,
+# not just speed. Re-tune after the variants are proven, with `correct=`.
+#
+# Every shape here is under one wave and far below the H100 ridge point of
+# 295 FLOP/B (21.3, 32.0 and 10.7 for the three GEMM variants), so these are
+# weight-bandwidth bound: the configs favour occupancy and pipeline depth over
+# big tiles.
+# ---------------------------------------------------------------------------
+_DEC_ACTION_IN = dict(BLOCK_M=16, BLOCK_N=64, BLOCK_K=32, NUM_STAGES=2, THREADS=128)
+_DEC_QKV = dict(BLOCK_M=64, BLOCK_N=32, BLOCK_K=128, NUM_STAGES=4, THREADS=128)
+_DEC_RESIDUAL = dict(BLOCK_M=16, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=4, THREADS=128)
+_DEC_GATE = dict(BLOCK_M=64, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128)
+_DEC_OUT_PROJ = dict(BLOCK_M=16, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128, PRO_K=128)
+_DEC_RMS = dict(BLOCK_M=2, BLOCK_K=256, THREADS=128)
+
+_FD_SPLIT = dict(BLOCK_M=64, BLOCK_N=64, NUM_SPLIT=7, NUM_STAGES=1, THREADS=128)
+_FD_COMBINE_BLOCK_M = 2
+_LOG2E = 1.4426950408889634
+
+
+def _rms_factor(x, out, cfg=_DEC_RMS):
+    """Write rsqrt(mean(x^2)+eps) into `out`, which the consuming GEMM then scales by.
+
+    Pi0's fused path folded this into `tl_fused_rms_gate`. Pi0.5 cannot: that
+    kernel accumulates the row sum of squares from the same shared tile the GEMM
+    consumes, and AdaRMSNorm needs the tile unscaled for the norm and scaled for
+    the GEMM. v1 pays the extra launch; see the spec for what v2 would need.
+    """
+    M, K = x.shape
+    _compiled(kernels.tl_rms_factor, M=M, K=K, **cfg)(x, out)
+    return out
+
+
+def decoder_action_in_proj(x, weight, bias, out):
+    """out = x @ weight + bias.
+
+    Pi0 fused the timestep into this projection and followed it with a second
+    MLP layer; Pi0.5's `action_in_proj` is a bare linear with no activation,
+    because the timestep now arrives through AdaRMSNorm instead.
+    """
+    M, K = x.shape
+    _compiled(kernels.tl_matmul_bias, M=M, N=weight.shape[1], K=K,
+              **_DEC_ACTION_IN)(x, weight, bias, out)
+    return out
+
+
+def decoder_norm_qkv_rope(x, scale, weight_qkv, bias, rope, Q, K, V, norm_factor):
+    """AdaRMS-scale x, project to QKV, add the shift bias, apply RoPE, scatter in place."""
+    M, Kdim = x.shape
+    head_dim = V.shape[1]
+    num_heads = Q.shape[0] // M
+    factor = _rms_factor(x, norm_factor[:M])
+    kfn = _compiled(ada_kernels.tl_ada_qkv_gemm_rope, M=M, N=weight_qkv.shape[1], K=Kdim,
+                    HEAD_DIM=head_dim, NUM_HEADS=num_heads, **_DEC_QKV)
+    kfn(x, factor, scale, weight_qkv, bias, rope, Q.view(M, num_heads * head_dim), K, V)
+
+
+def decoder_out_proj_residual(x, weight, gate, out):
+    """out = out + (x @ weight) * gate."""
+    M, K = x.shape
+    _compiled(ada_kernels.tl_matmul_gated_res, M=M, N=weight.shape[1], K=K,
+              **_DEC_RESIDUAL)(x, weight, gate, out, out)
+    return out
+
+
+def decoder_ffn_down_residual(x, weight, gate, out):
+    """out = out + (x @ weight) * gate. Same kernel as the out-projection, larger K."""
+    M, K = x.shape
+    _compiled(ada_kernels.tl_matmul_gated_res, M=M, N=weight.shape[1], K=K,
+              **_DEC_RESIDUAL)(x, weight, gate, out, out)
+    return out
+
+
+def decoder_norm_gated_ffn(x, scale, gate_w, up_w, gate_b, up_b, out, norm_factor):
+    """out = gelu(ada(x) @ gate_w + gate_b) * (ada(x) @ up_w + up_b)."""
+    M, K = x.shape
+    factor = _rms_factor(x, norm_factor[:M])
+    _compiled(ada_kernels.tl_ada_scaled_gate, M=M, N=gate_w.shape[1], K=K,
+              **_DEC_GATE)(x, factor, scale, gate_w, up_w, gate_b, up_b, out)
+    return out
+
+
+def decoder_action_out_proj(x, weight, bias, out, norm_factor):
+    """out += bias + rms(x) @ weight, with the final AdaRMSNorm folded into both.
+
+    Unchanged from Pi0's fused kernel: the final norm's scale, its shift and the
+    Euler dt all fold into per-step `decoder_action_out_proj_w` and `_b` at
+    checkpoint load, which leaves exactly this signature. `norm_factor` is
+    accepted for signature parity and never written -- the factor exists only
+    inside the kernel.
+    """
+    M, K = x.shape
+    _compiled(fused_norm_kernels.tl_fused_rms_matmul_bias_res, M=M, N=weight.shape[1], K=K,
+              **_DEC_OUT_PROJ)(x, weight, bias, out, out)
+    return out
+
+
+def _num_splits(keys: int, block_n: int, requested: int) -> tuple[int, int]:
+    """Largest split count <= `requested` for which no split starts past `keys`.
+
+    An empty split is not merely wasted work. A TMA box whose first row is out of
+    bounds reads garbage rather than zeroes, and that garbage becomes inf, then
+    NaN, in the score initialization; it then survives the running-max update,
+    because fmax(NaN, x) hides it. At Pi0.5's keys=1018 this selects 6.
+    """
+    def chunk_blocks(n: int) -> int:
+        return ((keys + n - 1) // n + block_n - 1) // block_n
+
+    while requested > 1 and (requested - 1) * chunk_blocks(requested) * block_n >= keys:
+        requested -= 1
+    return requested, chunk_blocks(requested)
+
+
+def decoder_attention(Q, K, V, mask, out):
+    """FlashDecoding attention with an additive per-key mask.
+
+    One implementation, not two. Pi0 kept a three-kernel scores/softmax/attn@V
+    chain as the readable reference beside the fused pair; Pi0.5 v1 has only the
+    fused path, so a second masked softmax does not have to be written and kept
+    in agreement with this one.
+
+    `out` aliases Q; the split kernel only reads Q and the combine's write is
+    ordered after it on the stream.
+    """
+    M, head_dim = Q.shape
+    keys = K.shape[0]
+    block_m, block_n = _FD_SPLIT["BLOCK_M"], _FD_SPLIT["BLOCK_N"]
+    assert M % _FD_COMBINE_BLOCK_M == 0, "combine tile must divide the flat query rows"
+
+    num_split, chunk_blocks = _num_splits(keys, block_n, _FD_SPLIT["NUM_SPLIT"])
+    q_pad = (M + block_m - 1) // block_m * block_m
+    config = dict(_FD_SPLIT, NUM_SPLIT=num_split)
+
+    partial = scratch("fd_partial", (num_split, q_pad, head_dim), Q.dtype, Q.device)
+    glse = scratch("fd_glse", (num_split, q_pad), torch.float32, Q.device)
+
+    split_fn = _compiled(ada_kernels.tl_fd_flat_split_mask, M=M, HD=head_dim, KEYS=keys,
+                         QPAD=q_pad,
+                         CHUNK=chunk_blocks * block_n, CHUNK_BLOCKS=chunk_blocks,
+                         SCALE_L2=float(head_dim ** -0.5) * _LOG2E, **config)
+    combine_fn = _compiled(kernels.tl_fd_flat_combine, M=M, HD=head_dim, QPAD=q_pad,
+                           NUM_SPLIT=num_split, BLOCK_M=_FD_COMBINE_BLOCK_M, THREADS=128)
+    split_fn(Q, K, V, mask, partial, glse)
+    combine_fn(partial, glse, out)
+    return out
+
+
+DECODER_WRAPPERS = {
+    "decoder_action_in_proj": decoder_action_in_proj,
+    "decoder_norm_qkv_rope": decoder_norm_qkv_rope,
+    "decoder_attention": decoder_attention,
+    "decoder_out_proj_residual": decoder_out_proj_residual,
+    "decoder_norm_gated_ffn": decoder_norm_gated_ffn,
+    "decoder_ffn_down_residual": decoder_ffn_down_residual,
+    "decoder_action_out_proj": decoder_action_out_proj,
+}
+
+
+ALL_WRAPPERS = {**VISION_WRAPPERS, **ENCODER_WRAPPERS, **PROMPT_WRAPPERS,
+                **DECODER_WRAPPERS}

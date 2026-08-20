@@ -636,19 +636,51 @@ Three things this shook out, all worth keeping:
    TileLang bounds-checks the scalar stores in `tl_rope_scatter_bf16`, so nothing
    is written past `encoder_seq_len`. Worth re-checking for any new kernel.
 
-### 4.3 AdaRMS
-- [x] Adapter-side fold: `weights.fold` builds the per-step tables (§2.1) from
-      `time_mlp_in/out` + `posemb_sincos` + each site's modulation Dense, over
-      the fixed schedule. Gated by `eval.correctness.pi05.fold_equivalence`.
-- [ ] **Kernels go through the tile-dataflow gate.** Write the tile-level
-  dataflow spec first — CTA tiling, mainloop, stage depth, warp specialisation,
-  per-instruction mma iters — and get it reviewed before any kernel code. The
-  v1 kernel list, the axis argument, and the decision to fall back to a separate
-  `tl_rms_factor` for the gated FFN are in §2.4; because of that fallback all
-  four variants share one design, so write **one** spec with four
-  instantiations rather than four specs of the same trade-off.
-- **Gate:** `eval/correctness/pi05/fused_vs_unfused.py`, then suffix parity
-  against openpi with `--steps 1` and `--layers` bisection.
+### 4.3 AdaRMS — kernels **landed**, integration next
+- [x] Adapter-side fold: `weights.fold` builds the per-step tables (§2.1).
+      Gated by `eval.correctness.pi05.fold_equivalence`.
+- [x] Tile-dataflow spec written, reviewed and approved:
+      `specs/tile/pi05-adarms-decoder.md`. One spec, four instantiations, because
+      they share one decision.
+- [x] Four kernels in `backends/tilelang/kernels/adarms.py`, plus their call-site
+      wrappers. The op table is now 18 entries.
+- [x] **Gate (passing):** `python -m eval.correctness.pi05.kernel_parity`
+      (`--only A|B|C|D` runs one variant).
+
+      | variant | cosine vs torch | max_abs |
+      |---|---|---|
+      | A `tl_ada_qkv_gemm_rope` | 0.9999959 | 3.1e-2 |
+      | B `tl_ada_scaled_gate` | 1.0000000 | 3.1e-2 |
+      | C `tl_matmul_gated_res` K=2048 | 0.9999999 | 4.9e-4 |
+      | C `tl_matmul_gated_res` K=4096 | 1.0000000 | 4.9e-4 |
+      | D `tl_fd_flat_split_mask` | 0.9999957 | 3.1e-5 |
+
+      Against a torch recomputation, not against OpenPI: OpenPI has no AdaRMSNorm
+      kernel to compare with, only a whole model. This gate is what localizes a
+      failure to the kernel rather than the weights, which is the split that
+      resolved the prefix bring-up.
+- [ ] Wire `pipeline.decoder()` and extend the engine to the full pass.
+- [ ] Suffix parity against `PI0Pytorch(Pi0Config(pi05=True))` at `--steps 1`
+      with `--layers` bisection.
+- [ ] Re-tune. Every config is Pi0's, carried over unchanged, and every decoder
+      shape moved (M 51 -> 50, keys 819 -> 1018). Deliberate: changing the tiling
+      and the maths in one step makes a numerical failure un-bisectable.
+
+**What the kernels cost, and the one trap.** `S` -- the per-K `(1 + scale)` --
+is staged one `BLOCK_K` slice per mainloop iteration, alongside A and W. The
+spec originally said to hold the whole 1024-entry vector in shared memory,
+loaded once, and that **deadlocked**: under warp specialization a
+global→shared `T.copy` outside `T.Pipelined` lowers to a producer-warp TMA with
+no matching consumer arrival, so the kernel compiles, launches, and never
+returns. It cost a 17-minute job that sat silent after the kernel finished
+compiling. The origin kernels only ever load vectors into *fragments*, which is
+a per-thread load with no barrier, so there was no precedent for the shape and
+the argument for it — "keep the pipelined body free of an extra copy" — had it
+backwards. Recorded in the spec's `deviations`.
+
+Two consequences worth carrying forward: a TileLang kernel that deadlocks does
+not fail, it hangs, so the gate takes `--only` and new kernels get one job each;
+and `global→shared` outside a pipelined body is the shape to distrust.
 
 ### 4.4 Full parity + capture
 - `eval/correctness/pi05/openpi_parity.py` mirroring the pi0 one, against
