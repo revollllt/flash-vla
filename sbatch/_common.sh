@@ -42,6 +42,18 @@ pin_gpu_clocks() {
         echo "[warn] could not lock GPU clocks" >&2
 }
 
+require_cuda() {
+    # Part of the acd_u partition runs a driver this torch build refuses with
+    # CUDA error 803, and nvidia-smi still reports a healthy H100, so the job
+    # looks fine until torch initializes -- deep inside a benchmark, minutes in.
+    # Fail in seconds instead, naming the node, so the retry is obvious.
+    if ! "${PYTHON}" -c 'import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)' 2>/dev/null; then
+        echo "[job] FATAL: torch cannot see a GPU on $(hostname) (CUDA error 803?)." >&2
+        echo "[job] resubmit with --nodelist pinned to a known-good node." >&2
+        exit 75
+    fi
+}
+
 report_env() {
     echo "[job] node=$(hostname) job=${SLURM_JOB_ID:-local} gpu=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null)"
     echo "[job] python=$("${PYTHON}" --version 2>&1)"

@@ -683,16 +683,41 @@ Two consequences worth carrying forward: a TileLang kernel that deadlocks does
 not fail, it hangs, so the gate takes `--only` and new kernels get one job each;
 and `global→shared` outside a pipelined body is the shape to distrust.
 
-### 4.4 Full parity + capture
-- `eval/correctness/pi05/openpi_parity.py` mirroring the pi0 one, against
-  `pi05_base`.
-- Dump a real `pi05_base` state dict and **confirm the adapter key names** —
-  they are currently inferred from `gemma_pytorch.py:42-57` +
-  `modeling_gemma.py:430`, expected to be
-  `paligemma_with_expert.gemma_expert.model.layers.{i}.{input_layernorm,post_attention_layernorm}.dense.{weight,bias}`
-  and `...gemma_expert.model.norm.dense.{weight,bias}`, with **no**
-  `...layernorm.weight` on the expert side.
-- **Gate:** full-pass parity at the pi0 tolerance (max/mean/RMS/P99 + cosine).
+### 4.4 Full parity — **landed**
+
+`eval/correctness/pi05/suffix_parity.py`, against
+`PI0Pytorch(Pi0Config(pi05=True))` on random weights.
+
+| mode | steps | cosine | max_abs | rms |
+|---|---:|---:|---:|---:|
+| transplanted KV cache | 1 | **0.9999911** | 0.0176 | 0.00488 |
+| transplanted KV cache | 10 | 0.9999841 | 0.0457 | 0.00634 |
+| full pass | 10 | 0.9999840 | 0.0457 | 0.00636 |
+
+**The KV cache is transplanted by default, on purpose.** The gate hands our
+decoder OpenPI's own prefix cache instead of the one our encoder built. Our
+prefix agrees to a layer-0 cosine of 0.99994 but drifts to 0.9973 by layer 17 on
+random weights; feeding that into the decoder would mix two error sources in one
+number. Transplanting leaves only decoder wiring and decoder kernels — which is
+what nothing else covered, and the class of mistake (wrong per-step table slice,
+wrong residual aliasing, wrong suffix RoPE offset) that produces a plausible
+wrong answer.
+
+`--steps 1` is the gated reading, because the flow loop is a chaotic map on
+random weights and depth is an amplifier, not a defect.
+
+**The prefix drift barely reaches the actions.** Full-pass and transplanted
+agree to seven digits at 10 steps (0.9999840 vs 0.9999841), so the 0.9973 KV
+cache drift washes out: the decoder attends over 1018 keys and averages.
+
+One gate bug worth remembering: `--layers` originally truncated only *our*
+decoder, so an 18-layer reference was being compared against our 1-layer run and
+reported a meaningless 0.995. `openpi05.truncate_expert` now cuts both, and both
+its `ModuleList` and its config count have to move — `GemmaModel` iterates
+`self.layers[: self.config.num_hidden_layers]`.
+
+Still open: none of this uses trained weights. `--checkpoint <pi05_base>` adds
+the conversion of trained values; it says nothing more about the code.
 
 ### 4.5 Tuning — not started, and now the top item
 Every config is Pi0's and every decoder shape moved. §4.7 says where to aim.
@@ -740,9 +765,8 @@ it is a Pi0 debt inherited, not something Pi0.5 introduced.
 Not comparable to Pi0's 15.18 ms headline: that is prompt 0, encoder M=768,
 decoder keys 819. Pi0.5's prefix is 26 % longer by construction.
 
-**These are latency numbers, not correctness numbers.** The decoder pipeline
-wiring — per-step table slicing, the residual aliasing, the RoPE offset — is
-covered by no gate yet. §4.4's suffix parity is what makes them mean anything.
+These are latency numbers; §4.4's suffix parity is what makes them mean
+anything, and it now passes end to end at cosine 0.99998.
 
 ### 4.6 Packaging
 - `hardware/.../pi05/README.md` with the measured profile; sbatch example.

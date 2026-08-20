@@ -115,7 +115,7 @@ def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
     baseline = openpi05.build_model(checkpoint, torch_device, seed=seed,
                                     exact_rope=exact_rope)
     rope_freqs = baseline.paligemma_with_expert.paligemma.model.language_model.rotary_emb.inv_freq
-    past_key_values, _ = openpi05.prefix_kv_cache(
+    past_key_values, _, _ = openpi05.prefix_kv_cache(
         baseline, images, state,
         torch.from_numpy(tokens.astype("int64")).to(torch_device),
         torch.from_numpy(mask).to(torch_device))
