@@ -101,8 +101,10 @@ def allocate_static_buffers(num_views: int, chunk_size: int, device: str,
         "decoder_rope_weights": buf(chunk_size, HEAD_DIM),
         "decoder_x": buf(chunk_size, 1024),
         "decoder_norm_factor_buf": buf(chunk_size),
+        # No score buffer: the only attention implementation is FlashDecoding,
+        # which keeps the (queries, keys) matrix in SRAM. Pi0 allocated one for
+        # its unfused three-kernel reference path, which Pi0.5 does not carry.
         "decoder_q_buf": buf(chunk_size * DECODER_HEADS, HEAD_DIM),
-        "decoder_attn_buf": buf(chunk_size * DECODER_HEADS, cache_len),
         "decoder_hidden": buf(chunk_size, 4096),
     }
 

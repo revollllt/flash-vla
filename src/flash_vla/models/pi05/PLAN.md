@@ -659,7 +659,8 @@ Three things this shook out, all worth keeping:
       kernel to compare with, only a whole model. This gate is what localizes a
       failure to the kernel rather than the weights, which is the split that
       resolved the prefix bring-up.
-- [ ] Wire `pipeline.decoder()` and extend the engine to the full pass.
+- [x] Wire `pipeline.decoder()` and extend the engine to the full pass. Three
+      graphs now: vision | prefix | decoder. See §4.7 for the measurement.
 - [ ] Suffix parity against `PI0Pytorch(Pi0Config(pi05=True))` at `--steps 1`
       with `--layers` bisection.
 - [ ] Re-tune. Every config is Pi0's, carried over unchanged, and every decoder
@@ -693,14 +694,55 @@ and `global→shared` outside a pipelined body is the shape to distrust.
   `...layernorm.weight` on the expert side.
 - **Gate:** full-pass parity at the pi0 tolerance (max/mean/RMS/P99 + cosine).
 
-### 4.5 Tuning
+### 4.5 Tuning — not started, and now the top item
+Every config is Pi0's and every decoder shape moved. §4.7 says where to aim.
 - Re-tune every call site at the new geometry: encoder M = 968, decoder M = 50,
-  decoder keys = 1018. New sites: embed gather, AdaRMS
-  variants of `norm_qkv_rope` / `norm_gated_ffn` / `action_out_proj`.
+  decoder keys = 1018. New sites: embed gather, the four AdaRMS variants.
 - `autotune.sweep_kernel` with `correct=` on every candidate — some tilings are
   wrong, not slow.
-- **Gate:** median-of-30, cold, in-graph; per-stage split recorded against the
-  §1.2 floors and the pi0 15.18 ms baseline.
+- BLOCK_M=64 is a cliff, not a knob: below it TileLang drops off wgmma onto
+  Ampere `mma.sync` (measured, see the spec's `mma_m` check). A sweep that
+  straddles it is comparing two different kernels.
+
+### 4.7 First end-to-end measurement
+
+`python -m benchmarks e2e-pi05`, H100 SXM5, 3 views, prompt padded to 200,
+chunk 50, 10 steps, 18 layers, median of 30. **Untuned** — every tile config is
+Pi0's, carried over unchanged.
+
+| stage | median | floor (§1.2) | above floor |
+|---|---:|---:|---:|
+| vision | 2.494 ms | 0.66 | 3.78x |
+| prefix | 7.933 ms | 3.88 | 2.04x |
+| decoder | 8.635 ms | 1.88 | 4.59x |
+| **forward()** | **19.241 ms** | 6.42 | **3.00x** |
+
+Launch overhead — three graph launches plus the input copies — is 0.179 ms,
+0.9 % of the pass, so the stage sum accounts for the whole number.
+
+**The host tokenizer is fully hidden, as designed.** It costs 0.152 ms on the
+compute node (an order of magnitude more than the 16 us measured on the login
+node, worth knowing), and `forward` measures 19.209 ms by wall clock against
+19.241 ms by CUDA event — the wall clock is *no worse*, so none of that host
+time is on the critical path. That is the two-graph split of §3.2 paying off,
+measured rather than assumed.
+
+**Where the time is.** The decoder is the worst stage at 4.59x its floor and the
+largest absolute gap at 6.8 ms. Three known contributors, none yet separated:
+the v1 AdaRMS fallback adds a `tl_rms_factor` launch per layer (180 extra nodes
+over 18 layers x 10 steps); keys grew 819 -> 1018; and `S` is now staged per
+mainloop iteration. Pi0's decoder measured 7.08 ms, so Pi0.5 is 1.55 ms worse on
+a stage whose floor did not move.
+
+Vision at 3.78x is Pi0's number unchanged (Pi0: ~2.41 ms) on identical work, so
+it is a Pi0 debt inherited, not something Pi0.5 introduced.
+
+Not comparable to Pi0's 15.18 ms headline: that is prompt 0, encoder M=768,
+decoder keys 819. Pi0.5's prefix is 26 % longer by construction.
+
+**These are latency numbers, not correctness numbers.** The decoder pipeline
+wiring — per-step table slicing, the residual aliasing, the RoPE offset — is
+covered by no gate yet. §4.4's suffix parity is what makes them mean anything.
 
 ### 4.6 Packaging
 - `hardware/.../pi05/README.md` with the measured profile; sbatch example.

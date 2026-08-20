@@ -98,7 +98,7 @@ def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
 
-    from flash_vla.hardware.nvidia.h100.pi05 import Pi05Prefix
+    from flash_vla.hardware.nvidia.h100.pi05 import Pi05Inference
 
     torch_device = torch.device(device)
     generator = torch.Generator(device=torch_device).manual_seed(seed)
@@ -124,13 +124,13 @@ def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
     del baseline, past_key_values
     torch.cuda.empty_cache()
 
-    engine = Pi05Prefix(target_weights, tokenizer, num_views=3, chunk_size=50,
-                        layers=layers, device=device)
+    engine = Pi05Inference(target_weights, tokenizer, num_views=3, chunk_size=50,
+                           layers=layers, device=device)
     del target_weights
     torch.cuda.empty_cache()
 
     engine.set_task(prompt)
-    engine_n_valid = engine.forward(images, state)
+    engine_n_valid = engine.forward_prefix(images, state)
     torch.cuda.synchronize()
     keys, values = engine.kv_cache
 
