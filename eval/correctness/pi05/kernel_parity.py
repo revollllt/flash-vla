@@ -1,6 +1,6 @@
 """Numerical gate for the four Pi0.5 AdaRMSNorm decoder kernels.
 
-Each variant of `specs/tile/pi05-adarms-decoder.md` against a plain-torch
+Each of the four AdaRMSNorm decoder kernels against a plain-torch
 recomputation of the same maths, on the same random tensors. This is the check
 that localizes a failure to the kernel rather than to the weight conversion --
 the split that found the RoPE bug during the prefix bring-up, where the kernel
@@ -39,6 +39,19 @@ from flash_vla.models.pi05.spec import (
     HEAD_DIM,
     QKV_WIDTH,
 )
+
+# Acceptance bar, set by the target owner 2026-08-21: cosine > 0.999.
+#
+# This is a per-kernel SMOKE bar, not an end-to-end accuracy guarantee, and the
+# difference matters here. cosine 0.999 is ~4.5% relative L2 error
+# (1 - cos ~ theta^2/2); bf16 itself carries ~0.4%. The decoder applies 180
+# layers, so a per-layer error of that size compounds -- as a random walk,
+# 0.045 * sqrt(180) ~ 60% by the end of the pass. What this gate catches is a
+# kernel that is wrong. What it cannot catch is a kernel that is slightly wrong
+# 180 times; only a full-pass action-tensor comparison does that, and Pi0.5 does
+# not have one yet. So: report the measured cosine, never just pass/fail, and
+# treat a number that moves as a finding even when it still passes.
+TOLERANCE = 0.999
 
 CHUNK = 50
 KEYS = 1018
@@ -166,7 +179,7 @@ def check_attention(gen, device) -> dict[str, float]:
     return error_metrics(reference, out)
 
 
-def run(seed: int = 0, device: str = "cuda", tolerance: float = 0.9999,
+def run(seed: int = 0, device: str = "cuda", tolerance: float = TOLERANCE,
         only: str | None = None) -> dict[str, object]:
     """Run every variant, or just the one named by `only`, and report its metrics.
 
@@ -206,7 +219,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--tolerance", type=float, default=0.9999,
+    parser.add_argument("--tolerance", type=float, default=TOLERANCE,
                         help="minimum cosine against the torch recomputation")
     parser.add_argument("--only", default=None,
                         help="run one variant by name prefix, e.g. A / B / C / D")

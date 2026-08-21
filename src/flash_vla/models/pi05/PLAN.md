@@ -13,10 +13,27 @@ anything from `hardware/nvidia/h100/pi0/` (target isolation, ARCHITECTURE.md).
 
 **This is an inference-optimization target, not a model change.** The I/O
 contract — tokenization, discretization, padding length, sequence layout,
-action semantics — is openpi's, verbatim. A transformation is allowed only when
-it is *provably equivalent* (algebraic folds, exact closed forms, mathematically
-identical fusions), and the proof or the parity measurement belongs next to it.
-Anything that would move a number, however defensibly, is out of scope here.
+action semantics — is openpi's, verbatim.
+
+**RELAXED 2026-08-21 by the target owner: bit-identity is no longer required;
+performance wins within a bounded accuracy envelope.** The bar is the one the
+repo already enforces — **cosine > 0.999 per call site**
+(`eval/correctness/pi05/kernel_parity.py`) — against a torch reference that
+mirrors the kernel's own precision. What is given up is reproducing an earlier
+*implementation's* rounding bit-for-bit; what is kept is the I/O contract and
+the accuracy bound. A transformation that is mathematically exact but rounds
+differently (row scaling moved across a reduction, an fp32 accumulator in place
+of a bf16 intermediate) is now in scope, and is often *more* accurate than what
+it replaces.
+
+Two things this does not license. Changing what is computed — a shorter pad, a
+different discretization, a fused approximation of a non-linear op — is still a
+model change and still out of scope. And **per-kernel cosine does not bound
+end-to-end error**: the decoder applies 180 layers, so a kernel that is not
+bit-identical makes the full-pass action tensor diverge chaotically on random
+weights. That is why `Pi05Inference` takes `steps` and `layers` — bisect with
+those, and gate the full pass on real weights or on policy quality, not on an
+exact comparison that no longer exists.
 
 Concretely: `max_token_len = 200`, matching openpi (`pi0_config.py:38`). The
 output happens to be invariant to a shorter pad (§1.2), and that is worth
@@ -640,7 +657,7 @@ Three things this shook out, all worth keeping:
 - [x] Adapter-side fold: `weights.fold` builds the per-step tables (§2.1).
       Gated by `eval.correctness.pi05.fold_equivalence`.
 - [x] Tile-dataflow spec written, reviewed and approved:
-      `specs/tile/pi05-adarms-decoder.md`. One spec, four instantiations, because
+      one design, four instantiations, because
       they share one decision.
 - [x] Four kernels in `backends/tilelang/kernels/adarms.py`, plus their call-site
       wrappers. The op table is now 18 entries.

@@ -293,7 +293,7 @@ PROMPT_WRAPPERS = {
 # Decoder (18 layers x 10 flow steps, M = chunk = 50 -- Pi0 had 51, the extra
 # row being the state token Pi0.5 moved into the prompt)
 #
-# Implements specs/tile/pi05-adarms-decoder.md. Every config is Pi0's, carried
+# Every config is Pi0's, carried
 # over unchanged and NOT re-tuned: changing the tiling and the AdaRMSNorm maths
 # in one step would make a numerical failure un-bisectable, and
 # `kernels.tl_scaled_gate` is documented as tiling-dependent for correctness,

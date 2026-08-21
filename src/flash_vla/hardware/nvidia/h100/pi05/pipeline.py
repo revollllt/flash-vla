@@ -132,7 +132,7 @@ def decoder(ops, weights, buffers, encoder_seq_len, steps=10, layers=ENCODER_LAY
     scales the GEMM's A operand, `_shift_bias` is an epilogue bias, and
     `_ada_*_gate` multiplies the residual branch. See PLAN.md §1.1 for why none
     of the 116 M modulation parameters is streamed, and
-    specs/tile/pi05-adarms-decoder.md for how each lands in a kernel.
+    `backends/tilelang/kernels/adarms.py` for how each lands in a kernel.
     """
     for step in range(steps):
         ops.decoder_action_in_proj(

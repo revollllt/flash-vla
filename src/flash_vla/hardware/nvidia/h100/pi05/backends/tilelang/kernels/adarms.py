@@ -1,8 +1,8 @@
 """AdaRMSNorm decoder kernels.
 
-Implements `specs/tile/pi05-adarms-decoder.md`, approved 2026-08-20. Read that
-first: it carries the tile arithmetic, the smem and register budgets, and the
-reasoning for the one decision these four kernels share.
+The one decision these four kernels share is where the AdaRMSNorm scale `s` is
+applied; it is spelled out below, because `s` is indexed by the contraction axis
+and so cannot ride the epilogue the way `b` and `g` do.
 
 Pi0.5's action expert replaces plain RMSNorm with AdaRMSNorm. The modulation
 Dense layers are folded away at checkpoint load (`models.pi05.weights.fold`),
