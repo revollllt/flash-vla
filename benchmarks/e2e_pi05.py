@@ -111,7 +111,10 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
     report = {
         "device": torch.cuda.get_device_name(0),
         "config": {"num_views": num_views, "chunk": chunk_size, "steps": steps,
-                   "layers": layers, "reps": reps, "prompt_len": engine.prompt_len},
+                   "layers": layers, "reps": reps, "prompt_len": engine.prompt_len,
+                   # Which implementation each call site resolved to. A timing
+                   # report that does not say this cannot be compared to another.
+                   "plan": engine.plan},
         "shapes": {"encoder_seq_len": engine.encoder_seq_len,
                    "prompt_tokens_valid": prompt_tokens,
                    "decoder_keys": engine.encoder_seq_len + chunk_size,

@@ -50,13 +50,23 @@ class Pi05Inference:
 
     def __init__(self, checkpoint, tokenizer, num_views: int, chunk_size: int,
                  steps: int = 10, layers: int = ENCODER_LAYERS, fused: bool = True,
-                 prompt_len: int = MAX_TOKEN_LEN, device: str = "cuda"):
+                 prompt_len: int = MAX_TOKEN_LEN, device: str = "cuda",
+                 plan: dict[str, str] | None = None):
+        """`plan` maps a call-site name to the backend that implements it.
+
+        `None` keeps every call site on TileLang, which is the only backend in
+        the tree today. A second backend registers in `backends/__init__.py` and
+        is selected per call site here. Resolved before capture, so the replay
+        path never dispatches -- the rule that makes a mixed backend free at
+        runtime.
+        """
         self.num_views = num_views
         self.chunk_size = chunk_size
         self.steps = steps
         self.layers = layers
         self.prompt_len = prompt_len
-        self.ops = op_table(fused)
+        self.plan = dict(plan) if plan else {}
+        self.ops = op_table(fused, plan=self.plan or None)
 
         self.weights = {
             name: torch.empty(shape, dtype=torch.bfloat16, device=device)

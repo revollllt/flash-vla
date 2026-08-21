@@ -30,6 +30,16 @@ def op_table(fused: bool = True, backend: str = "tilelang",
     if plan is None:
         return _build_table(backend, fused=fused)
 
+    for op_name, chosen in plan.items():
+        if chosen not in BACKENDS:
+            raise KeyError(f"plan names unknown backend {chosen!r} for {op_name!r}; "
+                           f"known: {sorted(BACKENDS)}")
+        module = BACKENDS[chosen]
+        if op_name not in module.ALL_WRAPPERS and op_name not in module.FUSED_WRAPPERS:
+            raise KeyError(
+                f"backend {chosen!r} does not implement call site {op_name!r}; "
+                f"it provides {sorted(set(module.ALL_WRAPPERS) | set(module.FUSED_WRAPPERS))}")
+
     table = {}
     for op_name in _op_names(backend):
         chosen = plan.get(op_name, backend)
