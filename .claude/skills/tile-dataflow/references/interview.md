@@ -38,12 +38,27 @@ If the user has an existing kernel to port or beat, read it now. Extracting its
 spec first (see the reverse-engineering section of SKILL.md) turns most of the
 remaining interview into confirmation.
 
+## Before Phase 1 at all
+
+**Has Phase 0 been run on this machine, or are we about to derive a floor from a
+datasheet?** If it exists, ask for the four numbers (launch floor, the
+`a + MB/b` fit, the CTA-count knee, the best-known implementation on this shape).
+If it does not, say that every target in the spec will be provisional until it
+does — see `example-phase0.md`. This is the question that, unasked, produced a
+spec whose targets sat below their own floor.
+
 ## Universal: per-section questions
 
 **Grid.** Persistent or wave — and if persistent, what does the scheduler
 guarantee about load balance? What rasterization order, and is L2 reuse of A or
 of B the one worth optimizing? Is a cluster worth it (only when one operand is
 genuinely shared between adjacent CTAs)?
+
+**Residency.** What `cta_per_sm`, and does the grid actually reach
+`SM_count × cta_per_sm`? If it is 1 on a latency-bound kernel, is that forced by
+smem, forced by registers, or inherited from the warp-specialisation idiom
+without being argued? And is the schedule static enough to be solved offline
+rather than swizzled at — if so, what is being minimised?
 
 **Mainloop.** Which axis is the mainloop, when there is more than one candidate?
 Does the step size have an external constraint — a quantization scale
@@ -62,6 +77,22 @@ enforces it?
 **Iters.** What MMA shape, and is the N dimension the full tile N or a split?
 Where does the accumulator live and does it survive the mainloop? What runs
 between the MMA batch and the barrier release?
+
+**Schedule (L3).** For one steady-state stage, what is each of the three engines
+doing — and is any column empty? What gates the next copy: the issue, the
+release, or the buffer still being read by an unretired wgmma? Which pairs
+genuinely overlap because they use different units, and which is the *one* true
+serialisation point? If a CUDA-core stretch sits between the copy and tensor
+columns, that is the fusion serialising the thing it was built to overlap.
+
+**Non-MMA work (5b).** List every computation that is not an MMA — the scaling,
+the activation, any reduction, any transpose. For each: where in the schedule,
+what axis and extent it reduces over, and at what **span** (lane / warp / CTA /
+cluster — this is what sets the cost, and getting it wrong underestimates by an
+order of magnitude). Is it a named primitive from `primitives.md`? What dtype
+does it compute in, and **where does each rounding land** — that is the
+numerical contract, and the parity reference has to mirror it. Does it sit
+between a load and the MMA that consumes it?
 
 **Epilogue.** Fused or separate kernel? Does the output need a smem round-trip
 (TMA store does; `st.global` does not)? Any cross-CTA reduction, and if so what
@@ -136,6 +167,14 @@ combines it?
 - Is the intermediate precision fp32 even when inputs and outputs are bf16?
 
 ## Questions people forget
+
+- **Where does each rounding land?** "Scale A by S" is a different function in
+  bf16 in shared memory and in fp32 on the accumulator. Both are defensible; the
+  spec has to say which, and the parity reference must mirror it. This is the
+  most common source of a "real but uninteresting" parity failure.
+- **What would refute this?** For every performance claim in the spec, the
+  measurement that would show it false. A claim with no refuting measurement is
+  an assumption wearing a number.
 
 Ask these when the corresponding section looks finished. Each one has bitten a
 real kernel.
