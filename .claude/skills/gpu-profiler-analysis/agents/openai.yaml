@@ -1,0 +1,4 @@
+interface:
+  display_name: "GPU Profiler Analysis"
+  short_description: "Analyze GPU traces and profiler artifacts"
+  default_prompt: "Use $gpu-profiler-analysis to analyze this GPU profile and produce a Perfetto-ready report."
