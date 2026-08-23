@@ -286,16 +286,56 @@ L4 ------------------------------------- instructions and threads, one stage
           C = C_s[64, 128]                    f32 RF, 64*128/128 = 64 elems/thread
           clear = (ki == 0) )                 # ScaleOut::Zero on iter 0, accumulate on 1..3
 
-  PER-THREAD ACCESS, every gmem/smem touch in the stage
-    A_s, B_s    NO per-thread access -- the copy engine writes smem. One elected
-                thread issues one cp.async.bulk.tensor per operand, which is why
-                the producer needs so few registers. Per-thread rows are for
-                what THREADS touch: the wgmma smem reads, and the epilogue.
-    sfa load     32 b/thread, broadcast within a quad -> 1 transaction
-    smem A read 128 B swizzle atom, aligned -> 0-way bank conflict
+  PER-THREAD ACCESS, every gmem/smem touch in the stage. GENERATED, verbatim,
+  by `tv_check.py <access-file> --markdown`; see the section below.
+
+  | touch         | width       | count             | banks / sectors                |
+  |---------------|-------------|-------------------|--------------------------------|
+  | A_s, B_s fill | n/a         | n/a               | NO per-thread access -- one elected thread issues the whole tile; the copy engine writes smem |
+  | smem A/B read | n/a         | n/a               | NO per-thread access -- operands come through a matrix descriptor, not ld.shared |
+  | sfa load      | 32 b/thread | 2 inst x 4 warps  | 1-wavefront, ideal 1 -> 1x     |
+  | sfb load      | 64 b/thread | 16 inst x 4 warps | 1-wavefront, ideal 1 -> 1x     |
+  | D store       | 64 b/thread | 32 inst x 4 warps | 8 sectors, ideal 8 -> 1x       |
+
     addressing  tile base computed once in the prologue, carried in a register;
                 the stage index is the only per-iteration arithmetic (1 IADD)
 ```
+
+### L4 is computed, not asserted
+
+Every number in that table — width, vector, transactions, conflict ways — is a
+function of exactly two maps: the buffer's layout (with its swizzle) and the
+access's thread-value map. Write those two down and the rest is arithmetic over
+32 lanes, which is why this level does not get written in prose.
+
+The failure prose invites is specific. `128 B swizzle atom, aligned -> 0-way`
+is a *conclusion*: it cannot be rechecked, cannot be regenerated when L2 changes
+a tile extent, and cannot be wrong out loud. Both worked examples marked nearly
+every conflict count `[I]`, and `example-deepgemm.md` had to open an
+`open_questions.bank_ways` entry because nobody could settle one by hand. They
+are all `[D]` now. So:
+
+```
+python3 scripts/tv_check.py <access-file> --markdown    # the table above
+```
+
+The composition is also not something to do in your head: **a swizzle is an XOR,
+not an affine map**, and a tile wider than its atom is a *tiling* of atoms rather
+than one big swizzle — apply the XOR to the flat offset of a 256 B-row tile and
+it keys off the wrong bits and reports conflicts the real layout does not have.
+
+Two consequences worth carrying into the spec:
+
+- **"N-way conflict" is not a verdict on its own.** A 64-bit access moves two
+  words per lane, so two words per bank is the *optimum*: FlashMLA's stride-520
+  staging buffer measures 2 and is exactly optimal, while DeepGEMM's epilogue
+  measures 8 against an ideal of 2 and is a real 4x. Report against the ideal.
+- **The unit is not always a thread.** On Hopper most data movement has no
+  per-thread address at all — TMA moves a tile from one elected lane, wgmma reads
+  smem through a descriptor. Those rows say *no per-thread access*, and saying it
+  is the point: a spec that invents a per-thread pattern for a TMA load has
+  described a kernel it did not write. A per-thread affine model imported whole
+  from a scalar-load ISA gets this exactly backwards.
 
 The `=` on `C_s` beside the `+=` on `D_acc` is the whole design in two lines: the
 tensor-core accumulator is stage-local because the scales change every K block,
@@ -631,16 +671,33 @@ lever is the activation re-read plus the seam. Measure the slope first.
 ## Consistency arithmetic — run this before every hand-back
 
 Most under-specification shows up as an equation that does not balance, and
-finding it yourself is worth more than another round of questions. Compute all
-of these, put the results in the spec's `checks` block, and lead the hand-back
-with any that fail:
+finding it yourself is worth more than another round of questions.
+
+**Run the script rather than doing this in your head.** Two dozen equations
+evaluated from memory, mid-spec, is the least reliable step in the whole process
+and the one most easily made exact:
+
+```
+python3 scripts/budget.py <spec.md> --sms <SM count>
+python3 scripts/budget.py <spec.md> --gate          # what `status: review` must clear
+```
+
+It reports `PASS` / `FAIL` / `TIGHT` / `SKIP` / `MANUAL` per row with the
+computed number beside it, follows `l4_accesses` into `tv_check.py`, and rejects
+duplicate YAML keys — which is not theoretical: the shipped template carried two
+different `primitive:` fields in one `non_mma` entry, and PyYAML silently kept
+the second.
+
+`SKIP` is not a pass; it means a field it needs is still `TODO`. `MANUAL` marks
+the rows that are not arithmetic and still need a human. Put the results in the
+spec's `checks` block and lead the hand-back with anything that fails:
 
 | Check | Must hold |
 |---|---|
 | smem | `depth × per_stage_bytes + non_staged_bytes ≤ arch smem/CTA` (232448 B = 227 KB per CTA on sm90/sm100 -- the per-SM figure is 233472 B and is a different number, 164 KB sm80) — and if aliasing is used, say which buffers alias and why that is safe |
 | threads | `sum(warp_groups.threads) == launch threads`, each group a multiple of 128 when it issues wgmma |
 | acc_registers | fp32 accumulator elems/thread `= cta_tile.M × cta_tile.N / math_threads`; plus operands and addressing must fit 255 (sm90 RF) — or live in TMEM (sm100) |
-| mma_k | `iters_per_stage × inst_shape.K == mainloop.step` |
+| mma_k | `iters_per_stage × inst_shape.K == extent of the axis this MMA contracts`, named in `math[].contracts`. That axis is usually `mainloop.axis`, and in a fused kernel often is not: attention's QKᵀ contracts the head dim while the mainloop walks `kv_seqlen`, so without the field a correct `count_per_stage` looks wrong |
 | mma_m | `inst_shape.M × num_math_groups == cta_tile.M` (or state the split rule that replaces it) |
 | mma_n_legal | `inst_shape.N` is a legal atom for the arch/dtype (wgmma N ∈ {8,16,…,256} step 8) |
 | trip_count | `mainloop.trip_count × mainloop.step ≥ problem reduction extent`, and the tail policy is named |
@@ -655,9 +712,9 @@ with any that fail:
 | **acceptance** | the spec names the *one* measurement that decides acceptance, and it is the one the kernel will ship under. Designing against an isolated cold benchmark and shipping against an in-graph profile is a 2× discrepancy waiting to happen |
 | **falsifiability** | every performance claim in `Why these numbers` names the measurement that would refute it. A claim with no refuting measurement is an assumption wearing a number |
 | **concurrency** | L3's bubble check is filled in: for a steady-state stage, each of the three engines is either busy or its idle time is named and accepted. |
-| **vectorisation** | every gmem and smem touch at L4 states bits/thread and transactions; each is the widest legal access (128 b where alignment allows), coalesced, and bank-conflict-free — or the exception is named with its reason |
+| **vectorisation** | every gmem and smem touch at L4 states bits/thread and transactions; each is the widest legal access (128 b where alignment allows), coalesced, and bank-conflict-free — or the exception is named with its reason. **Computed, not asserted**: `l4_accesses` names the access file and `tv_check.py` produces the table. Report conflicts against their *ideal*, since two words per bank is optimal for a 64-bit access, not a 2-way defect |
 | **addressing** | per-iteration address arithmetic is counted. Anything loop-invariant is hoisted to the prologue and carried in a register; if the mainloop recomputes a base each stage, say why |
-| **register_budget** | `threads_per_cta × regs_per_thread × cta_per_sm ≤ 65536`, computed. This is what forces `cta_per_sm` in practice, and `acc_registers` (per thread) does not cover it |
+| **register_budget** | `threads_per_cta × regs_per_thread × cta_per_sm ≤ 65536`, computed. This is what forces `cta_per_sm` in practice, and `acc_registers` (per thread) does not cover it. **But that product is the wrong one as soon as `setmaxnreg` is in play**: the launch bound's `max_regs_per_thread` is then a pre-redistribution ceiling, not the allocation. DeepGEMM's 384 × 255 "needs" 97920 registers while the kernel allocates 24/240/240 → 64512 and fits. When any warp group states `regs`, the binding sum is `Σ warps × 32 × regs ≤ 65536 / cta_per_sm` |
 | **residency** | `cta_per_sm` is stated with the smem *and* register arithmetic that produces it, and for a latency-bound kernel a value of 1 is justified against the 2-or-4 alternative rather than inherited from the warp-specialisation idiom |
 | **persistence** | if `mode: persistent`, the grid is at least `SM_count x cta_per_sm` or the shortfall is named; `cooperative` is `true` only where CTAs block on each other, and when combined with a cluster the grid is checked against `cudaOccupancyMaxActiveClusters x cluster_size`; any semaphore is self-resetting under graph replay |
 | **tile_order** | `grid.rasterization` carries an L2 argument, not just a name, and on a static graph `grid.l2_schedule` says whether the map was solved offline or defaulted |
@@ -671,7 +728,22 @@ When a check fails, the spec is wrong, not the check. Fix the spec or ask.
 The spec is ready to hand over when every field is filled or explicitly
 deleted, the L1-L4 nest is complete with explicit bounds and every
 number in it traces upward, `open_questions` is empty, and every consistency check passes. Set
-`status: review`, then **stop and hand back**. In the hand-back message give:
+`status: review`, then **stop and hand back**.
+
+**The gate is a command, and its output goes in the hand-back:**
+
+```
+python3 scripts/budget.py <spec.md> --sms <SM count> --gate
+```
+
+`--gate` fails on `SKIP` as well as `FAIL`, which is exactly the difference
+between a draft and a spec ready for review: a `SKIP` means a field the check
+needed is still `TODO`. Every remaining row must be `PASS`, `TIGHT` or `MANUAL`,
+and each `MANUAL` is a claim the reviewer is being asked to read — say which
+ones and why they resolve. A spec moved to `review` with the checker unrun is
+not ready; paste the output.
+
+In the hand-back message give:
 
 1. The path to the spec.
 2. The shape in one line: `grid × cta_tile @ cta_per_sm / mainloop / stages /
@@ -679,10 +751,12 @@ number in it traces upward, `open_questions` is empty, and every consistency che
    opening the file.
 3. **The floor and the target, with the Phase 0 numbers they came from**, so the
    reviewer can see the target is reachable before reading anything else.
-4. The consistency check results — especially anything tight (smem within a few
-   KB of the cap, registers near 255, `cta_per_sm` at 1 on a latency-bound
-   kernel) and **L3's bubble check**, which is the one a reviewer of a fused
-   kernel should read first.
+4. The consistency check results — `budget.py --gate` output pasted, especially
+   anything tight (smem within a few KB of the cap, registers near 255,
+   `cta_per_sm` at 1 on a latency-bound kernel) and **L3's bubble check**, which
+   is the one a reviewer of a fused kernel should read first. L3 is the level
+   the tools do *not* check: `budget.py` checks the arithmetic and `tv_check.py`
+   the lowering, so the schedule is where a reviewer's attention is worth most.
 5. The decisions you made on the human's behalf and the reasoning, so they know
    where to look first.
 6. Anything you could not settle, phrased as a decision rather than a question.
@@ -811,3 +885,19 @@ slope does not transfer between bodies.
 | `references/backends.md` | Phase 2, after the backend is chosen |
 | `references/example-deepgemm.md` | A GEMM, or a producer/consumer warp split — SM90 FP8, persistent, TMA multicast, per-K-block dequant |
 | `references/example-flashmla.md` | Attention/decode, or a non-producer/consumer warp split — SM90 MLA, two math warp groups in a seesaw, split-KV |
+| `references/l4-access.md` | Writing L4 — the access-file format, the layout and thread-value maps, and the bank model |
+
+# Scripts
+
+Design-time only: pure python, no CUDA and no torch, so they run on a login node.
+
+| Command | Does |
+|---|---|
+| `python3 scripts/budget.py <spec.md> [--sms N] [--gate]` | The consistency arithmetic, one line per check with the computed number. `--gate` is what `status: review` must clear. Follows `l4_accesses` into `tv_check.py` |
+| `python3 scripts/tv_check.py <access-file> [--markdown]` | L4's per-thread table: widths, vector legality, transactions, bank conflicts against their ideal. `--markdown` emits the table to paste into the spec |
+| `python3 scripts/tests/test_tvlayout.py` | Cross-validates the layout/swizzle algebra against CUTLASS's `pycute` and runs every shipped known answer. Run after touching `scripts/` |
+
+The layout algebra in `scripts/tvlayout.py` is a reimplementation of the part of
+CuTe these checks need, so that a spec can be checked without a CUDA toolchain.
+It is compared against `pycute` in the test suite rather than trusted — a
+confidently wrong bank count is the exact failure the checker exists to remove.

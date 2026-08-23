@@ -132,7 +132,8 @@ different accumulators.
 | `stage_phase` | when >1 | Where in the stage this fires, for stages with several ordered math steps. |
 | `unit` | yes | `wgmma.mma_async` (sm90, warp-group), `mma.sync` (sm80, warp), `tcgen05.mma` (sm100, CTA-pair). |
 | `inst_shape` | yes | The **hardware** instruction shape, not the tile. wgmma is `m64nNk16` for 16-bit and `m64nNk32` for 8-bit, N a multiple of 8 up to 256. Getting M=64 wrong is why a spec's register math stops balancing. |
-| `count_per_stage` | derived | `mainloop.step / inst_shape.K`. **This is the "iter" count** — the number the whole format exists to make explicit. |
+| `contracts` | yes | The axis **this** MMA reduces, as a name from `problem.dims` or `name=extent`. For a GEMM it is `mainloop.axis` and the field looks redundant; in a fused kernel it routinely is not, and that is the case it exists for. FlashMLA's QKᵀ contracts `d_k`=576 while the mainloop walks `kv_seqlen`, so `count_per_stage: 36` is correct and looks wrong against `mainloop.step`. Without the field the `mma_k` check has to be waived by hand, which is how a real mismatch would get waived too. |
+| `count_per_stage` | derived | `extent(contracts) / inst_shape.K`. **This is the "iter" count** — the number the whole format exists to make explicit. |
 | `a_source`, `b_source` | yes | `smem-desc` (wgmma reads smem through a matrix descriptor), `rf` (A only, the `rs` variants), `tmem` (sm100). Decides register pressure and whether a smem round-trip is needed for an intermediate. |
 | `acc.name` | yes | The identifier the L3/L4 nest uses. Without it a stage-local accumulator appears only in prose and `traceability` cannot close on it — found by walking the DeepGEMM example. |
 | `acc.location` | yes | `RF` on sm80/sm90, `TMEM` on sm100. |
@@ -152,8 +153,9 @@ time goes.
 |---|---|---|
 | `id`, `where`, `kind` | yes | `where` is the schedule slot, and it is the field that decides whether this work can be overlapped at all. Work in `mainloop.per_iter` competes with the MMA for issue slots; work in `epilogue` does not. |
 | `over` | yes | The axis and its extent. A row reduction over `BLOCK_N=64` and one over `BLOCK_N=256` are different kernels. |
-| `span` | yes | `lane` / `warp` / `warpgroup` / `cta` / `cluster`. This is what picks the primitive and sets the cost — a lane-local reduction is free, a cluster-wide one costs a barrier (see the arch table). Getting `span` wrong is the most common way a reduction's cost is underestimated by an order of magnitude. |
-| `primitive` | yes | `shfl.bfly` / `redux.sync` / smem tree / DSMEM / atomics. Name it; "a reduction" is not an implementation. |
+| `span` | yes | `lane` / `warp` / `warpgroup` / `cta` / `cluster`. This is what picks the mechanism and sets the cost — a lane-local reduction is free, a cluster-wide one costs a barrier (see the arch table). Getting `span` wrong is the most common way a reduction's cost is underestimated by an order of magnitude. |
+| `primitive` | yes | A **name from `references/primitives.md`** (`online_softmax`, `row_rms`, `split_reduce`), or `none` when the computation is bespoke. Fixes the algorithm, its state and its hazards. |
+| `mechanism` | yes | *How* it is computed: `shfl.bfly` / `redux.sync` / smem tree / DSMEM / atomics. Name it; "a reduction" is not an implementation. **Distinct from `primitive`** — these were one key until a spec was parsed and the earlier value turned out to be silently discarded. |
 | `loop_carried` | yes | What survives the iteration. Online softmax carries a running max **and** a running sum, and the accumulator rescale that keeps them consistent is itself a `non_mma` entry — specs that list only the accumulator are the ones that turn out wrong. |
 | `dtype` | yes | The compute dtype **and where each rounding lands**. This is the numerical contract: the same algebraic operation in bf16 in smem and in fp32 on the accumulator are different functions, and the parity reference must mirror whichever the kernel does. |
 | `cost` | yes | Ops per thread and the unit that runs them. This is the number that populates L3's CUDA-core column; without it the timeline is decorative. |
@@ -168,7 +170,8 @@ primitive fixes the algorithm and its hazards, the schedule stays yours.
 
 ```yaml
   - id: softmax
-    primitive: online_softmax
+    primitive: online_softmax          # WHAT -- the contract in primitives.md
+    mechanism: "lane-local max and sum; no shfl -- the fragment keeps a row in one lane"
     params: {rows: BLOCK_M, block: BLOCK_N, span: lane, first_iter: specialised,
              masked_rows: clamped, p_cast: bf16}
     where: mainloop.per_iter
@@ -195,6 +198,22 @@ primitive fixes the *algorithm* and the *hazards*; the schedule is yours.
 Fill each with the computed value **and** a verdict, not just `ok` — the number
 is what a reviewer scans for. `smem: 230808 B / 232448 B cap, 1640 B spare —
 PASS (tight)` is useful; `smem: ok` is not.
+
+Do not evaluate these by hand. `python3 scripts/budget.py <spec.md> --sms N`
+computes every arithmetic row and prints the number beside its verdict;
+`--gate` additionally fails on `SKIP`, which is what `status: review` must
+clear. Rows it reports as `MANUAL` are the ones that are not arithmetic — L3's
+bubble check, traceability, the rasterization argument — and they still need a
+human.
+
+**`l4_accesses`** sits beside `checks` and names the YAML file holding the
+layout and thread-value maps for every per-thread touch. `scripts/tv_check.py`
+turns those two maps into L4's table, so the widths and conflict counts are
+computed rather than claimed; `budget.py` follows the field and runs it.
+Format in `references/l4-access.md`, worked files in
+`references/accesses-deepgemm.yaml` and `accesses-flashmla.yaml`. `none` is
+legal when nothing in the kernel is touched per-thread — a pure TMA + wgmma
+mainloop — but say so rather than deleting the field.
 
 The full check list and the formulas are in SKILL.md. Two worth expanding:
 

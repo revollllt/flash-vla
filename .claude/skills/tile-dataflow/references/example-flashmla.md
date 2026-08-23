@@ -227,6 +227,7 @@ math:
     stage_phase: "QK^T"
     unit: wgmma.mma_async
     inst_shape: {M: 64, N: 64, K: 16}   # GMMA::ss_op_selector<bf16,bf16,f32, Shape<64,64,576>, K, K> (traits.h:26-29)
+    contracts: d_k              # 576, the HEAD DIM -- not mainloop.axis (kv_seqlen). 36 x 16 = 576
     dtype: "bf16 x bf16 -> f32"
     count_per_stage: 36                 # 9 sub-tiles x 4 cute::gemm each (splitkv_mla.cuh:170-174)
     a_source: "smem-desc for tiles 0-7 (sQ); rf for tile 8 (rQ8), because sQ's tile 8 is aliased away to sP1 (splitkv_mla.cuh:213-218)"
@@ -247,6 +248,7 @@ math:
     stage_phase: "PV, local P (own P, in registers)"
     unit: wgmma.mma_async
     inst_shape: {M: 64, N: 256, K: 16}  # GMMA::rs_op_selector<..., Shape<64,256,64>, K, MN> (traits.h:36-39)
+    contracts: page             # 64, ONE page block -- half of mainloop.step, which is the seesaw pair
     dtype: "bf16 x bf16 -> f32"
     count_per_stage: 4                  # 64 / 16 (splitkv_mla.cuh:297)
     a_source: rf                        # P is already in this group's registers
@@ -258,6 +260,7 @@ math:
     stage_phase: "PV, remote P (the OTHER group's P, from smem)"
     unit: wgmma.mma_async
     inst_shape: {M: 64, N: 256, K: 16}  # ss variant -- A comes from sP0 / sP1 (traits.h:41-44)
+    contracts: page             # 64, as above
     dtype: "bf16 x bf16 -> f32"
     count_per_stage: 4
     a_source: smem-desc
@@ -271,7 +274,10 @@ math:
 # ------------------------------- 5b. non-MMA work (the CUDA-core column of L3)
 non_mma:
   - id: softmax
-    primitive: online_softmax                       # references/primitives.md
+    primitive: online_softmax                       # references/primitives.md -- WHAT
+    mechanism: "lane-local max and sum -- the wgmma C layout keeps a row inside one lane,
+                so neither reduction needs a shfl; the CHAINING between groups goes
+                through sM, and that is the cost, not the reduce"
     params:
       rows: 64                  # BLOCK_SIZE_M; 2 rows per lane under the wgmma m64nN C layout [D]
       block: 64                 # ONE page block per instance. TWO instances per mainloop
@@ -322,7 +328,8 @@ non_mma:
     kind: "smem store, cross-warp-group hand-off"
     over: "P[64, 64] bf16, 8192 B"
     span: warpgroup
-    primitive: "stmatrix.sync.aligned.m8n8.x4.shared.b16 -- Copy_Atom<SM90_U32x4_STSM_N> (splitkv_mla.cuh:489-492)"
+    primitive: none             # bespoke; no contract in references/primitives.md
+    mechanism: "stmatrix.sync.aligned.m8n8.x4.shared.b16 -- Copy_Atom<SM90_U32x4_STSM_N> (splitkv_mla.cuh:489-492)"
     loop_carried: []
     dtype: "bf16; the cast itself is softmax.p_cast"
     cost: "64 B/thread as 4 x stmatrix.x4 (16 B/thread each). The acc-fragment gather is done by the tiled-copy retile, not by hand. [D]"
@@ -334,7 +341,8 @@ non_mma:
     kind: "reduction + elementwise + cast"
     over: "l across the quad then across both groups; then rO[64, 256] per group"
     span: "quad (2 x shfl.bfly, splitkv_mla.cuh:1186-1189) then cta (sL_reduction_wksp, :1191-1205)"
-    primitive: "shfl.bfly then a one-level smem exchange"
+    primitive: none
+    mechanism: "shfl.bfly then a one-level smem exchange"
     loop_carried: []
     dtype: "f32 reduce and divide, one rounding f32->bf16 on O (unsplit) or none (split, f32 partials); lse = log2(l) + m*scale_log2 in f32"
     cost: "128 FMUL/thread for the divide plus the reduction; once per request, not per round"
@@ -346,7 +354,8 @@ non_mma:
     kind: reduction
     over: "num_splits partials of (acc_o[64,512] f32, lse[64] f32)"
     span: cta
-    primitive: "a second, tiny online pass over the splits, merging by LSE"
+    primitive: split_reduce     # references/primitives.md, the split variant
+    mechanism: "a second, tiny online pass over the splits, merging by LSE"
     loop_carried: []
     dtype: "f32 partials in, one rounding f32->bf16 on the final O"
     cost: "TODO -- needs the combine kernel's source; it needs its own spec"
@@ -369,6 +378,7 @@ epilogue:
     combine.cu to merge by LSE (non_mma.split_combine). That kernel needs its own spec.
 
 # ------------------------------------------------------------- 7. checks
+l4_accesses: accesses-flashmla.yaml   # scripts/tv_check.py computes L4's table from it
 checks:
   smem: >
     depth 2 x per_stage 73728 = 147456 staged, plus 83352 non-staged (sQ 73728 + sP0 8192
@@ -783,7 +793,8 @@ Cycle counts are `[I]`; row order is program order from the two subroutines
     (8192 B / 128 thr)                    (SM90_U32x4_STSM_N)       wgmma acc fragment; the
                                                                     gather is the tiled copy's
                                                                     retile. On the sP0Ready path.
-  sM read (running max)     32 b          1, broadcast in quad [I]  4 lanes own one row
+  sM read (running max)     32 b          1 wavefront, ideal 1     4 lanes own one row,
+                                            8 distinct words, bcast 4x  computed [D]
   rO -> sOutputBuf, UNSPLIT 2048 b        16 x stmatrix.x4          into the bf16
     (32768 B / 128 thr)                                             Layout_K_SW128_Atom buffer
                                                                     -> 0-way, then TMA store.

@@ -176,7 +176,8 @@ inter_group_sync: >
 math:
   - group: "math0 and math1 (identical, disjoint row ranges)"
     unit: wgmma.mma_async
-    inst_shape: {M: 64, N: 128, K: 32}    # FP8MMA in mma/sm90.cuh:26-28; FP8MMASelector<128> -> MMA_64x128x32_F32E4M3E4M3_SS_TN (mma/sm90.cuh:51)
+    inst_shape: {M: 64, N: 128, K: 32}
+    contracts: K=128            # BLOCK_K, and it IS mainloop.axis here -- the plain case    # FP8MMA in mma/sm90.cuh:26-28; FP8MMASelector<128> -> MMA_64x128x32_F32E4M3E4M3_SS_TN (mma/sm90.cuh:51)
     dtype: "e4m3 x e4m3 -> f32"
     count_per_stage: 4                    # BLOCK_K / WGMMA::K = 128 / 32 (1d1d.cuh:297)
     a_source: smem-desc                   # make_smem_desc(smem_a + math_wg_idx*64*BLOCK_K + k*32, layout_type=1 = B128, mma/sm90.cuh:260-272)
@@ -197,7 +198,8 @@ non_mma:
     kind: "staging, smem -> RF; no arithmetic"
     over: "sfa rows [64w, 64w+64) and sfb cols [0,128), one K-block"
     span: lane
-    primitive: "ld.shared.b32 x2 (scale_a_0/1) + ld.shared.b64 x16 (scales_b[i] as float2)"
+    primitive: none             # bespoke; no contract in references/primitives.md
+    mechanism: "ld.shared.b32 x2 (scale_a_0/1) + ld.shared.b64 x16 (scales_b[i] as float2)"
     loop_carried: []
     dtype: "f32, no rounding -- a copy"
     cost: "18 LDS/thread, LSU (1d1d.cuh:283-289). Negligible against the 128-op promote. [I]"
@@ -211,7 +213,8 @@ non_mma:
     kind: elementwise
     over: "the 64 accumulator elems/thread (the whole 64x128 slice), every K-block"
     span: lane
-    primitive: "none -- register-local FMUL + FFMA"
+    primitive: none
+    mechanism: "register-local FMUL + FFMA"
     loop_carried: [final_accum]
     dtype: >
       f32 end to end. `accum[]` is the wgmma f32 output and is never narrowed; sfa*sfb
@@ -228,7 +231,8 @@ non_mma:
     kind: "elementwise accumulate into gmem"
     over: "64 x 128 f32 per math warp group, once per output tile"
     span: cta
-    primitive: "SM90_TMA_REDUCE_ADD_2D -- the copy engine's reduction unit, not the CUDA cores"
+    primitive: none
+    mechanism: "SM90_TMA_REDUCE_ADD_2D -- the copy engine's reduction unit, not the CUDA cores"
     loop_carried: []
     dtype: "f32 add performed in the TMA unit"
     cost: "0 thread-instructions; 1 issue from 1 elected thread per warp group (1d1d.cuh:340-345)"
@@ -247,6 +251,7 @@ epilogue:
     in place. Upstream DeepGEMM uses a plain TMA store.
 
 # ------------------------------------------------------------- 7. checks
+l4_accesses: accesses-deepgemm.yaml   # scripts/tv_check.py computes L4's table from it
 checks:
   smem: >
     Host formula (sm90.hpp:208-238): smem_extra = smem_cd 65536 + smem_barriers 256 = 65792;
@@ -315,8 +320,10 @@ checks:
     Every touch at L4 states bits/thread. sfa 32 b, sfb 64 b, smem_d store 64 b -- all
     conflict-free EXCEPT the smem_d store, which is 8-way conflicted at BLOCK_N=128 because
     swizzle_cd_mode is 0 for fp32 D and the 512 B row stride is an exact multiple of the 128 B
-    bank cycle -> FLAG. The widths are [D]; every conflict-way count is [I] (open_questions.
-    bank_ways). The source dodges it by tile size, not by swizzle: sm90.hpp:59-67
+    bank cycle -> FLAG, computed at 8 wavefronts against an ideal of 2 (4x) from
+    references/accesses-deepgemm.yaml. Widths and conflict counts are both [D] now; only the
+    ncu counter's naming is left open (open_questions.bank_ways).
+    The source dodges it by tile size, not by swizzle: sm90.hpp:59-67
     builds the BLOCK_N candidate list so that BLOCK_N % 32 != 0 always, commented "Avoid
     bank conflicts for 1D1D kernel FP32 output".
   addressing: >
@@ -399,11 +406,13 @@ open_questions:
       per_stage=32768, smem_cd=61440, depth=5.
   - id: bank_ways
     q: >
-      INFERRED, not in the source: the 8-way figure for the smem_d store comes from the
-      addressing (row stride 512 B, 8 rows per warp aliasing the same 4 bank pairs), on the
-      32-bank word model. A 64-bit st.shared is processed in two 16-lane phases, so the
-      hardware may report 4-way per phase instead. Would need
-      l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_st to settle.
+      SETTLED as a design number, open only as a counter name. The smem_d store is computed
+      at 8 wavefronts against an ideal of 2 -- a 4x serialisation -- by enumerating the warp
+      in references/accesses-deepgemm.yaml, so the tile-order argument does not rest on an
+      inference any more. What remains is a labelling question: a 64-bit st.shared is
+      processed in two 16-lane phases, so ncu may report 4-way per phase rather than 8-way
+      over one. The ratio to conflict-free is 4x under either reading, so nothing in this
+      spec turns on it. l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_st would name it.
   - id: engine_cycles
     q: >
       INFERRED: L3's cycle figures come from DeepGEMM's own cost model (l1 128 B/cycle/SM,
@@ -574,17 +583,20 @@ deviations: []
                      issues 1 cp.async.bulk.tensor per operand, which is why the producer
                      needs only 24 registers.
     smem A/B read    NO per-thread ld.shared either -- wgmma reads smem through a matrix
-                     descriptor. 128 B swizzle atom, base 1024 B aligned (:93) -> 0-way. [I]
-    sfa load         32 b/thread (ld.shared.b32) x2 (:283-284). 8 distinct addresses per warp,
-                     4 lanes broadcast each -> 1 transaction, 0-way conflict. [I]
-    sfb load         64 b/thread (ld.shared.b64, float2) x16 (:288-289). 4 distinct addresses
-                     per warp per instruction, 8 lanes broadcast each -> 0-way conflict. [I]
+                     descriptor. 128 B swizzle atom, base 1024 B aligned (:93). [I] on the
+                     descriptor read itself; the atom is verified conflict-free for the
+                     ldmatrix-shaped gather in scripts/tests/known_answers.yaml.
+    sfa load         32 b/thread (ld.shared.b32) x2 (:283-284). 8 distinct words per warp,
+                     broadcast 4x -> 1 wavefront, ideal 1 -> 1x. [D]
+    sfb load         64 b/thread (ld.shared.b64, float2) x16 (:288-289). 8 distinct words per
+                     warp, broadcast 8x -> 1 wavefront, ideal 1 -> 1x. [D]
     smem_d store     64 b/thread (st.shared.b64) x32 (:332-334), EPILOGUE ONLY, once per output
                      tile. smem_d is unswizzled (swizzle_cd_mode = 0 for fp32 D) and its row
-                     stride is BLOCK_N*4 = 512 B = 4 exact bank cycles, so the 8 rows a warp
-                     writes land on the same 4 bank pairs -> 8-WAY CONFLICT [I], see
-                     open_questions.bank_ways. sm90.hpp:59-67 keeps BLOCK_N off every
-                     multiple of 32 for exactly this reason.
+                     stride is BLOCK_N*4 = 512 B = 4 exact bank cycles, so the row index drops
+                     out of the bank index entirely: 64 distinct words land on 8 banks.
+                     8 WAVEFRONTS against an ideal of 2 -> 4x SERIALISATION. [D]
+                     sm90.hpp:59-67 keeps BLOCK_N off every multiple of 32 for exactly this
+                     reason -- an L4 symptom whose only cure is the L2 number BLOCK_N.
     D store          NO per-thread access -- 1 elected thread per math WG issues one
                      SM90_TMA_REDUCE_ADD_2D over its own 64 x 128 slab (:340-345).
     addressing       HOISTED to before the scheduler loop (:251-253): math_wg_idx, row_idx,

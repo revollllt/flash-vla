@@ -1,0 +1,51 @@
+# L4 accesses for example-flashmla.md.
+#
+#     python3 ../scripts/tv_check.py accesses-flashmla.yaml --markdown
+#
+# The unpadded stride-512 counterfactual that shows what the 520 buys lives in
+# ../scripts/tests/known_answers.yaml: a spec states what the kernel does, the
+# test suite states what the alternatives would have cost.
+
+accesses:
+
+  # The spec's L4 said: "rO -> sOutputBuf, SPLIT: 4096 b, 64 x STS.64 (float2),
+  # SMEM, f32, Shape<64,512> : Stride<520,1>."
+  #
+  # This is the case that shows why an "N-way" label alone is the wrong verdict.
+  # 520 f32 is 8 words past a bank cycle, so consecutive rows walk the banks and
+  # the 64 words a warp stores spread over all 32 of them -- two per bank. Two
+  # per bank is the OPTIMUM for a 64-bit access (32 lanes x 8 B = 256 B = two
+  # 128 B cycles), so calling this "2-way conflict" would condemn a layout that
+  # is exactly optimal. The tool reports it against its ideal instead.
+  - id: rO -> sOutputBuf, SPLIT path (stride 520)
+    space: smem
+    op: st.shared.b64
+    dtype: f32
+    threads: 128
+    buffer: {kind: layout, shape: [64, 512], stride: [520, 1]}
+    tv: {atom: wgmma_acc, n: 256, vec: 2, project: both}
+    expect: {wavefronts: 2, ideal: 2, distinct_words: 64}
+
+  # The other paths through the same kernel have no per-thread address: the KV
+  # loads are TMA, and sQ/sK are read by wgmma through a matrix descriptor. The
+  # stmatrix publishes (sP0/sP1, and the UNSPLIT rO path) are warp-scoped
+  # instructions whose thread-value map is fixed by the hardware rather than by
+  # this kernel; the spec's L4 states their widths, and there is no layout choice
+  # here for the checker to falsify.
+  - id: KV gmem -> sK0/sK1
+    unit: tma
+
+  - id: sQ, sK read by wgmma
+    unit: wgmma-desc
+
+  # The running max, read once per row per round. The spec's L4 marked this
+  # "broadcast in quad [I]"; it is the same fragment map as any per-row vector,
+  # so the broadcast factor is computed rather than inferred.
+  - id: sM read (running max)
+    space: smem
+    op: ld.shared.b32
+    dtype: f32
+    threads: 128
+    buffer: {kind: layout, shape: [64], stride: [1]}
+    tv: {atom: wgmma_acc, n: 256, vec: 1, project: row}
+    expect: {wavefronts: 1, ideal: 1, distinct_words: 8, requests: 32}

@@ -107,8 +107,12 @@ math:
     stage_phase: TODO           # where in the stage this fires, when a stage has several math steps
     unit: TODO                  # wgmma.mma_async | mma.sync | tcgen05.mma
     inst_shape: {M: TODO, N: TODO, K: TODO}
+    contracts: TODO             # the axis THIS MMA reduces, as a name from problem.dims or
+                                # `name=extent`. Usually mainloop.axis, but not always: attention's
+                                # QK^T contracts the head dim while the mainloop walks kv_seqlen,
+                                # so without this field count_per_stage looks wrong when it is right
     dtype: TODO                 # e.g. "e4m3 x e4m3 -> f32"
-    count_per_stage: TODO       # the "iter" count -- derived, = mainloop.step / inst_shape.K
+    count_per_stage: TODO       # the "iter" count -- derived, = contracts extent / inst_shape.K
     a_source: TODO              # smem-desc | rf | tmem
     b_source: TODO              # smem-desc | tmem
     acc: {name: TODO, location: TODO, elems_per_thread: TODO, dtype: f32, cleared: TODO}
@@ -131,7 +135,9 @@ non_mma:
     kind: TODO                  # elementwise | reduction | scan | transpose | cast
     over: TODO                  # axis and extent, e.g. "row, BLOCK_N=64" / "column, BLOCK_K"
     span: TODO                  # lane | warp | warpgroup | cta | cluster -- decides the primitive
-    primitive: TODO             # none | shfl.bfly | redux.sync | smem tree | DSMEM | atomic
+    mechanism: TODO             # none | shfl.bfly | redux.sync | smem tree | DSMEM | atomic --
+                                # HOW it is computed. Distinct from `primitive`, which names the
+                                # contract in references/primitives.md; one key cannot carry both
     loop_carried: TODO          # [] | [m, l] for online softmax | [sumsq]
     dtype: TODO                 # compute dtype AND where each rounding lands -- see below
     cost: TODO                  # ops/thread and unit: "32 HMUL2 + 8 ex2.approx, CUDA cores"
@@ -153,7 +159,13 @@ epilogue:
   split_reduction: TODO         # none | atomics | separate combine kernel (name it)
 
 # ------------------------------------------------------------- 7. checks
-checks:                         # fill with the computed value AND pass/fail, not just "ok"
+l4_accesses: TODO               # path to the access file whose layouts and thread-value maps
+                                # produce the L4 table below; `scripts/tv_check.py` computes every
+                                # width, transaction and conflict count in it. See
+                                # references/l4-access.md. `none` is legal only when nothing in this
+                                # kernel is touched per-thread -- say so rather than deleting it.
+checks:                         # fill with the computed value AND pass/fail, not just "ok".
+                                # `scripts/budget.py <spec>` computes the arithmetic ones
   smem: TODO                    # depth*per_stage + non_staged <= arch cap
   threads: TODO
   acc_registers: TODO           # per thread
