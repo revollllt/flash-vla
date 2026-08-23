@@ -708,8 +708,9 @@ Cycle counts are `[I]`; row order is program order from the two subroutines
 
   the rate, stated once   H100 SXM5 bf16 dense: 989.5e12 / 132 SM / 1.755 GHz = ~4270
                 FLOP/cycle/SM, so wgmma.m64n64k16 (131072 FLOP) is ~31 cycles and
-                m64n256k16 (524288 FLOP) is ~123. Both columns below use it; per SKILL.md
-                the criterion is the RATIO, which survives the rate being 2x wrong --
+                m64n256k16 (524288 FLOP) is ~123. Both columns below use it; per
+                references/schedule-l3.md the criterion is the RATIO, which survives the rate
+                being 2x wrong --
                 except that the CUDA column is counted in instructions and does not scale
                 with it, so halve the tensor rate and the CUDA share doubles.
 

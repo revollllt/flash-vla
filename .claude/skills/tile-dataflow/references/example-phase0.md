@@ -143,6 +143,26 @@ floor is launch-count reduction, and none of it is tiling.
 
 Per-engine throughput — wgmma cycles per instruction, CUDA-core issue rate, TMA
 issue latency. **L3's bubble check needs those and none of the five yields them.**
-See SKILL.md's L3 section for what to do instead: ordering edges and which column
-is empty are *structural* and need no cycles; cycle counts are `[I]`, must be
-marked, and the criterion is the **ratio** between columns, never the absolutes.
+See `references/schedule-l3.md` for what to do instead: ordering edges and which
+column is empty are *structural* and need no cycles; cycle counts are `[I]`, must
+be marked, and the criterion is the **ratio** between columns, never the absolutes.
+
+## Where this skill's own numbers come from
+
+This skill holds specs to `[D]` / `[I]` / `TODO — needs source`; it owes the
+same. Every measured figure in SKILL.md and the references is from one project —
+an H100 SXM5 Pi0.5 decoder on this cluster, torch 2.11.0+cu130, clocks
+**unpinnable** so ~6% is the noise floor. One machine's numbers, not constants:
+**re-measure before porting them.**
+
+| tag | what | source |
+|---|---|---|
+| `[MEAS-A]` | 0.30 eligible warps/sched, `short scoreboard` 42.7%, transform 24-27% of cycles, the 0.8 us TMA hoist, 0.23 µs/MB of L2 activation re-read | `ncu --set full` plus A/B rebuilds of **one** fused FFN kernel. Where it appears twice, that is one finding cited twice, not two corroborating ones |
+| `[MEAS-B]` | cooperative + cluster rejected on sm90 | probe kernel, cluster 8 at 207360 B: `cudaOccupancyMaxActiveClusters` returns 15 against the 16 the grid needs, and cooperative+cluster returns `cudaErrorCooperativeLaunchTooLarge`. Reproduced behaviourally — 120 blocks reach a spin barrier, 128 time out |
+| `[MEAS-C]` | 7.94 µs against cuBLAS 8.65 µs | split-K gated residual, M=50 K=4096 N=1024 bf16, both timed in one process, cold |
+| `[I, UNMEASURED]` | grid barrier ≈ launch cost | inference. Load-bearing for rejecting cooperative and **not measured** — the claim a reader should check first |
+| `[I]` | `~700 ns` HBM latency in the L3 example | a round figure for illustration |
+
+The depth knee (`4→8 = 10.38→6.67 us` on one body, `8→11 = 14.45→14.99` on
+another) is two kernels from that project — which is the rule's own point: a
+slope does not transfer between bodies.

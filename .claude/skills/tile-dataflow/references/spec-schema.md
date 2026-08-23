@@ -215,7 +215,43 @@ Format in `references/l4-access.md`, worked files in
 legal when nothing in the kernel is touched per-thread — a pure TMA + wgmma
 mainloop — but say so rather than deleting the field.
 
-The full check list and the formulas are in SKILL.md. Two worth expanding:
+The full check list and its formulas follow — this is the canonical version,
+and `budget.py` implements it. The rows it reports `MANUAL` (L3's bubble check,
+traceability, the rasterization argument) are the ones that are not arithmetic
+and still need a human.
+
+| Check | Must hold |
+|---|---|
+| smem | `depth × per_stage_bytes + non_staged_bytes ≤ arch smem/CTA` (232448 B = 227 KB per CTA on sm90/sm100 -- the per-SM figure is 233472 B and is a different number, 164 KB sm80) — and if aliasing is used, say which buffers alias and why that is safe |
+| threads | `sum(warp_groups.threads) == launch threads`, each group a multiple of 128 when it issues wgmma |
+| acc_registers | fp32 accumulator elems/thread `= cta_tile.M × cta_tile.N / math_threads`; plus operands and addressing must fit 255 (sm90 RF) — or live in TMEM (sm100) |
+| mma_k | `iters_per_stage × inst_shape.K == extent of the axis this MMA contracts`, named in `math[].contracts`. That axis is usually `mainloop.axis`, and in a fused kernel often is not: attention's QKᵀ contracts the head dim while the mainloop walks `kv_seqlen`, so without the field a correct `count_per_stage` looks wrong |
+| mma_m | `inst_shape.M × num_math_groups == cta_tile.M` (or state the split rule that replaces it) |
+| mma_n_legal | `inst_shape.N` is a legal atom for the arch/dtype (wgmma N ∈ {8,16,…,256} step 8) |
+| trip_count | `mainloop.trip_count × mainloop.step ≥ problem reduction extent`, and the tail policy is named |
+| output_coverage | grid tiles × cta_tile covers the output exactly; predication/masking named for ragged edges |
+| occupancy | `cta_per_sm` implied by smem and registers matches what the spec claims; for persistent grids `ctas == num_sms × cta_per_sm` |
+| barrier_arrivals | every stage buffer has a full and an empty barrier (or the stated equivalent); arrival counts match the number of arriving warps/CTAs; the phase-flip rule is written down |
+| traceability | every bound and extent at L4 traces to an L2 loop, every name at L2 traces to an L1 dim, and the shared inner name of each `@` is `mainloop.axis` — an untraceable number means a missing field |
+| loop_bounds | every `range` in the nest states start, stop, and step, and its trip count matches the corresponding YAML field (`mainloop.trip_count`, `math.count_per_stage`) |
+| arithmetic_intensity | tile arithmetic intensity `≈ 2·M·N·K / (bytes moved)` versus the arch ridge point — flags a tile that cannot reach peak no matter how good the code is |
+| **floor** | every `perf_target` ≥ the Phase 0 floor for that kernel, computed as `a + MB/b` from measurement 2 **plus one launch cost per kernel launch** — a target below its own floor makes the whole spec unfalsifiable |
+| **reference** | measurement 4 is used to *calibrate the floor model*, never as a bound. See Phase 0 measurement 4 |
+| **acceptance** | the spec names the *one* measurement that decides acceptance, and it is the one the kernel will ship under. Designing against an isolated cold benchmark and shipping against an in-graph profile is a 2× discrepancy waiting to happen |
+| **falsifiability** | every performance claim in `Why these numbers` names the measurement that would refute it. A claim with no refuting measurement is an assumption wearing a number |
+| **concurrency** | L3's bubble check is filled in: for a steady-state stage, each of the three engines is either busy or its idle time is named and accepted. |
+| **vectorisation** | every gmem and smem touch at L4 states bits/thread and transactions; each is the widest legal access (128 b where alignment allows), coalesced, and bank-conflict-free — or the exception is named with its reason. **Computed, not asserted**: `l4_accesses` names the access file and `tv_check.py` produces the table. Report conflicts against their *ideal*, since two words per bank is optimal for a 64-bit access, not a 2-way defect |
+| **addressing** | per-iteration address arithmetic is counted. Anything loop-invariant is hoisted to the prologue and carried in a register; if the mainloop recomputes a base each stage, say why |
+| **register_budget** | `threads_per_cta × regs_per_thread × cta_per_sm ≤ 65536`, computed. This is what forces `cta_per_sm` in practice, and `acc_registers` (per thread) does not cover it. **But that product is the wrong one as soon as `setmaxnreg` is in play**: the launch bound's `max_regs_per_thread` is then a pre-redistribution ceiling, not the allocation. DeepGEMM's 384 × 255 "needs" 97920 registers while the kernel allocates 24/240/240 → 64512 and fits. When any warp group states `regs`, the binding sum is `Σ warps × 32 × regs ≤ 65536 / cta_per_sm` |
+| **residency** | `cta_per_sm` is stated with the smem *and* register arithmetic that produces it, and for a latency-bound kernel a value of 1 is justified against the 2-or-4 alternative rather than inherited from the warp-specialisation idiom (see `references/residency.md`) |
+| **persistence** | if `mode: persistent`, the grid is at least `SM_count x cta_per_sm` or the shortfall is named; `cooperative` is `true` only where CTAs block on each other, and when combined with a cluster the grid is checked against `cudaOccupancyMaxActiveClusters x cluster_size`; any semaphore is self-resetting under graph replay |
+| **tile_order** | `grid.rasterization` carries an L2 argument, not just a name, and on a static graph `grid.l2_schedule` says whether the map was solved offline or defaulted |
+| **non_mma_accounting** | every `non_mma` entry appears in L3's CUDA-core column with its `cost`, and every name in its `loop_carried` also appears in `mainloop.loop_carried`. Any entry with `on_critical_path: yes` shows what the copy engine is doing during it |
+| **rounding_contract** | every `non_mma.dtype` says where each rounding lands, and the parity reference in `verification` mirrors it. An algebraically identical op at a different precision is a different function and will not compare |
+
+When a check fails, the spec is wrong, not the check. Fix the spec or ask.
+
+Two rows worth expanding:
 
 **acc_registers.** For an fp32 accumulator held in RF: `elems_per_thread =
 cta_tile.M × cta_tile.N / math_threads`. A 128×128 tile over 256 math threads
@@ -297,6 +333,6 @@ Ask only what the target arch has.
 
 Consequences for the interview:
 
-- **sm80**: no `warp_groups`, no `cluster`, no `phase`. Pipeline depth is bounded by 163 KB per CTA and by `cp.async` in-flight limits. `mma.sync` is per-warp, so `inst_shape.M = 16` and the tile is split across warps in both M and N — the M-split check in SKILL.md needs the per-warp tiling stated instead.
+- **sm80**: no `warp_groups`, no `cluster`, no `phase`. Pipeline depth is bounded by 163 KB per CTA and by `cp.async` in-flight limits. `mma.sync` is per-warp, so `inst_shape.M = 16` and the tile is split across warps in both M and N — the `mma_m` check (§7) needs the per-warp tiling stated instead.
 - **sm90a**: everything in the template applies. The `a` suffix is mandatory; `sm90` alone will not compile wgmma or TMA.
 - **sm100a**: `acc.location` is `TMEM`, which changes the register math completely — the accumulator no longer competes for RF, so larger tiles become possible. Add TMEM allocation/deallocation to `pipeline.barriers`, and note whether MMA is 1-CTA or 2-CTA.
