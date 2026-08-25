@@ -30,7 +30,10 @@ src/flash_vla/
   models/                         hardware-independent model contracts
     pi0/                          checkpoint schema and weight helpers
   runtime/
-    cuda/                         graph-safe runtime mechanisms (ScratchPool)
+    cuda/                         graph-safe mechanisms (ScratchPool) and in-graph timing
+  tuning/                         backend-agnostic config sweeps
+    space.py                      candidate-set construction
+    loop.py                       the sweep loop, with build/invoke injected
   hardware/
     nvidia/
       h100/
@@ -43,6 +46,7 @@ src/flash_vla/
             tilelang/             TileLang backend (current main line)
               wrappers.py          call-site configs and launch wrappers
               fused_wrappers.py    fused call-site alternatives
+              autotune.py          TileLang tuning adapter (device axes, rewrap)
               kernels/             H100/Pi0 workload-specific TileLang kernels
 
 eval/                             numerical and policy-quality evaluation
@@ -52,11 +56,13 @@ benchmarks/                       performance measurement and profiling
 ## Dependency direction
 
 ```text
-eval / benchmarks -> public engine API
+eval / benchmarks -> public engine API and runtime
 hardware target   -> models + runtime + target-local backends
 models            -> no hardware target
 runtime           -> no model or hardware target
+tuning            -> runtime only; no model, backend or hardware target
 backend kernels   -> their backend and its own toolchain (TileLang / CUDA)
+backend adapters  -> tuning + their own device spec
 ```
 
 A backend module registers `ALL_WRAPPERS` / `FUSED_WRAPPERS` in
@@ -74,7 +80,21 @@ extract the proven common part then; do not generalize a kernel in anticipation.
   allocate device memory.
 - Keep fusion boundaries target-local because they change the pipeline and
   buffer lifetimes, not just one operator implementation.
-- Keep tuning results with the target and call site that produced them.
+- Keep tuning results with the target and call site that produced them. Split
+  the tuner itself: the sweep loop is workload-independent and lives in
+  `tuning/`, while the adapter that turns a candidate into a compiled kernel is
+  backend-private and stays with its backend. Neither belongs in `benchmarks/`,
+  which may only consume the public engine API.
+- A device capability is not a tuning axis. The spec states what the hardware
+  can do (`SUPPORTS_TMA`); the backend decides what that implies for its own
+  axes, because the implication differs per backend -- TileLang's warp
+  specialization exists only where TMA does, while a CUDA backend would use TMA
+  directly with no such flag. Keep that mapping in the backend adapter, so the
+  spec never names a backend concept and `tuning/` never names a hardware one.
+- Derive a tuning space from the spec rather than filtering a fixed list. A new
+  device changes which axes exist, which values fit (shared memory per block is
+  usually the binding limit, and eliminates more candidates than any missing
+  feature), and how many input sets a cold measurement needs.
 - Add a separate execution plan only when a shape profile changes topology or
   fusion, rather than merely changing a compile-time constant.
 - Treat PDL as a target pipeline decision: kernels expose the required device

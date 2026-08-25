@@ -1,0 +1,62 @@
+# L4 accesses for example-deepgemm.md.
+#
+# Every number in that spec's PER-THREAD ACCESS table is computed from this file:
+#
+#     python3 ../scripts/tv_check.py accesses-deepgemm.yaml --markdown
+#
+# The `expect` blocks pin the values the spec quotes, so a layout change that
+# invalidates the table fails the run instead of ageing quietly in prose.
+
+accesses:
+
+  # The spec's L4 said: "smem_d is unswizzled and its row stride is BLOCK_N*4 =
+  # 512 B = 4 exact bank cycles, so the 8 rows a warp writes land on the same 4
+  # bank pairs -> 8-WAY CONFLICT [I], see open_questions.bank_ways."
+  #
+  # It was right, and it is no longer an open question: 8 wavefronts against an
+  # ideal of 2 is a real 4x. This is what `sm90.hpp`'s rule about keeping BLOCK_N
+  # off multiples of 32 buys back, and it is an L4 symptom whose only cure is the
+  # L2 number BLOCK_N.
+  - id: smem_d store
+    space: smem
+    op: st.shared.b64
+    dtype: f32
+    threads: 128
+    buffer: {kind: tile, rows: 64, cols: 128, swizzle: none}
+    tv: {atom: wgmma_acc, n: 128, vec: 2, project: both}
+    expect: {wavefronts: 8, ideal: 2, distinct_words: 64}
+
+  # "32 b/thread (ld.shared.b32) x2. 8 distinct addresses per warp, 4 lanes
+  # broadcast each -> 1 transaction, 0-way conflict."  Confirmed: the wgmma
+  # accumulator gives four lanes the same row, so a per-row scale broadcasts.
+  - id: sfa load
+    space: smem
+    op: ld.shared.b32
+    dtype: f32
+    threads: 128
+    buffer: {kind: layout, shape: [128], stride: [1]}
+    tv: {atom: wgmma_acc, n: 128, vec: 1, project: row}
+    expect: {wavefronts: 1, ideal: 1, distinct_words: 8, instructions: 2}
+
+  # "64 b/thread (ld.shared.b64, float2) x16. 4 distinct addresses per warp per
+  # instruction, 8 lanes broadcast each -> 0-way conflict."
+  - id: sfb load
+    space: smem
+    op: ld.shared.b64
+    dtype: f32
+    threads: 128
+    buffer: {kind: layout, shape: [128], stride: [1]}
+    tv: {atom: wgmma_acc, n: 128, vec: 2, project: col}
+    expect: {wavefronts: 1, ideal: 1, distinct_words: 8, instructions: 16}
+
+  # The two Hopper touches with no per-thread answer at all. Their rows exist to
+  # say so: a spec that describes a TMA load per-thread has described a kernel it
+  # did not write.
+  - id: smem_a / smem_b fill
+    unit: tma
+
+  - id: smem A/B read by wgmma
+    unit: wgmma-desc
+
+  - id: D store
+    unit: tma

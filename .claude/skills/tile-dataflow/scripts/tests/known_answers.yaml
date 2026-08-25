@@ -1,0 +1,111 @@
+# Regression cases for the checker itself: counterfactuals, swizzle behaviour and
+# global-memory coalescing. The two worked examples' real accesses live beside
+# their specs in ../../references/accesses-*.yaml, and test_tvlayout.py runs
+# those too.
+#
+# Run: python3 tv_check.py --self-test
+
+accesses:
+
+  # What FlashMLA's stride-520 padding is worth. The same store into the same
+  # shape with the natural stride puts every lane's pair on the same 8 banks:
+  # 512 f32 is a whole number of bank cycles, so the row index drops out of the
+  # bank index entirely.
+  - id: flashmla sOutputBuf store, UNPADDED stride 512 (counterfactual)
+    space: smem
+    op: st.shared.b64
+    dtype: f32
+    threads: 128
+    buffer: {kind: layout, shape: [64, 512], stride: [512, 1]}
+    tv: {atom: wgmma_acc, n: 256, vec: 2, project: both}
+    expect: {wavefronts: 8, ideal: 2}
+
+  # ------------------------------------------------------- swizzle, end to end
+
+  # 32 lanes each pull a 16 B row segment out of a 128 B-row bf16 tile: the
+  # ldmatrix-shaped gather every Hopper mainloop does. Unswizzled, every lane
+  # starts at bank 0. This pair is the tool's proof that it computes the XOR
+  # rather than quoting the atom's reputation -- the swizzled case is not merely
+  # better, it is exactly optimal.
+  - id: bf16 row-segment gather, UNSWIZZLED (counterfactual)
+    space: smem
+    op: ld.shared.b128
+    dtype: bf16
+    threads: 32
+    buffer: {kind: tile, rows: 64, cols: 64, swizzle: none}
+    tv:
+      expr: "coord = (tid, elem)"
+      vals: 1
+      vec: 8
+    expect: {wavefronts: 32, ideal: 4, distinct_words: 128}
+
+  - id: bf16 row-segment gather, 128 B swizzle
+    space: smem
+    op: ld.shared.b128
+    dtype: bf16
+    threads: 32
+    buffer: {kind: tile, rows: 64, cols: 64, swizzle: 128}
+    tv:
+      expr: "coord = (tid, elem)"
+      vals: 1
+      vec: 8
+    expect: {wavefronts: 4, ideal: 4, distinct_words: 128}
+
+  # ------------------------------------------------------------ global memory
+
+  # The plain coalesced gmem read every epilogue and every cp.async prologue
+  # wants: 32 lanes x 16 B = 512 B = 16 sectors, nothing wasted.
+  - id: gmem coalesced 128-bit load
+    space: gmem
+    op: ld.global.v4
+    dtype: f32
+    threads: 32
+    buffer: {kind: layout, shape: [4096], stride: [1]}
+    tv:
+      expr: "coord = (tid * 4 + elem,)"
+      vals: 1
+      vec: 4
+    expect: {sectors: 16, ideal: 16}
+
+  # The same load with a stride of 8 f32: each lane still moves 16 B, but they
+  # land one per 32 B sector with a 16 B hole, so half the traffic is waste.
+  - id: gmem strided 128-bit load (counterfactual)
+    space: gmem
+    op: ld.global.v4
+    dtype: f32
+    threads: 32
+    buffer: {kind: layout, shape: [4096], stride: [1]}
+    tv:
+      expr: "coord = (tid * 8 + elem,)"
+      vals: 1
+      vec: 4
+    expect: {sectors: 32, ideal: 16}
+
+  # The `linear` atom: the plain CTA-strided fill a cp.async prologue or an
+  # epilogue staging store uses. 128 threads x 16 B walking contiguous memory.
+  #
+  # This pair is here for what it does NOT show. The fill is conflict-free with
+  # the swizzle and without it -- a swizzle is a permutation within a contiguous
+  # block, and a contiguous walk cannot conflict either way. So the 128 B atom is
+  # not justified by the WRITER; it is justified by the row-segment gather above,
+  # which goes from 32 wavefronts to 4. One buffer, two access patterns, and only
+  # one of them can see the reason the layout is what it is. That asymmetry is
+  # the whole argument for checking every touch on a buffer rather than one.
+  - id: linear 128-bit fill of a swizzled bf16 tile
+    space: smem
+    op: st.shared.b128
+    dtype: bf16
+    threads: 128
+    buffer: {kind: tile, rows: 64, cols: 64, swizzle: 128}
+    tv: {atom: linear, cols: 64, rows: 64, vals: 4, vec: 8}
+    expect: {wavefronts: 4, ideal: 4, distinct_words: 128, instructions: 4}
+
+  # The same fill with the swizzle removed: identical, as above.
+  - id: linear 128-bit fill, UNSWIZZLED (counterfactual)
+    space: smem
+    op: st.shared.b128
+    dtype: bf16
+    threads: 128
+    buffer: {kind: tile, rows: 64, cols: 64, swizzle: none}
+    tv: {atom: linear, cols: 64, rows: 64, vals: 4, vec: 8}
+    expect: {wavefronts: 4, ideal: 4, distinct_words: 128}

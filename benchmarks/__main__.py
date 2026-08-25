@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import sys
 
-COMMANDS = {"e2e": "e2e", "profile": "profile"}
+COMMANDS = {"e2e": "e2e", "e2e-pi05": "e2e_pi05", "profile": "profile", "profile-pi05": "profile_pi05", "roofline-pi05": "roofline_pi05",
+            "kernels": "kernels"}
 
 
 def main(argv=None) -> int:

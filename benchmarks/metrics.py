@@ -11,6 +11,10 @@ Launch overhead is amortised away, so it resolves single-digit-microsecond
 kernels -- the regime every decoder kernel lives in. It also cycles the caller's
 inputs so weight-heavy kernels read cold HBM instead of a warm L2, which is how
 they actually run inside the per-layer loop.
+
+That second regime and `capture` live in `flash_vla.runtime.cuda.timing`, not
+here: the backend autotuner needs them and must not import a benchmark harness
+to get them. They are re-exported below so existing call sites keep working.
 """
 from __future__ import annotations
 
@@ -19,6 +23,8 @@ import sys
 from typing import Any, Callable
 
 import torch
+
+from flash_vla.runtime.cuda import capture, graph_time_cold
 
 
 def percentile(values: list[float], q: float) -> float:
@@ -50,55 +56,6 @@ def bench_ms(fn: Callable[[], Any], warmup: int = 10, iterations: int = 100) -> 
         "p99": percentile(samples, 0.99),
         "max": max(samples),
     }
-
-
-def graph_time_cold(invoke: Callable[[int], Any], n_inner: int = 48, reps: int = 40,
-                    warmup: int = 4) -> float:
-    """Median us per call, launch overhead removed.
-
-    `invoke(i)` must issue exactly one kernel launch against the i-th input set;
-    cycling i over distinct weights keeps the reads cold.
-    """
-    side = torch.cuda.Stream()
-    side.wait_stream(torch.cuda.current_stream())
-    with torch.cuda.stream(side):
-        for i in range(warmup):
-            invoke(i)
-    torch.cuda.current_stream().wait_stream(side)
-    torch.cuda.synchronize()
-
-    graph = torch.cuda.CUDAGraph()
-    with torch.cuda.graph(graph):
-        for i in range(n_inner):
-            invoke(i)
-    torch.cuda.synchronize()
-
-    samples = []
-    for _ in range(reps):
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        start.record()
-        graph.replay()
-        end.record()
-        torch.cuda.synchronize()
-        samples.append(start.elapsed_time(end) / n_inner * 1000)
-    return statistics.median(samples)
-
-
-def capture(run: Callable[[], Any], warmup: int = 3) -> torch.cuda.CUDAGraph:
-    """Warm up `run` on a side stream, then capture one call into a CUDA graph."""
-    side = torch.cuda.Stream()
-    side.wait_stream(torch.cuda.current_stream())
-    with torch.cuda.stream(side):
-        for _ in range(warmup):
-            run()
-    torch.cuda.current_stream().wait_stream(side)
-    torch.cuda.synchronize()
-    graph = torch.cuda.CUDAGraph()
-    with torch.cuda.graph(graph):
-        run()
-    torch.cuda.synchronize()
-    return graph
 
 
 def diff_stats(ref: torch.Tensor, got: torch.Tensor) -> dict[str, Any]:
@@ -136,3 +93,7 @@ def require_cuda() -> None:
     """Fail early and loudly off-GPU: on this cluster CUDA only exists inside sbatch."""
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; submit via sbatch/run_gpu.sbatch")
+
+
+__all__ = ["bench_ms", "capture", "diff_stats", "env_block", "graph_time_cold", "percentile",
+           "require_cuda"]

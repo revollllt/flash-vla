@@ -7,12 +7,13 @@ warp-specialization setting, which is why some kernels appear here twice through
 two variants.
 
 Every config below came from a sweep at the call site's real shape, measured
-inside a CUDA graph with cold weights (`benchmarks.autotune`). They are not defaults
-and not guesses: three of them were wrong in ways an eager benchmark could not
-see, costing 2.4x on one kernel. Re-tune with
-`python -m benchmarks` after any shape change, and re-check
-correctness, not just time -- `kernels.tl_scaled_gate` in particular is
-numerically sensitive to its tiling.
+inside a CUDA graph with cold weights (`autotune.sweep_kernel`, in this
+package). They are not defaults and not guesses: three of them were wrong in
+ways an eager benchmark could not see, costing 2.4x on one kernel. Re-tune
+through `autotune.sweep_kernel` after any shape change, and pass `correct=` --
+`kernels.tl_scaled_gate` is numerically sensitive to its tiling and some
+tilings produce garbage rather than failing, so timing alone will happily rank
+a wrong config first.
 
 Shapes are passed through unpadded. TileLang masks out-of-bounds rows, reduction
 columns and output columns exactly as Triton's masks do, so nothing here pads a

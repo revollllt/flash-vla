@@ -70,11 +70,12 @@ at compile time.
 | path | responsibility |
 |---|---|
 | `src/flash_vla/models/pi0/` | hardware-independent checkpoint schema |
-| `src/flash_vla/runtime/cuda/` | graph-safe runtime mechanisms |
+| `src/flash_vla/runtime/cuda/` | graph-safe runtime mechanisms and in-graph timing |
+| `src/flash_vla/tuning/` | backend-agnostic config sweeps |
 | `src/flash_vla/hardware/nvidia/h100/pi0/` | complete H100/Pi0 execution target |
 | `.../pi0/backends/` | backend registry: one module per implementation strategy |
-| `.../pi0/backends/tilelang/` | TileLang backend: wrappers, fusions, and kernels |
-| `benchmarks/` | timing, profiling, and autotune harnesses |
+| `.../pi0/backends/tilelang/` | TileLang backend: wrappers, fusions, kernels, tuning adapter |
+| `benchmarks/` | timing and profiling harnesses |
 | `eval/` | numerical correctness and policy-quality evaluation |
 
 The target is the atomic performance unit: hardware, model, shape profile, and
