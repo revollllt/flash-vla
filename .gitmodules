@@ -1,0 +1,7 @@
+[submodule "third_party/flashmla"]
+	path = third_party/flashmla
+	url = https://github.com/deepseek-ai/FlashMLA.git
+
+[submodule "third_party/deepgemm"]
+	path = third_party/deepgemm
+	url = https://github.com/deepseek-ai/DeepGEMM.git

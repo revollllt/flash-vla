@@ -1,9 +1,10 @@
 # Vendored CUDA kernel references
 
-These checkouts are read-only reference sources for the SM90 action-expert
-kernel work. They are shallow clones of the official repositories; each
-checkout retains its upstream LICENSE and .git metadata so the exact revision
-can be audited locally.
+These are read-only submodule checkouts used as SM90 reference sources for the
+action-expert kernel. The top-level `.gitmodules` records the official URLs;
+`git clone --recurse-submodules` restores the pinned revisions and their
+upstream LICENSE files, so a clean checkout has the headers required by the
+CuTe build.
 
 | component | upstream | pinned revision | upstream submodules | license |
 | --- | --- | --- | --- | --- |
@@ -46,7 +47,7 @@ can be audited locally.
   machine-profile-driven choice of block sizes, swizzle modes, stage count,
   shared-memory budget, warp counts, and wave-efficiency scoring.
 
-The references are not included in the FFN build yet. New code should copy
+The references are not included in the FFN build as runtime dependencies. New code should copy
 only the small helper or contract needed, preserve upstream attribution, and
 keep repository-specific task descriptors and dependency protocols outside
 the vendored trees.
