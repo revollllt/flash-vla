@@ -1,8 +1,7 @@
 // ffn_taskloop.cu -- Phase 5 of specs/tile/ffn_taskloop_minimal.md.
 //
-// Persistent task-loop prototype fusing the pi0.5 decoder FFN chain in ONE
-// launch:
-//   GatedUp task (128x): hidden[:, n:n+32] = gelu((x*F*S) @ W1 + b1) * ((x*F*S) @ W2 + b2)
+// Persistent task-loop prototype consuming an upstream K-major XFS buffer:
+//   GatedUp task (128x): hidden[:, n:n+32] = gelu(XFS @ W1 + b1) * (XFS @ W2 + b2)
 //   DownResidual task (32x):  out[:, n:n+32]   += ((hidden @ Wd)[:, n:n+32]) * g[n:n+32]
 // with out pre-filled with the residual. GatedUp->DownResidual ordering runs through 32 gmem
 // counters (one per 128-col slice of hidden, arrive count 4).

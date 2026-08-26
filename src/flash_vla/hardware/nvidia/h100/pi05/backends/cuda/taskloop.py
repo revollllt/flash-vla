@@ -1,4 +1,4 @@
-"""Minimal FFN persistent task-loop: preallocated CPU worker queue + one 132-CTA kernel.
+"""K-major XFS producer plus the 132-CTA persistent FFN task loop.
 
 Phase 4 host side of specs/tile/ffn_taskloop_minimal.md. Three pieces:
 
@@ -11,8 +11,9 @@ Phase 4 host side of specs/tile/ffn_taskloop_minimal.md. Three pieces:
   with truncated variants for bisection --
   a persistent-kernel bug hangs rather than fails, so run-to-a-subset + compare
   is the debug loop.
-- `FFNTaskloop.launch()` zeroes the counters on-stream (graph-capturable, so a
-  captured graph self-resets on replay) and launches the kernel.
+- `FFNTaskloop.launch()` produces exact-rounding K-major XFS, zeroes the
+  counters on-stream, then launches the persistent kernel. Both launches are
+  graph-capturable after one explicit warmup call.
 
 Tensor contracts (all CUDA, contiguous): x_pad/out (64, 1024) bf16 with rows
 50..63 zeroed, hidden (64, 4096) bf16, S (1024,) bf16,
@@ -344,6 +345,10 @@ class FFNTaskloop:
             counters.zero_()  # on-stream: captured graphs self-reset on replay
             self._down_residual_counters.zero_()   # same, for the split-K join
         stream = torch.cuda.current_stream().cuda_stream
+        if ((self._x_internal is None or self._rms_xfs_producer is None) and
+                torch.cuda.is_current_stream_capturing()):
+            raise RuntimeError(
+                "call FFNTaskloop.launch once before CUDA graph capture")
         if self._x_internal is None or self._x_internal.device != x_pad.device:
             self._x_internal = torch.empty((D, M_PAD), dtype=torch.bfloat16,
                                            device=x_pad.device)
