@@ -21,7 +21,7 @@ from .base import kernel
 @kernel(warp_spec=False)
 def tl_rms_xfs_kmajor(
         X, Scale, XFS, BLOCK_M: int, BLOCK_K: int, OUTPUT_K: int,
-        THREADS: int, M_PAD: int):
+        THREADS: int, M_PAD: int, TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH: bool):
     """Compute row RMS and emit exact-rounding, zero-padded K-major XFS.
 
     Output-K CTAs intentionally recompute the small row RMS reduction.  For
@@ -38,6 +38,16 @@ def tl_rms_xfs_kmajor(
 
     with T.Kernel(T.ceildiv(K, OUTPUT_K), T.ceildiv(M_PAD, BLOCK_M),
                   threads=THREADS) as (pid_k, pid_m):
+        thread_id = T.get_thread_binding()
+        # Every primary CTA releases its programmatic launch dependency as
+        # soon as it is resident.  The consumer still performs the mandatory
+        # dependency wait before its first XFS TMA, so this early signal only
+        # exposes scheduling overlap; it does not provide memory visibility.
+        if TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH:
+            if thread_id == 0:
+                T.evaluate(T.call_extern(
+                    "void", "cudaTriggerProgrammaticLaunchCompletion"))
+
         X_norm = T.alloc_fragment((BLOCK_M, BLOCK_K), dtype)
         X_square = T.alloc_fragment((BLOCK_M, BLOCK_K), accum_dtype)
         square_sum = T.alloc_fragment((BLOCK_M,), accum_dtype)

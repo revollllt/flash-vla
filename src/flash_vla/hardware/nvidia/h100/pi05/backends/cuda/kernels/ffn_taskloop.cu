@@ -673,7 +673,8 @@ __global__ void __launch_bounds__(WarpRoles::kThreads, 1)
     uint32_t* __restrict__ counters,
     float* __restrict__ down_residual_partial,
     uint32_t* __restrict__ down_residual_counters,
-    long long* __restrict__ dbg) {
+    long long* __restrict__ dbg,
+    bool wait_for_xfs_producer) {
   extern __shared__ uint8_t pool[];
   uint64_t* bars = reinterpret_cast<uint64_t*>(pool + BARRIER_OFFSET);
   const int tid = threadIdx.x;
@@ -717,6 +718,12 @@ __global__ void __launch_bounds__(WarpRoles::kThreads, 1)
     }
     cutlass::arch::fence_barrier_init();
     __syncthreads();
+    // Address calculation and barrier initialization above are independent of
+    // the primary XFS producer.  The dependency wait must remain before any
+    // warp can issue an XFS TMA load.
+    if (wait_for_xfs_producer && slot == 0) {
+      cudaGridDependencySynchronize();
+    }
     if (ref::is_gated_up(kind)) {
       GatedUpTask task{my + slot, 1, &tmx, &tmwup, F, S, b1, b2, S, hidden,
                        counters, pool, bars, dbg};
@@ -799,6 +806,7 @@ static CUtensorMap enc2d(const void* p, uint64_t inner, uint64_t outer,
 extern "C" {
 
 int ffn_taskloop_launch(const void* table, int n_ctas,
+                        int use_programmatic_dependency,
                         const void* x_pad, const void* F, const void* S,
                         const void* W1, const void* W2,
                         const void* b1, const void* b2,
@@ -860,15 +868,40 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
   CUtensorMap tmh  = enc2d(hidden, FF, M_PAD, 64, 64, CU_TENSOR_MAP_SWIZZLE_128B, &rc);
   if (rc) return 1000 + (int)rc;
 
-  ffn_taskloop_kernel<<<N_CTAS, 224, SHARED_MEMORY_BYTES,
-                        (cudaStream_t)stream>>>(
-      (const TaskDesc*)table, tmx, tmwup, packed_gate_up_legacy_unused, tmwd, tmh,
-      (const __nv_bfloat16*)F, (const __nv_bfloat16*)S,
-      (const __nv_bfloat16*)b1, (const __nv_bfloat16*)b2,
-      (const __nv_bfloat16*)g_gate,
-      (__nv_bfloat16*)hidden, (__nv_bfloat16*)out, (uint32_t*)counters,
-      (float*)down_residual_partial, (uint32_t*)down_residual_counters,
-      (long long*)dbg);
+  const bool wait_for_xfs_producer = use_programmatic_dependency != 0;
+  if (wait_for_xfs_producer) {
+    cudaLaunchAttribute dependency_attribute{};
+    dependency_attribute.id =
+        cudaLaunchAttributeProgrammaticStreamSerialization;
+    dependency_attribute.val.programmaticStreamSerializationAllowed = 1;
+
+    cudaLaunchConfig_t launch_config{};
+    launch_config.gridDim = dim3(N_CTAS, 1, 1);
+    launch_config.blockDim = dim3(WarpRoles::kThreads, 1, 1);
+    launch_config.dynamicSmemBytes = SHARED_MEMORY_BYTES;
+    launch_config.stream = (cudaStream_t)stream;
+    launch_config.attrs = &dependency_attribute;
+    launch_config.numAttrs = 1;
+    cudaLaunchKernelEx(
+        &launch_config, ffn_taskloop_kernel,
+        (const TaskDesc*)table, tmx, tmwup, packed_gate_up_legacy_unused,
+        tmwd, tmh, (const __nv_bfloat16*)F, (const __nv_bfloat16*)S,
+        (const __nv_bfloat16*)b1, (const __nv_bfloat16*)b2,
+        (const __nv_bfloat16*)g_gate, (__nv_bfloat16*)hidden,
+        (__nv_bfloat16*)out, (uint32_t*)counters,
+        (float*)down_residual_partial, (uint32_t*)down_residual_counters,
+        (long long*)dbg, wait_for_xfs_producer);
+  } else {
+    ffn_taskloop_kernel<<<N_CTAS, WarpRoles::kThreads, SHARED_MEMORY_BYTES,
+                          (cudaStream_t)stream>>>(
+        (const TaskDesc*)table, tmx, tmwup, packed_gate_up_legacy_unused,
+        tmwd, tmh, (const __nv_bfloat16*)F, (const __nv_bfloat16*)S,
+        (const __nv_bfloat16*)b1, (const __nv_bfloat16*)b2,
+        (const __nv_bfloat16*)g_gate, (__nv_bfloat16*)hidden,
+        (__nv_bfloat16*)out, (uint32_t*)counters,
+        (float*)down_residual_partial, (uint32_t*)down_residual_counters,
+        (long long*)dbg, wait_for_xfs_producer);
+  }
   return (int)cudaGetLastError();
 }
 

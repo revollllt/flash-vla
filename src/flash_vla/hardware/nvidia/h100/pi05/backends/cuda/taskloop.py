@@ -299,7 +299,8 @@ class FFNTaskloop:
     def __init__(self, verbose: bool = False):
         self._lib = ctypes.CDLL(str(build(verbose)))
         self._lib.ffn_taskloop_launch.restype = ctypes.c_int
-        self._lib.ffn_taskloop_launch.argtypes = [ctypes.c_void_p, ctypes.c_int] + \
+        self._lib.ffn_taskloop_launch.argtypes = [ctypes.c_void_p, ctypes.c_int,
+                                                  ctypes.c_int] + \
             [ctypes.c_void_p] * 16
         # Split-K scratch is owned here rather than passed in, so `launch`'s
         # signature -- and every call site of it -- is unchanged. Allocated on
@@ -317,7 +318,8 @@ class FFNTaskloop:
     def launch(self, table, xfs_kmajor, F, S, packed_gate_up, packed_gate_up_unused,
                b1, b2, Wd, g_gate,
                hidden, out, counters, *, dbg=None,
-               zero_counters: bool = True) -> None:
+               zero_counters: bool = True,
+               use_programmatic_dependency: bool = False) -> None:
         """`dbg`: optional host-PINNED (n_ctas, 4) int64 tensor. On a watchdog
         trap the kernel writes {site, g, tid, 1} per stuck CTA there before
         aborting -- pass it during bring-up, drop it for benchmarks."""
@@ -354,6 +356,7 @@ class FFNTaskloop:
             raise ValueError("xfs_kmajor must be contiguous BF16 [1024,64]")
         rc = self._lib.ffn_taskloop_launch(
             ctypes.c_void_p(table.data_ptr()), int(table.shape[0]),
+            int(use_programmatic_dependency),
             *[ctypes.c_void_p(t.data_ptr()) for t in
               (xfs_kmajor, F, S, packed_gate_up, packed_gate_up_unused,
                b1, b2, Wd, g_gate, hidden, out, counters,

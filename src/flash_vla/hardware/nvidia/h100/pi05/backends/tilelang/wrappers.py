@@ -324,7 +324,14 @@ _DEC_RESIDUAL = dict(BLOCK_M=16, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=4, THREADS=
 _DEC_GATE = dict(BLOCK_M=64, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128)
 _DEC_OUT_PROJ = dict(BLOCK_M=16, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128, PRO_K=128)
 _DEC_RMS = dict(BLOCK_M=2, BLOCK_K=256, THREADS=128)
-_DEC_XFS = dict(BLOCK_M=8, BLOCK_K=256, OUTPUT_K=32, THREADS=128, M_PAD=64)
+_DEC_XFS = dict(
+    BLOCK_M=8,
+    BLOCK_K=256,
+    OUTPUT_K=32,
+    THREADS=128,
+    M_PAD=64,
+    TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
+)
 
 # NUM_SPLIT is a request, not the realized count -- `_num_splits` shrinks it.
 # Pi0's 7 realizes as 6 at Pi0.5's 1018 keys; 8 realizes as 8 and measured
@@ -348,7 +355,7 @@ def _rms_factor(x, out, cfg=_DEC_RMS):
     return out
 
 
-def decoder_rms_xfs(x, scale, out):
+def decoder_rms_xfs(x, scale, out, *, trigger_programmatic_launch=False):
     """Write the next FFN's exact BF16 input as contiguous ``[1024,64]``.
 
     ``x`` is the BF16 ``decoder_x`` *after* ``decoder_out_proj_residual`` has
@@ -366,7 +373,9 @@ def decoder_rms_xfs(x, scale, out):
         raise ValueError("decoder_rms_xfs tensors must be BF16")
     if not x.is_contiguous() or not scale.is_contiguous() or not out.is_contiguous():
         raise ValueError("decoder_rms_xfs tensors must be contiguous")
-    _compiled(xfs_kernels.tl_rms_xfs_kmajor, M=M, K=K, **_DEC_XFS)(x, scale, out)
+    config = dict(_DEC_XFS)
+    config["TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH"] = trigger_programmatic_launch
+    _compiled(xfs_kernels.tl_rms_xfs_kmajor, M=M, K=K, **config)(x, scale, out)
     return out
 
 
