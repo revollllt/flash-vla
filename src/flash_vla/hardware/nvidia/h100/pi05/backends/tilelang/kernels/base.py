@@ -370,60 +370,6 @@ def tl_rms_factor(A, F, BLOCK_M: int, BLOCK_K: int, THREADS: int):
         T.copy(A_powsum, F[bx * BLOCK_M])
 
 
-@kernel(warp_spec=False)
-def tl_rms_xfs_kmajor(
-        X, scale, xfs_kmajor,
-        BLOCK_M: int, BLOCK_K: int, OUTPUT_K: int, THREADS: int):
-    """Produce the FFN input in its consumer-native K-major layout.
-
-    Exact contract:
-    ``xfs_kmajor[k,m] = bf16(bf16(X[m,k] * rstd(X[m,:])) * scale[k])``.
-    A two-dimensional static grid gives each CTA one output tile. Each CTA
-    recomputes the factors for its M rows, then stages the transpose through
-    shared memory so the final global write is contiguous along M.
-    """
-    M, K = T.const("M, K")
-    dtype = T.bfloat16
-    accum_dtype = T.float32
-    X: T.Tensor((M, K), dtype)
-    scale: T.Tensor((K,), dtype)
-    xfs_kmajor: T.Tensor((K, M), dtype)
-
-    with T.Kernel(T.ceildiv(K, OUTPUT_K), T.ceildiv(M, BLOCK_M),
-                  threads=THREADS) as (k_tile, m_tile):
-        x_for_norm = T.alloc_fragment((BLOCK_M, BLOCK_K), dtype)
-        squared = T.alloc_fragment((BLOCK_M, BLOCK_K), accum_dtype)
-        square_sum = T.alloc_fragment((BLOCK_M,), accum_dtype)
-        row_factor = T.alloc_fragment((BLOCK_M,), dtype)
-        x_tile = T.alloc_fragment((BLOCK_M, OUTPUT_K), dtype)
-        scale_tile = T.alloc_fragment((OUTPUT_K,), dtype)
-        xfs_transposed = T.alloc_shared((OUTPUT_K, BLOCK_M), dtype)
-
-        T.clear(squared)
-        for reduction_tile in T.Serial(T.ceildiv(K, BLOCK_K)):
-            T.copy(X[m_tile * BLOCK_M, reduction_tile * BLOCK_K], x_for_norm)
-            for row, column in T.Parallel(BLOCK_M, BLOCK_K):
-                value = x_for_norm[row, column].astype(accum_dtype)
-                squared[row, column] += value * value
-        T.reduce_sum(squared, square_sum, dim=1)
-        for row in T.Parallel(BLOCK_M):
-            row_factor[row] = T.rsqrt(
-                square_sum[row] / K + 1e-6).astype(dtype)
-
-        T.copy(X[m_tile * BLOCK_M, k_tile * OUTPUT_K], x_tile)
-        T.copy(scale[k_tile * OUTPUT_K], scale_tile)
-        for row, column in T.Parallel(BLOCK_M, OUTPUT_K):
-            normalized = (x_tile[row, column] * row_factor[row]).astype(dtype)
-            xfs_transposed[column, row] = \
-                (normalized * scale_tile[column]).astype(dtype)
-        T.sync_threads()
-        T.copy(
-            xfs_transposed,
-            xfs_kmajor[k_tile * OUTPUT_K, m_tile * BLOCK_M],
-            disable_tma=True,
-        )
-
-
 @kernel
 def tl_rms_norm(X, O, BLOCK_M: int, BLOCK_K: int, THREADS: int):
     """O = X * rsqrt(mean_k(X^2) + 1e-6), the encoder's RMSNorm.
