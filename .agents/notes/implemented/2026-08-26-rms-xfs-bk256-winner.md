@@ -1,7 +1,9 @@
 # RMS-XFS producer unlocks the BK256 GatedProjection path
 
-Date: 2026-08-26  
-Branch: `perf-rms-xfs-kmajor`  
+Date: 2026-08-26
+
+Branch: `perf-rms-xfs-kmajor`
+
 Base: `origin/main@cda270b`
 
 ## Contract
