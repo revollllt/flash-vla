@@ -17,6 +17,7 @@
 
 #include <cuda.h>
 #include <cuda_bf16.h>
+#include <cstddef>
 #include <cstdio>
 #include <cstdint>
 
@@ -106,7 +107,6 @@ constexpr int DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES =
 constexpr int DOWN_RESIDUAL_WEIGHT_FRAME_BYTES =
     BN * DOWN_RESIDUAL_BLOCK_K * sizeof(BF);                     // 4096
 
-constexpr int GATED_UP_ACTIVATION_OFFSET = 0;
 constexpr int GATED_UP_WEIGHT_OFFSET =
     GATED_UP_ACTIVATION_FRAMES * GATED_UP_ACTIVATION_FRAME_BYTES; // 131072
 constexpr int BARRIER_OFFSET =
@@ -116,15 +116,43 @@ constexpr int BARRIER_OFFSET =
 // are needed.  Each producer warp waits on its empty slot, calls
 // arrive_and_expect_tx for its own byte count, and emits the TMA operation.
 constexpr int SHARED_MEMORY_BYTES = BARRIER_OFFSET + 16 * sizeof(uint64_t); // 229504
-// DownResidual pool aliases the GatedUp pool (spec: non_staged_buffers.dr_pool)
-constexpr int DOWN_RESIDUAL_WEIGHT_OFFSET = 0;
-constexpr int DOWN_RESIDUAL_ACTIVATION_OFFSET =
-    DOWN_RESIDUAL_WEIGHT_DEPTH * DOWN_RESIDUAL_WEIGHT_FRAME_BYTES;
-static_assert(
-    DOWN_RESIDUAL_ACTIVATION_OFFSET +
-        DOWN_RESIDUAL_ACTIVATION_DEPTH * DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES <=
-        BARRIER_OFFSET,
-    "DownResidual shared-memory pool must fit inside the GatedUp pool");
+
+// The two task bodies never execute concurrently, so their data planes alias.
+// Describe that alias once instead of rebuilding it with byte offsets at every
+// TMA and WGMMA call site. The external dynamic-SMEM allocation remains exact.
+struct GatedProjectionSharedData {
+  BF activation_frames[GATED_UP_ACTIVATION_FRAMES]
+                      [GATED_UP_ACTIVATION_FRAME_BYTES / sizeof(BF)];
+  BF weight_frames[GATED_UP_WEIGHT_DEPTH]
+                  [GATED_UP_WEIGHT_FRAME_BYTES / sizeof(BF)];
+};
+
+struct DownProjectionResidualSharedData {
+  BF weight_frames[DOWN_RESIDUAL_WEIGHT_DEPTH]
+                  [DOWN_RESIDUAL_WEIGHT_FRAME_BYTES / sizeof(BF)];
+  BF activation_frames[DOWN_RESIDUAL_ACTIVATION_DEPTH]
+                      [DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES / sizeof(BF)];
+};
+
+struct SharedStorage {
+  union {
+    GatedProjectionSharedData gated_projection;
+    DownProjectionResidualSharedData down_projection_residual;
+  } mainloop;
+  alignas(16) uint64_t barrier_words[16];
+};
+
+static_assert(offsetof(GatedProjectionSharedData, weight_frames) ==
+                  GATED_UP_WEIGHT_OFFSET,
+              "stationary activation and weight-ring offsets changed");
+static_assert(sizeof(GatedProjectionSharedData) == BARRIER_OFFSET,
+              "GatedProjection data plane must end at the barrier pool");
+static_assert(sizeof(DownProjectionResidualSharedData) <= BARRIER_OFFSET,
+              "DownProjectionResidual data must fit the aliased pool");
+static_assert(offsetof(SharedStorage, barrier_words) == BARRIER_OFFSET,
+              "barrier-pool offset changed");
+static_assert(sizeof(SharedStorage) == SHARED_MEMORY_BYTES,
+              "dynamic shared-memory footprint changed");
 static_assert(M_PAD * sizeof(BF) == 128,
               "internal activation TMA row must remain 128 bytes");
 static_assert(GATED_UP_WEIGHT_FRAME_BYTES == 32768,
@@ -180,27 +208,83 @@ using TaskDesc = TaskDescriptor;  // taskgraph.queue; binary ABI is unchanged
 using BarrierViews = ref::BarrierViews<FullBar, EmptyBar, GATED_UP_WEIGHT_DEPTH,
                                        DOWN_RESIDUAL_WEIGHT_DEPTH, DOWN_RESIDUAL_ACTIVATION_DEPTH>;
 
-// GatedUp no longer shares one transaction barrier between activation and
-// weight arrivals. Activation frames are single-fill stationary storage;
-// only the weight frames need an empty/reuse barrier.
-__device__ __forceinline__ FullBar* gated_up_activation_full(uint64_t* base) {
-  return reinterpret_cast<FullBar*>(base);
-}
-__device__ __forceinline__ FullBar* gated_up_weight_full(uint64_t* base) {
-  return reinterpret_cast<FullBar*>(base + GATED_UP_ACTIVATION_FRAMES);
-}
-__device__ __forceinline__ EmptyBar* gated_up_weight_empty(uint64_t* base) {
-  return reinterpret_cast<EmptyBar*>(
-      base + GATED_UP_ACTIVATION_FRAMES + GATED_UP_WEIGHT_DEPTH);
-}
+// Task-local views own every address calculation. Producers and consumers see
+// named frames/barrier pools, never a raw shared-memory byte offset.
+struct GatedProjectionSharedStorageView {
+  SharedStorage* storage;
+
+  __device__ __forceinline__ BF* activation_frame(int stage) const {
+    auto* base = reinterpret_cast<uint8_t*>(storage);
+    return reinterpret_cast<BF*>(
+        base + stage * GATED_UP_ACTIVATION_FRAME_BYTES);
+  }
+  __device__ __forceinline__ BF* weight_frame(int stage) const {
+    auto* base = reinterpret_cast<uint8_t*>(storage);
+    return reinterpret_cast<BF*>(
+        base + GATED_UP_WEIGHT_OFFSET + stage * GATED_UP_WEIGHT_FRAME_BYTES);
+  }
+  __device__ __forceinline__ uint64_t* barrier_words() const {
+    auto* base = reinterpret_cast<uint8_t*>(storage);
+    return reinterpret_cast<uint64_t*>(base + BARRIER_OFFSET);
+  }
+  __device__ __forceinline__ FullBar* activation_full() const {
+    return reinterpret_cast<FullBar*>(barrier_words());
+  }
+  __device__ __forceinline__ FullBar* weight_full() const {
+    return reinterpret_cast<FullBar*>(
+        barrier_words() + GATED_UP_ACTIVATION_FRAMES);
+  }
+  __device__ __forceinline__ EmptyBar* weight_empty() const {
+    return reinterpret_cast<EmptyBar*>(
+        barrier_words() + GATED_UP_ACTIVATION_FRAMES +
+        GATED_UP_WEIGHT_DEPTH);
+  }
+};
+
+struct DownProjectionResidualSharedStorageView {
+  SharedStorage* storage;
+
+  __device__ __forceinline__ BF* weight_frame(int stage) const {
+    auto* base = reinterpret_cast<uint8_t*>(storage);
+    return reinterpret_cast<BF*>(
+        base + stage * DOWN_RESIDUAL_WEIGHT_FRAME_BYTES);
+  }
+  __device__ __forceinline__ BF* activation_frame(int stage) const {
+    auto* base = reinterpret_cast<uint8_t*>(storage);
+    constexpr int kActivationOffset =
+        offsetof(DownProjectionResidualSharedData, activation_frames);
+    return reinterpret_cast<BF*>(
+        base + kActivationOffset +
+        stage * DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES);
+  }
+  __device__ __forceinline__ uint64_t* barrier_words() const {
+    auto* base = reinterpret_cast<uint8_t*>(storage);
+    return reinterpret_cast<uint64_t*>(base + BARRIER_OFFSET);
+  }
+  __device__ __forceinline__ FullBar* weight_full() const {
+    return BarrierViews::down_residual_weight_full(barrier_words());
+  }
+  __device__ __forceinline__ EmptyBar* weight_empty() const {
+    return BarrierViews::down_residual_weight_empty(barrier_words());
+  }
+  __device__ __forceinline__ FullBar* activation_full() const {
+    return BarrierViews::down_residual_activation_full(barrier_words());
+  }
+  __device__ __forceinline__ EmptyBar* activation_empty() const {
+    return BarrierViews::down_residual_activation_empty(barrier_words());
+  }
+};
 
 // --------------------------------------------------------------- device utils
 __device__ __forceinline__ uint32_t smem_u32(const void* p) {
   return static_cast<uint32_t>(__cvta_generic_to_shared(p));
 }
 
-// spec L2: TMA-2D issue, one elected thread; coords {inner, outer}
-__device__ __forceinline__ void issue_tma_2d(
+namespace tma {
+
+// Device-side issue layer. Host descriptor construction is kept separate.
+// Every helper is called by one elected producer lane; coords are {inner, outer}.
+__device__ __forceinline__ void load_2d(
     const CUtensorMap* map, void* dst, int32_t c_inner, int32_t c_outer,
     uint64_t* bar) {
   uint32_t d = smem_u32(dst), b = smem_u32(bar);
@@ -212,7 +296,7 @@ __device__ __forceinline__ void issue_tma_2d(
 
 // DeepGEMM marks one-shot TMA loads EVICT_FIRST so streamed weights do not
 // displace the reused XFS working set from L2. Keep activation loads normal.
-__device__ __forceinline__ void issue_weight_tma_2d_evict_first(
+__device__ __forceinline__ void load_weight_2d_evict_first(
     const CUtensorMap* map, void* dst, int32_t c_inner, int32_t c_outer,
     uint64_t* bar) {
   uint32_t d = smem_u32(dst), b = smem_u32(bar);
@@ -228,7 +312,7 @@ __device__ __forceinline__ void issue_weight_tma_2d_evict_first(
 // Tensor prefetch has no shared-memory destination and no completion barrier.
 // It moves the tensor-map tile toward L2; the later ordinary TMA load remains
 // the sole operation that owns the weight transaction barrier.
-__device__ __forceinline__ void prefetch_tma_2d_to_l2(
+__device__ __forceinline__ void prefetch_2d_to_l2(
     const CUtensorMap* map, int32_t c_inner, int32_t c_outer) {
   asm volatile(
       "cp.async.bulk.prefetch.tensor.2d.L2.global [%0, {%1, %2}];"
@@ -236,7 +320,7 @@ __device__ __forceinline__ void prefetch_tma_2d_to_l2(
 }
 
 // Plain 1D bulk-copy helper retained for profiles that transport side data.
-__device__ __forceinline__ void issue_bulk_1d(
+__device__ __forceinline__ void load_1d(
     void* dst, const void* src, uint32_t bytes, uint64_t* bar) {
   uint32_t d = smem_u32(dst), b = smem_u32(bar);
   asm volatile(
@@ -244,6 +328,8 @@ __device__ __forceinline__ void issue_bulk_1d(
       " [%0], [%1], %2, [%3];"
       :: "r"(d), "l"(src), "r"(bytes), "r"(b) : "memory");
 }
+
+}  // namespace tma
 
 // spec: grid.persistence.phase_ordering -- release: fence then red.add
 __device__ __forceinline__ void counter_release(uint32_t* c) {
@@ -315,45 +401,49 @@ __device__ __forceinline__ void mathwg_sync() {
 // spec L2/L3: GatedUp steady state. tid 0..127 = math0; warp 4 is the weight
 // producer and warp 5 is the activation producer (same roles as DownResidual);
 // warp 6 is reserved for future task-queue scheduling.
-struct GatedUpTask {
-  const TaskDesc* my;
-  int ntask;
-  const CUtensorMap *tmx, *tmwup;
-  const __nv_bfloat16 *F, *S, *b1, *b2, *Sg;
-  __nv_bfloat16* hidden;
-  uint32_t* counters;
-  uint8_t* pool;
-  uint64_t* bars;
+struct GatedProjectionTask {
+  const TaskDesc* tasks;
+  int task_count;
+  const CUtensorMap* xfs_tensor_map;
+  const CUtensorMap* weight_tensor_map;
+  const __nv_bfloat16* legacy_norm_factor;
+  const __nv_bfloat16* legacy_adaptive_scale;
+  const __nv_bfloat16* gate_bias;
+  const __nv_bfloat16* up_bias;
+  const __nv_bfloat16* legacy_output_scale;
+  __nv_bfloat16* hidden_output;
+  uint32_t* hidden_ready_counters;
+  SharedStorage* shared;
   long long* dbg;
 };
 
 // The activation producer fills four fixed frames once. The frames stay live
 // until the task finishes, so there is no activation empty/reuse protocol.
-__device__ __forceinline__ void gated_up_activation_producer(
-    const GatedUpTask& task) {
-  auto* full_a = gated_up_activation_full(task.bars);
+__device__ __forceinline__ void gated_projection_activation_loader(
+    const GatedProjectionTask& task) {
+  GatedProjectionSharedStorageView shared{task.shared};
+  auto* full_a = shared.activation_full();
   for (int i = 0; i < GATED_UP_ACTIVATION_FRAMES; ++i) {
     int k = i * GATED_UP_BLOCK_K;
     __syncwarp();
-    uint8_t* activation_frame =
-        task.pool + GATED_UP_ACTIVATION_OFFSET +
-        i * GATED_UP_ACTIVATION_FRAME_BYTES;
+    BF* activation_frame = shared.activation_frame(i);
     if (cute::elect_one_sync()) {
       full_a[i].arrive_and_expect_tx(GATED_UP_ACTIVATION_FRAME_BYTES);
-      issue_tma_2d(task.tmx, activation_frame, 0, k,
+      tma::load_2d(task.xfs_tensor_map, activation_frame, 0, k,
                    reinterpret_cast<uint64_t*>(&full_a[i]));
     }
   }
 }
 
-__device__ __forceinline__ void gated_up_weight_producer(
-    const GatedUpTask& task) {
-  auto* full_w = gated_up_weight_full(task.bars);
-  auto* empty_w = gated_up_weight_empty(task.bars);
+__device__ __forceinline__ void gated_projection_weight_loader(
+    const GatedProjectionTask& task) {
+  GatedProjectionSharedStorageView shared{task.shared};
+  auto* full_w = shared.weight_full();
+  auto* empty_w = shared.weight_empty();
   uint32_t empty_phase[GATED_UP_WEIGHT_DEPTH] = {};
-  for (int g = 0; g < task.ntask * GATED_UP_TRIP; ++g) {
+  for (int g = 0; g < task.task_count * GATED_UP_TRIP; ++g) {
     int t = g / GATED_UP_TRIP, i = g % GATED_UP_TRIP;
-    int n = task.my[t].column;
+    int n = task.tasks[t].column;
     int s = g % GATED_UP_WEIGHT_DEPTH;
     if (g >= GATED_UP_WEIGHT_DEPTH) {
       wait_bar_wd(reinterpret_cast<uint64_t*>(&empty_w[s]), empty_phase[s],
@@ -364,29 +454,28 @@ __device__ __forceinline__ void gated_up_weight_producer(
     // Interleaved gate/up weights: each blocked row is [W1(32), W2(32)].
     if (cute::elect_one_sync()) {
       full_w[s].arrive_and_expect_tx(GATED_UP_WEIGHT_FRAME_BYTES);
-      issue_weight_tma_2d_evict_first(
-          task.tmwup,
-          task.pool + GATED_UP_WEIGHT_OFFSET +
-              s * GATED_UP_WEIGHT_FRAME_BYTES,
+      tma::load_weight_2d_evict_first(
+          task.weight_tensor_map, shared.weight_frame(s),
           0, (n >> 5) * D + i * GATED_UP_BLOCK_K,
           reinterpret_cast<uint64_t*>(&full_w[s]));
       // The three-deep SMEM ring cannot reserve stage 3 until math releases
       // slot 0. Prefetch that final 32 KiB tensor tile immediately after
       // issuing stage 2, so its HBM latency can overlap the slot-0 wait.
       if (i == GATED_UP_TRIP - 2) {
-        prefetch_tma_2d_to_l2(
-            task.tmwup, 0,
+        tma::prefetch_2d_to_l2(
+            task.weight_tensor_map, 0,
             (n >> 5) * D + (i + 1) * GATED_UP_BLOCK_K);
       }
     }
   }
 }
 
-__device__ __forceinline__ void gated_up_math(
-    const GatedUpTask& task, int tid) {
-  auto* full_a = gated_up_activation_full(task.bars);
-  auto* full_w = gated_up_weight_full(task.bars);
-  auto* empty_w = gated_up_weight_empty(task.bars);
+__device__ __forceinline__ void gated_projection_math(
+    const GatedProjectionTask& task, int tid) {
+  GatedProjectionSharedStorageView shared{task.shared};
+  auto* full_a = shared.activation_full();
+  auto* full_w = shared.weight_full();
+  auto* empty_w = shared.weight_empty();
   uint32_t weight_phase[GATED_UP_WEIGHT_DEPTH] = {};
 
   TiledMmaWide mma;
@@ -396,8 +485,8 @@ __device__ __forceinline__ void gated_up_math(
   Tensor cC = thr.partition_C(
       make_identity_tensor(Shape<Int<M_PAD>, Int<2 * BN>>{}));
 
-  for (int t = 0; t < task.ntask; ++t) {
-    int n = task.my[t].column;
+  for (int t = 0; t < task.task_count; ++t) {
+    int n = task.tasks[t].column;
     clear(acc);
     for (int i = 0; i < GATED_UP_TRIP; ++i) {
       int g = t * GATED_UP_TRIP + i;
@@ -411,14 +500,10 @@ __device__ __forceinline__ void gated_up_math(
       // The upper-bound input is already scaled by F and S in BF16 before it
       // is materialized as [K, M_PAD]. One BK=256 stage then issues sixteen
       // N=64 WGMMA instructions in one commit.
-      Tensor sA = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(
-                      task.pool + GATED_UP_ACTIVATION_OFFSET +
-                          i * GATED_UP_ACTIVATION_FRAME_BYTES)),
-                                  GatedUpSmemLayoutA{});
-      Tensor sBwide = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(
-                          task.pool + GATED_UP_WEIGHT_OFFSET +
-                              s * GATED_UP_WEIGHT_FRAME_BYTES)),
-                                      GatedUpSmemLayoutB{});
+      Tensor sA = make_tensor(make_smem_ptr(shared.activation_frame(i)),
+                              GatedUpSmemLayoutA{});
+      Tensor sBwide = make_tensor(make_smem_ptr(shared.weight_frame(s)),
+                                  GatedUpSmemLayoutB{});
       Tensor tCrA = thr.make_fragment_A(thr.partition_A(sA));
       Tensor tCrB = thr.make_fragment_B(thr.partition_B(sBwide));
       // FlashMLA's CuTe wrapper keeps the fence/arrive/commit ordering next
@@ -445,7 +530,7 @@ __device__ __forceinline__ void gated_up_math(
     }
 
     // spec non_mma.gelu_gate epilogue: f32 bias/gelu/product, bf16 pair store
-    __nv_bfloat16* Cg = task.hidden + n;
+    __nv_bfloat16* Cg = task.hidden_output + n;
     // Gate and up share one accumulator now. For m64n64k16, register r maps to
     // col = (r/4)*8 + (lane%4)*2 + (r%2): r and r+UP differ only in the column
     // group, so they are the SAME (row, col) with col apart by BN -- the
@@ -455,46 +540,53 @@ __device__ __forceinline__ void gated_up_math(
     CUTE_UNROLL
     for (int e = 0; e < UP; e += 2) {
       int row = get<0>(cC(e)), col = get<1>(cC(e));
-      float h0 = gelu_sig(acc(e)     + __bfloat162float(task.b1[n + col]))
-               * (acc(e + UP)     + __bfloat162float(task.b2[n + col]));
-      float h1 = gelu_sig(acc(e + 1) + __bfloat162float(task.b1[n + col + 1]))
-               * (acc(e + 1 + UP) + __bfloat162float(task.b2[n + col + 1]));
+      float h0 = gelu_sig(acc(e) + __bfloat162float(task.gate_bias[n + col]))
+               * (acc(e + UP) + __bfloat162float(task.up_bias[n + col]));
+      float h1 = gelu_sig(
+                     acc(e + 1) +
+                     __bfloat162float(task.gate_bias[n + col + 1]))
+               * (acc(e + 1 + UP) +
+                  __bfloat162float(task.up_bias[n + col + 1]));
       __nv_bfloat162 hv{__float2bfloat16(h0), __float2bfloat16(h1)};
       *reinterpret_cast<__nv_bfloat162*>(Cg + row * FF + col) = hv;
     }
     // all 128 threads' stores precede the single release
     mathwg_sync();
-    if (tid == 0) counter_release(&task.counters[task.my[t].dependency]);
+    if (tid == 0) {
+      counter_release(
+          &task.hidden_ready_counters[task.tasks[t].dependency]);
+    }
   }
 }
 
 // ------------------------------------------------------------------- DownResidual body
 // DownResidual split rings: W_d depth 4 dep-free, A_h depth 4 counter-gated
 // on counter[k-slice] >= 4. The decoupling IS the design thesis.
-struct DownResidualTask {
-  const TaskDesc* my;
-  int ntask;
-  const CUtensorMap *tmwd, *tmh;
-  const __nv_bfloat16* g_gate;
-  __nv_bfloat16* out;
-  uint32_t* counters;
-  float* partial;            // (DOWN_RESIDUAL_SPLIT-1, NUM_DOWN_RESIDUAL_TILES, M_PAD*BN) f32 scratch
-  uint32_t* down_residual_counters;     // one per output tile; splits 1..S-1 arrive
-  uint8_t* pool;
-  uint64_t* bars;
+struct DownProjectionResidualTask {
+  const TaskDesc* tasks;
+  int task_count;
+  const CUtensorMap* weight_tensor_map;
+  const CUtensorMap* hidden_tensor_map;
+  const __nv_bfloat16* output_gate;
+  __nv_bfloat16* output;
+  uint32_t* hidden_ready_counters;
+  float* split_partials;
+  uint32_t* split_ready_counters;
+  SharedStorage* shared;
   long long* dbg;
 };
 
-__device__ __forceinline__ void down_residual_weight_producer(
-    const DownResidualTask& task) {
-  auto* full_w  = BarrierViews::down_residual_weight_full(task.bars);
-  auto* empty_w = BarrierViews::down_residual_weight_empty(task.bars);
+__device__ __forceinline__ void down_projection_weight_loader(
+    const DownProjectionResidualTask& task) {
+  DownProjectionResidualSharedStorageView shared{task.shared};
+  auto* full_w = shared.weight_full();
+  auto* empty_w = shared.weight_empty();
   uint32_t ewph[DOWN_RESIDUAL_WEIGHT_DEPTH] = {};
-  for (int g = 0; g < task.ntask * DOWN_RESIDUAL_TRIP_PER_SPLIT; ++g) {
+  for (int g = 0; g < task.task_count * DOWN_RESIDUAL_TRIP_PER_SPLIT; ++g) {
     int t = g / DOWN_RESIDUAL_TRIP_PER_SPLIT, i = g % DOWN_RESIDUAL_TRIP_PER_SPLIT;
     // `pad` carries the split index; this CTA walks only its own K span.
-    int n = task.my[t].column;
-    int k = task.my[t].split * DOWN_RESIDUAL_K_SPAN +
+    int n = task.tasks[t].column;
+    int k = task.tasks[t].split * DOWN_RESIDUAL_K_SPAN +
             i * DOWN_RESIDUAL_BLOCK_K;
     // dep-free weight ring first: it runs ahead through any counter stall
     int sw = g % DOWN_RESIDUAL_WEIGHT_DEPTH;
@@ -508,10 +600,8 @@ __device__ __forceinline__ void down_residual_weight_producer(
     // whole warp runs the producer body it must be explicit here.
     if (cute::elect_one_sync()) {
       full_w[sw].arrive_and_expect_tx(DOWN_RESIDUAL_WEIGHT_FRAME_BYTES);
-      issue_tma_2d(
-          task.tmwd,
-          task.pool + DOWN_RESIDUAL_WEIGHT_OFFSET +
-              sw * DOWN_RESIDUAL_WEIGHT_FRAME_BYTES,
+      tma::load_2d(
+          task.weight_tensor_map, shared.weight_frame(sw),
           0, (n >> 5) * FF + k,
           reinterpret_cast<uint64_t*>(&full_w[sw]));
     }
@@ -521,19 +611,21 @@ __device__ __forceinline__ void down_residual_weight_producer(
 // The DownResidual activation producer owns its dependency poll and TMA issue in one
 // warp.  Keeping these operations together avoids a scheduler->TMA sequence
 // handoff (and the block fence that would otherwise be needed to order it).
-__device__ __forceinline__ void down_residual_activation_producer(
-    const DownResidualTask& task) {
-  auto* full_a  = BarrierViews::down_residual_activation_full(task.bars);
-  auto* empty_a = BarrierViews::down_residual_activation_empty(task.bars);
+__device__ __forceinline__ void down_projection_activation_loader(
+    const DownProjectionResidualTask& task) {
+  DownProjectionResidualSharedStorageView shared{task.shared};
+  auto* full_a = shared.activation_full();
+  auto* empty_a = shared.activation_empty();
   uint32_t eaph[DOWN_RESIDUAL_ACTIVATION_DEPTH] = {};
-  for (int g = 0; g < task.ntask * DOWN_RESIDUAL_TRIP_PER_SPLIT; ++g) {
+  for (int g = 0; g < task.task_count * DOWN_RESIDUAL_TRIP_PER_SPLIT; ++g) {
     int t = g / DOWN_RESIDUAL_TRIP_PER_SPLIT, i = g % DOWN_RESIDUAL_TRIP_PER_SPLIT;
     // Absolute stage index over the full FF: the counter this split waits on
     // covers ITS k span, not the span a full-K task would have walked.
-    int kb = task.my[t].split * DOWN_RESIDUAL_TRIP_PER_SPLIT + i;
+    int kb = task.tasks[t].split * DOWN_RESIDUAL_TRIP_PER_SPLIT + i;
     // gated activation ring: poll BEFORE reserving the hidden slice (spec L2)
     int counter_id = kb / (COUNTER_K / DOWN_RESIDUAL_BLOCK_K);
-    counter_wait(&task.counters[counter_id], COUNTER_ARRIVE, g, task.dbg);
+    counter_wait(&task.hidden_ready_counters[counter_id], COUNTER_ARRIVE,
+                 g, task.dbg);
     int sa = g % DOWN_RESIDUAL_ACTIVATION_DEPTH;
     if (g >= DOWN_RESIDUAL_ACTIVATION_DEPTH) {
       wait_bar_wd(reinterpret_cast<uint64_t*>(&empty_a[sa]), eaph[sa], 6, g, task.dbg);
@@ -541,25 +633,26 @@ __device__ __forceinline__ void down_residual_activation_producer(
     }
     __syncwarp();
     int k = kb * DOWN_RESIDUAL_BLOCK_K;
-    uint8_t* Ah = task.pool + DOWN_RESIDUAL_ACTIVATION_OFFSET +
-                  sa * DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES;
+    BF* Ah = shared.activation_frame(sa);
     if (cute::elect_one_sync()) {
       // GatedProjection publishes hidden through generic global stores while
       // this TMA load reads it through the async proxy.
       asm volatile("fence.proxy.async.global;" ::: "memory");
       full_a[sa].arrive_and_expect_tx(
           DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES);
-      issue_tma_2d(task.tmh, Ah, k, 0, reinterpret_cast<uint64_t*>(&full_a[sa]));
+      tma::load_2d(task.hidden_tensor_map, Ah, k, 0,
+                   reinterpret_cast<uint64_t*>(&full_a[sa]));
     }
   }
 }
 
-__device__ __forceinline__ void down_residual_math(
-    const DownResidualTask& task, int tid) {
-  auto* full_w  = BarrierViews::down_residual_weight_full(task.bars);
-  auto* empty_w = BarrierViews::down_residual_weight_empty(task.bars);
-  auto* full_a  = BarrierViews::down_residual_activation_full(task.bars);
-  auto* empty_a = BarrierViews::down_residual_activation_empty(task.bars);
+__device__ __forceinline__ void down_projection_math(
+    const DownProjectionResidualTask& task, int tid) {
+  DownProjectionResidualSharedStorageView shared{task.shared};
+  auto* full_w = shared.weight_full();
+  auto* empty_w = shared.weight_empty();
+  auto* full_a = shared.activation_full();
+  auto* empty_a = shared.activation_empty();
   uint32_t fwph[DOWN_RESIDUAL_WEIGHT_DEPTH] = {}, faph[DOWN_RESIDUAL_ACTIVATION_DEPTH] = {};
 
   TiledMma mma;
@@ -567,8 +660,8 @@ __device__ __forceinline__ void down_residual_math(
   Tensor acc = partition_fragment_C(mma, Shape<Int<M_PAD>, Int<BN>>{});
   Tensor cC = thr.partition_C(make_identity_tensor(Shape<Int<M_PAD>, Int<BN>>{}));
 
-  for (int t = 0; t < task.ntask; ++t) {
-    int n = task.my[t].column;
+  for (int t = 0; t < task.task_count; ++t) {
+    int n = task.tasks[t].column;
     clear(acc);
     for (int i = 0; i < DOWN_RESIDUAL_TRIP_PER_SPLIT; ++i) {
       int g = t * DOWN_RESIDUAL_TRIP_PER_SPLIT + i;
@@ -577,14 +670,10 @@ __device__ __forceinline__ void down_residual_math(
       fwph[sw] ^= 1;
       full_a[sa].wait(faph[sa]);
       faph[sa] ^= 1;
-      Tensor sAh = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(
-                       task.pool + DOWN_RESIDUAL_ACTIVATION_OFFSET +
-                           sa * DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES)),
-                                   DownResidualSmemLayoutA{});
-      Tensor sWd = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(
-                       task.pool + DOWN_RESIDUAL_WEIGHT_OFFSET +
-                           sw * DOWN_RESIDUAL_WEIGHT_FRAME_BYTES)),
-                                   DownResidualSmemLayoutB{});
+      Tensor sAh = make_tensor(make_smem_ptr(shared.activation_frame(sa)),
+                               DownResidualSmemLayoutA{});
+      Tensor sWd = make_tensor(make_smem_ptr(shared.weight_frame(sw)),
+                               DownResidualSmemLayoutB{});
       Tensor tCrA = thr.make_fragment_A(thr.partition_A(sAh));
       Tensor tCrB = thr.make_fragment_B(thr.partition_B(sWd));
       ::sm90::gemm<false, -1, true, true>(mma, tCrA, tCrB, acc);
@@ -612,24 +701,25 @@ __device__ __forceinline__ void down_residual_math(
     // waits, folds them in a FIXED order, then runs the unchanged epilogue.
     // Fixed order keeps the result bit-identical to the un-split kernel, which
     // an atomic accumulate would not (f32 addition is not associative).
-    const int split = task.my[t].split;
+    const int split = task.tasks[t].split;
     const int tile  = n / BN;
     if (split != 0) {
-      float* P = task.partial
+      float* P = task.split_partials
                + ((size_t)(split - 1) * NUM_DOWN_RESIDUAL_TILES + tile) * PARTIAL_ELEMS;
       CUTE_UNROLL
       for (int e = 0; e < size(acc); ++e)
         P[get<0>(cC(e)) * BN + get<1>(cC(e))] = acc(e);
       mathwg_sync();          // every math lane's store issued before the count
-      if (tid == 0) counter_release(&task.down_residual_counters[tile]);
+      if (tid == 0) counter_release(&task.split_ready_counters[tile]);
       continue;               // only split 0 owns `out`
     }
     if (tid == 0)
-      counter_wait(&task.down_residual_counters[tile], DOWN_RESIDUAL_SPLIT - 1, t, task.dbg);
+      counter_wait(&task.split_ready_counters[tile],
+                   DOWN_RESIDUAL_SPLIT - 1, t, task.dbg);
     mathwg_sync();            // thread 0's gpu-scope acquire covers the CTA
     CUTE_UNROLL
     for (int sp = 1; sp < DOWN_RESIDUAL_SPLIT; ++sp) {
-      const float* P = task.partial
+      const float* P = task.split_partials
                      + ((size_t)(sp - 1) * NUM_DOWN_RESIDUAL_TILES + tile) * PARTIAL_ELEMS;
       CUTE_UNROLL
       for (int e = 0; e < size(acc); ++e)
@@ -638,19 +728,48 @@ __device__ __forceinline__ void down_residual_math(
 
     // DownResidual epilogue: f32 gate multiply + residual add, bf16 store.
     // out is both R and C; each thread reads its element before writing it.
-    __nv_bfloat16* Og = task.out + n;
+    __nv_bfloat16* Og = task.output + n;
     CUTE_UNROLL
     for (int e = 0; e < size(acc); e += 2) {
       int row = get<0>(cC(e)), col = get<1>(cC(e));
       __nv_bfloat162 r =
           *reinterpret_cast<const __nv_bfloat162*>(Og + row * D + col);
       float o0 = __bfloat162float(r.x)
-               + acc(e)     * __bfloat162float(task.g_gate[n + col]);
+               + acc(e)     * __bfloat162float(task.output_gate[n + col]);
       float o1 = __bfloat162float(r.y)
-               + acc(e + 1) * __bfloat162float(task.g_gate[n + col + 1]);
+               + acc(e + 1) * __bfloat162float(task.output_gate[n + col + 1]);
       __nv_bfloat162 ov{__float2bfloat16(o0), __float2bfloat16(o1)};
       *reinterpret_cast<__nv_bfloat162*>(Og + row * D + col) = ov;
     }
+  }
+}
+
+__device__ __forceinline__ void initialize_barriers(
+    const GatedProjectionSharedStorageView& shared) {
+  auto* activation_full = shared.activation_full();
+  auto* weight_full = shared.weight_full();
+  auto* weight_empty = shared.weight_empty();
+  for (int stage = 0; stage < GATED_UP_ACTIVATION_FRAMES; ++stage)
+    activation_full[stage].init(1);
+  for (int stage = 0; stage < GATED_UP_WEIGHT_DEPTH; ++stage) {
+    weight_full[stage].init(1);
+    weight_empty[stage].init(kNumEpilogueWarps);
+  }
+}
+
+__device__ __forceinline__ void initialize_barriers(
+    const DownProjectionResidualSharedStorageView& shared) {
+  auto* weight_full = shared.weight_full();
+  auto* weight_empty = shared.weight_empty();
+  auto* activation_full = shared.activation_full();
+  auto* activation_empty = shared.activation_empty();
+  for (int stage = 0; stage < DOWN_RESIDUAL_WEIGHT_DEPTH; ++stage) {
+    weight_full[stage].init(1);
+    weight_empty[stage].init(kNumEpilogueWarps);
+  }
+  for (int stage = 0; stage < DOWN_RESIDUAL_ACTIVATION_DEPTH; ++stage) {
+    activation_full[stage].init(1);
+    activation_empty[stage].init(kNumEpilogueWarps);
   }
 }
 
@@ -658,11 +777,11 @@ __device__ __forceinline__ void down_residual_math(
 __global__ void __launch_bounds__(WarpRoles::kThreads, 1)
     ffn_taskloop_kernel(
     const TaskDesc* __restrict__ table,
-    const __grid_constant__ CUtensorMap tmx,
-    const __grid_constant__ CUtensorMap tmwup,
+    const __grid_constant__ CUtensorMap xfs_tensor_map,
+    const __grid_constant__ CUtensorMap gated_up_weight_tensor_map,
     const __grid_constant__ CUtensorMap packed_gate_up_legacy_unused,
-    const __grid_constant__ CUtensorMap tmwd,
-    const __grid_constant__ CUtensorMap tmh,
+    const __grid_constant__ CUtensorMap down_weight_tensor_map,
+    const __grid_constant__ CUtensorMap hidden_tensor_map,
     const __nv_bfloat16* __restrict__ F,
     const __nv_bfloat16* __restrict__ S,
     const __nv_bfloat16* __restrict__ b1,
@@ -675,45 +794,29 @@ __global__ void __launch_bounds__(WarpRoles::kThreads, 1)
     uint32_t* __restrict__ down_residual_counters,
     long long* __restrict__ dbg,
     bool wait_for_xfs_producer) {
-  extern __shared__ uint8_t pool[];
-  uint64_t* bars = reinterpret_cast<uint64_t*>(pool + BARRIER_OFFSET);
+  // The dynamic extent is supplied by the launch; typed views below own all
+  // frame and barrier addressing.
+  extern __shared__ uint8_t smem_buffer[];
+  auto* shared_storage = reinterpret_cast<SharedStorage*>(smem_buffer);
+  GatedProjectionSharedStorageView gated_shared{shared_storage};
+  DownProjectionResidualSharedStorageView down_shared{shared_storage};
   const int tid = threadIdx.x;
-  const TaskDesc* my = table + blockIdx.x * MAX_TASKS_PER_CTA;
+  const TaskDesc* cta_tasks = table + blockIdx.x * MAX_TASKS_PER_CTA;
   // The launch geometry is fixed at 132 workers.  Bisection schedules keep
   // that geometry and mark unused workers with a sentinel row; idle workers
   // must return before initializing their private barrier pool.
-  if (ref::is_sentinel(my[0].kind)) return;
+  if (ref::is_sentinel(cta_tasks[0].kind)) return;
   for (int slot = 0; slot < MAX_TASKS_PER_CTA; ++slot) {
-    const TaskKind kind = my[slot].kind;
+    const TaskKind kind = cta_tasks[slot].kind;
     if (ref::is_sentinel(kind)) break;
     // Warp roles are uniform across task types: warp 4 loads weights and warp
     // 5 fills the stationary activation. Reinitialize the aliased barrier pool
     // at the GatedUp->DownResidual worker seam.
     if (tid == 0) {
-      auto* full_w = BarrierViews::down_residual_weight_full(bars);
-      auto* empty_w = BarrierViews::down_residual_weight_empty(bars);
       if (ref::is_gated_up(kind)) {
-        auto* activation_full = gated_up_activation_full(bars);
-        auto* weight_full = gated_up_weight_full(bars);
-        auto* weight_empty = gated_up_weight_empty(bars);
-        for (int i = 0; i < GATED_UP_ACTIVATION_FRAMES; ++i) {
-          activation_full[i].init(1);
-        }
-        for (int i = 0; i < GATED_UP_WEIGHT_DEPTH; ++i) {
-          weight_full[i].init(1);
-          weight_empty[i].init(kNumEpilogueWarps);
-        }
+        initialize_barriers(gated_shared);
       } else {
-        for (int i = 0; i < DOWN_RESIDUAL_WEIGHT_DEPTH; ++i) {
-          full_w[i].init(1);
-          empty_w[i].init(kNumEpilogueWarps);
-        }
-        auto* full_a = BarrierViews::down_residual_activation_full(bars);
-        auto* empty_a = BarrierViews::down_residual_activation_empty(bars);
-        for (int i = 0; i < DOWN_RESIDUAL_ACTIVATION_DEPTH; ++i) {
-          full_a[i].init(1);
-          empty_a[i].init(kNumEpilogueWarps);
-        }
+        initialize_barriers(down_shared);
       }
     }
     cutlass::arch::fence_barrier_init();
@@ -725,24 +828,27 @@ __global__ void __launch_bounds__(WarpRoles::kThreads, 1)
       cudaGridDependencySynchronize();
     }
     if (ref::is_gated_up(kind)) {
-      GatedUpTask task{my + slot, 1, &tmx, &tmwup, F, S, b1, b2, S, hidden,
-                       counters, pool, bars, dbg};
+      GatedProjectionTask task{
+          cta_tasks + slot, 1, &xfs_tensor_map, &gated_up_weight_tensor_map,
+          F, S, b1, b2, S, hidden, counters, shared_storage, dbg};
       if (WarpRoles::is_math(tid)) {
-        gated_up_math(task, tid);
+        gated_projection_math(task, tid);
       } else if (WarpRoles::is_weight_producer(tid)) {
-        gated_up_weight_producer(task);
+        gated_projection_weight_loader(task);
       } else if (WarpRoles::is_activation_producer(tid)) {
-        gated_up_activation_producer(task);
+        gated_projection_activation_loader(task);
       }
     } else {
-      DownResidualTask task{my + slot, 1, &tmwd, &tmh, g_gate, out, counters,
-                              down_residual_partial, down_residual_counters, pool, bars, dbg};
+      DownProjectionResidualTask task{
+          cta_tasks + slot, 1, &down_weight_tensor_map, &hidden_tensor_map,
+          g_gate, out, counters, down_residual_partial,
+          down_residual_counters, shared_storage, dbg};
       if (WarpRoles::is_math(tid)) {
-        down_residual_math(task, tid);
+        down_projection_math(task, tid);
       } else if (WarpRoles::is_weight_producer(tid)) {
-        down_residual_weight_producer(task);
+        down_projection_weight_loader(task);
       } else if (WarpRoles::is_activation_producer(tid)) {
-        down_residual_activation_producer(task);
+        down_projection_activation_loader(task);
       }
     }
     // All active warps finish before the CTA reuses the shared-memory pool for
@@ -785,20 +891,23 @@ __global__ void reset_ffn_counters_kernel(
   if (index < NUM_DOWN_RESIDUAL_TILES) down_residual_ready[index] = 0;
 }
 
-// ------------------------------------------------------------------- host side
-static CUtensorMap enc2d(const void* p, uint64_t inner, uint64_t outer,
-                         uint32_t box_inner, uint32_t box_outer,
-                         CUtensorMapSwizzle sw, CUresult* rc) {
-  CUtensorMap m{};
-  uint64_t dims[2] = {inner, outer};
-  uint64_t strides[1] = {inner * 2};  // bf16, row-major, 16B-multiple required
+// ------------------------------------------------------ host TMA descriptors
+// Descriptor preparation is separate from the device-side `tma::load_*` layer.
+static CUtensorMap encode_bf16_tensor_map_2d(
+    const void* global_address, uint64_t inner_extent, uint64_t outer_extent,
+    uint32_t box_inner, uint32_t box_outer, CUtensorMapSwizzle swizzle,
+    CUresult* result) {
+  CUtensorMap tensor_map{};
+  uint64_t dims[2] = {inner_extent, outer_extent};
+  uint64_t strides[1] = {inner_extent * 2};
   uint32_t box[2] = {box_inner, box_outer};
-  uint32_t es[2] = {1, 1};
-  *rc = cuTensorMapEncodeTiled(
-      &m, CU_TENSOR_MAP_DATA_TYPE_BFLOAT16, 2, const_cast<void*>(p), dims,
-      strides, box, es, CU_TENSOR_MAP_INTERLEAVE_NONE, sw,
+  uint32_t element_strides[2] = {1, 1};
+  *result = cuTensorMapEncodeTiled(
+      &tensor_map, CU_TENSOR_MAP_DATA_TYPE_BFLOAT16, 2,
+      const_cast<void*>(global_address), dims, strides, box, element_strides,
+      CU_TENSOR_MAP_INTERLEAVE_NONE, swizzle,
       CU_TENSOR_MAP_L2_PROMOTION_L2_128B, CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
-  return m;
+  return tensor_map;
 }
 
 }  // namespace ffn
@@ -845,8 +954,9 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
   // GatedProjection input contract: x_pad points to a contiguous
   // [D, M_PAD] buffer, so M is the 128-byte TMA row and one BK256 box fills a
   // complete GatedUp activation stage.
-  CUtensorMap tmx = enc2d(x_pad, M_PAD, D, M_PAD, GATED_UP_BLOCK_K,
-                          CU_TENSOR_MAP_SWIZZLE_128B, &rc);
+  CUtensorMap xfs_tensor_map = encode_bf16_tensor_map_2d(
+      x_pad, M_PAD, D, M_PAD, GATED_UP_BLOCK_K,
+      CU_TENSOR_MAP_SWIZZLE_128B, &rc);
   if (rc) return 1000 + (int)rc;
   // Weights arrive PRE-BLOCKED and gate/up interleaved. One 128B row is
   // [W1_tile(32), W2_tile(32)].
@@ -855,17 +965,18 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
   // the TileLang composition sits at the same ~1.1 TB/s -- PLAN 4.9's 30-36%
   // MBU is the same pattern). Static weights make the relayout free, offline,
   // and planner-owned.
-  CUtensorMap tmwup = enc2d(W1, 2 * BN, (uint64_t)(FF / BN) * D,
-                            2 * BN, GATED_UP_BLOCK_K,
-                            CU_TENSOR_MAP_SWIZZLE_128B, &rc);
+  CUtensorMap gated_up_weight_tensor_map = encode_bf16_tensor_map_2d(
+      W1, 2 * BN, (uint64_t)(FF / BN) * D, 2 * BN,
+      GATED_UP_BLOCK_K, CU_TENSOR_MAP_SWIZZLE_128B, &rc);
   if (rc) return 1000 + (int)rc;
   CUtensorMap packed_gate_up_legacy_unused{};
   if (rc) return 1000 + (int)rc;
-  CUtensorMap tmwd = enc2d(
+  CUtensorMap down_weight_tensor_map = encode_bf16_tensor_map_2d(
       Wd, BN, (uint64_t)(D / BN) * FF, BN, DOWN_RESIDUAL_BLOCK_K,
       CU_TENSOR_MAP_SWIZZLE_64B, &rc);
   if (rc) return 1000 + (int)rc;
-  CUtensorMap tmh  = enc2d(hidden, FF, M_PAD, 64, 64, CU_TENSOR_MAP_SWIZZLE_128B, &rc);
+  CUtensorMap hidden_tensor_map = encode_bf16_tensor_map_2d(
+      hidden, FF, M_PAD, 64, 64, CU_TENSOR_MAP_SWIZZLE_128B, &rc);
   if (rc) return 1000 + (int)rc;
 
   const bool wait_for_xfs_producer = use_programmatic_dependency != 0;
@@ -884,8 +995,10 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
     launch_config.numAttrs = 1;
     cudaError_t launch_error = cudaLaunchKernelEx(
         &launch_config, ffn_taskloop_kernel,
-        (const TaskDesc*)table, tmx, tmwup, packed_gate_up_legacy_unused,
-        tmwd, tmh, (const __nv_bfloat16*)F, (const __nv_bfloat16*)S,
+        (const TaskDesc*)table, xfs_tensor_map, gated_up_weight_tensor_map,
+        packed_gate_up_legacy_unused, down_weight_tensor_map,
+        hidden_tensor_map, (const __nv_bfloat16*)F,
+        (const __nv_bfloat16*)S,
         (const __nv_bfloat16*)b1, (const __nv_bfloat16*)b2,
         (const __nv_bfloat16*)g_gate, (__nv_bfloat16*)hidden,
         (__nv_bfloat16*)out, (uint32_t*)counters,
@@ -895,8 +1008,10 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
   } else {
     ffn_taskloop_kernel<<<N_CTAS, WarpRoles::kThreads, SHARED_MEMORY_BYTES,
                           (cudaStream_t)stream>>>(
-        (const TaskDesc*)table, tmx, tmwup, packed_gate_up_legacy_unused,
-        tmwd, tmh, (const __nv_bfloat16*)F, (const __nv_bfloat16*)S,
+        (const TaskDesc*)table, xfs_tensor_map, gated_up_weight_tensor_map,
+        packed_gate_up_legacy_unused, down_weight_tensor_map,
+        hidden_tensor_map, (const __nv_bfloat16*)F,
+        (const __nv_bfloat16*)S,
         (const __nv_bfloat16*)b1, (const __nv_bfloat16*)b2,
         (const __nv_bfloat16*)g_gate, (__nv_bfloat16*)hidden,
         (__nv_bfloat16*)out, (uint32_t*)counters,
