@@ -210,6 +210,21 @@ __device__ __forceinline__ void issue_tma_2d(
       :: "r"(d), "l"(map), "r"(c_inner), "r"(c_outer), "r"(b) : "memory");
 }
 
+// DeepGEMM marks one-shot TMA loads EVICT_FIRST so streamed weights do not
+// displace the reused XFS working set from L2. Keep activation loads normal.
+__device__ __forceinline__ void issue_weight_tma_2d_evict_first(
+    const CUtensorMap* map, void* dst, int32_t c_inner, int32_t c_outer,
+    uint64_t* bar) {
+  uint32_t d = smem_u32(dst), b = smem_u32(bar);
+  constexpr uint64_t hint = static_cast<uint64_t>(
+      cute::TMA::CacheHintSm90::EVICT_FIRST);
+  asm volatile(
+      "cp.async.bulk.tensor.2d.shared::cluster.global.mbarrier::complete_tx::bytes"
+      ".L2::cache_hint [%0], [%1, {%2, %3}], [%4], %5;"
+      :: "r"(d), "l"(map), "r"(c_inner), "r"(c_outer), "r"(b), "l"(hint)
+      : "memory");
+}
+
 // Plain 1D bulk-copy helper retained for profiles that transport side data.
 __device__ __forceinline__ void issue_bulk_1d(
     void* dst, const void* src, uint32_t bytes, uint64_t* bar) {
@@ -339,7 +354,7 @@ __device__ __forceinline__ void gated_up_weight_producer(
     // Interleaved gate/up weights: each blocked row is [W1(32), W2(32)].
     if (cute::elect_one_sync()) {
       full_w[s].arrive_and_expect_tx(GATED_UP_WEIGHT_FRAME_BYTES);
-      issue_tma_2d(
+      issue_weight_tma_2d_evict_first(
           task.tmwup,
           task.pool + GATED_UP_WEIGHT_OFFSET +
               s * GATED_UP_WEIGHT_FRAME_BYTES,
