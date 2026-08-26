@@ -308,11 +308,14 @@ class FFNTaskloop:
         self._lib.counter_probe_launch.argtypes = [
             ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
             ctypes.c_int, ctypes.c_void_p]
+        self._lib.ffn_counters_reset_launch.restype = ctypes.c_int
+        self._lib.ffn_counters_reset_launch.argtypes = [ctypes.c_void_p] * 3
 
     def launch(self, table, x_pad, F, S, packed_gate_up, packed_gate_up_unused,
                b1, b2, Wd, g_gate,
                hidden, out, counters, *, dbg=None,
-               zero_counters: bool = True) -> None:
+               zero_counters: bool = True,
+               fused_counter_reset: bool = True) -> None:
         """`dbg`: optional host-PINNED (n_ctas, 4) int64 tensor. On a watchdog
         trap the kernel writes {site, g, tid, 1} per stuck CTA there before
         aborting -- pass it during bring-up, drop it for benchmarks."""
@@ -335,10 +338,18 @@ class FFNTaskloop:
                                            device=out.device)
             self._down_residual_counters = torch.zeros(DOWN_RESIDUAL_TILES, dtype=torch.int32,
                                             device=out.device)
-        if zero_counters:
-            counters.zero_()  # on-stream: captured graphs self-reset on replay
-            self._down_residual_counters.zero_()   # same, for the split-K join
         stream = torch.cuda.current_stream().cuda_stream
+        if zero_counters:
+            if fused_counter_reset:
+                rc = self._lib.ffn_counters_reset_launch(
+                    ctypes.c_void_p(counters.data_ptr()),
+                    ctypes.c_void_p(self._down_residual_counters.data_ptr()),
+                    ctypes.c_void_p(stream))
+                if rc != 0:
+                    raise RuntimeError(f"ffn_counters_reset_launch rc={rc}")
+            else:
+                counters.zero_()
+                self._down_residual_counters.zero_()
         rc = self._lib.ffn_taskloop_launch(
             ctypes.c_void_p(table.data_ptr()), int(table.shape[0]),
             *[ctypes.c_void_p(t.data_ptr()) for t in

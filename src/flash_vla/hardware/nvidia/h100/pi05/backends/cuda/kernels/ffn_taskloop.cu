@@ -682,6 +682,14 @@ __global__ void counter_probe_kernel(uint32_t* __restrict__ c,
   }
 }
 
+__global__ void reset_ffn_counters_kernel(
+    uint32_t* __restrict__ hidden_ready,
+    uint32_t* __restrict__ down_residual_ready) {
+  const int index = threadIdx.x;
+  if (index < N_COUNTERS) hidden_ready[index] = 0;
+  if (index < NUM_DOWN_RESIDUAL_TILES) down_residual_ready[index] = 0;
+}
+
 // ------------------------------------------------------------------- host side
 static CUtensorMap enc2d(const void* p, uint64_t inner, uint64_t outer,
                          uint32_t box_inner, uint32_t box_outer,
@@ -756,6 +764,14 @@ int counter_probe_launch(void* c, void* t0s, void* out_ns, int pairs,
                          void* stream) {
   ffn::counter_probe_kernel<<<pairs * 2, 32, 0, (cudaStream_t)stream>>>(
       (uint32_t*)c, (long long*)t0s, (long long*)out_ns);
+  return (int)cudaGetLastError();
+}
+
+int ffn_counters_reset_launch(void* hidden_ready,
+                              void* down_residual_ready,
+                              void* stream) {
+  ffn::reset_ffn_counters_kernel<<<1, 32, 0, (cudaStream_t)stream>>>(
+      (uint32_t*)hidden_ready, (uint32_t*)down_residual_ready);
   return (int)cudaGetLastError();
 }
 
