@@ -101,6 +101,9 @@ def allocate_static_buffers(num_views: int, chunk_size: int, device: str,
         "decoder_rope_weights": buf(chunk_size, HEAD_DIM),
         "decoder_x": buf(chunk_size, 1024),
         "decoder_norm_factor_buf": buf(chunk_size),
+        # Direct input to the persistent FFN. K-major makes the padded token
+        # axis a contiguous 128-byte TMA row; the producer overwrites all rows.
+        "decoder_ffn_xfs": buf(1024, 64),
         # No score buffer: the only attention implementation is FlashDecoding,
         # which keeps the (queries, keys) matrix in SRAM. Pi0 allocated one for
         # its unfused three-kernel reference path, which Pi0.5 does not carry.
