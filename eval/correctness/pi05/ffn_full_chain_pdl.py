@@ -64,7 +64,6 @@ def make_case(gen: torch.Generator) -> dict[str, torch.Tensor]:
         "out_dr": x_pad.clone(),
         "out_dummy": torch.empty((M_PAD, D), dtype=torch.bfloat16, device="cuda"),
         "counters_full": torch.empty((N_COUNTERS,), dtype=torch.int32, device="cuda"),
-        "counters_base": torch.empty((N_COUNTERS,), dtype=torch.int32, device="cuda"),
         "counters_gu": torch.empty((N_COUNTERS,), dtype=torch.int32, device="cuda"),
         "counters_dr": torch.empty((N_COUNTERS,), dtype=torch.int32, device="cuda"),
     }
@@ -138,7 +137,6 @@ def main() -> None:
         )
 
     def baseline(case) -> None:
-        taskloop.reset_counters(case["counters_base"])
         wrappers._rms_factor(case["x"], case["factor"])
         tilelang_gate(
             case["x"], case["factor"], case["scale"],
