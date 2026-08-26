@@ -249,13 +249,15 @@ def build_table(mode: str = "full") -> torch.Tensor:
             rows[cta][0] = task
 
     if mode in ("full", "dr"):
-        # 32 output tiles x DOWN_RESIDUAL_SPLIT partials. Worker c owns (tile, split) =
-        # divmod(c, DOWN_RESIDUAL_SPLIT), so the four splits of one tile sit on four
-        # consecutive workers -- all resident, which principle 4 of
-        # megakernel-taskgraph makes a correctness gate, not a preference.
+        # Split-major placement: worker c owns
+        #   split, tile = divmod(c, DOWN_RESIDUAL_TILES).
+        # For c=32*split+tile, its preceding GatedProjection task publishes
+        # counter 8*split+tile//4, one of the eight counters consumed by that
+        # DownProjection split. This tightens the fixed-grid completion tail
+        # without changing ownership, task count, or the compact table ABI.
         slot = 1 if mode == "full" else 0
         for cta in range(DOWN_RESIDUAL_SUBTASKS):
-            tile, split = divmod(cta, DOWN_RESIDUAL_SPLIT)
+            split, tile = divmod(cta, DOWN_RESIDUAL_TILES)
             rows[cta][slot] = [1, tile * 32, 0, split]
 
     table = torch.tensor(rows, dtype=torch.int32)
