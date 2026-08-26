@@ -67,7 +67,8 @@ Independent PR review found two required production guards: a
 and a fail-fast 132-CTA residency check. Both were implemented on the measured
 head. Job 553879 passed GU, DR, full-chain, and two replay iterations with
 worst cosine 0.9999999. These fixes do not remain in this rejected performance
-PR; the proxy fence continues as its already-separated correctness change.
+PR; the proxy fence remains on its separate correctness branch pending its own
+PR.
 
 ## Decision
 
