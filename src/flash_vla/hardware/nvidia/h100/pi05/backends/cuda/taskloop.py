@@ -15,16 +15,13 @@ Phase 4 host side of specs/tile/ffn_taskloop_minimal.md. Three pieces:
   captured graph self-resets on replay) and launches the kernel.
 
 Tensor contracts (all CUDA, contiguous): x_pad/out (64, 1024) bf16 with rows
-50..63 zeroed, hidden (64, 4096) bf16, S (1024,) bf16,
-`packed_gate_up` ((4096/32)*1024, 64) bf16 containing one
+50..63 zeroed, hidden (64, 4096) bf16, F (64,) bf16 zero-padded, S (1024,)
+bf16, `packed_gate_up` ((4096/32)*1024, 64) bf16 containing one
 `[W_gate_tile | W_up_tile]` row per K tile, b1/b2 (4096,) bf16,
 Wd (4096, 1024) bf16, g_gate (1024,) bf16, counters (32,) int32. The legacy
-F and second packed-weight pointers remain in the C ABI for call-site
-stability but are not read by GatedProjection. The launch first materializes
-exact-rounding XFS as a private contiguous (1024, 64) K-major buffer, which
-the persistent kernel consumes with one 32 KiB activation TMA per BK256 stage.
-`out` doubles as the residual input; the DownResidual epilogue reads each
-element before writing it.
+second packed-weight pointer remains in the C ABI for call-site stability but
+is not read by the kernel. `out` doubles as the residual input; the
+DownResidual epilogue reads each element before writing it.
 """
 from __future__ import annotations
 
@@ -311,8 +308,6 @@ class FFNTaskloop:
         self._lib.counter_probe_launch.argtypes = [
             ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
             ctypes.c_int, ctypes.c_void_p]
-        self._x_internal = None
-        self._rms_xfs_producer = None
 
     def launch(self, table, x_pad, F, S, packed_gate_up, packed_gate_up_unused,
                b1, b2, Wd, g_gate,
@@ -344,25 +339,10 @@ class FFNTaskloop:
             counters.zero_()  # on-stream: captured graphs self-reset on replay
             self._down_residual_counters.zero_()   # same, for the split-K join
         stream = torch.cuda.current_stream().cuda_stream
-        if self._x_internal is None or self._x_internal.device != x_pad.device:
-            self._x_internal = torch.empty((D, M_PAD), dtype=torch.bfloat16,
-                                           device=x_pad.device)
-        if self._rms_xfs_producer is None:
-            from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang import (
-                wrappers,
-            )
-            from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels import (
-                base,
-            )
-            self._rms_xfs_producer = wrappers._compiled(
-                base.tl_rms_xfs_kmajor,
-                M=M_PAD, K=D, BLOCK_M=8, BLOCK_K=256, OUTPUT_K=32,
-                THREADS=128)
-        self._rms_xfs_producer(x_pad, S, self._x_internal)
         rc = self._lib.ffn_taskloop_launch(
             ctypes.c_void_p(table.data_ptr()), int(table.shape[0]),
             *[ctypes.c_void_p(t.data_ptr()) for t in
-              (self._x_internal, F, S, packed_gate_up, packed_gate_up_unused,
+              (x_pad, F, S, packed_gate_up, packed_gate_up_unused,
                b1, b2, Wd, g_gate, hidden, out, counters,
                self._down_residual_partial, self._down_residual_counters)],
             ctypes.c_void_p(dbg.data_ptr() if dbg is not None else 0),

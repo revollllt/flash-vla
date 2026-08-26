@@ -45,20 +45,20 @@ constexpr int M_PAD = 64;                 // cta_tile.M, pads M=50
 constexpr int D  = 1024;                  // hidden width (GatedUp contraction)
 constexpr int FF = 4096;                  // ffn width per branch (DownResidual contraction)
 constexpr int BN = 32;                    // cta_tile.N
-// GatedUp deliberately probes the TileLang upper-bound K tile while retaining
-// the shipped DownResidual geometry. Keeping the two profiles independent is
-// required: the internal GatedUp input uses one 32 KB BK256 box, whereas
-// DownResidual still consumes one BK64 hidden box per stage.
-constexpr int GATED_UP_BLOCK_K = 256;
-constexpr int DOWN_RESIDUAL_BLOCK_K = 64;
-constexpr int GATED_UP_TRIP = D / GATED_UP_BLOCK_K;                 // 4
-constexpr int DOWN_RESIDUAL_TRIP = FF / DOWN_RESIDUAL_BLOCK_K;      // 64
-// BK=256 leaves room for exactly three GatedUp stages under the H100 opt-in
-// shared-memory ceiling. DownResidual retains the shipped depth-4 rings.
-constexpr int GATED_UP_DEPTH = 3;
-// Preserve PR3's non-draining policy: one committed group stays outstanding.
-// A BK=256 stage contains sixteen m64n64k16 operations, so this experiment
-// intentionally changes the per-group instruction count but not wait depth.
+// BF16 profile: keep the K tile aligned with the m64n32k16 WGMMA atom. BK=128
+// is reserved for the later FP8 profile; using it here over-stages the CTA.
+constexpr int BK = 64;                    // mainloop.step, both task types
+constexpr int GATED_UP_TRIP = D / BK;           // 16
+constexpr int DOWN_RESIDUAL_TRIP = FF / BK;          // 64 stages over the full FF
+// Depth 4 everywhere, revised from the spec's 2 after job 541358 measured
+// 81 us: at this fan-out the per-CTA stage cadence is TMA-LATENCY-bound
+// (~L/depth per stage), not bandwidth-bound -- the spec's "depth buys only
+// jitter" argument priced fills at bandwidth and was wrong. Recorded in the
+// spec's deviations.
+constexpr int GATED_UP_DEPTH = 4;
+// One BK=64 stage already commits four N=64 WGMMA instructions. MMA-DEPTH
+// therefore reaches its four-instruction knee with one group left outstanding;
+// a larger backlog only delays frame retirement and TMA ring reuse.
 constexpr int GATED_UP_WGMMA_WAIT = 1;
 constexpr int DOWN_RESIDUAL_WEIGHT_DEPTH = 4;              // DownResidual weight ring, dep-free
 constexpr int DOWN_RESIDUAL_ACTIVATION_DEPTH = 4;          // DownResidual activation ring, counter-gated
@@ -74,86 +74,47 @@ constexpr int DOWN_RESIDUAL_SPLIT   = 4;
 constexpr int DOWN_RESIDUAL_K_SPAN  = FF / DOWN_RESIDUAL_SPLIT;      // 1024 contraction rows per split
 constexpr int NUM_DOWN_RESIDUAL_TILES = D / BN;             // 32 output tiles
 constexpr int PARTIAL_ELEMS = M_PAD * BN;      // 2048 f32 per partial tile
-constexpr int DOWN_RESIDUAL_TRIP_PER_SPLIT =
-    DOWN_RESIDUAL_TRIP / DOWN_RESIDUAL_SPLIT;  // 16 stages per split at BK=64
+constexpr int DOWN_RESIDUAL_TRIP_PER_SPLIT  = DOWN_RESIDUAL_TRIP / DOWN_RESIDUAL_SPLIT; // 16 stages per split at BK=64
 constexpr int kNumEpilogueWarps = 4;      // math warpgroup consumes each stage
 constexpr int MAX_TASKS_PER_CTA = 2;      // rows may end early with type = -1
 constexpr int N_CTAS = 132;               // fixed H100 worker grid
 constexpr int COUNTER_K = 128;             // dependency granularity in hidden K
 constexpr int N_COUNTERS = FF / COUNTER_K; // one per 128-col hidden slice
 constexpr int COUNTER_ARRIVE = COUNTER_K / BN; // 4 GatedUp tasks fill one slice
-static_assert(D % GATED_UP_BLOCK_K == 0,
-              "GatedUp BLOCK_K must divide the contraction");
-static_assert(FF % DOWN_RESIDUAL_BLOCK_K == 0,
-              "DownResidual BLOCK_K must divide the contraction");
-static_assert(FF % COUNTER_K == 0 &&
-                  COUNTER_K % DOWN_RESIDUAL_BLOCK_K == 0,
-              "counter geometry must divide DownResidual BLOCK_K");
+static_assert(FF % COUNTER_K == 0 && COUNTER_K % BK == 0,
+              "counter and BK geometry must divide FF");
 static_assert(WarpRoles::kThreads == 224,
               "the current ABI/profile is a 224-thread CTA");
 
-// spec: pipeline.staged_buffers -- shared-memory pool offsets in bytes.
-// The experimental [K, M_PAD] input makes M the 128-byte TMA row, so one
-// BK256 box fills the complete activation frame.
-constexpr int GATED_UP_ACTIVATION_FRAME_BYTES =
-    M_PAD * GATED_UP_BLOCK_K * sizeof(BF);                       // 32768
-constexpr int GATED_UP_WEIGHT_FRAME_BYTES =
-    2 * BN * GATED_UP_BLOCK_K * sizeof(BF);                      // 32768
-constexpr int DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES =
-    M_PAD * DOWN_RESIDUAL_BLOCK_K * sizeof(BF);                  // 8192
-constexpr int DOWN_RESIDUAL_WEIGHT_FRAME_BYTES =
-    BN * DOWN_RESIDUAL_BLOCK_K * sizeof(BF);                     // 4096
-
-constexpr int GATED_UP_ACTIVATION_OFFSET = 0;
-constexpr int GATED_UP_WEIGHT_OFFSET =
-    GATED_UP_DEPTH * GATED_UP_ACTIVATION_FRAME_BYTES;            // 98304
-constexpr int BARRIER_OFFSET =
-    GATED_UP_WEIGHT_OFFSET +
-    GATED_UP_DEPTH * GATED_UP_WEIGHT_FRAME_BYTES;                // 196608
+// spec: pipeline.staged_buffers -- smem pool offsets (bytes)
+constexpr int A_FRAME_B = M_PAD * BK * 2; // 8192 at BK=64
+constexpr int W_FRAME_B = BK * BN * 2;    // 4096 at BK=64
+constexpr int WUP_FRAME_B = 2 * W_FRAME_B; // interleaved gate/up tile
+constexpr int S_FRAME_B = BK * 2;         // 128
+constexpr int OFF_A  = 0;                              // GATED_UP_DEPTH x 8192
+constexpr int OFF_W1 = GATED_UP_DEPTH * A_FRAME_B;           // 32768
+constexpr int OFF_S  = OFF_W1 + GATED_UP_DEPTH * WUP_FRAME_B; // 65536
+constexpr int OFF_BARS = OFF_S + GATED_UP_DEPTH * S_FRAME_B; // 66048
 // The barrier pool is now producer-owned: no scheduler->TMA sequence arrays
 // are needed.  Each producer warp waits on its empty slot, calls
 // arrive_and_expect_tx for its own byte count, and emits the TMA operation.
-constexpr int SHARED_MEMORY_BYTES = BARRIER_OFFSET + 16 * sizeof(uint64_t); // 196736
+constexpr int SMEM_B = OFF_BARS + 16 * sizeof(uint64_t);
 // DownResidual pool aliases the GatedUp pool (spec: non_staged_buffers.dr_pool)
-constexpr int DOWN_RESIDUAL_WEIGHT_OFFSET = 0;
-constexpr int DOWN_RESIDUAL_ACTIVATION_OFFSET =
-    DOWN_RESIDUAL_WEIGHT_DEPTH * DOWN_RESIDUAL_WEIGHT_FRAME_BYTES;
-static_assert(
-    DOWN_RESIDUAL_ACTIVATION_OFFSET +
-        DOWN_RESIDUAL_ACTIVATION_DEPTH * DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES <=
-        BARRIER_OFFSET,
-    "DownResidual shared-memory pool must fit inside the GatedUp pool");
-static_assert(M_PAD * sizeof(BF) == 128,
-              "internal activation TMA row must remain 128 bytes");
-static_assert(GATED_UP_WEIGHT_FRAME_BYTES == 32768,
-              "GatedUp weight TMA must stay at the measured 32 KB frame cap");
-static_assert(GATED_UP_ACTIVATION_FRAME_BYTES == 32768,
-              "internal GatedUp activation must stay at the 32 KB frame cap");
-static_assert(GATED_UP_WGMMA_WAIT < GATED_UP_DEPTH,
-              "WGMMA retirement distance must fit the GatedUp ring");
-static_assert(BARRIER_OFFSET % 16 == 0,
-              "mbarrier storage must remain 16-byte aligned");
-static_assert(SHARED_MEMORY_BYTES <= 232448,
-              "GatedUp BK=256/depth=3 must fit the H100 opt-in SMEM limit");
+constexpr int OFF_WD = 0;                              // DOWN_RESIDUAL_WEIGHT_DEPTH x 8192
+constexpr int OFF_AH = DOWN_RESIDUAL_WEIGHT_DEPTH * W_FRAME_B;          // 32768; + 4 x 16384 = 98304
+static_assert(OFF_AH + DOWN_RESIDUAL_ACTIVATION_DEPTH * A_FRAME_B <= OFF_BARS, "dr pool inside gu pool");
 
 // ------------------------------------------------------- canonical smem layouts
-// The internal GatedUp input is [K, M_PAD] with M contiguous, allowing one
-// legal 32 KB SW128 TMA box. DownResidual A retains the shipped K-contiguous
-// 64x64 atom and row-major global input contract.
-using GatedUpSmemLayoutA = decltype(tile_to_shape(
-    GMMA::Layout_MN_SW128_Atom<BF>{},
-    Shape<Int<M_PAD>, Int<GATED_UP_BLOCK_K>>{}));
+// A_s / A_h: 64 x 64 bf16, K-major, 128B swizzle (one TMA box).
+// The BK=64 profile needs one 64x64 SW128 atom per stage.
+using SmemLayoutA = decltype(tile_to_shape(
+    GMMA::Layout_K_SW128_Atom<BF>{}, Shape<Int<M_PAD>, Int<BK>>{}));
 // Wd uses a 32-column SW64 tile. Gate/up is interleaved offline as a
 // 64-column row [W1|W2], loaded by one 128B TMA and consumed as two B views.
-using DownResidualSmemLayoutA = decltype(tile_to_shape(
-    GMMA::Layout_K_SW128_Atom<BF>{},
-    Shape<Int<M_PAD>, Int<DOWN_RESIDUAL_BLOCK_K>>{}));
-using DownResidualSmemLayoutB = decltype(tile_to_shape(
-    GMMA::Layout_MN_SW64_Atom<BF>{},
-    Shape<Int<BN>, Int<DOWN_RESIDUAL_BLOCK_K>>{}));
-using GatedUpSmemLayoutB = decltype(tile_to_shape(
-    GMMA::Layout_MN_SW128_Atom<BF>{},
-    Shape<Int<2 * BN>, Int<GATED_UP_BLOCK_K>>{}));
+using SmemLayoutB = decltype(tile_to_shape(
+    GMMA::Layout_MN_SW64_Atom<BF>{}, Shape<Int<BN>, Int<BK>>{}));
+using SmemLayoutBWide = decltype(tile_to_shape(
+    GMMA::Layout_MN_SW128_Atom<BF>{}, Shape<Int<2 * BN>, Int<BK>>{}));
 
 // spec: math[].unit / inst_shape -- wgmma.m64n32k16, A K-major, B MN-major
 // GatedUp consumes the interleaved [W1|W2] slab as ONE 64-wide B operand instead of
@@ -189,7 +150,7 @@ __device__ __forceinline__ void issue_tma_2d(
       :: "r"(d), "l"(map), "r"(c_inner), "r"(c_outer), "r"(b) : "memory");
 }
 
-// Plain 1D bulk-copy helper retained for profiles that transport side data.
+// spec L2: the 256 B S slice -- plain 1D bulk copy, same barrier
 __device__ __forceinline__ void issue_bulk_1d(
     void* dst, const void* src, uint32_t bytes, uint64_t* bar) {
   uint32_t d = smem_u32(dst), b = smem_u32(bar);
@@ -253,6 +214,15 @@ __device__ __forceinline__ void counter_wait(const uint32_t* c, uint32_t need,
 // Full transaction barriers are consumed directly with ClusterBarrier::wait;
 // producer warps use __syncwarp() before electing the lane that arrives and
 // emits TMA, so no scheduler-to-producer command handoff is required.
+// Physical SW128 element offset inside one 64x64 A frame. The 16B chunk index
+// XORs with the row (byte address bits [4:7) ^ [7:10)). Deliberately do not
+// use SmemLayoutA{}(m, kk) for flat indexing: the explicit physical mapping
+// is what the TMA write and the in-place BF16 scale pass share.
+__device__ __forceinline__ int a_phys_elem(int m, int kk) {
+  int c = kk >> 3;                  // 16B chunk within the 128 B row
+  return m * BK + ((c ^ (m & 7)) << 3) + (kk & 7);
+}
+
 // gelu_tanh in sigmoid form -- mirrors tilelang/kernels/base.py:_gelu exactly
 // (rounding_contract: f32 throughout the epilogue)
 __device__ __forceinline__ float gelu_sig(float v) {
@@ -290,20 +260,17 @@ __device__ __forceinline__ void gated_up_activation_producer(
   auto* empty = BarrierViews::gated_up_empty(task.bars);
   for (int g = 0; g < task.ntask * GATED_UP_TRIP; ++g) {
     int i = g % GATED_UP_TRIP;
-    int k = i * GATED_UP_BLOCK_K, s = g % GATED_UP_DEPTH;
+    int k = i * BK, s = g % GATED_UP_DEPTH;
     if (g >= GATED_UP_DEPTH) {
       const uint32_t empty_phase = ((g / GATED_UP_DEPTH) - 1) & 1;
       wait_bar_wd(reinterpret_cast<uint64_t*>(&empty[s]), empty_phase,
                   2, g, task.dbg);
     }
     __syncwarp();
-    uint8_t* activation_frame =
-        task.pool + GATED_UP_ACTIVATION_OFFSET +
-        s * GATED_UP_ACTIVATION_FRAME_BYTES;
+    uint8_t* A0 = task.pool + OFF_A + s * A_FRAME_B;
     if (cute::elect_one_sync()) {
-      full[s].arrive_and_expect_tx(GATED_UP_ACTIVATION_FRAME_BYTES);
-      issue_tma_2d(task.tmx, activation_frame, 0, k,
-                   reinterpret_cast<uint64_t*>(&full[s]));
+      full[s].arrive_and_expect_tx(A_FRAME_B);
+      issue_tma_2d(task.tmx, A0, k, 0, reinterpret_cast<uint64_t*>(&full[s]));
     }
   }
 }
@@ -314,8 +281,7 @@ __device__ __forceinline__ void gated_up_weight_producer(
   auto* empty = BarrierViews::gated_up_empty(task.bars);
   for (int g = 0; g < task.ntask * GATED_UP_TRIP; ++g) {
     int t = g / GATED_UP_TRIP, i = g % GATED_UP_TRIP;
-    int n = task.my[t].column;
-    int k = i * GATED_UP_BLOCK_K, s = g % GATED_UP_DEPTH;
+    int n = task.my[t].column, k = i * BK, s = g % GATED_UP_DEPTH;
     if (g >= GATED_UP_DEPTH) {
       const uint32_t empty_phase = ((g / GATED_UP_DEPTH) - 1) & 1;
       wait_bar_wd(reinterpret_cast<uint64_t*>(&empty[s]), empty_phase,
@@ -324,13 +290,13 @@ __device__ __forceinline__ void gated_up_weight_producer(
     __syncwarp();
     // Interleaved gate/up weights: each blocked row is [W1(32), W2(32)].
     if (cute::elect_one_sync()) {
-      full[s].arrive_and_expect_tx(GATED_UP_WEIGHT_FRAME_BYTES);
-      issue_tma_2d(
-          task.tmwup,
-          task.pool + GATED_UP_WEIGHT_OFFSET +
-              s * GATED_UP_WEIGHT_FRAME_BYTES,
-          0, (n >> 5) * D + k,
-          reinterpret_cast<uint64_t*>(&full[s]));
+      full[s].arrive_and_expect_tx(WUP_FRAME_B + S_FRAME_B);
+      issue_tma_2d(task.tmwup, task.pool + OFF_W1 + s * WUP_FRAME_B,
+             0, (n >> 5) * D + k, reinterpret_cast<uint64_t*>(&full[s]));
+    }
+    if (cute::elect_one_sync()) {
+      issue_bulk_1d(task.pool + OFF_S + s * S_FRAME_B, task.Sg + k, S_FRAME_B,
+              reinterpret_cast<uint64_t*>(&full[s]));
     }
   }
 }
@@ -354,24 +320,42 @@ __device__ __forceinline__ void gated_up_math(
       int g = t * GATED_UP_TRIP + i, s = g % GATED_UP_DEPTH;
       full[s].wait((g / GATED_UP_DEPTH) & 1);
 
-      // The upper-bound input is already scaled by F and S in BF16 before it
-      // is materialized as [K, M_PAD]. One BK=256 stage then issues sixteen
-      // N=64 WGMMA instructions in one commit.
+      // spec non_mma.a_scale: in place, (A*F)*S in bf16, 16 B vectors.
+      // Same buffer wgmma reads through its descriptor -> async-proxy fence
+      // plus a math-WG barrier before any wgmma touches the frame.
+      __nv_bfloat16* Abase =
+          reinterpret_cast<__nv_bfloat16*>(task.pool + OFF_A + s * A_FRAME_B);
+      const __nv_bfloat162* S2 = reinterpret_cast<const __nv_bfloat162*>(
+          task.pool + OFF_S + s * S_FRAME_B);
+      #pragma unroll
+      for (int it = 0; it < (M_PAD * BK) / (8 * 128); ++it) {  // 4 segs/thread
+        int seg = tid + it * 128;
+        int m = seg / (BK / 8), kk = (seg % (BK / 8)) << 3;
+        int off = a_phys_elem(m, kk);                // physical swizzled offset
+        uint4* p = reinterpret_cast<uint4*>(Abase + off);
+        uint4 v = *p;
+        __nv_bfloat162 f2 = __bfloat162bfloat162(task.F[m]);
+        __nv_bfloat162* h2 = reinterpret_cast<__nv_bfloat162*>(&v);
+        #pragma unroll
+        for (int j = 0; j < 4; ++j)
+          h2[j] = __hmul2(__hmul2(h2[j], f2), S2[(kk >> 1) + j]);
+        *p = v;
+      }
+      cutlass::arch::fence_view_async_shared();
+      mathwg_sync();
+
+      // One BK=64 stage issues four N=64 WGMMA instructions in one commit.
       Tensor sA = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(
-                      task.pool + GATED_UP_ACTIVATION_OFFSET +
-                          s * GATED_UP_ACTIVATION_FRAME_BYTES)),
-                                  GatedUpSmemLayoutA{});
+                      task.pool + OFF_A + s * A_FRAME_B)), SmemLayoutA{});
       Tensor sBwide = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(
-                          task.pool + GATED_UP_WEIGHT_OFFSET +
-                              s * GATED_UP_WEIGHT_FRAME_BYTES)),
-                                      GatedUpSmemLayoutB{});
+                          task.pool + OFF_W1 + s * WUP_FRAME_B)), SmemLayoutBWide{});
       Tensor tCrA = thr.make_fragment_A(thr.partition_A(sA));
       Tensor tCrB = thr.make_fragment_B(thr.partition_B(sBwide));
       // FlashMLA's CuTe wrapper keeps the fence/arrive/commit ordering next
       // to the GEMM contract instead of repeating raw choreography here.
       ::sm90::gemm<false, -1, true, true>(mma, tCrA, tCrB, acc);
       // Keep one committed group outstanding. Once g-1 retires, release its
-      // shared-memory frame independently of the three-stage TMA ring depth.
+      // shared-memory frame independently of the four-stage TMA ring depth.
       if (g >= GATED_UP_WGMMA_WAIT) {
         warpgroup_wait<GATED_UP_WGMMA_WAIT>();
         __syncwarp();
@@ -439,9 +423,7 @@ __device__ __forceinline__ void down_residual_weight_producer(
   for (int g = 0; g < task.ntask * DOWN_RESIDUAL_TRIP_PER_SPLIT; ++g) {
     int t = g / DOWN_RESIDUAL_TRIP_PER_SPLIT, i = g % DOWN_RESIDUAL_TRIP_PER_SPLIT;
     // `pad` carries the split index; this CTA walks only its own K span.
-    int n = task.my[t].column;
-    int k = task.my[t].split * DOWN_RESIDUAL_K_SPAN +
-            i * DOWN_RESIDUAL_BLOCK_K;
+    int n = task.my[t].column, k = task.my[t].split * DOWN_RESIDUAL_K_SPAN + i * BK;
     // dep-free weight ring first: it runs ahead through any counter stall
     int sw = g % DOWN_RESIDUAL_WEIGHT_DEPTH;
     if (g >= DOWN_RESIDUAL_WEIGHT_DEPTH) {
@@ -453,13 +435,9 @@ __device__ __forceinline__ void down_residual_weight_producer(
     // old single-thread dispatch implicitly provided this election; once the
     // whole warp runs the producer body it must be explicit here.
     if (cute::elect_one_sync()) {
-      full_w[sw].arrive_and_expect_tx(DOWN_RESIDUAL_WEIGHT_FRAME_BYTES);
-      issue_tma_2d(
-          task.tmwd,
-          task.pool + DOWN_RESIDUAL_WEIGHT_OFFSET +
-              sw * DOWN_RESIDUAL_WEIGHT_FRAME_BYTES,
-          0, (n >> 5) * FF + k,
-          reinterpret_cast<uint64_t*>(&full_w[sw]));
+      full_w[sw].arrive_and_expect_tx(W_FRAME_B);
+      issue_tma_2d(task.tmwd, task.pool + OFF_WD + sw * W_FRAME_B,
+             0, (n >> 5) * FF + k, reinterpret_cast<uint64_t*>(&full_w[sw]));
     }
   }
 }
@@ -478,7 +456,7 @@ __device__ __forceinline__ void down_residual_activation_producer(
     // covers ITS k span, not the span a full-K task would have walked.
     int kb = task.my[t].split * DOWN_RESIDUAL_TRIP_PER_SPLIT + i;
     // gated activation ring: poll BEFORE reserving the hidden slice (spec L2)
-    int counter_id = kb / (COUNTER_K / DOWN_RESIDUAL_BLOCK_K);
+    int counter_id = kb / (COUNTER_K / BK);
     counter_wait(&task.counters[counter_id], COUNTER_ARRIVE, g, task.dbg);
     int sa = g % DOWN_RESIDUAL_ACTIVATION_DEPTH;
     if (g >= DOWN_RESIDUAL_ACTIVATION_DEPTH) {
@@ -486,12 +464,10 @@ __device__ __forceinline__ void down_residual_activation_producer(
       eaph[sa] ^= 1;
     }
     __syncwarp();
-    int k = kb * DOWN_RESIDUAL_BLOCK_K;
-    uint8_t* Ah = task.pool + DOWN_RESIDUAL_ACTIVATION_OFFSET +
-                  sa * DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES;
+    int k = kb * BK;
+    uint8_t* Ah = task.pool + OFF_AH + sa * A_FRAME_B;
     if (cute::elect_one_sync()) {
-      full_a[sa].arrive_and_expect_tx(
-          DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES);
+      full_a[sa].arrive_and_expect_tx(A_FRAME_B);
       issue_tma_2d(task.tmh, Ah, k, 0, reinterpret_cast<uint64_t*>(&full_a[sa]));
     }
   }
@@ -521,13 +497,9 @@ __device__ __forceinline__ void down_residual_math(
       full_a[sa].wait(faph[sa]);
       faph[sa] ^= 1;
       Tensor sAh = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(
-                       task.pool + DOWN_RESIDUAL_ACTIVATION_OFFSET +
-                           sa * DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES)),
-                                   DownResidualSmemLayoutA{});
+                       task.pool + OFF_AH + sa * A_FRAME_B)), SmemLayoutA{});
       Tensor sWd = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(
-                       task.pool + DOWN_RESIDUAL_WEIGHT_OFFSET +
-                           sw * DOWN_RESIDUAL_WEIGHT_FRAME_BYTES)),
-                                   DownResidualSmemLayoutB{});
+                       task.pool + OFF_WD + sw * W_FRAME_B)), SmemLayoutB{});
       Tensor tCrA = thr.make_fragment_A(thr.partition_A(sAh));
       Tensor tCrB = thr.make_fragment_B(thr.partition_B(sWd));
       ::sm90::gemm<false, -1, true, true>(mma, tCrA, tCrB, acc);
@@ -618,7 +590,7 @@ __global__ void __launch_bounds__(WarpRoles::kThreads, 1)
     uint32_t* __restrict__ down_residual_counters,
     long long* __restrict__ dbg) {
   extern __shared__ uint8_t pool[];
-  uint64_t* bars = reinterpret_cast<uint64_t*>(pool + BARRIER_OFFSET);
+  uint64_t* bars = reinterpret_cast<uint64_t*>(pool + OFF_BARS);
   const int tid = threadIdx.x;
   const TaskDesc* my = table + blockIdx.x * MAX_TASKS_PER_CTA;
   // The launch geometry is fixed at 132 workers.  Bisection schedules keep
@@ -743,17 +715,12 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
   static bool attr_set = false;
   if (!attr_set) {
     cudaError_t e = cudaFuncSetAttribute(
-        ffn_taskloop_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
-        SHARED_MEMORY_BYTES);
+        ffn_taskloop_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, SMEM_B);
     if (e != cudaSuccess) return (int)e;
     attr_set = true;
   }
   CUresult rc = CUDA_SUCCESS;
-  // GatedProjection input contract: x_pad points to a contiguous
-  // [D, M_PAD] buffer, so M is the 128-byte TMA row and one BK256 box fills a
-  // complete GatedUp activation stage.
-  CUtensorMap tmx = enc2d(x_pad, M_PAD, D, M_PAD, GATED_UP_BLOCK_K,
-                          CU_TENSOR_MAP_SWIZZLE_128B, &rc);
+  CUtensorMap tmx  = enc2d(x_pad,  D,  M_PAD, 64, 64, CU_TENSOR_MAP_SWIZZLE_128B, &rc);
   if (rc) return 1000 + (int)rc;
   // Weights arrive PRE-BLOCKED and interleaved by the host: each row is
   // (N/32, K, 64) = [W1_tile(32), W2_tile(32)], so one 128B TMA replaces the
@@ -764,20 +731,17 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
   // MBU is the same pattern). Static weights make the relayout free, offline,
   // and planner-owned.
   CUtensorMap tmwup = enc2d(W1, 2 * BN, (uint64_t)(FF / BN) * D,
-                            2 * BN, GATED_UP_BLOCK_K,
-                            CU_TENSOR_MAP_SWIZZLE_128B, &rc);
+                            2 * BN, BK, CU_TENSOR_MAP_SWIZZLE_128B, &rc);
   if (rc) return 1000 + (int)rc;
   CUtensorMap packed_gate_up_legacy_unused{};
   if (rc) return 1000 + (int)rc;
-  CUtensorMap tmwd = enc2d(
-      Wd, BN, (uint64_t)(D / BN) * FF, BN, DOWN_RESIDUAL_BLOCK_K,
-      CU_TENSOR_MAP_SWIZZLE_64B, &rc);
+  CUtensorMap tmwd = enc2d(Wd, BN, (uint64_t)(D / BN) * FF, BN, BK,
+                           CU_TENSOR_MAP_SWIZZLE_64B, &rc);
   if (rc) return 1000 + (int)rc;
   CUtensorMap tmh  = enc2d(hidden, FF, M_PAD, 64, 64, CU_TENSOR_MAP_SWIZZLE_128B, &rc);
   if (rc) return 1000 + (int)rc;
 
-  ffn_taskloop_kernel<<<N_CTAS, 224, SHARED_MEMORY_BYTES,
-                        (cudaStream_t)stream>>>(
+  ffn_taskloop_kernel<<<N_CTAS, 224, SMEM_B, (cudaStream_t)stream>>>(
       (const TaskDesc*)table, tmx, tmwup, packed_gate_up_legacy_unused, tmwd, tmh,
       (const __nv_bfloat16*)F, (const __nv_bfloat16*)S,
       (const __nv_bfloat16*)b1, (const __nv_bfloat16*)b2,
@@ -795,6 +759,6 @@ int counter_probe_launch(void* c, void* t0s, void* out_ns, int pairs,
   return (int)cudaGetLastError();
 }
 
-int ffn_taskloop_smem_bytes() { return ffn::SHARED_MEMORY_BYTES; }
+int ffn_taskloop_smem_bytes() { return ffn::SMEM_B; }
 
 }  // extern "C"

@@ -16,6 +16,6 @@ using DownResidualGemm = GemmTraits<
 
 using GatedUpGemm = GemmTraits<
     cute::SM90_64x64x16_F32BF16BF16_SS<
-        cute::GMMA::Major::MN, cute::GMMA::Major::MN>>;
+        cute::GMMA::Major::K, cute::GMMA::Major::MN>>;
 
 }  // namespace flash_vla::pi05::sm90::ffn
