@@ -361,8 +361,8 @@ class FFNTaskloop:
             )
             self._rms_xfs_producer = wrappers._compiled(
                 base.tl_rms_xfs_kmajor,
-                M=M_PAD, K=D, BLOCK_M=8, BLOCK_K=256, OUTPUT_K=32,
-                THREADS=128)
+                M=M_PAD, K=D, BLOCK_M=4, BLOCK_K=256, OUTPUT_K=128,
+                THREADS=256)
         self._rms_xfs_producer(x_pad, S, self._x_internal)
         rc = self._lib.ffn_taskloop_launch(
             ctypes.c_void_p(table.data_ptr()), int(table.shape[0]),
