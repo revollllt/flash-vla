@@ -45,14 +45,14 @@ constexpr int M_PAD = 64;                 // cta_tile.M, pads M=50
 constexpr int D  = 1024;                  // hidden width (GatedUp contraction)
 constexpr int FF = 4096;                  // ffn width per branch (DownResidual contraction)
 constexpr int BN = 32;                    // cta_tile.N
-// GatedUp deliberately probes the TileLang upper-bound K tile while retaining
-// the shipped DownResidual geometry. Keeping the two profiles independent is
-// required: the internal GatedUp input uses one 32 KB BK256 box, whereas
-// DownResidual still consumes one BK64 hidden box per stage.
+// Keep the two mainloop profiles independent. GatedUp consumes one 32 KiB
+// BK256 activation box. DownResidual computes a BK128 stage; its hidden
+// producer composes that stage from two legal SW128 BK64 TMA boxes.
 constexpr int GATED_UP_BLOCK_K = 256;
-constexpr int DOWN_RESIDUAL_BLOCK_K = 64;
+constexpr int DOWN_RESIDUAL_BLOCK_K = 128;
+constexpr int DOWN_RESIDUAL_HIDDEN_TMA_K = 64;
 constexpr int GATED_UP_TRIP = D / GATED_UP_BLOCK_K;                 // 4
-constexpr int DOWN_RESIDUAL_TRIP = FF / DOWN_RESIDUAL_BLOCK_K;      // 64
+constexpr int DOWN_RESIDUAL_TRIP = FF / DOWN_RESIDUAL_BLOCK_K;      // 32
 // Keep the complete [K=1024, M_PAD=64] XFS activation stationary in shared
 // memory. Four fixed 32 KiB activation frames never rotate or get overwritten.
 // Weights use a separate three-deep 32 KiB macro ring; each frame feeds one
@@ -69,16 +69,15 @@ constexpr int DOWN_RESIDUAL_ACTIVATION_DEPTH = 4;          // DownResidual activ
 // [hardware-unit-test TMA-ISSUE], and txns_per_warp = K_per_CTA / BK -- so
 // splitting K is one of only three levers that divides a copy floor, and the
 // only one available here (more CTAs does NOT move it; every CTA still walks
-// its own K). S=4 takes DownResidual from 64 stages to 16, 15.87 -> 3.97 us, and lands
-// under the 2.71 us DRAM wall (W_down 8.39 MB / 3.09 TB/s [TMA-CEIL]) as soon
-// as BK reaches 128. Larger S buys nothing -- the issue column is already
-// below the wall and every extra split is pure partial traffic.
+// its own K). S=4 takes DownResidual from 32 stages to 8 and places the TMA
+// issue column below the DRAM wall. Larger S adds partial traffic without
+// reducing the memory floor.
 constexpr int DOWN_RESIDUAL_SPLIT   = 4;
 constexpr int DOWN_RESIDUAL_K_SPAN  = FF / DOWN_RESIDUAL_SPLIT;      // 1024 contraction rows per split
 constexpr int NUM_DOWN_RESIDUAL_TILES = D / BN;             // 32 output tiles
 constexpr int PARTIAL_ELEMS = M_PAD * BN;      // 2048 f32 per partial tile
 constexpr int DOWN_RESIDUAL_TRIP_PER_SPLIT =
-    DOWN_RESIDUAL_TRIP / DOWN_RESIDUAL_SPLIT;  // 16 stages per split at BK=64
+    DOWN_RESIDUAL_TRIP / DOWN_RESIDUAL_SPLIT;  // 8 stages per split at BK=128
 constexpr int kNumEpilogueWarps = 4;      // math warpgroup consumes each stage
 constexpr int MAX_TASKS_PER_CTA = 2;      // rows may end early with type = -1
 constexpr int N_CTAS = 132;               // fixed H100 worker grid
@@ -103,9 +102,11 @@ constexpr int GATED_UP_ACTIVATION_FRAME_BYTES =
 constexpr int GATED_UP_WEIGHT_FRAME_BYTES =
     2 * BN * GATED_UP_BLOCK_K * sizeof(BF);                      // 32768
 constexpr int DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES =
-    M_PAD * DOWN_RESIDUAL_BLOCK_K * sizeof(BF);                  // 8192
+    M_PAD * DOWN_RESIDUAL_BLOCK_K * sizeof(BF);                 // 16384
 constexpr int DOWN_RESIDUAL_WEIGHT_FRAME_BYTES =
-    BN * DOWN_RESIDUAL_BLOCK_K * sizeof(BF);                     // 4096
+    BN * DOWN_RESIDUAL_BLOCK_K * sizeof(BF);                     // 8192
+constexpr int DOWN_RESIDUAL_HIDDEN_TMA_BYTES =
+    M_PAD * DOWN_RESIDUAL_HIDDEN_TMA_K * sizeof(BF);             // 8192
 
 constexpr int GATED_UP_WEIGHT_OFFSET =
     GATED_UP_ACTIVATION_FRAMES * GATED_UP_ACTIVATION_FRAME_BYTES; // 131072
@@ -159,6 +160,10 @@ static_assert(GATED_UP_WEIGHT_FRAME_BYTES == 32768,
               "GatedUp weight TMA must stay at the measured 32 KB frame cap");
 static_assert(GATED_UP_ACTIVATION_FRAME_BYTES == 32768,
               "internal GatedUp activation must stay at the 32 KB frame cap");
+static_assert(DOWN_RESIDUAL_BLOCK_K == 2 * DOWN_RESIDUAL_HIDDEN_TMA_K &&
+                  DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES ==
+                      2 * DOWN_RESIDUAL_HIDDEN_TMA_BYTES,
+              "BK128 hidden stage must contain exactly two BK64 TMA boxes");
 static_assert(GATED_UP_WGMMA_WAIT < GATED_UP_WEIGHT_DEPTH,
               "WGMMA retirement distance must fit the weight ring");
 static_assert(BARRIER_OFFSET % 16 == 0,
@@ -168,8 +173,8 @@ static_assert(SHARED_MEMORY_BYTES <= 232448,
 
 // ------------------------------------------------------- canonical smem layouts
 // The internal GatedUp input is [K, M_PAD] with M contiguous, allowing one
-// legal 32 KB SW128 TMA box. DownResidual A retains the shipped K-contiguous
-// 64x64 atom and row-major global input contract.
+// legal 32 KB SW128 TMA box. DownResidual A tiles two K-contiguous 64x64
+// atoms into one BK128 compute stage while retaining the row-major input.
 using GatedUpSmemLayoutA = decltype(tile_to_shape(
     GMMA::Layout_MN_SW128_Atom<BF>{},
     Shape<Int<M_PAD>, Int<GATED_UP_BLOCK_K>>{}));
@@ -640,8 +645,17 @@ __device__ __forceinline__ void down_projection_activation_loader(
       asm volatile("fence.proxy.async.global;" ::: "memory");
       full_a[sa].arrive_and_expect_tx(
           DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES);
+      // SW128 limits the hidden descriptor's innermost box to [K64, M64].
+      // Two adjacent 8 KiB loads fill this BK128 frame and share one 16 KiB
+      // completion barrier, so math observes the stage atomically.
       tma::load_2d(task.hidden_tensor_map, Ah, k, 0,
                    reinterpret_cast<uint64_t*>(&full_a[sa]));
+      tma::load_2d(
+          task.hidden_tensor_map,
+          reinterpret_cast<uint8_t*>(Ah) +
+              DOWN_RESIDUAL_HIDDEN_TMA_BYTES,
+          k + DOWN_RESIDUAL_HIDDEN_TMA_K, 0,
+          reinterpret_cast<uint64_t*>(&full_a[sa]));
     }
   }
 }
@@ -971,12 +985,16 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
   if (rc) return 1000 + (int)rc;
   CUtensorMap packed_gate_up_legacy_unused{};
   if (rc) return 1000 + (int)rc;
+  // DownResidual uses one [K128, N32] 8 KiB weight box per compute stage.
   CUtensorMap down_weight_tensor_map = encode_bf16_tensor_map_2d(
       Wd, BN, (uint64_t)(D / BN) * FF, BN, DOWN_RESIDUAL_BLOCK_K,
       CU_TENSOR_MAP_SWIZZLE_64B, &rc);
   if (rc) return 1000 + (int)rc;
+  // The hidden operand keeps a legal [K64, M64] SW128 box. The activation
+  // producer issues this descriptor twice into each BK128 shared frame.
   CUtensorMap hidden_tensor_map = encode_bf16_tensor_map_2d(
-      hidden, FF, M_PAD, 64, 64, CU_TENSOR_MAP_SWIZZLE_128B, &rc);
+      hidden, FF, M_PAD, M_PAD, DOWN_RESIDUAL_HIDDEN_TMA_K,
+      CU_TENSOR_MAP_SWIZZLE_128B, &rc);
   if (rc) return 1000 + (int)rc;
 
   const bool wait_for_xfs_producer = use_programmatic_dependency != 0;
