@@ -5,18 +5,19 @@ each printed behind a [phase] marker BEFORE its device sync, because a
 persistent-kernel bug hangs rather than fails and the log must show which
 phase died:
 
-- parity (default): the XFS producer plus persistent kernel against a torch
-  recomputation mirroring the kernels' precision exactly (bf16
-  `bf16(x*rstd)*S`, f32 accumulator/bias/gelu/gate/residual, bf16 stores).
+- parity (default): the fused kernel against a torch recomputation mirroring
+  the kernels' precision exactly (bf16 (x*F)*S in the mainloop, f32
+  accumulator/bias/gelu/gate/residual, bf16 stores) -- the same recipe as
+  kernel_parity's check_gated_ffn, with F an input rather than computed.
   `--modes gu,dr,full` is the bisection: gu runs only the GU task list and
   checks hidden; dr pre-fills hidden + counters and checks out; full runs the
   counter protocol end to end.
 - --replay-check: execute the full fixed-132-CTA table repeatedly with fresh
   residual/counter state, proving that counter reset is replay-safe.
 - --bench: the acceptance measurement named in the spec -- one CUDA graph
-  cycling 3 distinct weight sets (75 MB > L2, so每 launch cold), XFS plus the
-  persistent FFN vs the TileLang composition, same process, median over
-  replays.
+  cycling 3 distinct weight sets (75 MB > L2, so每 launch cold), fused single
+  launch vs the tl_ada_scaled_gate + tl_matmul_gated_res composition, same
+  process, median over replays.
 - --probe: Phase 0 measurement for the [I] counter figures -- release->acquire
   RTT over 40 concurrent CTA pairs via %%globaltimer.
 
@@ -192,7 +193,7 @@ def run_replay_check(kt, gen, device, reps):
 
 
 def run_bench(kt, gen, device, reps):
-    """Acceptance: XFS + persistent FFN vs the 2-kernel TileLang composition."""
+    """Acceptance: fused single launch vs the 2-kernel TileLang composition."""
     from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang import wrappers
     from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels import (
         adarms,
