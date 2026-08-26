@@ -882,7 +882,7 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
     launch_config.stream = (cudaStream_t)stream;
     launch_config.attrs = &dependency_attribute;
     launch_config.numAttrs = 1;
-    cudaLaunchKernelEx(
+    cudaError_t launch_error = cudaLaunchKernelEx(
         &launch_config, ffn_taskloop_kernel,
         (const TaskDesc*)table, tmx, tmwup, packed_gate_up_legacy_unused,
         tmwd, tmh, (const __nv_bfloat16*)F, (const __nv_bfloat16*)S,
@@ -891,6 +891,7 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
         (__nv_bfloat16*)out, (uint32_t*)counters,
         (float*)down_residual_partial, (uint32_t*)down_residual_counters,
         (long long*)dbg, wait_for_xfs_producer);
+    if (launch_error != cudaSuccess) return (int)launch_error;
   } else {
     ffn_taskloop_kernel<<<N_CTAS, WarpRoles::kThreads, SHARED_MEMORY_BYTES,
                           (cudaStream_t)stream>>>(

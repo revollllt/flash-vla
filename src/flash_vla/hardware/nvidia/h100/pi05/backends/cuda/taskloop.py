@@ -320,9 +320,17 @@ class FFNTaskloop:
                hidden, out, counters, *, dbg=None,
                zero_counters: bool = True,
                use_programmatic_dependency: bool = False) -> None:
-        """`dbg`: optional host-PINNED (n_ctas, 4) int64 tensor. On a watchdog
-        trap the kernel writes {site, g, tid, 1} per stuck CTA there before
-        aborting -- pass it during bring-up, drop it for benchmarks."""
+        """Launch the fixed persistent FFN schedule.
+
+        ``use_programmatic_dependency`` requires the triggering XFS producer
+        to be the direct predecessor on the current stream.  In particular,
+        reset the readiness counters before that producer and pass
+        ``zero_counters=False`` here; otherwise the reset kernel becomes the
+        immediate predecessor and the XFS/FFN overlap is lost.
+
+        ``dbg`` is an optional host-pinned ``(n_ctas, 4)`` int64 tensor.  On a
+        watchdog trap the kernel writes ``{site, g, tid, 1}`` per stuck CTA.
+        """
         if tuple(table.shape) != (N_CTAS_FULL, MAX_TASKS_PER_CTA, 4):
             raise ValueError(
                 f"FFN persistent launch requires table shape "
