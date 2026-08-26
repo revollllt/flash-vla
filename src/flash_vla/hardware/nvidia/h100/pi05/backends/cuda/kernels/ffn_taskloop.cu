@@ -48,7 +48,7 @@ constexpr int BN = 32;                    // cta_tile.N
 // BF16 profile: keep the K tile aligned with the m64n32k16 WGMMA atom. BK=128
 // is reserved for the later FP8 profile; using it here over-stages the CTA.
 constexpr int BK = 64;                    // mainloop.step, both task types
-constexpr int GATED_UP_TRIP = D / BK;           // 8
+constexpr int GATED_UP_TRIP = D / BK;           // 16
 constexpr int DOWN_RESIDUAL_TRIP = FF / BK;          // 64 stages over the full FF
 // Depth 4 everywhere, revised from the spec's 2 after job 541358 measured
 // 81 us: at this fan-out the per-CTA stage cadence is TMA-LATENCY-bound
@@ -56,6 +56,10 @@ constexpr int DOWN_RESIDUAL_TRIP = FF / BK;          // 64 stages over the full 
 // jitter" argument priced fills at bandwidth and was wrong. Recorded in the
 // spec's deviations.
 constexpr int GATED_UP_DEPTH = 4;
+// One BK=64 stage already commits four N=64 WGMMA instructions. MMA-DEPTH
+// therefore reaches its four-instruction knee with one group left outstanding;
+// a larger backlog only delays frame retirement and TMA ring reuse.
+constexpr int GATED_UP_WGMMA_WAIT = 1;
 constexpr int DOWN_RESIDUAL_WEIGHT_DEPTH = 4;              // DownResidual weight ring, dep-free
 constexpr int DOWN_RESIDUAL_ACTIVATION_DEPTH = 4;          // DownResidual activation ring, counter-gated
 // Split-K on DownResidual's FF contraction. The copy column is `txns_per_warp x 248 ns`
@@ -86,7 +90,7 @@ static_assert(WarpRoles::kThreads == 224,
 constexpr int A_FRAME_B = M_PAD * BK * 2; // 8192 at BK=64
 constexpr int W_FRAME_B = BK * BN * 2;    // 4096 at BK=64
 constexpr int WUP_FRAME_B = 2 * W_FRAME_B; // interleaved gate/up tile
-constexpr int S_FRAME_B = BK * 2;         // 256
+constexpr int S_FRAME_B = BK * 2;         // 128
 constexpr int OFF_A  = 0;                              // GATED_UP_DEPTH x 8192
 constexpr int OFF_W1 = GATED_UP_DEPTH * A_FRAME_B;           // 32768
 constexpr int OFF_S  = OFF_W1 + GATED_UP_DEPTH * WUP_FRAME_B; // 65536
@@ -254,13 +258,13 @@ __device__ __forceinline__ void gated_up_activation_producer(
     const GatedUpTask& task) {
   auto* full  = BarrierViews::gated_up_full(task.bars);
   auto* empty = BarrierViews::gated_up_empty(task.bars);
-  uint32_t eph[GATED_UP_DEPTH] = {};
   for (int g = 0; g < task.ntask * GATED_UP_TRIP; ++g) {
     int i = g % GATED_UP_TRIP;
     int k = i * BK, s = g % GATED_UP_DEPTH;
     if (g >= GATED_UP_DEPTH) {
-      wait_bar_wd(reinterpret_cast<uint64_t*>(&empty[s]), eph[s], 2, g, task.dbg);
-      eph[s] ^= 1;
+      const uint32_t empty_phase = ((g / GATED_UP_DEPTH) - 1) & 1;
+      wait_bar_wd(reinterpret_cast<uint64_t*>(&empty[s]), empty_phase,
+                  2, g, task.dbg);
     }
     __syncwarp();
     uint8_t* A0 = task.pool + OFF_A + s * A_FRAME_B;
@@ -275,13 +279,13 @@ __device__ __forceinline__ void gated_up_weight_producer(
     const GatedUpTask& task) {
   auto* full  = BarrierViews::gated_up_full(task.bars);
   auto* empty = BarrierViews::gated_up_empty(task.bars);
-  uint32_t eph[GATED_UP_DEPTH] = {};
   for (int g = 0; g < task.ntask * GATED_UP_TRIP; ++g) {
     int t = g / GATED_UP_TRIP, i = g % GATED_UP_TRIP;
     int n = task.my[t].column, k = i * BK, s = g % GATED_UP_DEPTH;
     if (g >= GATED_UP_DEPTH) {
-      wait_bar_wd(reinterpret_cast<uint64_t*>(&empty[s]), eph[s], 2, g, task.dbg);
-      eph[s] ^= 1;
+      const uint32_t empty_phase = ((g / GATED_UP_DEPTH) - 1) & 1;
+      wait_bar_wd(reinterpret_cast<uint64_t*>(&empty[s]), empty_phase,
+                  2, g, task.dbg);
     }
     __syncwarp();
     // Interleaved gate/up weights: each blocked row is [W1(32), W2(32)].
@@ -301,7 +305,6 @@ __device__ __forceinline__ void gated_up_math(
     const GatedUpTask& task, int tid) {
   auto* full  = BarrierViews::gated_up_full(task.bars);
   auto* empty = BarrierViews::gated_up_empty(task.bars);
-  uint32_t fph[GATED_UP_DEPTH] = {};
 
   TiledMmaWide mma;
   auto thr = mma.get_thread_slice(tid);
@@ -315,8 +318,7 @@ __device__ __forceinline__ void gated_up_math(
     clear(acc);
     for (int i = 0; i < GATED_UP_TRIP; ++i) {
       int g = t * GATED_UP_TRIP + i, s = g % GATED_UP_DEPTH;
-      full[s].wait(fph[s]);
-      fph[s] ^= 1;
+      full[s].wait((g / GATED_UP_DEPTH) & 1);
 
       // spec non_mma.a_scale: in place, (A*F)*S in bf16, 16 B vectors.
       // Same buffer wgmma reads through its descriptor -> async-proxy fence
@@ -357,11 +359,11 @@ __device__ __forceinline__ void gated_up_math(
       // cadence (~2 us/stage measured, job 541432 -- per-CTA rate identical to
       // the 4-warp TileLang kernels); consecutive wgmma batches on one
       // accumulator pipeline fine, so only the frame release needs the wait.
-      if (g >= GATED_UP_DEPTH - 1) {
-        warpgroup_wait<GATED_UP_DEPTH - 1>();
+      if (g >= GATED_UP_WGMMA_WAIT) {
+        warpgroup_wait<GATED_UP_WGMMA_WAIT>();
         __syncwarp();
         if ((tid & 31) == 0)
-          empty[(g - (GATED_UP_DEPTH - 1)) % GATED_UP_DEPTH].arrive();
+          empty[(g - GATED_UP_WGMMA_WAIT) % GATED_UP_DEPTH].arrive();
       }
     }
     // Retire everything before the epilogue reads acc.  A worker-queue CTA
@@ -370,7 +372,8 @@ __device__ __forceinline__ void gated_up_math(
     warpgroup_wait<0>();
     __syncwarp();
     if ((tid & 31) == 0) {
-      for (int tail = GATED_UP_TRIP - GATED_UP_DEPTH + 1; tail < GATED_UP_TRIP; ++tail)
+      for (int tail = GATED_UP_TRIP - GATED_UP_WGMMA_WAIT;
+           tail < GATED_UP_TRIP; ++tail)
         empty[tail % GATED_UP_DEPTH].arrive();
     }
 
@@ -608,9 +611,11 @@ __global__ void __launch_bounds__(WarpRoles::kThreads, 1)
       auto* full_w = BarrierViews::down_residual_weight_full(bars);
       auto* empty_w = BarrierViews::down_residual_weight_empty(bars);
       if (ref::is_gated_up(kind)) {
+        auto* gated_up_full = BarrierViews::gated_up_full(bars);
+        auto* gated_up_empty = BarrierViews::gated_up_empty(bars);
         for (int i = 0; i < GATED_UP_DEPTH; ++i) {
-          full_w[i].init(2);
-          empty_w[i].init(kNumEpilogueWarps);
+          gated_up_full[i].init(2);
+          gated_up_empty[i].init(kNumEpilogueWarps);
         }
       } else {
         for (int i = 0; i < DOWN_RESIDUAL_WEIGHT_DEPTH; ++i) {
