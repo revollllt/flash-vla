@@ -490,9 +490,6 @@ __device__ __forceinline__ void down_residual_activation_producer(
     uint8_t* Ah = task.pool + DOWN_RESIDUAL_ACTIVATION_OFFSET +
                   sa * DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES;
     if (cute::elect_one_sync()) {
-      // GatedProjection publishes hidden through generic global stores while
-      // this TMA load reads it through the async proxy.
-      asm volatile("fence.proxy.async.global;" ::: "memory");
       full_a[sa].arrive_and_expect_tx(
           DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES);
       issue_tma_2d(task.tmh, Ah, k, 0, reinterpret_cast<uint64_t*>(&full_a[sa]));
