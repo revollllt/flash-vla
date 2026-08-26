@@ -378,9 +378,9 @@ def tl_rms_xfs_kmajor(
 
     Exact contract:
     ``xfs_kmajor[k,m] = bf16(bf16(X[m,k] * rstd(X[m,:])) * scale[k])``.
-    One CTA owns each M tile, computes its row factors once, then walks the
-    output-K tiles. The transpose is staged through shared memory so the final
-    global write is contiguous along M without multiplying cold X traffic.
+    A two-dimensional static grid gives each CTA one output tile. Each CTA
+    recomputes the factors for its M rows, then stages the transpose through
+    shared memory so the final global write is contiguous along M.
     """
     M, K = T.const("M, K")
     dtype = T.bfloat16
@@ -389,7 +389,8 @@ def tl_rms_xfs_kmajor(
     scale: T.Tensor((K,), dtype)
     xfs_kmajor: T.Tensor((K, M), dtype)
 
-    with T.Kernel(T.ceildiv(M, BLOCK_M), threads=THREADS) as m_tile:
+    with T.Kernel(T.ceildiv(K, OUTPUT_K), T.ceildiv(M, BLOCK_M),
+                  threads=THREADS) as (k_tile, m_tile):
         x_for_norm = T.alloc_fragment((BLOCK_M, BLOCK_K), dtype)
         squared = T.alloc_fragment((BLOCK_M, BLOCK_K), accum_dtype)
         square_sum = T.alloc_fragment((BLOCK_M,), accum_dtype)
@@ -409,21 +410,18 @@ def tl_rms_xfs_kmajor(
             row_factor[row] = T.rsqrt(
                 square_sum[row] / K + 1e-6).astype(dtype)
 
-        for k_tile in T.Serial(T.ceildiv(K, OUTPUT_K)):
-            T.copy(X[m_tile * BLOCK_M, k_tile * OUTPUT_K], x_tile)
-            T.copy(scale[k_tile * OUTPUT_K], scale_tile)
-            for row, column in T.Parallel(BLOCK_M, OUTPUT_K):
-                normalized = (
-                    x_tile[row, column] * row_factor[row]).astype(dtype)
-                xfs_transposed[column, row] = \
-                    (normalized * scale_tile[column]).astype(dtype)
-            T.sync_threads()
-            T.copy(
-                xfs_transposed,
-                xfs_kmajor[k_tile * OUTPUT_K, m_tile * BLOCK_M],
-                disable_tma=True,
-            )
-            T.sync_threads()
+        T.copy(X[m_tile * BLOCK_M, k_tile * OUTPUT_K], x_tile)
+        T.copy(scale[k_tile * OUTPUT_K], scale_tile)
+        for row, column in T.Parallel(BLOCK_M, OUTPUT_K):
+            normalized = (x_tile[row, column] * row_factor[row]).astype(dtype)
+            xfs_transposed[column, row] = \
+                (normalized * scale_tile[column]).astype(dtype)
+        T.sync_threads()
+        T.copy(
+            xfs_transposed,
+            xfs_kmajor[k_tile * OUTPUT_K, m_tile * BLOCK_M],
+            disable_tma=True,
+        )
 
 
 @kernel
