@@ -65,7 +65,15 @@ candidate already failed the performance gate.
 Reject the BK256 global-scratch path, including both global synchronization
 and per-slice readiness variants. Retain the production BK64/depth4/N64/wait1
 kernel. Do not merge the experimental cooperative launch, workspace cache,
-readiness counters, or proxy-fence edits through this performance PR.
+readiness counters, or BK256/readiness-specific proxy-fence edits through this
+performance PR.
+
+The existing production hidden generic-store to DownResidual TMA boundary is
+an independent SM90 memory-model correctness issue. Its
+`fence.proxy.async.global` fix must land separately from this rejected
+performance candidate, with focused GatedProjection, DownResidual, full-chain,
+replay, and performance evidence. Rejecting BK256 readiness does not waive
+that required production fix.
 
 Skip `column_cohort=2` for this dataflow: it depends on a useful BK256 prep
 path and would additionally reduce GatedProjection compute CTAs from 128 to 64
