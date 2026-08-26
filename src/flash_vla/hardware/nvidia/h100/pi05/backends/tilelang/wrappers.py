@@ -31,6 +31,7 @@ from flash_vla.runtime.cuda import ScratchPool
 from .kernels import adarms as ada_kernels
 from .kernels import base as kernels
 from .kernels import fused_norm as fused_norm_kernels
+from .kernels import xfs as xfs_kernels
 
 _CACHE: dict = {}
 _POOL = ScratchPool()
@@ -323,6 +324,14 @@ _DEC_RESIDUAL = dict(BLOCK_M=16, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=4, THREADS=
 _DEC_GATE = dict(BLOCK_M=64, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128)
 _DEC_OUT_PROJ = dict(BLOCK_M=16, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128, PRO_K=128)
 _DEC_RMS = dict(BLOCK_M=2, BLOCK_K=256, THREADS=128)
+_DEC_XFS = dict(
+    BLOCK_M=8,
+    BLOCK_K=256,
+    OUTPUT_K=32,
+    THREADS=128,
+    M_PAD=64,
+    TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
+)
 
 # NUM_SPLIT is a request, not the realized count -- `_num_splits` shrinks it.
 # Pi0's 7 realizes as 6 at Pi0.5's 1018 keys; 8 realizes as 8 and measured
@@ -343,6 +352,32 @@ def _rms_factor(x, out, cfg=_DEC_RMS):
     """
     M, K = x.shape
     _compiled(kernels.tl_rms_factor, M=M, K=K, **cfg)(x, out)
+    return out
+
+
+def decoder_rms_xfs(x, scale, out, *, trigger_programmatic_launch=False):
+    """Write the next FFN's exact BF16 input as contiguous ``[1024,64]``.
+
+    ``x`` is the BF16 ``decoder_x`` *after* ``decoder_out_proj_residual`` has
+    applied its gated residual update.  This replaces ``_rms_factor`` for the
+    persistent GatedProjection path; neither the row factor nor a row-major
+    normalized activation is materialized.  When ``trigger_programmatic_launch``
+    is true, the persistent consumer must be the direct successor on the same
+    stream; move readiness-counter resets before this call.
+    """
+    M, K = x.shape
+    if (M != 50 or K != 1024 or tuple(scale.shape) != (1024,)
+            or tuple(out.shape) != (1024, 64)):
+        raise ValueError(
+            "decoder_rms_xfs requires x[50,1024], scale[1024], out[1024,64]")
+    if (x.dtype != torch.bfloat16 or scale.dtype != torch.bfloat16
+            or out.dtype != torch.bfloat16):
+        raise ValueError("decoder_rms_xfs tensors must be BF16")
+    if not x.is_contiguous() or not scale.is_contiguous() or not out.is_contiguous():
+        raise ValueError("decoder_rms_xfs tensors must be contiguous")
+    config = dict(_DEC_XFS)
+    config["TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH"] = trigger_programmatic_launch
+    _compiled(xfs_kernels.tl_rms_xfs_kmajor, M=M, K=K, **config)(x, scale, out)
     return out
 
 
@@ -465,6 +500,7 @@ DECODER_WRAPPERS = {
     "decoder_norm_qkv_rope": decoder_norm_qkv_rope,
     "decoder_attention": decoder_attention,
     "decoder_out_proj_residual": decoder_out_proj_residual,
+    "decoder_rms_xfs": decoder_rms_xfs,
     "decoder_norm_gated_ffn": decoder_norm_gated_ffn,
     "decoder_ffn_down_residual": decoder_ffn_down_residual,
     "decoder_action_out_proj": decoder_action_out_proj,

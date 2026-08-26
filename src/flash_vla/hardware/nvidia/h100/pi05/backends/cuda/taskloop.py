@@ -1,4 +1,4 @@
-"""Minimal FFN persistent task-loop: preallocated CPU worker queue + one 132-CTA kernel.
+"""K-major XFS consumer plus the 132-CTA persistent FFN task loop.
 
 Phase 4 host side of specs/tile/ffn_taskloop_minimal.md. Three pieces:
 
@@ -11,17 +11,20 @@ Phase 4 host side of specs/tile/ffn_taskloop_minimal.md. Three pieces:
   with truncated variants for bisection --
   a persistent-kernel bug hangs rather than fails, so run-to-a-subset + compare
   is the debug loop.
-- `FFNTaskloop.launch()` zeroes the counters on-stream (graph-capturable, so a
-  captured graph self-resets on replay) and launches the kernel.
+- `FFNTaskloop.launch()` consumes exact-rounding K-major XFS produced directly
+  by the preceding operation, resets readiness counters, then launches the
+  persistent kernel.
 
-Tensor contracts (all CUDA, contiguous): x_pad/out (64, 1024) bf16 with rows
-50..63 zeroed, hidden (64, 4096) bf16, F (64,) bf16 zero-padded, S (1024,)
-bf16, `packed_gate_up` ((4096/32)*1024, 64) bf16 containing one
+Tensor contracts (all CUDA, contiguous): xfs_kmajor (1024, 64) bf16,
+out (64, 1024) bf16, hidden (64, 4096) bf16, S (1024,) bf16,
+`packed_gate_up` ((4096/32)*1024, 64) bf16 containing one
 `[W_gate_tile | W_up_tile]` row per K tile, b1/b2 (4096,) bf16,
 Wd (4096, 1024) bf16, g_gate (1024,) bf16, counters (32,) int32. The legacy
-second packed-weight pointer remains in the C ABI for call-site stability but
-is not read by the kernel. `out` doubles as the residual input; the
-DownResidual epilogue reads each element before writing it.
+F and second packed-weight pointers remain in the C ABI for call-site
+stability but are not read by GatedProjection. The persistent kernel consumes
+XFS with four 32 KiB activation TMA operations into stationary shared memory.
+`out` doubles as the residual input; the DownResidual epilogue reads each
+element before writing it.
 """
 from __future__ import annotations
 
@@ -246,13 +249,15 @@ def build_table(mode: str = "full") -> torch.Tensor:
             rows[cta][0] = task
 
     if mode in ("full", "dr"):
-        # 32 output tiles x DOWN_RESIDUAL_SPLIT partials. Worker c owns (tile, split) =
-        # divmod(c, DOWN_RESIDUAL_SPLIT), so the four splits of one tile sit on four
-        # consecutive workers -- all resident, which principle 4 of
-        # megakernel-taskgraph makes a correctness gate, not a preference.
+        # Split-major placement: worker c owns
+        #   split, tile = divmod(c, DOWN_RESIDUAL_TILES).
+        # For c=32*split+tile, its preceding GatedProjection task publishes
+        # counter 8*split+tile//4, one of the eight counters consumed by that
+        # DownProjection split. This tightens the fixed-grid completion tail
+        # without changing ownership, task count, or the compact table ABI.
         slot = 1 if mode == "full" else 0
         for cta in range(DOWN_RESIDUAL_SUBTASKS):
-            tile, split = divmod(cta, DOWN_RESIDUAL_SPLIT)
+            split, tile = divmod(cta, DOWN_RESIDUAL_TILES)
             rows[cta][slot] = [1, tile * 32, 0, split]
 
     table = torch.tensor(rows, dtype=torch.int32)
@@ -296,7 +301,8 @@ class FFNTaskloop:
     def __init__(self, verbose: bool = False):
         self._lib = ctypes.CDLL(str(build(verbose)))
         self._lib.ffn_taskloop_launch.restype = ctypes.c_int
-        self._lib.ffn_taskloop_launch.argtypes = [ctypes.c_void_p, ctypes.c_int] + \
+        self._lib.ffn_taskloop_launch.argtypes = [ctypes.c_void_p, ctypes.c_int,
+                                                  ctypes.c_int] + \
             [ctypes.c_void_p] * 16
         # Split-K scratch is owned here rather than passed in, so `launch`'s
         # signature -- and every call site of it -- is unchanged. Allocated on
@@ -308,14 +314,47 @@ class FFNTaskloop:
         self._lib.counter_probe_launch.argtypes = [
             ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
             ctypes.c_int, ctypes.c_void_p]
+        self._lib.ffn_counters_reset_launch.restype = ctypes.c_int
+        self._lib.ffn_counters_reset_launch.argtypes = [ctypes.c_void_p] * 3
 
-    def launch(self, table, x_pad, F, S, packed_gate_up, packed_gate_up_unused,
+    def _ensure_down_residual_storage(self, device: torch.device) -> None:
+        if (self._down_residual_partial is None or
+                self._down_residual_partial.device != device):
+            self._down_residual_partial = torch.empty(
+                PARTIAL_ELEMS, dtype=torch.float32, device=device)
+            # Keep the legacy zero_counters=False first-launch behavior: the
+            # internal split counters start at zero even without an explicit
+            # reset launch.
+            self._down_residual_counters = torch.zeros(
+                DOWN_RESIDUAL_TILES, dtype=torch.int32, device=device)
+
+    def reset_counters(self, counters: torch.Tensor) -> None:
+        """Reset both persistent-FFN readiness arrays on the current stream."""
+        self._ensure_down_residual_storage(counters.device)
+        stream = torch.cuda.current_stream().cuda_stream
+        rc = self._lib.ffn_counters_reset_launch(
+            ctypes.c_void_p(counters.data_ptr()),
+            ctypes.c_void_p(self._down_residual_counters.data_ptr()),
+            ctypes.c_void_p(stream))
+        if rc != 0:
+            raise RuntimeError(f"ffn_counters_reset_launch rc={rc}")
+
+    def launch(self, table, xfs_kmajor, F, S, packed_gate_up, packed_gate_up_unused,
                b1, b2, Wd, g_gate,
                hidden, out, counters, *, dbg=None,
-               zero_counters: bool = True) -> None:
-        """`dbg`: optional host-PINNED (n_ctas, 4) int64 tensor. On a watchdog
-        trap the kernel writes {site, g, tid, 1} per stuck CTA there before
-        aborting -- pass it during bring-up, drop it for benchmarks."""
+               zero_counters: bool = True,
+               use_programmatic_dependency: bool = False) -> None:
+        """Launch the fixed persistent FFN schedule.
+
+        ``use_programmatic_dependency`` requires the triggering XFS producer
+        to be the direct predecessor on the current stream.  In particular,
+        reset the readiness counters before that producer and pass
+        ``zero_counters=False`` here; otherwise the reset kernel becomes the
+        immediate predecessor and the XFS/FFN overlap is lost.
+
+        ``dbg`` is an optional host-pinned ``(n_ctas, 4)`` int64 tensor.  On a
+        watchdog trap the kernel writes ``{site, g, tid, 1}`` per stuck CTA.
+        """
         if tuple(table.shape) != (N_CTAS_FULL, MAX_TASKS_PER_CTA, 4):
             raise ValueError(
                 f"FFN persistent launch requires table shape "
@@ -330,19 +369,19 @@ class FFNTaskloop:
         if (not packed_gate_up.is_contiguous() or
                 not packed_gate_up_unused.is_contiguous()):
             raise ValueError("packed gate/up weights must be contiguous")
-        if self._down_residual_partial is None or self._down_residual_partial.device != out.device:
-            self._down_residual_partial = torch.empty(PARTIAL_ELEMS, dtype=torch.float32,
-                                           device=out.device)
-            self._down_residual_counters = torch.zeros(DOWN_RESIDUAL_TILES, dtype=torch.int32,
-                                            device=out.device)
-        if zero_counters:
-            counters.zero_()  # on-stream: captured graphs self-reset on replay
-            self._down_residual_counters.zero_()   # same, for the split-K join
+        self._ensure_down_residual_storage(out.device)
         stream = torch.cuda.current_stream().cuda_stream
+        if zero_counters:
+            self.reset_counters(counters)
+        if (tuple(xfs_kmajor.shape) != (D, M_PAD) or
+                xfs_kmajor.dtype != torch.bfloat16 or
+                not xfs_kmajor.is_contiguous()):
+            raise ValueError("xfs_kmajor must be contiguous BF16 [1024,64]")
         rc = self._lib.ffn_taskloop_launch(
             ctypes.c_void_p(table.data_ptr()), int(table.shape[0]),
+            int(use_programmatic_dependency),
             *[ctypes.c_void_p(t.data_ptr()) for t in
-              (x_pad, F, S, packed_gate_up, packed_gate_up_unused,
+              (xfs_kmajor, F, S, packed_gate_up, packed_gate_up_unused,
                b1, b2, Wd, g_gate, hidden, out, counters,
                self._down_residual_partial, self._down_residual_counters)],
             ctypes.c_void_p(dbg.data_ptr() if dbg is not None else 0),
