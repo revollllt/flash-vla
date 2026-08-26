@@ -317,6 +317,28 @@ class FFNTaskloop:
         self._lib.ffn_counters_reset_launch.restype = ctypes.c_int
         self._lib.ffn_counters_reset_launch.argtypes = [ctypes.c_void_p] * 3
 
+    def _ensure_down_residual_storage(self, device: torch.device) -> None:
+        if (self._down_residual_partial is None or
+                self._down_residual_partial.device != device):
+            self._down_residual_partial = torch.empty(
+                PARTIAL_ELEMS, dtype=torch.float32, device=device)
+            # Keep the legacy zero_counters=False first-launch behavior: the
+            # internal split counters start at zero even without an explicit
+            # reset launch.
+            self._down_residual_counters = torch.zeros(
+                DOWN_RESIDUAL_TILES, dtype=torch.int32, device=device)
+
+    def reset_counters(self, counters: torch.Tensor) -> None:
+        """Reset both persistent-FFN readiness arrays on the current stream."""
+        self._ensure_down_residual_storage(counters.device)
+        stream = torch.cuda.current_stream().cuda_stream
+        rc = self._lib.ffn_counters_reset_launch(
+            ctypes.c_void_p(counters.data_ptr()),
+            ctypes.c_void_p(self._down_residual_counters.data_ptr()),
+            ctypes.c_void_p(stream))
+        if rc != 0:
+            raise RuntimeError(f"ffn_counters_reset_launch rc={rc}")
+
     def launch(self, table, xfs_kmajor, F, S, packed_gate_up, packed_gate_up_unused,
                b1, b2, Wd, g_gate,
                hidden, out, counters, *, dbg=None,
@@ -347,19 +369,10 @@ class FFNTaskloop:
         if (not packed_gate_up.is_contiguous() or
                 not packed_gate_up_unused.is_contiguous()):
             raise ValueError("packed gate/up weights must be contiguous")
-        if self._down_residual_partial is None or self._down_residual_partial.device != out.device:
-            self._down_residual_partial = torch.empty(PARTIAL_ELEMS, dtype=torch.float32,
-                                           device=out.device)
-            self._down_residual_counters = torch.zeros(DOWN_RESIDUAL_TILES, dtype=torch.int32,
-                                            device=out.device)
+        self._ensure_down_residual_storage(out.device)
         stream = torch.cuda.current_stream().cuda_stream
         if zero_counters:
-            rc = self._lib.ffn_counters_reset_launch(
-                ctypes.c_void_p(counters.data_ptr()),
-                ctypes.c_void_p(self._down_residual_counters.data_ptr()),
-                ctypes.c_void_p(stream))
-            if rc != 0:
-                raise RuntimeError(f"ffn_counters_reset_launch rc={rc}")
+            self.reset_counters(counters)
         if (tuple(xfs_kmajor.shape) != (D, M_PAD) or
                 xfs_kmajor.dtype != torch.bfloat16 or
                 not xfs_kmajor.is_contiguous()):
