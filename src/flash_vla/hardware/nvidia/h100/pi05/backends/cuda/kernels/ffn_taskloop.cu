@@ -751,23 +751,6 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
     if (e != cudaSuccess) return (int)e;
     attr_set = true;
   }
-  int device = 0;
-  int multiprocessors = 0;
-  int active_blocks_per_multiprocessor = 0;
-  cudaError_t occupancy_error = cudaGetDevice(&device);
-  if (occupancy_error != cudaSuccess) return (int)occupancy_error;
-  occupancy_error = cudaDeviceGetAttribute(
-      &multiprocessors, cudaDevAttrMultiProcessorCount, device);
-  if (occupancy_error != cudaSuccess) return (int)occupancy_error;
-  occupancy_error = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-      &active_blocks_per_multiprocessor, ffn_taskloop_kernel,
-      WarpRoles::kThreads, SHARED_MEMORY_BYTES);
-  if (occupancy_error != cudaSuccess) return (int)occupancy_error;
-  if (multiprocessors * active_blocks_per_multiprocessor < N_CTAS) {
-    // DownResidual workers wait on counters published by GatedProjection
-    // workers. Refuse launches that cannot make every fixed worker resident.
-    return 1102;
-  }
   CUresult rc = CUDA_SUCCESS;
   // GatedProjection input contract: x_pad points to a contiguous
   // [D, M_PAD] buffer, so M is the 128-byte TMA row and one BK256 box fills a
