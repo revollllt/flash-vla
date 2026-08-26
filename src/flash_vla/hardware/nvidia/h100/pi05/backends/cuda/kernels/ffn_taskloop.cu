@@ -225,6 +225,16 @@ __device__ __forceinline__ void issue_weight_tma_2d_evict_first(
       : "memory");
 }
 
+// Tensor prefetch has no shared-memory destination and no completion barrier.
+// It moves the tensor-map tile toward L2; the later ordinary TMA load remains
+// the sole operation that owns the weight transaction barrier.
+__device__ __forceinline__ void prefetch_tma_2d_to_l2(
+    const CUtensorMap* map, int32_t c_inner, int32_t c_outer) {
+  asm volatile(
+      "cp.async.bulk.prefetch.tensor.2d.L2.global [%0, {%1, %2}];"
+      :: "l"(map), "r"(c_inner), "r"(c_outer) : "memory");
+}
+
 // Plain 1D bulk-copy helper retained for profiles that transport side data.
 __device__ __forceinline__ void issue_bulk_1d(
     void* dst, const void* src, uint32_t bytes, uint64_t* bar) {
@@ -360,6 +370,14 @@ __device__ __forceinline__ void gated_up_weight_producer(
               s * GATED_UP_WEIGHT_FRAME_BYTES,
           0, (n >> 5) * D + i * GATED_UP_BLOCK_K,
           reinterpret_cast<uint64_t*>(&full_w[s]));
+      // The three-deep SMEM ring cannot reserve stage 3 until math releases
+      // slot 0. Prefetch that final 32 KiB tensor tile immediately after
+      // issuing stage 2, so its HBM latency can overlap the slot-0 wait.
+      if (i == GATED_UP_TRIP - 2) {
+        prefetch_tma_2d_to_l2(
+            task.tmwup, 0,
+            (n >> 5) * D + (i + 1) * GATED_UP_BLOCK_K);
+      }
     }
   }
 }
