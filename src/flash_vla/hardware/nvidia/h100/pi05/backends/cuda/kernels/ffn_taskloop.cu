@@ -344,7 +344,7 @@ __device__ __forceinline__ void gated_up_math(
       cutlass::arch::fence_view_async_shared();
       mathwg_sync();
 
-      // spec math[0..1]: two 8-instruction batches off one A fill, one commit
+      // One BK=64 stage issues four N=64 WGMMA instructions in one commit.
       Tensor sA = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(
                       task.pool + OFF_A + s * A_FRAME_B)), SmemLayoutA{});
       Tensor sBwide = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(
@@ -354,11 +354,8 @@ __device__ __forceinline__ void gated_up_math(
       // FlashMLA's CuTe wrapper keeps the fence/arrive/commit ordering next
       // to the GEMM contract instead of repeating raw choreography here.
       ::sm90::gemm<false, -1, true, true>(mma, tCrA, tCrB, acc);
-      // Release on retirement, PIPELINED depth-1 batches deep (CUTLASS's
-      // wait<K_PIPE_MMAS>). wait_group<1> per stage made batch RETIREMENT the
-      // cadence (~2 us/stage measured, job 541432 -- per-CTA rate identical to
-      // the 4-warp TileLang kernels); consecutive wgmma batches on one
-      // accumulator pipeline fine, so only the frame release needs the wait.
+      // Keep one committed group outstanding. Once g-1 retires, release its
+      // shared-memory frame independently of the four-stage TMA ring depth.
       if (g >= GATED_UP_WGMMA_WAIT) {
         warpgroup_wait<GATED_UP_WGMMA_WAIT>();
         __syncwarp();
