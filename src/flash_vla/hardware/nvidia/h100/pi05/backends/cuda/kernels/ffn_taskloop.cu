@@ -459,12 +459,12 @@ __device__ __forceinline__ void gated_projection_weight_loader(
           0, (n >> 5) * D + i * GATED_UP_BLOCK_K,
           reinterpret_cast<uint64_t*>(&full_w[s]));
       // The three-deep SMEM ring cannot reserve stage 3 until math releases
-      // slot 0. Prefetch that final 32 KiB tensor tile immediately after
-      // issuing stage 2, so its HBM latency can overlap the slot-0 wait.
-      if (i == GATED_UP_TRIP - 2) {
+      // slot 0. Stage 0's real TMA must enter the urgent path first; then move
+      // the final 32 KiB tile toward L2 while stages 1 and 2 fill the ring.
+      if (i == 0) {
         tma::prefetch_2d_to_l2(
             task.weight_tensor_map, 0,
-            (n >> 5) * D + (i + 1) * GATED_UP_BLOCK_K);
+            (n >> 5) * D + (GATED_UP_TRIP - 1) * GATED_UP_BLOCK_K);
       }
     }
   }
