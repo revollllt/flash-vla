@@ -458,13 +458,13 @@ __device__ __forceinline__ void gated_projection_weight_loader(
           task.weight_tensor_map, shared.weight_frame(s),
           0, (n >> 5) * D + i * GATED_UP_BLOCK_K,
           reinterpret_cast<uint64_t*>(&full_w[s]));
-      // The three-deep SMEM ring cannot reserve stage 3 until math releases
-      // slot 0. Stage 0's real TMA must enter the urgent path first; then move
-      // the final 32 KiB tile toward L2 while stages 1 and 2 fill the ring.
+      // Let stage 0's real TMA enter the urgent path before competing for L2
+      // resources, then move stage 1 toward L2 immediately before its load.
+      // Prefetching at loader entry delays the critical stage-0 transaction.
       if (i == 0) {
         tma::prefetch_2d_to_l2(
             task.weight_tensor_map, 0,
-            (n >> 5) * D + (GATED_UP_TRIP - 1) * GATED_UP_BLOCK_K);
+            (n >> 5) * D + (i + 1) * GATED_UP_BLOCK_K);
       }
     }
   }
