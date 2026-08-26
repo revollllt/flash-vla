@@ -113,10 +113,13 @@ constexpr int GATED_UP_WEIGHT_OFFSET =
 constexpr int BARRIER_OFFSET =
     GATED_UP_WEIGHT_OFFSET +
     GATED_UP_WEIGHT_DEPTH * GATED_UP_WEIGHT_FRAME_BYTES;          // 229376
+constexpr int BARRIER_WORDS = 17;
+constexpr int DOWN_RESIDUAL_STAGE4_PREFETCH_BARRIER = 16;
 // The barrier pool is now producer-owned: no scheduler->TMA sequence arrays
 // are needed.  Each producer warp waits on its empty slot, calls
 // arrive_and_expect_tx for its own byte count, and emits the TMA operation.
-constexpr int SHARED_MEMORY_BYTES = BARRIER_OFFSET + 16 * sizeof(uint64_t); // 229504
+constexpr int SHARED_MEMORY_BYTES =
+    BARRIER_OFFSET + BARRIER_WORDS * sizeof(uint64_t);             // 229512
 
 // The two task bodies never execute concurrently, so their data planes alias.
 // Describe that alias once instead of rebuilding it with byte offsets at every
@@ -140,7 +143,9 @@ struct SharedStorage {
     GatedProjectionSharedData gated_projection;
     DownProjectionResidualSharedData down_projection_residual;
   } mainloop;
-  alignas(16) uint64_t barrier_words[16];
+  // BARRIER_OFFSET is already 16-byte aligned. Keeping the aggregate at its
+  // natural 8-byte alignment avoids padding after the seventeenth word.
+  uint64_t barrier_words[BARRIER_WORDS];
 };
 
 static_assert(offsetof(GatedProjectionSharedData, weight_frames) ==
@@ -277,6 +282,10 @@ struct DownProjectionResidualSharedStorageView {
   }
   __device__ __forceinline__ EmptyBar* activation_empty() const {
     return BarrierViews::down_residual_activation_empty(barrier_words());
+  }
+  __device__ __forceinline__ EmptyBar* stage4_prefetch_ready() const {
+    return reinterpret_cast<EmptyBar*>(
+        barrier_words() + DOWN_RESIDUAL_STAGE4_PREFETCH_BARRIER);
   }
 };
 
@@ -586,6 +595,8 @@ __device__ __forceinline__ void down_projection_weight_loader(
   DownProjectionResidualSharedStorageView shared{task.shared};
   auto* full_w = shared.weight_full();
   auto* empty_w = shared.weight_empty();
+  auto* full_a = shared.activation_full();
+  auto* stage4_prefetch_ready = shared.stage4_prefetch_ready();
   uint32_t ewph[DOWN_RESIDUAL_WEIGHT_DEPTH] = {};
   for (int g = 0; g < task.task_count * DOWN_RESIDUAL_TRIP_PER_SPLIT; ++g) {
     int t = g / DOWN_RESIDUAL_TRIP_PER_SPLIT, i = g % DOWN_RESIDUAL_TRIP_PER_SPLIT;
@@ -596,6 +607,21 @@ __device__ __forceinline__ void down_projection_weight_loader(
     // dep-free weight ring first: it runs ahead through any counter stall
     int sw = g % DOWN_RESIDUAL_WEIGHT_DEPTH;
     if (g >= DOWN_RESIDUAL_WEIGHT_DEPTH) {
+      // Stage 4 is the only steady-state weight tile whose completion remains
+      // exposed. Activation stage 0 completes before weight slot 0 can be
+      // released, so use that otherwise-dead interval to move stage 4 toward
+      // L2 without attaching another transaction to the shared-memory ring.
+      if (i == DOWN_RESIDUAL_WEIGHT_DEPTH) {
+        full_a[0].wait(0);
+        if (cute::elect_one_sync()) {
+          // Release the activation producer before issuing the barrier-free
+          // prefetch. The handshake protects the full_a[0] phase from ABA;
+          // it does not make the prefetch part of activation's dependency.
+          stage4_prefetch_ready->arrive();
+          tma::prefetch_2d_to_l2(
+              task.weight_tensor_map, 0, (n >> 5) * FF + k);
+        }
+      }
       wait_bar_wd(reinterpret_cast<uint64_t*>(&empty_w[sw]), ewph[sw], 5, g, task.dbg);
       ewph[sw] ^= 1;
     }
@@ -621,6 +647,7 @@ __device__ __forceinline__ void down_projection_activation_loader(
   DownProjectionResidualSharedStorageView shared{task.shared};
   auto* full_a = shared.activation_full();
   auto* empty_a = shared.activation_empty();
+  auto* stage4_prefetch_ready = shared.stage4_prefetch_ready();
   uint32_t eaph[DOWN_RESIDUAL_ACTIVATION_DEPTH] = {};
   for (int g = 0; g < task.task_count * DOWN_RESIDUAL_TRIP_PER_SPLIT; ++g) {
     int t = g / DOWN_RESIDUAL_TRIP_PER_SPLIT, i = g % DOWN_RESIDUAL_TRIP_PER_SPLIT;
@@ -632,6 +659,12 @@ __device__ __forceinline__ void down_projection_activation_loader(
     counter_wait(&task.hidden_ready_counters[counter_id], COUNTER_ARRIVE,
                  g, task.dbg);
     int sa = g % DOWN_RESIDUAL_ACTIVATION_DEPTH;
+    // Do not rearm full_a[0] for activation stage 4 until the weight producer
+    // has observed activation stage 0. This prevents a late phase-0 waiter
+    // from confusing a future barrier generation for the original A0.
+    if (i == DOWN_RESIDUAL_ACTIVATION_DEPTH) {
+      stage4_prefetch_ready->wait(0);
+    }
     if (g >= DOWN_RESIDUAL_ACTIVATION_DEPTH) {
       wait_bar_wd(reinterpret_cast<uint64_t*>(&empty_a[sa]), eaph[sa], 6, g, task.dbg);
       eaph[sa] ^= 1;
@@ -777,6 +810,7 @@ __device__ __forceinline__ void initialize_barriers(
   auto* weight_empty = shared.weight_empty();
   auto* activation_full = shared.activation_full();
   auto* activation_empty = shared.activation_empty();
+  auto* stage4_prefetch_ready = shared.stage4_prefetch_ready();
   for (int stage = 0; stage < DOWN_RESIDUAL_WEIGHT_DEPTH; ++stage) {
     weight_full[stage].init(1);
     weight_empty[stage].init(kNumEpilogueWarps);
@@ -785,6 +819,7 @@ __device__ __forceinline__ void initialize_barriers(
     activation_full[stage].init(1);
     activation_empty[stage].init(kNumEpilogueWarps);
   }
+  stage4_prefetch_ready->init(1);
 }
 
 // ------------------------------------------------------------------ the kernel
