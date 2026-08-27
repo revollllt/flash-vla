@@ -187,7 +187,7 @@ def tl_rms_xfs_from_partials(
         if thread_id < ROWS_PER_CTA:
             row = pid_m * ROWS_PER_CTA + thread_id
             scalar_sum[0] = 0.0
-            for n_block in T.Serial(32):
+            for n_block in T.Unroll(32):
                 scalar_sum[0] += SquarePartials[
                     row // BLOCK_M,
                     n_block,
