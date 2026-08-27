@@ -36,8 +36,6 @@ class _FFNState:
             (M,), dtype=torch.bfloat16, device=device)
         self.square_partials = torch.empty(
             (4, 32, 16), dtype=torch.float32, device=device)
-        self.rstd_per_cta = torch.empty(
-            (4, 32, 16), dtype=torch.bfloat16, device=device)
         self.packed: dict[tuple[int, ...], tuple[tuple[torch.Tensor, ...],
                                                  torch.Tensor]] = {}
         self.pending_out_proj: _PendingOutProj | None = None
@@ -133,7 +131,7 @@ def make_wrappers(
         return torch.cuda.current_stream(device).cuda_stream
 
     def decoder_out_proj_residual(attention, weight, gate, out):
-        """Defer the out projection to the adjacent cooperative XFS producer."""
+        """Defer out projection to the adjacent residual/partial producer."""
         runtime = state_for(out.device)
         if not fuse_out_proj:
             raise RuntimeError(
@@ -184,7 +182,7 @@ def make_wrappers(
             _tilelang.decoder_out_proj_residual_rms_xfs(
                 out_proj.attention, out_proj.weight, out_proj.gate, x, scale,
                 hidden_ready, down_ready, runtime.square_partials,
-                runtime.rstd_per_cta, runtime.xfs)
+                runtime.xfs)
             runtime.pending_out_proj = None
         else:
             if runtime.pending_out_proj is not None:
@@ -194,7 +192,7 @@ def make_wrappers(
                 trigger_programmatic_launch=True)
         runtime.pending = _PendingFFN(
             hidden_ptr=out.data_ptr(), stream=stream,
-            use_programmatic_dependency=not fuse_out_proj,
+            use_programmatic_dependency=True,
             scale=scale, gate_bias=gate_b,
             up_bias=up_b, packed_gate_up=packed_gate_up)
 

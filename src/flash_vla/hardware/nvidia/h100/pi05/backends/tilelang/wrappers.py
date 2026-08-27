@@ -333,13 +333,21 @@ _DEC_XFS = dict(
     TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
     RESET_READINESS_COUNTERS=True,
 )
-_DEC_OUT_PROJ_XFS = dict(
+_DEC_OUT_PROJ_PARTIALS = dict(
     BLOCK_M=16,
     BLOCK_N=32,
     BLOCK_K=256,
     NUM_STAGES=4,
     THREADS=128,
     M_PAD=64,
+)
+_DEC_XFS_FROM_PARTIALS = dict(
+    BLOCK_M=16,
+    BLOCK_N=32,
+    ROWS_PER_CTA=64,
+    THREADS=128,
+    M_PAD=64,
+    TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=True,
 )
 
 # NUM_SPLIT is a request, not the realized count -- `_num_splits` shrinks it.
@@ -402,20 +410,19 @@ def decoder_rms_xfs(
 
 def decoder_out_proj_residual_rms_xfs(
         attention, weight, attention_gate, residual, ffn_scale,
-        hidden_ready, down_ready, square_partials, rstd_per_cta, xfs):
-    """Cooperatively produce the BF16 residual and contiguous K-major XFS."""
+        hidden_ready, down_ready, square_partials, xfs):
+    """Produce exact BF16 residual/partials, then contiguous K-major XFS."""
     if (tuple(attention.shape) != (50, 2048)
             or tuple(weight.shape) != (2048, 1024)
             or tuple(attention_gate.shape) != (1024,)
             or tuple(residual.shape) != (50, 1024)
             or tuple(ffn_scale.shape) != (1024,)
             or tuple(square_partials.shape) != (4, 32, 16)
-            or tuple(rstd_per_cta.shape) != (4, 32, 16)
             or tuple(xfs.shape) != (1024, 64)):
         raise ValueError("invalid fixed-shape fused out-projection/XFS tensors")
     bf16_tensors = (
         attention, weight, attention_gate, residual, ffn_scale,
-        rstd_per_cta, xfs,
+        xfs,
     )
     if any(tensor.dtype != torch.bfloat16 for tensor in bf16_tensors):
         raise ValueError("fused out-projection/XFS data tensors must be BF16")
@@ -432,11 +439,17 @@ def decoder_out_proj_residual_rms_xfs(
                 or not counters.is_contiguous()):
             raise ValueError(f"{name} must be contiguous int32[32]")
     _compiled(
-        xfs_kernels.tl_out_proj_residual_rms_xfs,
-        M=50, N=1024, K=2048, **_DEC_OUT_PROJ_XFS,
+        xfs_kernels.tl_out_proj_residual_partials,
+        M=50, N=1024, K=2048, **_DEC_OUT_PROJ_PARTIALS,
     )(
-        attention, weight, attention_gate, residual, ffn_scale,
-        hidden_ready, down_ready, square_partials, rstd_per_cta, xfs,
+        attention, weight, attention_gate, residual,
+        hidden_ready, down_ready, square_partials,
+    )
+    _compiled(
+        xfs_kernels.tl_rms_xfs_from_partials,
+        M=50, N=1024, **_DEC_XFS_FROM_PARTIALS,
+    )(
+        residual, ffn_scale, square_partials, xfs,
     )
     return residual, xfs
 

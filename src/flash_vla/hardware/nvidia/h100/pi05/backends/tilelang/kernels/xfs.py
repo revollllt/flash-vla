@@ -1,9 +1,9 @@
-"""FFN input preparation for the fixed Pi0.5 action-expert shape.
+"""FFN input producers for the fixed Pi0.5 action-expert shape.
 
-The preceding attention output projection has already completed its gated
-residual update when this kernel runs.  This kernel replaces the standalone
-row-factor launch and writes exactly the layout consumed by the persistent
-GatedProjection kernel::
+The Phase-1 path converts an existing gated residual directly. The Phase-2
+path first writes the gated residual and exact row-square partials, then a
+small successor reduces those partials and writes the layout consumed by the
+persistent GatedProjection kernel::
 
     XFS[k, m] = bf16(bf16(X[m, k] * rstd[m]) * scale[k])
 
@@ -99,18 +99,12 @@ def tl_rms_xfs_kmajor(
 
 
 @kernel(warp_spec=False)
-def tl_out_proj_residual_rms_xfs(
-        A, W, AttentionGate, Residual, FFNScale,
-        HiddenReady, DownReady, SquarePartials, RstdPerCTA, XFS,
+def tl_out_proj_residual_partials(
+        A, W, AttentionGate, Residual,
+        HiddenReady, DownReady, SquarePartials,
         BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_STAGES: int,
         THREADS: int, M_PAD: int):
-    """Fuse the fixed decoder out-projection, residual, RMS, and K-major XFS.
-
-    The 32x4 grid owns one M16/N32 output tile per CTA. Each CTA publishes one
-    FP32 row-square partial, then all CTAs join once. Only the first 16 threads
-    in each CTA reduce one row apiece, avoiding the fragment mapping that would
-    otherwise make every warp reload the same 2-KiB partial tile.
-    """
+    """Write the gated residual and its exact FP32 row-square partials."""
     M, N, K = T.const("M, N, K")
     dtype = T.bfloat16
     accum_dtype = T.float32
@@ -118,33 +112,19 @@ def tl_out_proj_residual_rms_xfs(
     W: T.Tensor((K, N), dtype)
     AttentionGate: T.Tensor((N,), dtype)
     Residual: T.Tensor((M, N), dtype)
-    FFNScale: T.Tensor((N,), dtype)
     HiddenReady: T.Tensor((32,), "int32")
     DownReady: T.Tensor((32,), "int32")
     SquarePartials: T.Tensor((4, 32, 16), accum_dtype)
-    RstdPerCTA: T.Tensor((4, 32, 16), dtype)
-    XFS: T.Tensor((N, M_PAD), dtype)
 
     with T.Kernel(T.ceildiv(N, BLOCK_N), T.ceildiv(M_PAD, BLOCK_M),
                   threads=THREADS) as (pid_n, pid_m):
-        thread_id = T.get_thread_binding()
         A_shared = T.alloc_shared((BLOCK_M, BLOCK_K), dtype)
         W_shared = T.alloc_shared((BLOCK_K, BLOCK_N), dtype)
         gate_local = T.alloc_fragment((BLOCK_N,), dtype)
-        scale_local = T.alloc_fragment((BLOCK_N,), dtype)
-        residual_local = T.alloc_fragment((BLOCK_M, BLOCK_N), dtype)
-        rounded_local = T.alloc_fragment((BLOCK_M, BLOCK_N), dtype)
         accumulator = T.alloc_fragment((BLOCK_M, BLOCK_N), accum_dtype)
         row_partial = T.alloc_fragment((BLOCK_M,), accum_dtype)
-        scalar_sum = T.alloc_fragment((1,), accum_dtype)
-        # Padding the token stride from 16 to 18 avoids the 8-way conflict of
-        # shared[j, i] under the common j-fast lane mapping.
-        xfs_transposed = T.alloc_shared((BLOCK_N, BLOCK_M + 2), dtype)
 
         T.copy(AttentionGate[pid_n * BLOCK_N], gate_local)
-        T.clear(residual_local)
-        T.copy(
-            Residual[pid_m * BLOCK_M, pid_n * BLOCK_N], residual_local)
         T.clear(accumulator)
         for ko in T.Pipelined(T.ceildiv(K, BLOCK_K), num_stages=NUM_STAGES):
             T.copy(A[pid_m * BLOCK_M, ko * BLOCK_K], A_shared)
@@ -152,45 +132,85 @@ def tl_out_proj_residual_rms_xfs(
             T.gemm(A_shared, W_shared, accumulator)
 
         for i, j in T.Parallel(BLOCK_M, BLOCK_N):
-            rounded_local[i, j] = (
+            row = pid_m * BLOCK_M + i
+            residual = T.if_then_else(
+                row < M,
+                Residual[row, pid_n * BLOCK_N + j],
+                T.cast(0, dtype),
+            )
+            accumulator[i, j] = (
                 accumulator[i, j] * gate_local[j].astype(accum_dtype)
-                + residual_local[i, j].astype(accum_dtype)).astype(dtype)
-            value = rounded_local[i, j].astype(accum_dtype)
-            accumulator[i, j] = value * value
+                + residual.astype(accum_dtype)).astype(dtype).astype(
+                    accum_dtype)
         T.copy(
-            rounded_local,
+            accumulator,
             Residual[pid_m * BLOCK_M, pid_n * BLOCK_N],
         )
-        T.reduce_sum(accumulator, row_partial, dim=1)
+        for i, j in T.Parallel(BLOCK_M, BLOCK_N):
+            accumulator[i, j] *= accumulator[i, j]
+        T.reduce_sum(accumulator, row_partial, dim=1, batch=2)
         T.copy(row_partial, SquarePartials[pid_m, pid_n, 0])
         if pid_n == 0 and pid_m == 0:
             for index in T.Parallel(32):
                 HiddenReady[index] = 0
                 DownReady[index] = 0
-        T.sync_grid()
 
-        if thread_id < BLOCK_M:
+
+@kernel(warp_spec=False)
+def tl_rms_xfs_from_partials(
+        Residual, FFNScale, SquarePartials, XFS,
+        BLOCK_M: int, BLOCK_N: int, ROWS_PER_CTA: int,
+        THREADS: int, M_PAD: int,
+        TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH: bool):
+    """Reduce exact out-projection partials and emit contiguous K-major XFS."""
+    M, N = T.const("M, N")
+    dtype = T.bfloat16
+    accum_dtype = T.float32
+    Residual: T.Tensor((M, N), dtype)
+    FFNScale: T.Tensor((N,), dtype)
+    SquarePartials: T.Tensor((4, 32, 16), accum_dtype)
+    XFS: T.Tensor((N, M_PAD), dtype)
+
+    with T.Kernel(T.ceildiv(N, BLOCK_N), T.ceildiv(M_PAD, ROWS_PER_CTA),
+                  threads=THREADS) as (pid_n, pid_m):
+        thread_id = T.get_thread_binding()
+        scalar_sum = T.alloc_fragment((1,), accum_dtype)
+        scale_local = T.alloc_fragment((BLOCK_N,), dtype)
+        rstd_shared = T.alloc_shared((ROWS_PER_CTA,), dtype)
+        # The padded row stride avoids shared-bank conflicts during transpose.
+        xfs_transposed = T.alloc_shared((BLOCK_N, ROWS_PER_CTA + 2), dtype)
+
+        if TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH and thread_id == 0:
+            T.evaluate(T.call_extern(
+                "void", "cudaTriggerProgrammaticLaunchCompletion"))
+
+        if thread_id < ROWS_PER_CTA:
+            row = pid_m * ROWS_PER_CTA + thread_id
             scalar_sum[0] = 0.0
             for n_block in T.Serial(32):
                 scalar_sum[0] += SquarePartials[
-                    pid_m, n_block, thread_id]
-            RstdPerCTA[pid_m, pid_n, thread_id] = T.rsqrt(
+                    row // BLOCK_M,
+                    n_block,
+                    row % BLOCK_M,
+                ]
+            rstd_shared[thread_id] = T.rsqrt(
                 scalar_sum[0] / N + 1e-6).astype(dtype)
         T.sync_threads()
 
         T.copy(FFNScale[pid_n * BLOCK_N], scale_local)
-        for i, j in T.Parallel(BLOCK_M, BLOCK_N):
-            normalized = (
-                rounded_local[i, j]
-                * RstdPerCTA[pid_m, pid_n, i]).astype(dtype)
-            xfs_transposed[j, i] = T.if_then_else(
-                pid_m * BLOCK_M + i < M,
-                (normalized * scale_local[j]).astype(dtype),
+        for i, j in T.Parallel(ROWS_PER_CTA, BLOCK_N):
+            row = pid_m * ROWS_PER_CTA + i
+            value = T.if_then_else(
+                row < M,
+                Residual[row, pid_n * BLOCK_N + j],
                 T.cast(0, dtype),
             )
+            normalized = (value * rstd_shared[i]).astype(dtype)
+            xfs_transposed[j, i] = (
+                normalized * scale_local[j]).astype(dtype)
         T.sync_threads()
         T.copy(
-            xfs_transposed[:, :BLOCK_M],
-            XFS[pid_n * BLOCK_N, pid_m * BLOCK_M],
+            xfs_transposed[:, :ROWS_PER_CTA],
+            XFS[pid_n * BLOCK_N, pid_m * ROWS_PER_CTA],
             disable_tma=True,
         )

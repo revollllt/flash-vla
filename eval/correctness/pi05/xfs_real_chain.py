@@ -22,7 +22,10 @@ from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.taskloop import (
     build_table,
 )
 from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang import wrappers
-from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels import adarms
+from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels import (
+    adarms,
+    xfs as xfs_kernels,
+)
 from .xfs_producer import out_proj_residual_rms_xfs_reference
 
 
@@ -107,45 +110,69 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--sets", type=int, default=3)
     parser.add_argument("--reps", type=int, default=30)
+    parser.add_argument("--task-table", choices=("gu", "full"), default="gu")
     args = parser.parse_args()
 
     gen = torch.Generator(device="cuda").manual_seed(47)
     cases = [_make_case(gen) for _ in range(args.sets)]
-    table = build_table("gu").to("cuda")
+    table = build_table(args.task_table).to("cuda")
     taskloop = FFNTaskloop(verbose=True)
 
-    # GU-only does not consume these DownResidual operands. Keep valid shared
-    # allocations because they remain part of the stable taskloop C ABI.
+    # Keep one set of valid DownResidual operands for both task-table modes;
+    # they remain part of the stable taskloop C ABI even in GU-only mode.
     legacy_factor = torch.empty((M_PAD,), dtype=torch.bfloat16, device="cuda")
-    down_weight = torch.empty((FF, D), dtype=torch.bfloat16, device="cuda")
-    down_gate = torch.empty((D,), dtype=torch.bfloat16, device="cuda")
+    down_weight = _rand(gen, FF, D)
+    down_gate = _rand(gen, D)
     residual_out = torch.empty((M_PAD, D), dtype=torch.bfloat16, device="cuda")
     counters = torch.empty((N_COUNTERS,), dtype=torch.int32, device="cuda")
     hidden_ready, down_ready = taskloop.readiness_counter_buffers(counters)
     square_partials = torch.empty(
         (4, 32, 16), dtype=torch.float32, device="cuda")
-    rstd_per_cta = torch.empty(
-        (4, 32, 16), dtype=torch.bfloat16, device="cuda")
 
     tilelang_gate = wrappers._compiled(
         adarms.tl_ada_scaled_gate, M=M, N=FF, K=D, **wrappers._DEC_GATE)
+    partial_producer = wrappers._compiled(
+        xfs_kernels.tl_out_proj_residual_partials,
+        M=M, N=D, K=ATTENTION_K, **wrappers._DEC_OUT_PROJ_PARTIALS)
+    partial_xfs = wrappers._compiled(
+        xfs_kernels.tl_rms_xfs_from_partials,
+        M=M, N=D, **wrappers._DEC_XFS_FROM_PARTIALS)
 
-    def legacy_producer(case) -> None:
+    def legacy_out_proj(case) -> None:
         case["x_xfs"].copy_(case["residual_seed"])
         wrappers.decoder_out_proj_residual(
             case["attention"], case["attention_weight"],
             case["attention_gate"], case["x_xfs"])
+
+    def legacy_xfs(case) -> None:
         wrappers.decoder_rms_xfs(
             case["x_xfs"], case["ffn_scale"], hidden_ready, down_ready,
-            case["xfs"])
+            case["xfs"], trigger_programmatic_launch=True)
+
+    def legacy_xfs_before_reset_fusion(case) -> None:
+        wrappers.decoder_rms_xfs(
+            case["x_xfs"], case["ffn_scale"], hidden_ready, down_ready,
+            case["xfs"], reset_readiness=False)
+
+    def out_proj_partials(case) -> None:
+        case["x_fused"].copy_(case["residual_seed"])
+        partial_producer(
+            case["attention"], case["attention_weight"],
+            case["attention_gate"], case["x_fused"],
+            hidden_ready, down_ready, square_partials)
+
+    def xfs_from_partials(case) -> None:
+        partial_xfs(
+            case["x_fused"], case["ffn_scale"], square_partials,
+            case["xfs_fused"])
+
+    def legacy_producer(case) -> None:
+        legacy_out_proj(case)
+        legacy_xfs(case)
 
     def fused_producer(case) -> None:
-        case["x_fused"].copy_(case["residual_seed"])
-        wrappers.decoder_out_proj_residual_rms_xfs(
-            case["attention"], case["attention_weight"],
-            case["attention_gate"], case["x_fused"], case["ffn_scale"],
-            hidden_ready, down_ready, square_partials, rstd_per_cta,
-            case["xfs_fused"])
+        out_proj_partials(case)
+        xfs_from_partials(case)
 
     def xfs_path(case) -> None:
         legacy_producer(case)
@@ -155,6 +182,29 @@ def main() -> None:
             case["gate_b"], case["up_b"], down_weight, down_gate,
             case["hidden_xfs"], residual_out, counters,
             zero_counters=False,
+            use_programmatic_dependency=True,
+        )
+
+    def standalone_reset_path(case) -> None:
+        legacy_out_proj(case)
+        legacy_xfs_before_reset_fusion(case)
+        taskloop.launch(
+            table, case["xfs"], legacy_factor, case["ffn_scale"],
+            case["packed_gate_up"], case["packed_gate_up"],
+            case["gate_b"], case["up_b"], down_weight, down_gate,
+            case["hidden_xfs"], residual_out, counters,
+            zero_counters=True,
+        )
+
+    def fused_xfs_path(case) -> None:
+        fused_producer(case)
+        taskloop.launch(
+            table, case["xfs_fused"], legacy_factor, case["ffn_scale"],
+            case["packed_gate_up"], case["packed_gate_up"],
+            case["gate_b"], case["up_b"], down_weight, down_gate,
+            case["hidden_xfs"], residual_out, counters,
+            zero_counters=False,
+            use_programmatic_dependency=True,
         )
 
     def baseline_path(case) -> None:
@@ -218,24 +268,66 @@ def main() -> None:
             raise SystemExit(f"persistent/TileLang hidden mismatch in set {index}")
 
     graph_xfs = _capture(cases, xfs_path)
+    graph_fused_xfs = _capture(cases, fused_xfs_path)
+    graph_standalone_reset = _capture(cases, standalone_reset_path)
     graph_base = _capture(cases, baseline_path)
     graph_legacy_producer = _capture(cases, legacy_producer)
     graph_fused_producer = _capture(cases, fused_producer)
+    split_graphs = {
+        "legacy_out_proj": _capture(cases, legacy_out_proj),
+        "legacy_xfs": _capture(cases, legacy_xfs),
+        "partial_producer": _capture(cases, out_proj_partials),
+        "partial_xfs": _capture(cases, xfs_from_partials),
+    }
+    standalone_reset_us = _time_graph(
+        graph_standalone_reset, len(cases), args.reps)
+    fused_cumulative_us = _time_graph(
+        graph_fused_xfs, len(cases), args.reps)
+    closing_standalone_reset_us = _time_graph(
+        graph_standalone_reset, len(cases), args.reps)
     xfs_us = _time_graph(graph_xfs, len(cases), args.reps)
+    fused_xfs_us = _time_graph(graph_fused_xfs, len(cases), args.reps)
+    closing_xfs_us = _time_graph(graph_xfs, len(cases), args.reps)
     base_us = _time_graph(graph_base, len(cases), args.reps)
     legacy_producer_us = _time_graph(
         graph_legacy_producer, len(cases), args.reps)
     fused_producer_us = _time_graph(
         graph_fused_producer, len(cases), args.reps)
+    split_us = {
+        name: _time_graph(graph, len(cases), args.reps)
+        for name, graph in split_graphs.items()
+    }
     print(
         f"[chain] sets={len(cases)} xfs_persistent_gu={xfs_us:.3f} us "
         f"factor_tilelang_gate={base_us:.3f} us delta={xfs_us - base_us:+.3f} us",
+        flush=True,
+    )
+    xfs_midpoint = (xfs_us + closing_xfs_us) / 2.0
+    print(
+        f"[chain-pdl] legacy={xfs_us:.3f} us "
+        f"fused={fused_xfs_us:.3f} us closing_legacy={closing_xfs_us:.3f} us "
+        f"midpoint_delta={fused_xfs_us - xfs_midpoint:+.3f} us",
+        flush=True,
+    )
+    reset_midpoint = (
+        standalone_reset_us + closing_standalone_reset_us) / 2.0
+    print(
+        f"[chain-cumulative] standalone_reset={standalone_reset_us:.3f} us "
+        f"fused={fused_cumulative_us:.3f} us "
+        f"closing_standalone_reset={closing_standalone_reset_us:.3f} us "
+        f"midpoint_gain={reset_midpoint - fused_cumulative_us:+.3f} us",
         flush=True,
     )
     print(
         f"[producer] legacy={legacy_producer_us:.3f} us "
         f"fused={fused_producer_us:.3f} us "
         f"delta={fused_producer_us - legacy_producer_us:+.3f} us",
+        flush=True,
+    )
+    print(
+        "[producer-split] "
+        + " ".join(f"{name}={value:.3f} us"
+                   for name, value in split_us.items()),
         flush=True,
     )
 
