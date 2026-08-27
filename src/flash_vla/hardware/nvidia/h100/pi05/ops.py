@@ -45,12 +45,37 @@ def op_table(fused: bool = True, backend: str = "tilelang",
                 f"backend {chosen!r} does not implement call site {op_name!r}; "
                 f"it provides {sorted(names)}")
 
+    ffn_names = (
+        "decoder_out_proj_residual",
+        "decoder_norm_gated_ffn",
+        "decoder_ffn_down_residual",
+    )
+    ffn_route = tuple(plan.get(name, backend) for name in ffn_names)
+    allowed_ffn_routes = {
+        ("tilelang", "tilelang", "tilelang"),
+        ("tilelang", "cuda", "cuda"),
+        ("cuda", "cuda", "cuda"),
+    }
+    if ffn_route not in allowed_ffn_routes:
+        raise ValueError(
+            "out-projection/norm-gated/down-residual must select an atomic "
+            f"FFN route, got {dict(zip(ffn_names, ffn_route))}")
+
     table = {}
-    backend_tables = {}
-    for op_name in _op_names(backend):
-        chosen = plan.get(op_name, backend)
+    assignments = {
+        op_name: plan.get(op_name, backend) for op_name in _op_names(backend)
+    }
+    selected_by_backend: dict[str, set[str]] = {}
+    for op_name, chosen in assignments.items():
+        selected_by_backend.setdefault(chosen, set()).add(op_name)
+    backend_tables = {
+        chosen: _build_backend_table(
+            chosen, fused=fused, selected_names=selected_names)
+        for chosen, selected_names in selected_by_backend.items()
+    }
+    for op_name, chosen in assignments.items():
         if chosen not in backend_tables:
-            backend_tables[chosen] = _build_backend_table(chosen, fused=fused)
+            raise AssertionError(f"missing backend table for {chosen}")
         chosen_table = backend_tables[chosen]
         if op_name in chosen_table:
             table[op_name] = chosen_table[op_name]

@@ -47,6 +47,11 @@ PLANS = {
         "decoder_norm_gated_ffn": "cuda",
         "decoder_ffn_down_residual": "cuda",
     },
+    "ffn-cuda-fused-producer": {
+        "decoder_out_proj_residual": "cuda",
+        "decoder_norm_gated_ffn": "cuda",
+        "decoder_ffn_down_residual": "cuda",
+    },
 }
 
 #: Analytic per-stage floors from PLAN.md §1.2, at 3 views / prompt 200 /
@@ -156,17 +161,32 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
         })
         reset_nodes = [name for name in kernel_names
                        if "reset_ffn_counters_kernel" in name]
+        legacy_producer_nodes = [
+            name for name in kernel_names
+            if ("tl_matmul_gated_res" in name
+                or "tl_rms_xfs_kmajor" in name)
+        ]
         report["decoder_graph_check"] = {
             "replays": 20,
             "bf16_exact": replay_exact,
             "kernel_count": len(kernel_names),
             "reset_nodes": reset_nodes,
+            "legacy_producer_nodes": legacy_producer_nodes,
         }
         if not replay_exact:
             raise RuntimeError("decoder graph changed output across reset replays")
         if reset_nodes:
             raise RuntimeError(
                 "production decoder graph contains standalone FFN counter reset")
+        fused_producer = plan is not None and all(
+            plan.get(name) == "cuda" for name in (
+                "decoder_out_proj_residual",
+                "decoder_norm_gated_ffn",
+                "decoder_ffn_down_residual",
+            ))
+        if fused_producer and legacy_producer_nodes:
+            raise RuntimeError(
+                "fused production graph contains legacy FFN producer nodes")
     for name, graph in (("vision", engine.vision_graph),
                         ("prefix", engine.prefix_graph),
                         ("decoder", engine.decoder_graph)):
