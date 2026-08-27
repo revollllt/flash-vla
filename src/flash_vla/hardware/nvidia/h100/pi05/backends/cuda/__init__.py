@@ -3,10 +3,11 @@
 from . import wrappers
 from .taskloop import FFNTaskloop, build_table
 
-ALL_WRAPPERS = dict(wrappers.ALL_WRAPPERS)
+WRAPPER_NAMES = wrappers.WRAPPER_NAMES
 FUSED_WRAPPERS = dict(wrappers.FUSED_WRAPPERS)
+make_wrappers = wrappers.make_wrappers
 
 __all__ = [
-    "ALL_WRAPPERS", "FUSED_WRAPPERS", "FFNTaskloop", "build_table",
-    "wrappers",
+    "WRAPPER_NAMES", "FUSED_WRAPPERS", "make_wrappers", "FFNTaskloop",
+    "build_table", "wrappers",
 ]

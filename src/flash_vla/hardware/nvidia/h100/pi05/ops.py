@@ -15,7 +15,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from .backends import BACKENDS, build_table as _build_table
+from .backends import (
+    BACKENDS,
+    backend_names as _backend_names,
+    build_backend_table as _build_backend_table,
+    build_table as _build_table,
+)
 
 
 def op_table(fused: bool = True, backend: str = "tilelang",
@@ -34,27 +39,27 @@ def op_table(fused: bool = True, backend: str = "tilelang",
         if chosen not in BACKENDS:
             raise KeyError(f"plan names unknown backend {chosen!r} for {op_name!r}; "
                            f"known: {sorted(BACKENDS)}")
-        module = BACKENDS[chosen]
-        if op_name not in module.ALL_WRAPPERS and op_name not in module.FUSED_WRAPPERS:
+        names = _backend_names(chosen)
+        if op_name not in names:
             raise KeyError(
                 f"backend {chosen!r} does not implement call site {op_name!r}; "
-                f"it provides {sorted(set(module.ALL_WRAPPERS) | set(module.FUSED_WRAPPERS))}")
+                f"it provides {sorted(names)}")
 
     table = {}
+    backend_tables = {}
     for op_name in _op_names(backend):
         chosen = plan.get(op_name, backend)
-        module = BACKENDS[chosen]
-        if op_name in module.FUSED_WRAPPERS and fused:
-            table[op_name] = module.FUSED_WRAPPERS[op_name]
-        elif op_name in module.ALL_WRAPPERS:
-            table[op_name] = module.ALL_WRAPPERS[op_name]
+        if chosen not in backend_tables:
+            backend_tables[chosen] = _build_backend_table(chosen, fused=fused)
+        chosen_table = backend_tables[chosen]
+        if op_name in chosen_table:
+            table[op_name] = chosen_table[op_name]
     return SimpleNamespace(**table)
 
 
 def _op_names(backend: str) -> list[str]:
     """Union of op names a backend can provide (unfused + fused)."""
-    module = BACKENDS[backend]
-    return sorted(set(module.ALL_WRAPPERS) | set(module.FUSED_WRAPPERS))
+    return sorted(_backend_names(backend))
 
 
 def op_names(fused: bool = True, backend: str = "tilelang") -> list[str]:
