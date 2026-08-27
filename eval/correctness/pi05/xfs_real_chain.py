@@ -61,9 +61,11 @@ def _make_case(gen: torch.Generator) -> dict[str, torch.Tensor]:
         "packed_gate_up": _pack_gate_up(gate_w, up_w),
         # Independent destinations keep the two paths comparable after capture.
         "x_xfs": torch.empty((M, D), dtype=torch.bfloat16, device="cuda"),
+        "x_fused": torch.empty((M, D), dtype=torch.bfloat16, device="cuda"),
         "x_base": torch.empty((M, D), dtype=torch.bfloat16, device="cuda"),
         "factor": torch.empty((M,), dtype=torch.bfloat16, device="cuda"),
         "xfs": torch.empty((D, M_PAD), dtype=torch.bfloat16, device="cuda"),
+        "xfs_fused": torch.empty((D, M_PAD), dtype=torch.bfloat16, device="cuda"),
         "hidden_xfs": torch.empty((M_PAD, FF), dtype=torch.bfloat16, device="cuda"),
         "hidden_base": torch.empty((M, FF), dtype=torch.bfloat16, device="cuda"),
     }
@@ -120,11 +122,15 @@ def main() -> None:
     residual_out = torch.empty((M_PAD, D), dtype=torch.bfloat16, device="cuda")
     counters = torch.empty((N_COUNTERS,), dtype=torch.int32, device="cuda")
     hidden_ready, down_ready = taskloop.readiness_counter_buffers(counters)
+    square_partials = torch.empty(
+        (4, 32, 16), dtype=torch.float32, device="cuda")
+    rstd_per_cta = torch.empty(
+        (4, 32, 16), dtype=torch.bfloat16, device="cuda")
 
     tilelang_gate = wrappers._compiled(
         adarms.tl_ada_scaled_gate, M=M, N=FF, K=D, **wrappers._DEC_GATE)
 
-    def xfs_path(case) -> None:
+    def legacy_producer(case) -> None:
         case["x_xfs"].copy_(case["residual_seed"])
         wrappers.decoder_out_proj_residual(
             case["attention"], case["attention_weight"],
@@ -132,6 +138,17 @@ def main() -> None:
         wrappers.decoder_rms_xfs(
             case["x_xfs"], case["ffn_scale"], hidden_ready, down_ready,
             case["xfs"])
+
+    def fused_producer(case) -> None:
+        case["x_fused"].copy_(case["residual_seed"])
+        wrappers.decoder_out_proj_residual_rms_xfs(
+            case["attention"], case["attention_weight"],
+            case["attention_gate"], case["x_fused"], case["ffn_scale"],
+            hidden_ready, down_ready, square_partials, rstd_per_cta,
+            case["xfs_fused"])
+
+    def xfs_path(case) -> None:
+        legacy_producer(case)
         taskloop.launch(
             table, case["xfs"], legacy_factor, case["ffn_scale"],
             case["packed_gate_up"], case["packed_gate_up"],
@@ -154,12 +171,18 @@ def main() -> None:
 
     # One real-chain execution supplies the semantic comparison before timing.
     for case in cases:
+        hidden_ready.fill_(7)
+        down_ready.fill_(9)
+        fused_producer(case)
         xfs_path(case)
         baseline_path(case)
     torch.cuda.synchronize()
 
     for index, case in enumerate(cases):
         residual_exact = torch.equal(case["x_xfs"], case["x_base"])
+        fused_residual_exact = torch.equal(case["x_fused"], case["x_xfs"])
+        fused_xfs_exact = torch.equal(case["xfs_fused"], case["xfs"])
+        fused_pad_nonzero = torch.count_nonzero(case["xfs_fused"][:, M:]).item()
         old_xfs = torch.zeros_like(case["xfs"])
         old_xfs[:, :M] = (
             ((case["x_base"] * case["factor"][:, None]).bfloat16()
@@ -178,24 +201,41 @@ def main() -> None:
         print(
             f"[chain] set={index} residual_exact={residual_exact} "
             f"producer_exact={producer_exact} pad_nonzero={padding_nonzero} "
+            f"fused_residual_exact={fused_residual_exact} "
+            f"fused_xfs_exact={fused_xfs_exact} "
+            f"fused_pad_nonzero={fused_pad_nonzero} "
             f"hidden_cos={hidden_cos:.7f} hidden_max_abs={hidden_max:.6g} "
             f"torch_x_cos={torch_x_cos:.7f} torch_x_max={torch_x_max:.6g} "
             f"torch_xfs_cos={torch_xfs_cos:.7f} "
             f"torch_xfs_max={torch_xfs_max:.6g}",
             flush=True,
         )
-        if not residual_exact or not producer_exact or padding_nonzero:
+        if (not residual_exact or not producer_exact or padding_nonzero
+                or not fused_residual_exact or not fused_xfs_exact
+                or fused_pad_nonzero):
             raise SystemExit(f"chain semantic mismatch in set {index}")
         if hidden_cos < 0.999:
             raise SystemExit(f"persistent/TileLang hidden mismatch in set {index}")
 
     graph_xfs = _capture(cases, xfs_path)
     graph_base = _capture(cases, baseline_path)
+    graph_legacy_producer = _capture(cases, legacy_producer)
+    graph_fused_producer = _capture(cases, fused_producer)
     xfs_us = _time_graph(graph_xfs, len(cases), args.reps)
     base_us = _time_graph(graph_base, len(cases), args.reps)
+    legacy_producer_us = _time_graph(
+        graph_legacy_producer, len(cases), args.reps)
+    fused_producer_us = _time_graph(
+        graph_fused_producer, len(cases), args.reps)
     print(
         f"[chain] sets={len(cases)} xfs_persistent_gu={xfs_us:.3f} us "
         f"factor_tilelang_gate={base_us:.3f} us delta={xfs_us - base_us:+.3f} us",
+        flush=True,
+    )
+    print(
+        f"[producer] legacy={legacy_producer_us:.3f} us "
+        f"fused={fused_producer_us:.3f} us "
+        f"delta={fused_producer_us - legacy_producer_us:+.3f} us",
         flush=True,
     )
 

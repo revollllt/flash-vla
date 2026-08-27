@@ -96,3 +96,101 @@ def tl_rms_xfs_kmajor(
             XFS[pid_k * OUTPUT_K, pid_m * BLOCK_M],
             disable_tma=True,
         )
+
+
+@kernel(warp_spec=False)
+def tl_out_proj_residual_rms_xfs(
+        A, W, AttentionGate, Residual, FFNScale,
+        HiddenReady, DownReady, SquarePartials, RstdPerCTA, XFS,
+        BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_STAGES: int,
+        THREADS: int, M_PAD: int):
+    """Fuse the fixed decoder out-projection, residual, RMS, and K-major XFS.
+
+    The 32x4 grid owns one M16/N32 output tile per CTA. Each CTA publishes one
+    FP32 row-square partial, then all CTAs join once. Only the first 16 threads
+    in each CTA reduce one row apiece, avoiding the fragment mapping that would
+    otherwise make every warp reload the same 2-KiB partial tile.
+    """
+    M, N, K = T.const("M, N, K")
+    dtype = T.bfloat16
+    accum_dtype = T.float32
+    A: T.Tensor((M, K), dtype)
+    W: T.Tensor((K, N), dtype)
+    AttentionGate: T.Tensor((N,), dtype)
+    Residual: T.Tensor((M, N), dtype)
+    FFNScale: T.Tensor((N,), dtype)
+    HiddenReady: T.Tensor((32,), "int32")
+    DownReady: T.Tensor((32,), "int32")
+    SquarePartials: T.Tensor((4, 32, 16), accum_dtype)
+    RstdPerCTA: T.Tensor((4, 32, 16), dtype)
+    XFS: T.Tensor((N, M_PAD), dtype)
+
+    with T.Kernel(T.ceildiv(N, BLOCK_N), T.ceildiv(M_PAD, BLOCK_M),
+                  threads=THREADS) as (pid_n, pid_m):
+        thread_id = T.get_thread_binding()
+        A_shared = T.alloc_shared((BLOCK_M, BLOCK_K), dtype)
+        W_shared = T.alloc_shared((BLOCK_K, BLOCK_N), dtype)
+        gate_local = T.alloc_fragment((BLOCK_N,), dtype)
+        scale_local = T.alloc_fragment((BLOCK_N,), dtype)
+        residual_local = T.alloc_fragment((BLOCK_M, BLOCK_N), dtype)
+        rounded_local = T.alloc_fragment((BLOCK_M, BLOCK_N), dtype)
+        accumulator = T.alloc_fragment((BLOCK_M, BLOCK_N), accum_dtype)
+        row_partial = T.alloc_fragment((BLOCK_M,), accum_dtype)
+        scalar_sum = T.alloc_fragment((1,), accum_dtype)
+        # Padding the token stride from 16 to 18 avoids the 8-way conflict of
+        # shared[j, i] under the common j-fast lane mapping.
+        xfs_transposed = T.alloc_shared((BLOCK_N, BLOCK_M + 2), dtype)
+
+        T.copy(AttentionGate[pid_n * BLOCK_N], gate_local)
+        T.clear(residual_local)
+        T.copy(
+            Residual[pid_m * BLOCK_M, pid_n * BLOCK_N], residual_local)
+        T.clear(accumulator)
+        for ko in T.Pipelined(T.ceildiv(K, BLOCK_K), num_stages=NUM_STAGES):
+            T.copy(A[pid_m * BLOCK_M, ko * BLOCK_K], A_shared)
+            T.copy(W[ko * BLOCK_K, pid_n * BLOCK_N], W_shared)
+            T.gemm(A_shared, W_shared, accumulator)
+
+        for i, j in T.Parallel(BLOCK_M, BLOCK_N):
+            rounded_local[i, j] = (
+                accumulator[i, j] * gate_local[j].astype(accum_dtype)
+                + residual_local[i, j].astype(accum_dtype)).astype(dtype)
+            value = rounded_local[i, j].astype(accum_dtype)
+            accumulator[i, j] = value * value
+        T.copy(
+            rounded_local,
+            Residual[pid_m * BLOCK_M, pid_n * BLOCK_N],
+        )
+        T.reduce_sum(accumulator, row_partial, dim=1)
+        T.copy(row_partial, SquarePartials[pid_m, pid_n, 0])
+        if pid_n == 0 and pid_m == 0:
+            for index in T.Parallel(32):
+                HiddenReady[index] = 0
+                DownReady[index] = 0
+        T.sync_grid()
+
+        if thread_id < BLOCK_M:
+            scalar_sum[0] = 0.0
+            for n_block in T.Serial(32):
+                scalar_sum[0] += SquarePartials[
+                    pid_m, n_block, thread_id]
+            RstdPerCTA[pid_m, pid_n, thread_id] = T.rsqrt(
+                scalar_sum[0] / N + 1e-6).astype(dtype)
+        T.sync_threads()
+
+        T.copy(FFNScale[pid_n * BLOCK_N], scale_local)
+        for i, j in T.Parallel(BLOCK_M, BLOCK_N):
+            normalized = (
+                rounded_local[i, j]
+                * RstdPerCTA[pid_m, pid_n, i]).astype(dtype)
+            xfs_transposed[j, i] = T.if_then_else(
+                pid_m * BLOCK_M + i < M,
+                (normalized * scale_local[j]).astype(dtype),
+                T.cast(0, dtype),
+            )
+        T.sync_threads()
+        T.copy(
+            xfs_transposed[:, :BLOCK_M],
+            XFS[pid_n * BLOCK_N, pid_m * BLOCK_M],
+            disable_tma=True,
+        )
