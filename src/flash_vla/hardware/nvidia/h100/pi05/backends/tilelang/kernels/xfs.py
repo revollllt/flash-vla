@@ -20,8 +20,10 @@ from .base import kernel
 
 @kernel(warp_spec=False)
 def tl_rms_xfs_kmajor(
-        X, Scale, XFS, BLOCK_M: int, BLOCK_K: int, OUTPUT_K: int,
-        THREADS: int, M_PAD: int, TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH: bool):
+        X, Scale, HiddenReady, DownReady, XFS,
+        BLOCK_M: int, BLOCK_K: int, OUTPUT_K: int,
+        THREADS: int, M_PAD: int, TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH: bool,
+        RESET_READINESS_COUNTERS: bool):
     """Compute row RMS and emit exact-rounding, zero-padded K-major XFS.
 
     Output-K CTAs intentionally recompute the small row RMS reduction.  For
@@ -34,11 +36,21 @@ def tl_rms_xfs_kmajor(
     accum_dtype = T.float32
     X: T.Tensor((M, K), dtype)
     Scale: T.Tensor((K,), dtype)
+    HiddenReady: T.Tensor((32,), "int32")
+    DownReady: T.Tensor((32,), "int32")
     XFS: T.Tensor((K, M_PAD), dtype)
 
     with T.Kernel(T.ceildiv(K, OUTPUT_K), T.ceildiv(M_PAD, BLOCK_M),
                   threads=THREADS) as (pid_k, pid_m):
         thread_id = T.get_thread_binding()
+        # The producer replaces the standalone one-block reset. Only CTA(0,0)
+        # touches the two contiguous arrays; its block barrier ensures all 64
+        # stores are issued before that CTA releases its PDL dependency.
+        if RESET_READINESS_COUNTERS and pid_k == 0 and pid_m == 0:
+            for index in T.Parallel(32):
+                HiddenReady[index] = 0
+                DownReady[index] = 0
+            T.sync_threads()
         # Every primary CTA releases its programmatic launch dependency as
         # soon as it is resident.  The consumer still performs the mandatory
         # dependency wait before its first XFS TMA, so this early signal only

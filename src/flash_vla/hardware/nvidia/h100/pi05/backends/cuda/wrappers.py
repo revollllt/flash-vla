@@ -100,10 +100,11 @@ def decoder_norm_gated_ffn(
             "decoder_norm_gated_ffn armed twice without down_residual")
     packed_gate_up = _packed(
         state, (gate_w, up_w), lambda: _pack_gate_up(gate_w, up_w))
-    # Reset precedes XFS so the producer remains the PDL direct predecessor.
-    state.kernel.reset_counters(state.counters)
+    hidden_ready, down_ready = state.kernel.readiness_counter_buffers(
+        state.counters)
     _tilelang.decoder_rms_xfs(
-        x, scale, state.xfs, trigger_programmatic_launch=True)
+        x, scale, hidden_ready, down_ready, state.xfs,
+        trigger_programmatic_launch=True)
     state.pending = (out.data_ptr(), scale, gate_b, up_b, packed_gate_up)
 
 
