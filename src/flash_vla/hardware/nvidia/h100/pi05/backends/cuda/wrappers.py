@@ -1,9 +1,9 @@
 """Pipeline call sites for the fixed-shape persistent Pi0.5 FFN.
 
-The two adjacent FFN calls preserve the pipeline signatures. The first resets
-readiness state, produces contiguous K-major XFS, and arms the persistent
-launch. The second consumes that state immediately. Weight packing is cached
-during warmup and is absent from CUDA graph replay.
+The Phase-1 route uses two adjacent CUDA calls. The Phase-2 route starts one
+call earlier and treats out-projection, norm/gated-FFN, and down-residual as an
+atomic three-call transaction. Weight packing is cached during warmup and is
+absent from CUDA graph replay.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ class _PendingOutProj:
     attention: torch.Tensor
     weight: torch.Tensor
     gate: torch.Tensor
-    residual_ptr: int
+    residual: torch.Tensor
     stream: int
 
 
@@ -146,9 +146,16 @@ def make_wrappers(
                 or tuple(gate.shape) != (_ffn.D,)
                 or tuple(out.shape) != (M, _ffn.D)):
             raise ValueError("invalid fixed-shape CUDA out-projection tensors")
+        tensors = (attention, weight, gate, out)
+        if any(tensor.dtype != torch.bfloat16 for tensor in tensors):
+            raise ValueError("CUDA out-projection tensors must be BF16")
+        if any(not tensor.is_contiguous() for tensor in tensors):
+            raise ValueError("CUDA out-projection tensors must be contiguous")
+        if any(tensor.device != out.device for tensor in tensors):
+            raise ValueError("CUDA out-projection tensors must share one device")
         runtime.pending_out_proj = _PendingOutProj(
             attention=attention, weight=weight, gate=gate,
-            residual_ptr=out.data_ptr(), stream=current_stream(out.device))
+            residual=out, stream=current_stream(out.device))
         return out
 
     def decoder_norm_gated_ffn(
@@ -168,7 +175,8 @@ def make_wrappers(
         stream = current_stream(x.device)
         if fuse_out_proj:
             out_proj = runtime.pending_out_proj
-            if (out_proj is None or out_proj.residual_ptr != x.data_ptr()
+            if (out_proj is None
+                    or out_proj.residual.data_ptr() != x.data_ptr()
                     or out_proj.stream != stream):
                 raise RuntimeError(
                     "fused CUDA norm_gated_ffn requires adjacent out projection "
@@ -199,17 +207,20 @@ def make_wrappers(
             raise RuntimeError(
                 "CUDA down_residual requires adjacent CUDA norm_gated_ffn "
                 "on the same stream")
-        runtime.pending = None
         packed_down = _packed(runtime, (weight,), lambda: _pack_down(weight))
         hidden_pad = _padded_base(x, (_ffn.M_PAD, _ffn.FF))
         out_pad = _padded_base(out, (_ffn.M_PAD, _ffn.D))
-        runtime.kernel.launch(
-            runtime.table, runtime.xfs, runtime.legacy_factor, pending.scale,
-            pending.packed_gate_up, pending.packed_gate_up,
-            pending.gate_bias, pending.up_bias, packed_down, gate,
-            hidden_pad, out_pad, runtime.counters,
-            zero_counters=False,
-            use_programmatic_dependency=pending.use_programmatic_dependency)
+        try:
+            runtime.kernel.launch(
+                runtime.table, runtime.xfs, runtime.legacy_factor,
+                pending.scale, pending.packed_gate_up,
+                pending.packed_gate_up, pending.gate_bias, pending.up_bias,
+                packed_down, gate, hidden_pad, out_pad, runtime.counters,
+                zero_counters=False,
+                use_programmatic_dependency=(
+                    pending.use_programmatic_dependency))
+        finally:
+            runtime.pending = None
         return out
 
     return {

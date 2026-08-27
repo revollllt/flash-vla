@@ -421,6 +421,10 @@ def decoder_out_proj_residual_rms_xfs(
         raise ValueError("fused out-projection/XFS data tensors must be BF16")
     if square_partials.dtype != torch.float32:
         raise ValueError("square_partials must be FP32 [4,32,16]")
+    if any(not tensor.is_contiguous() for tensor in (
+            *bf16_tensors, square_partials)):
+        raise ValueError(
+            "fused out-projection/XFS tensors must be contiguous")
     for name, counters in (("hidden_ready", hidden_ready),
                            ("down_ready", down_ready)):
         if (tuple(counters.shape) != (32,)
