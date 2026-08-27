@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 
 from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.taskloop import (
-    COUNTER_ARRIVE, FFNTaskloop, N_COUNTERS, build_table,
+    COUNTER_ARRIVE, DOWN_RESIDUAL_SPLIT, FFNTaskloop, N_COUNTERS, build_table,
 )
 from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang import wrappers
 from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels import adarms
@@ -120,14 +120,19 @@ def main() -> None:
     tilelang_gate = wrappers._compiled(
         adarms.tl_ada_scaled_gate, M=M, N=FF, K=D, **wrappers._DEC_GATE)
 
-    def persistent(case, mode: str, use_pdl: bool) -> None:
+    def persistent(
+            case, mode: str, use_pdl: bool,
+            reset_in_producer: bool = True) -> None:
         hidden = case["hidden_full"] if mode == "full" else case["hidden_gu"]
         output = case["out_full"] if mode == "full" else case["out_dummy"]
         counters = case["counters_full"] if mode == "full" else case["counters_gu"]
-        taskloop.reset_counters(counters)
+        hidden_ready, down_ready = taskloop.readiness_counter_buffers(counters)
+        if not reset_in_producer:
+            taskloop.reset_counters(counters)
         wrappers.decoder_rms_xfs(
-            case["x"], case["scale"], case["xfs"],
-            trigger_programmatic_launch=use_pdl)
+            case["x"], case["scale"], hidden_ready, down_ready, case["xfs"],
+            trigger_programmatic_launch=use_pdl,
+            reset_readiness=reset_in_producer)
         taskloop.launch(
             tables[mode], case["xfs"], case["factor"], case["scale"],
             case["packed_gate_up"], case["packed_gate_up"],
@@ -206,15 +211,77 @@ def main() -> None:
     base_prepare_graph = capture(cases, prepare_base)
     dr_prepare_graph = capture(cases, prepare_dr)
     full_graph = capture(cases, lambda case: persistent(case, "full", True))
+    reset_kernel_graph = capture(
+        cases, lambda case: persistent(
+            case, "full", True, reset_in_producer=False))
     baseline_graph = capture(cases, baseline)
     gu_graph = capture(cases, lambda case: persistent(case, "gu", True))
     dr_graph = capture(cases, dr_only)
 
+    # Poison both readiness arrays, then prove repeated producer -> consumer
+    # graph replay remains numerically identical rather than merely deadlock-free.
+    for case in cases:
+        hidden_ready, down_ready = taskloop.readiness_counter_buffers(
+            case["counters_full"])
+        hidden_ready.fill_(17)
+        down_ready.fill_(19)
+    for _ in range(20):
+        full_prepare_graph.replay()
+        full_graph.replay()
+    base_prepare_graph.replay()
+    baseline_graph.replay()
+    torch.cuda.synchronize()
+    for index, case in enumerate(cases):
+        hidden_cos, hidden_max = metrics(
+            case["hidden_base"], case["hidden_full"][:M])
+        output_cos, output_max = metrics(case["out_base"], case["out_full"][:M])
+        print(
+            f"[replay-parity] set={index} hidden_cos={hidden_cos:.7f} "
+            f"hidden_max={hidden_max:.6g} output_cos={output_cos:.7f} "
+            f"output_max={output_max:.6g}", flush=True,
+        )
+        if hidden_cos < 0.999 or output_cos < 0.999:
+            raise SystemExit(f"replay parity failure set={index}")
+        hidden_ready, down_ready = taskloop.readiness_counter_buffers(
+            case["counters_full"])
+        hidden_terminal = bool(torch.all(hidden_ready == COUNTER_ARRIVE).item())
+        down_terminal = bool(torch.all(
+            down_ready == DOWN_RESIDUAL_SPLIT - 1).item())
+        print(
+            f"[replay-counters] set={index} "
+            f"hidden={hidden_ready.min().item()}..{hidden_ready.max().item()} "
+            f"down={down_ready.min().item()}..{down_ready.max().item()}",
+            flush=True,
+        )
+        if not hidden_terminal or not down_terminal:
+            raise SystemExit(f"replay counter terminal-state failure set={index}")
+
+    # Profile the fused-pair test graph. The production decoder graph is checked
+    # separately by the targeted end-to-end profiler.
+    with torch.profiler.profile(
+            activities=[torch.profiler.ProfilerActivity.CUDA]) as trace:
+        full_prepare_graph.replay()
+        full_graph.replay()
+        torch.cuda.synchronize()
+    kernel_names = sorted({
+        event.key for event in trace.key_averages()
+        if (getattr(event, "device_time_total", 0) > 0
+            or getattr(event, "self_device_time_total", 0) > 0)
+    })
+    reset_nodes = [name for name in kernel_names
+                   if "reset_ffn_counters_kernel" in name]
+    print(f"[graph-kernels] count={len(kernel_names)} reset_nodes={reset_nodes}",
+          flush=True)
+    if reset_nodes:
+        raise SystemExit("production graph still contains standalone counter reset")
+
     measurements = {}
-    for order in (("full", "base", "gu", "dr"), ("dr", "gu", "base", "full")):
+    for order in (("full", "reset_kernel", "base", "gu", "dr"),
+                  ("dr", "gu", "base", "reset_kernel", "full")):
         for name in order:
             graph, prep = {
                 "full": (full_graph, full_prepare_graph),
+                "reset_kernel": (reset_kernel_graph, full_prepare_graph),
                 "base": (baseline_graph, base_prepare_graph),
                 "gu": (gu_graph, None),
                 "dr": (dr_graph, dr_prepare_graph),
@@ -223,13 +290,16 @@ def main() -> None:
                 time_graph(graph, len(cases), args.reps, prep))
         print("[full-bench] " + " ".join(
             f"{name}={measurements[name][-1]:.3f}us"
-            for name in ("full", "base", "gu", "dr")), flush=True)
+            for name in ("full", "reset_kernel", "base", "gu", "dr")),
+              flush=True)
 
     values = {name: statistics.median(samples)
               for name, samples in measurements.items()}
     print(
         f"[critical] full={values['full']:.3f}us base={values['base']:.3f}us "
         f"delta={values['full'] - values['base']:+.3f}us "
+        f"reset_kernel={values['reset_kernel']:.3f}us "
+        f"reset_gain={values['reset_kernel'] - values['full']:+.3f}us "
         f"gu_prefix={values['gu']:.3f}us dr_only={values['dr']:.3f}us "
         f"join_tail={values['full'] - values['gu']:.3f}us",
         flush=True,

@@ -41,6 +41,14 @@ from .metrics import require_cuda
 
 DEFAULT_PROMPT = "pick up the plate and put it in the sink"
 
+PLANS = {
+    "tilelang": None,
+    "ffn-cuda": {
+        "decoder_norm_gated_ffn": "cuda",
+        "decoder_ffn_down_residual": "cuda",
+    },
+}
+
 #: Analytic per-stage floors from PLAN.md §1.2, at 3 views / prompt 200 /
 #: chunk 50 / 10 steps on an H100 SXM5 at 989 TFLOP/s bf16 and 3.35 TB/s.
 FLOOR_MS = {"vision": 0.66, "prefix": 3.88, "decoder": 1.88}
@@ -82,7 +90,8 @@ def _time_wall(call, reps: int, warmup: int = 3) -> dict[str, float]:
 
 def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int = 18,
         reps: int = 30, seed: int = 0, prompt: str = DEFAULT_PROMPT,
-        tokenizer_path: str | None = None) -> dict:
+        tokenizer_path: str | None = None, plan: dict[str, str] | None = None,
+        profile_decoder_graph: bool = False) -> dict:
     """Build one engine, time the whole pass and each stage, and print a report."""
     require_cuda()
     torch.cuda.init()
@@ -100,7 +109,7 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
     from flash_vla.hardware.nvidia.h100.pi05 import Pi05Inference
 
     engine = Pi05Inference(checkpoint, tokenizer, num_views=num_views, chunk_size=chunk_size,
-                           steps=steps, layers=layers, device=device)
+                           steps=steps, layers=layers, device=device, plan=plan)
     del checkpoint
     torch.cuda.empty_cache()
     engine.set_task(prompt)
@@ -124,6 +133,40 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
         "host_tokenize": _time_wall(lambda: engine.inputs.build(state), reps, warmup=50),
         "stages": {},
     }
+    if profile_decoder_graph:
+        engine.buffers["diffusion_noise"].copy_(noise)
+        engine.decoder_graph.replay()
+        torch.cuda.synchronize()
+        replay_reference = engine.buffers["diffusion_noise"].clone()
+        for _ in range(20):
+            engine.buffers["diffusion_noise"].copy_(noise)
+            engine.decoder_graph.replay()
+        torch.cuda.synchronize()
+        replay_exact = torch.equal(
+            replay_reference, engine.buffers["diffusion_noise"])
+        with torch.profiler.profile(
+                activities=[torch.profiler.ProfilerActivity.CUDA]) as trace:
+            engine.buffers["diffusion_noise"].copy_(noise)
+            engine.decoder_graph.replay()
+            torch.cuda.synchronize()
+        kernel_names = sorted({
+            event.key for event in trace.key_averages()
+            if (getattr(event, "device_time_total", 0) > 0
+                or getattr(event, "self_device_time_total", 0) > 0)
+        })
+        reset_nodes = [name for name in kernel_names
+                       if "reset_ffn_counters_kernel" in name]
+        report["decoder_graph_check"] = {
+            "replays": 20,
+            "bf16_exact": replay_exact,
+            "kernel_count": len(kernel_names),
+            "reset_nodes": reset_nodes,
+        }
+        if not replay_exact:
+            raise RuntimeError("decoder graph changed output across reset replays")
+        if reset_nodes:
+            raise RuntimeError(
+                "production decoder graph contains standalone FFN counter reset")
     for name, graph in (("vision", engine.vision_graph),
                         ("prefix", engine.prefix_graph),
                         ("decoder", engine.decoder_graph)):
@@ -147,7 +190,15 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
     report["roofline_ms"] = round(floor, 2)
     report["above_roofline"] = round(report["forward_wall"]["median_ms"] / floor, 2)
     print(json.dumps(report, indent=2))
+    del engine
+    torch.cuda.empty_cache()
     return report
+
+
+def parse_plan(text: str) -> dict[str, str] | None:
+    if text in PLANS:
+        return PLANS[text]
+    return json.loads(text)
 
 
 def main(argv=None) -> int:
@@ -161,9 +212,32 @@ def main(argv=None) -> int:
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
     parser.add_argument("--tokenizer", default=None,
                         help="paligemma_tokenizer.model (default: $PALIGEMMA_TOKENIZER)")
+    parser.add_argument(
+        "--profile-decoder-graph", action="store_true",
+        help="check 20 exact production replays and list counter-reset nodes")
+    parser.add_argument(
+        "--plan", action="append", default=None,
+        help=f"call-site plan: one of {sorted(PLANS)} or JSON; repeat for A/B/A")
     args = parser.parse_args(argv)
-    run(args.num_views, args.chunk_size, args.steps, args.layers, args.reps, args.seed,
-        args.prompt, args.tokenizer)
+    plans = args.plan or ["tilelang"]
+    reports = []
+    for name in plans:
+        print(f"== plan {name}")
+        reports.append((name, run(
+            args.num_views, args.chunk_size, args.steps, args.layers,
+            args.reps, args.seed, args.prompt, args.tokenizer,
+            plan=parse_plan(name),
+            profile_decoder_graph=args.profile_decoder_graph)))
+    if len(reports) > 1:
+        reference = reports[0][1]["stages"]["decoder"]
+        print(f"== decoder stage vs first run ({plans[0]})")
+        for name, report in reports:
+            decoder = report["stages"]["decoder"]
+            print(
+                f"  {name:12s} median {decoder['median_ms']:8.3f} "
+                f"({decoder['median_ms'] - reference['median_ms']:+.3f}) "
+                f"min {decoder['min_ms']:8.3f} "
+                f"({decoder['min_ms'] - reference['min_ms']:+.3f})")
     return 0
 
 

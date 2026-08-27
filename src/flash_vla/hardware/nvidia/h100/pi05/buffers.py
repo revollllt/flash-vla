@@ -45,6 +45,9 @@ from flash_vla.models.pi05.spec import (
 #: query rows.
 MASK_NEG = -3.0e38
 
+#: One WGMMA M tile; CUDA FFN kernels recover the padded backing allocation.
+ROW_PAD = 64
+
 
 def rope_table(seq_len: int, offset: int, head_dim: int, device) -> torch.Tensor:
     """Interleaved (cos, sin) rotary table for positions [offset, offset + seq_len)."""
@@ -64,9 +67,16 @@ def allocate_static_buffers(num_views: int, chunk_size: int, device: str,
     image_tokens = num_views * VISION_TOKENS
     encoder_seq_len = image_tokens + prompt_len
     cache_len = encoder_seq_len + chunk_size
+    chunk_pad = -(-chunk_size // ROW_PAD) * ROW_PAD
 
     def buf(*shape, dtype=bf16):
         return torch.empty(shape, dtype=dtype, device=device)
+
+    def padded(*shape, dtype=bf16):
+        return torch.zeros(shape, dtype=dtype, device=device)
+
+    decoder_x = padded(chunk_pad, 1024)
+    decoder_hidden = padded(chunk_pad, 4096)
 
     buffers = {
         "observation_images_normalized": buf(num_views, 224, 224, 3),
@@ -99,7 +109,7 @@ def allocate_static_buffers(num_views: int, chunk_size: int, device: str,
         # Suffix. No state token, so the decoder sequence is the action chunk
         # alone -- Pi0's chunk + 1.
         "decoder_rope_weights": buf(chunk_size, HEAD_DIM),
-        "decoder_x": buf(chunk_size, 1024),
+        "decoder_x": decoder_x[:chunk_size],
         "decoder_norm_factor_buf": buf(chunk_size),
         # Direct input to the persistent FFN. K-major makes the padded token
         # axis a contiguous 128-byte TMA row; the producer overwrites all rows.
@@ -108,7 +118,7 @@ def allocate_static_buffers(num_views: int, chunk_size: int, device: str,
         # which keeps the (queries, keys) matrix in SRAM. Pi0 allocated one for
         # its unfused three-kernel reference path, which Pi0.5 does not carry.
         "decoder_q_buf": buf(chunk_size * DECODER_HEADS, HEAD_DIM),
-        "decoder_hidden": buf(chunk_size, 4096),
+        "decoder_hidden": decoder_hidden[:chunk_size],
     }
 
     # Anything the host rewrites every call still has to be valid during warmup,

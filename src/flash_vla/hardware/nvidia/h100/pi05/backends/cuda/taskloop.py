@@ -339,6 +339,16 @@ class FFNTaskloop:
         if rc != 0:
             raise RuntimeError(f"ffn_counters_reset_launch rc={rc}")
 
+    def readiness_counter_buffers(
+            self, hidden_ready: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return the two counter arrays reset by the upstream XFS producer."""
+        if (tuple(hidden_ready.shape) != (N_COUNTERS,)
+                or hidden_ready.dtype != torch.int32
+                or not hidden_ready.is_contiguous()):
+            raise ValueError("hidden readiness counters must be contiguous int32[32]")
+        self._ensure_down_residual_storage(hidden_ready.device)
+        return hidden_ready, self._down_residual_counters
+
     def launch(self, table, xfs_kmajor, F, S, packed_gate_up, packed_gate_up_unused,
                b1, b2, Wd, g_gate,
                hidden, out, counters, *, dbg=None,
@@ -347,10 +357,9 @@ class FFNTaskloop:
         """Launch the fixed persistent FFN schedule.
 
         ``use_programmatic_dependency`` requires the triggering XFS producer
-        to be the direct predecessor on the current stream.  In particular,
-        reset the readiness counters before that producer and pass
-        ``zero_counters=False`` here; otherwise the reset kernel becomes the
-        immediate predecessor and the XFS/FFN overlap is lost.
+        to be the direct predecessor on the current stream. Production passes
+        both readiness arrays to that producer and uses ``zero_counters=False``
+        here; the explicit reset entry point remains for diagnostics.
 
         ``dbg`` is an optional host-pinned ``(n_ctas, 4)`` int64 tensor.  On a
         watchdog trap the kernel writes ``{site, g, tid, 1}`` per stuck CTA.

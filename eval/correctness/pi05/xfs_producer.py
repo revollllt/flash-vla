@@ -85,6 +85,8 @@ def main() -> None:
     scale = (1.0 + torch.randn((K,), generator=gen, device="cuda") * 0.1).bfloat16()
     out = torch.empty((K, M_PAD), dtype=torch.bfloat16, device="cuda")
     factor = torch.empty((M,), dtype=torch.bfloat16, device="cuda")
+    hidden_ready = torch.empty((32,), dtype=torch.int32, device="cuda")
+    down_ready = torch.empty((32,), dtype=torch.int32, device="cuda")
 
     reference = rms_xfs_reference(x, scale)
     wrappers._rms_factor(x, factor)
@@ -94,18 +96,30 @@ def main() -> None:
                                 * scale[None, :]).bfloat16().T
     configs = (
         ("bm8_ok32", dict(BLOCK_M=8, BLOCK_K=256, OUTPUT_K=32,
-                          THREADS=128, M_PAD=M_PAD)),
+                          THREADS=128, M_PAD=M_PAD,
+                          TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
+                          RESET_READINESS_COUNTERS=True)),
         ("bm8_ok64", dict(BLOCK_M=8, BLOCK_K=256, OUTPUT_K=64,
-                          THREADS=128, M_PAD=M_PAD)),
+                          THREADS=128, M_PAD=M_PAD,
+                          TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
+                          RESET_READINESS_COUNTERS=True)),
         ("bm4_ok32", dict(BLOCK_M=4, BLOCK_K=256, OUTPUT_K=32,
-                          THREADS=128, M_PAD=M_PAD)),
+                          THREADS=128, M_PAD=M_PAD,
+                          TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
+                          RESET_READINESS_COUNTERS=True)),
         ("bm16_ok64", dict(BLOCK_M=16, BLOCK_K=256, OUTPUT_K=64,
-                           THREADS=128, M_PAD=M_PAD)),
+                           THREADS=128, M_PAD=M_PAD,
+                           TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
+                           RESET_READINESS_COUNTERS=True)),
     )
     for name, config in configs:
         producer = wrappers._compiled(tl_rms_xfs_kmajor, M=M, K=K, **config)
-        producer(x, scale, out)
+        hidden_ready.fill_(7)
+        down_ready.fill_(9)
+        producer(x, scale, hidden_ready, down_ready, out)
         torch.cuda.synchronize()
+        if hidden_ready.count_nonzero() or down_ready.count_nonzero():
+            raise SystemExit(f"{name}: readiness counters were not reset")
         exact = torch.equal(out, reference)
         max_abs = (out.float() - reference.float()).abs().max().item()
         max_abs_old_path = (
@@ -123,7 +137,8 @@ def main() -> None:
                 f"{name}: differs from factor path: max_abs={max_abs_old_path}")
         for launches in args.launches:
             producer_us = _median_graph_us(
-                lambda: producer(x, scale, out), launches, args.reps)
+                lambda: producer(x, scale, hidden_ready, down_ready, out),
+                launches, args.reps)
             print(f"[xfs] {name} launches={launches} producer={producer_us:.3f} us")
 
     for launches in args.launches:

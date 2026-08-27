@@ -118,6 +118,7 @@ def main() -> None:
     down_gate = torch.empty((K,), dtype=torch.bfloat16, device="cuda")
     residual_out = torch.empty((M_PAD, K), dtype=torch.bfloat16, device="cuda")
     counters = torch.empty((N_COUNTERS,), dtype=torch.int32, device="cuda")
+    hidden_ready, down_ready = taskloop.readiness_counter_buffers(counters)
 
     tilelang_gate = wrappers._compiled(
         adarms.tl_ada_scaled_gate, M=M, N=FF, K=K, **wrappers._DEC_GATE)
@@ -128,7 +129,8 @@ def main() -> None:
             case["attention"], case["attention_weight"],
             case["attention_gate"], case["x_xfs"])
         wrappers.decoder_rms_xfs(
-            case["x_xfs"], case["ffn_scale"], case["xfs"])
+            case["x_xfs"], case["ffn_scale"], hidden_ready, down_ready,
+            case["xfs"])
         taskloop.launch(
             table, case["xfs"], legacy_factor, case["ffn_scale"],
             case["packed_gate_up"], case["packed_gate_up"],

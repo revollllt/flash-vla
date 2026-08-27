@@ -331,6 +331,7 @@ _DEC_XFS = dict(
     THREADS=128,
     M_PAD=64,
     TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
+    RESET_READINESS_COUNTERS=True,
 )
 
 # NUM_SPLIT is a request, not the realized count -- `_num_splits` shrinks it.
@@ -355,7 +356,9 @@ def _rms_factor(x, out, cfg=_DEC_RMS):
     return out
 
 
-def decoder_rms_xfs(x, scale, out, *, trigger_programmatic_launch=False):
+def decoder_rms_xfs(
+        x, scale, hidden_ready, down_ready, out,
+        *, trigger_programmatic_launch=False, reset_readiness=True):
     """Write the next FFN's exact BF16 input as contiguous ``[1024,64]``.
 
     ``x`` is the BF16 ``decoder_x`` *after* ``decoder_out_proj_residual`` has
@@ -363,7 +366,7 @@ def decoder_rms_xfs(x, scale, out, *, trigger_programmatic_launch=False):
     persistent GatedProjection path; neither the row factor nor a row-major
     normalized activation is materialized.  When ``trigger_programmatic_launch``
     is true, the persistent consumer must be the direct successor on the same
-    stream; move readiness-counter resets before this call.
+    stream. The producer resets both readiness arrays before publishing XFS.
     """
     M, K = x.shape
     if (M != 50 or K != 1024 or tuple(scale.shape) != (1024,)
@@ -375,9 +378,17 @@ def decoder_rms_xfs(x, scale, out, *, trigger_programmatic_launch=False):
         raise ValueError("decoder_rms_xfs tensors must be BF16")
     if not x.is_contiguous() or not scale.is_contiguous() or not out.is_contiguous():
         raise ValueError("decoder_rms_xfs tensors must be contiguous")
+    for name, counters in (("hidden_ready", hidden_ready),
+                           ("down_ready", down_ready)):
+        if (tuple(counters.shape) != (32,)
+                or counters.dtype != torch.int32
+                or not counters.is_contiguous()):
+            raise ValueError(f"{name} must be contiguous int32[32]")
     config = dict(_DEC_XFS)
     config["TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH"] = trigger_programmatic_launch
-    _compiled(xfs_kernels.tl_rms_xfs_kmajor, M=M, K=K, **config)(x, scale, out)
+    config["RESET_READINESS_COUNTERS"] = reset_readiness
+    _compiled(xfs_kernels.tl_rms_xfs_kmajor, M=M, K=K, **config)(
+        x, scale, hidden_ready, down_ready, out)
     return out
 
 
