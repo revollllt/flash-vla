@@ -218,8 +218,33 @@ def main() -> None:
     gu_graph = capture(cases, lambda case: persistent(case, "gu", True))
     dr_graph = capture(cases, dr_only)
 
-    # Profile one production replay. This is the runtime proof that the
-    # standalone reset node is absent, rather than an inference from wrappers.
+    # Poison both readiness arrays, then prove repeated producer -> consumer
+    # graph replay remains numerically identical rather than merely deadlock-free.
+    for case in cases:
+        hidden_ready, down_ready = taskloop.readiness_counter_buffers(
+            case["counters_full"])
+        hidden_ready.fill_(17)
+        down_ready.fill_(19)
+    for _ in range(20):
+        full_prepare_graph.replay()
+        full_graph.replay()
+    base_prepare_graph.replay()
+    baseline_graph.replay()
+    torch.cuda.synchronize()
+    for index, case in enumerate(cases):
+        hidden_cos, hidden_max = metrics(
+            case["hidden_base"], case["hidden_full"][:M])
+        output_cos, output_max = metrics(case["out_base"], case["out_full"][:M])
+        print(
+            f"[replay-parity] set={index} hidden_cos={hidden_cos:.7f} "
+            f"hidden_max={hidden_max:.6g} output_cos={output_cos:.7f} "
+            f"output_max={output_max:.6g}", flush=True,
+        )
+        if hidden_cos < 0.999 or output_cos < 0.999:
+            raise SystemExit(f"replay parity failure set={index}")
+
+    # Profile the fused-pair test graph. The production decoder graph is checked
+    # separately by the targeted end-to-end profiler.
     with torch.profiler.profile(
             activities=[torch.profiler.ProfilerActivity.CUDA]) as trace:
         full_prepare_graph.replay()

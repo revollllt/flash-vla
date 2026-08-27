@@ -90,7 +90,8 @@ def _time_wall(call, reps: int, warmup: int = 3) -> dict[str, float]:
 
 def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int = 18,
         reps: int = 30, seed: int = 0, prompt: str = DEFAULT_PROMPT,
-        tokenizer_path: str | None = None, plan: dict[str, str] | None = None) -> dict:
+        tokenizer_path: str | None = None, plan: dict[str, str] | None = None,
+        profile_decoder_graph: bool = False) -> dict:
     """Build one engine, time the whole pass and each stage, and print a report."""
     require_cuda()
     torch.cuda.init()
@@ -132,6 +133,40 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
         "host_tokenize": _time_wall(lambda: engine.inputs.build(state), reps, warmup=50),
         "stages": {},
     }
+    if profile_decoder_graph:
+        engine.buffers["diffusion_noise"].copy_(noise)
+        engine.decoder_graph.replay()
+        torch.cuda.synchronize()
+        replay_reference = engine.buffers["diffusion_noise"].clone()
+        for _ in range(20):
+            engine.buffers["diffusion_noise"].copy_(noise)
+            engine.decoder_graph.replay()
+        torch.cuda.synchronize()
+        replay_exact = torch.equal(
+            replay_reference, engine.buffers["diffusion_noise"])
+        with torch.profiler.profile(
+                activities=[torch.profiler.ProfilerActivity.CUDA]) as trace:
+            engine.buffers["diffusion_noise"].copy_(noise)
+            engine.decoder_graph.replay()
+            torch.cuda.synchronize()
+        kernel_names = sorted({
+            event.key for event in trace.key_averages()
+            if (getattr(event, "device_time_total", 0) > 0
+                or getattr(event, "self_device_time_total", 0) > 0)
+        })
+        reset_nodes = [name for name in kernel_names
+                       if "reset_ffn_counters_kernel" in name]
+        report["decoder_graph_check"] = {
+            "replays": 20,
+            "bf16_exact": replay_exact,
+            "kernel_count": len(kernel_names),
+            "reset_nodes": reset_nodes,
+        }
+        if not replay_exact:
+            raise RuntimeError("decoder graph changed output across reset replays")
+        if reset_nodes:
+            raise RuntimeError(
+                "production decoder graph contains standalone FFN counter reset")
     for name, graph in (("vision", engine.vision_graph),
                         ("prefix", engine.prefix_graph),
                         ("decoder", engine.decoder_graph)):
@@ -178,6 +213,9 @@ def main(argv=None) -> int:
     parser.add_argument("--tokenizer", default=None,
                         help="paligemma_tokenizer.model (default: $PALIGEMMA_TOKENIZER)")
     parser.add_argument(
+        "--profile-decoder-graph", action="store_true",
+        help="check 20 exact production replays and list counter-reset nodes")
+    parser.add_argument(
         "--plan", action="append", default=None,
         help=f"call-site plan: one of {sorted(PLANS)} or JSON; repeat for A/B/A")
     args = parser.parse_args(argv)
@@ -188,7 +226,8 @@ def main(argv=None) -> int:
         reports.append((name, run(
             args.num_views, args.chunk_size, args.steps, args.layers,
             args.reps, args.seed, args.prompt, args.tokenizer,
-            plan=parse_plan(name))))
+            plan=parse_plan(name),
+            profile_decoder_graph=args.profile_decoder_graph)))
     if len(reports) > 1:
         reference = reports[0][1]["stages"]["decoder"]
         print(f"== decoder stage vs first run ({plans[0]})")

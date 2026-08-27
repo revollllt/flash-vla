@@ -366,7 +366,7 @@ def decoder_rms_xfs(
     persistent GatedProjection path; neither the row factor nor a row-major
     normalized activation is materialized.  When ``trigger_programmatic_launch``
     is true, the persistent consumer must be the direct successor on the same
-    stream; move readiness-counter resets before this call.
+    stream. The producer resets both readiness arrays before publishing XFS.
     """
     M, K = x.shape
     if (M != 50 or K != 1024 or tuple(scale.shape) != (1024,)
