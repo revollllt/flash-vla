@@ -23,9 +23,10 @@ from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.taskloop import (
 )
 from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang import wrappers
 from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels import adarms
+from .xfs_producer import out_proj_residual_rms_xfs_reference
 
 
-M, M_PAD, K, FF = 50, 64, 1024, 4096
+M, M_PAD, ATTENTION_K, D, FF = 50, 64, 2048, 1024, 4096
 
 
 def _rand(gen: torch.Generator, *shape: int) -> torch.Tensor:
@@ -34,35 +35,35 @@ def _rand(gen: torch.Generator, *shape: int) -> torch.Tensor:
 
 
 def _pack_gate_up(gate_w: torch.Tensor, up_w: torch.Tensor) -> torch.Tensor:
-    """[K,FF] pairs -> task-major [FF/32*K,64], matching persistent GU."""
+    """[D,FF] pairs -> task-major [FF/32*D,64], matching persistent GU."""
     def tiles(weight: torch.Tensor) -> torch.Tensor:
-        return (weight.reshape(K, FF // 32, 32).permute(1, 0, 2)
+        return (weight.reshape(D, FF // 32, 32).permute(1, 0, 2)
                 .contiguous().view(-1, 32))
 
     return torch.cat((tiles(gate_w), tiles(up_w)), dim=1).contiguous()
 
 
 def _make_case(gen: torch.Generator) -> dict[str, torch.Tensor]:
-    gate_w = _rand(gen, K, FF)
-    up_w = _rand(gen, K, FF)
+    gate_w = _rand(gen, D, FF)
+    up_w = _rand(gen, D, FF)
     return {
         # Real decoder_out_proj_residual inputs.
-        "attention": _rand(gen, M, K),
-        "attention_weight": _rand(gen, K, K),
-        "attention_gate": _rand(gen, K),
-        "residual_seed": _rand(gen, M, K),
+        "attention": _rand(gen, M, ATTENTION_K),
+        "attention_weight": _rand(gen, ATTENTION_K, D),
+        "attention_gate": _rand(gen, D),
+        "residual_seed": _rand(gen, M, D),
         # Next FFN's folded AdaRMS parameters and projections.
-        "ffn_scale": (1.0 + _rand(gen, K)).bfloat16(),
+        "ffn_scale": (1.0 + _rand(gen, D)).bfloat16(),
         "gate_w": gate_w,
         "up_w": up_w,
         "gate_b": _rand(gen, FF),
         "up_b": _rand(gen, FF),
         "packed_gate_up": _pack_gate_up(gate_w, up_w),
         # Independent destinations keep the two paths comparable after capture.
-        "x_xfs": torch.empty((M, K), dtype=torch.bfloat16, device="cuda"),
-        "x_base": torch.empty((M, K), dtype=torch.bfloat16, device="cuda"),
+        "x_xfs": torch.empty((M, D), dtype=torch.bfloat16, device="cuda"),
+        "x_base": torch.empty((M, D), dtype=torch.bfloat16, device="cuda"),
         "factor": torch.empty((M,), dtype=torch.bfloat16, device="cuda"),
-        "xfs": torch.empty((K, M_PAD), dtype=torch.bfloat16, device="cuda"),
+        "xfs": torch.empty((D, M_PAD), dtype=torch.bfloat16, device="cuda"),
         "hidden_xfs": torch.empty((M_PAD, FF), dtype=torch.bfloat16, device="cuda"),
         "hidden_base": torch.empty((M, FF), dtype=torch.bfloat16, device="cuda"),
     }
@@ -114,14 +115,14 @@ def main() -> None:
     # GU-only does not consume these DownResidual operands. Keep valid shared
     # allocations because they remain part of the stable taskloop C ABI.
     legacy_factor = torch.empty((M_PAD,), dtype=torch.bfloat16, device="cuda")
-    down_weight = torch.empty((FF, K), dtype=torch.bfloat16, device="cuda")
-    down_gate = torch.empty((K,), dtype=torch.bfloat16, device="cuda")
-    residual_out = torch.empty((M_PAD, K), dtype=torch.bfloat16, device="cuda")
+    down_weight = torch.empty((FF, D), dtype=torch.bfloat16, device="cuda")
+    down_gate = torch.empty((D,), dtype=torch.bfloat16, device="cuda")
+    residual_out = torch.empty((M_PAD, D), dtype=torch.bfloat16, device="cuda")
     counters = torch.empty((N_COUNTERS,), dtype=torch.int32, device="cuda")
     hidden_ready, down_ready = taskloop.readiness_counter_buffers(counters)
 
     tilelang_gate = wrappers._compiled(
-        adarms.tl_ada_scaled_gate, M=M, N=FF, K=K, **wrappers._DEC_GATE)
+        adarms.tl_ada_scaled_gate, M=M, N=FF, K=D, **wrappers._DEC_GATE)
 
     def xfs_path(case) -> None:
         case["x_xfs"].copy_(case["residual_seed"])
@@ -168,10 +169,19 @@ def main() -> None:
         padding_nonzero = torch.count_nonzero(case["xfs"][:, M:]).item()
         hidden_cos, hidden_max = _metrics(
             case["hidden_base"], case["hidden_xfs"][:M])
+        torch_x, torch_xfs = out_proj_residual_rms_xfs_reference(
+            case["attention"], case["attention_weight"],
+            case["attention_gate"], case["residual_seed"],
+            case["ffn_scale"])
+        torch_x_cos, torch_x_max = _metrics(torch_x, case["x_base"])
+        torch_xfs_cos, torch_xfs_max = _metrics(torch_xfs, case["xfs"])
         print(
             f"[chain] set={index} residual_exact={residual_exact} "
             f"producer_exact={producer_exact} pad_nonzero={padding_nonzero} "
-            f"hidden_cos={hidden_cos:.7f} hidden_max_abs={hidden_max:.6g}",
+            f"hidden_cos={hidden_cos:.7f} hidden_max_abs={hidden_max:.6g} "
+            f"torch_x_cos={torch_x_cos:.7f} torch_x_max={torch_x_max:.6g} "
+            f"torch_xfs_cos={torch_xfs_cos:.7f} "
+            f"torch_xfs_max={torch_xfs_max:.6g}",
             flush=True,
         )
         if not residual_exact or not producer_exact or padding_nonzero:

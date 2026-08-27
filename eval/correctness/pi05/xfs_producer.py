@@ -17,8 +17,38 @@ from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels.xfs import (
 )
 
 
-M, M_PAD, K = 50, 64, 1024
+M, M_PAD, K, ATTENTION_K = 50, 64, 1024, 2048
 EPS = 1e-6
+
+
+def out_proj_residual_rms_xfs_reference(
+        attention: torch.Tensor,
+        weight: torch.Tensor,
+        attention_gate: torch.Tensor,
+        residual: torch.Tensor,
+        ffn_scale: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Pure-Torch contract for the complete Phase-2 producer boundary.
+
+    The FP32 matmul is an algebra reference. TileLang WGMMA may accumulate in a
+    different reduction order, so exact candidate gating compares against the
+    existing TileLang out-projection at the BF16 ``x`` boundary.
+    """
+    expected = (
+        ("attention", attention, (M, ATTENTION_K)),
+        ("weight", weight, (ATTENTION_K, K)),
+        ("attention_gate", attention_gate, (K,)),
+        ("residual", residual, (M, K)),
+        ("ffn_scale", ffn_scale, (K,)),
+    )
+    for name, tensor, shape in expected:
+        if tensor.dtype != torch.bfloat16 or tuple(tensor.shape) != shape:
+            raise ValueError(f"{name} must be BF16 {list(shape)}")
+        if not tensor.is_contiguous():
+            raise ValueError(f"{name} must be contiguous")
+    projected = attention.float() @ weight.float()
+    return residual_rms_xfs_reference(
+        residual, projected, attention_gate, ffn_scale)
 
 
 def residual_rms_xfs_reference(
