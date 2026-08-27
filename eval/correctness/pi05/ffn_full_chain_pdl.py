@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 
 from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.taskloop import (
-    COUNTER_ARRIVE, FFNTaskloop, N_COUNTERS, build_table,
+    COUNTER_ARRIVE, DOWN_RESIDUAL_SPLIT, FFNTaskloop, N_COUNTERS, build_table,
 )
 from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang import wrappers
 from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels import adarms
@@ -242,6 +242,19 @@ def main() -> None:
         )
         if hidden_cos < 0.999 or output_cos < 0.999:
             raise SystemExit(f"replay parity failure set={index}")
+        hidden_ready, down_ready = taskloop.readiness_counter_buffers(
+            case["counters_full"])
+        hidden_terminal = bool(torch.all(hidden_ready == COUNTER_ARRIVE).item())
+        down_terminal = bool(torch.all(
+            down_ready == DOWN_RESIDUAL_SPLIT - 1).item())
+        print(
+            f"[replay-counters] set={index} "
+            f"hidden={hidden_ready.min().item()}..{hidden_ready.max().item()} "
+            f"down={down_ready.min().item()}..{down_ready.max().item()}",
+            flush=True,
+        )
+        if not hidden_terminal or not down_terminal:
+            raise SystemExit(f"replay counter terminal-state failure set={index}")
 
     # Profile the fused-pair test graph. The production decoder graph is checked
     # separately by the targeted end-to-end profiler.
