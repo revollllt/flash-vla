@@ -176,6 +176,7 @@ def tl_rms_xfs_from_partials(
         thread_id = T.get_thread_binding()
         scalar_sum = T.alloc_fragment((1,), accum_dtype)
         scale_local = T.alloc_fragment((BLOCK_N,), dtype)
+        residual_tile = T.alloc_fragment((ROWS_PER_CTA, BLOCK_N), dtype)
         rstd_shared = T.alloc_shared((ROWS_PER_CTA,), dtype)
         # The padded row stride avoids shared-bank conflicts during transpose.
         xfs_transposed = T.alloc_shared((BLOCK_N, ROWS_PER_CTA + 2), dtype)
@@ -183,6 +184,16 @@ def tl_rms_xfs_from_partials(
         if TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH and thread_id == 0:
             T.evaluate(T.call_extern(
                 "void", "cudaTriggerProgrammaticLaunchCompletion"))
+
+        # Issue the L2-hot residual and scale loads before the dependent row
+        # reduction. Other warps can make progress while the first half-warp
+        # walks the exact 32-add chain.
+        T.clear(residual_tile)
+        T.copy(
+            Residual[pid_m * ROWS_PER_CTA, pid_n * BLOCK_N],
+            residual_tile,
+        )
+        T.copy(FFNScale[pid_n * BLOCK_N], scale_local)
 
         if thread_id < ROWS_PER_CTA:
             row = pid_m * ROWS_PER_CTA + thread_id
@@ -197,14 +208,8 @@ def tl_rms_xfs_from_partials(
                 scalar_sum[0] / N + 1e-6).astype(dtype)
         T.sync_threads()
 
-        T.copy(FFNScale[pid_n * BLOCK_N], scale_local)
         for i, j in T.Parallel(ROWS_PER_CTA, BLOCK_N):
-            row = pid_m * ROWS_PER_CTA + i
-            value = T.if_then_else(
-                row < M,
-                Residual[row, pid_n * BLOCK_N + j],
-                T.cast(0, dtype),
-            )
+            value = residual_tile[i, j]
             normalized = (value * rstd_shared[i]).astype(dtype)
             xfs_transposed[j, i] = (
                 normalized * scale_local[j]).astype(dtype)
