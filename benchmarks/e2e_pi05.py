@@ -168,7 +168,8 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
         ]
         fused_producer_nodes = [
             name for name in kernel_names
-            if ("tl_out_proj_residual_partials" in name
+            if ("tl_out_proj_residual_rms_xfs" in name
+                or "tl_out_proj_residual_partials" in name
                 or "tl_rms_xfs_from_partials" in name)
         ]
         report["decoder_graph_check"] = {

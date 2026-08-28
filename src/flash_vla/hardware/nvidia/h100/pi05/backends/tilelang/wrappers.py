@@ -411,7 +411,7 @@ def decoder_rms_xfs(
 def decoder_out_proj_residual_rms_xfs(
         attention, weight, attention_gate, residual, ffn_scale,
         hidden_ready, down_ready, square_partials, xfs):
-    """Produce exact BF16 residual/partials, then contiguous K-major XFS."""
+    """Cooperatively produce the exact residual and contiguous K-major XFS."""
     if (tuple(attention.shape) != (50, 2048)
             or tuple(weight.shape) != (2048, 1024)
             or tuple(attention_gate.shape) != (1024,)
@@ -439,17 +439,11 @@ def decoder_out_proj_residual_rms_xfs(
                 or not counters.is_contiguous()):
             raise ValueError(f"{name} must be contiguous int32[32]")
     _compiled(
-        xfs_kernels.tl_out_proj_residual_partials,
+        xfs_kernels.tl_out_proj_residual_rms_xfs,
         M=50, N=1024, K=2048, **_DEC_OUT_PROJ_PARTIALS,
     )(
-        attention, weight, attention_gate, residual,
-        hidden_ready, down_ready, square_partials,
-    )
-    _compiled(
-        xfs_kernels.tl_rms_xfs_from_partials,
-        M=50, N=1024, **_DEC_XFS_FROM_PARTIALS,
-    )(
-        residual, ffn_scale, square_partials, xfs,
+        attention, weight, attention_gate, residual, ffn_scale,
+        hidden_ready, down_ready, square_partials, xfs,
     )
     return residual, xfs
 
