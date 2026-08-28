@@ -1,9 +1,9 @@
 """Pipeline call sites for the fixed-shape persistent Pi0.5 FFN.
 
-The two adjacent FFN calls preserve the pipeline signatures. The first resets
-readiness state, produces contiguous K-major XFS, and arms the persistent
-launch. The second consumes that state immediately. Weight packing is cached
-during warmup and is absent from CUDA graph replay.
+The Phase-1 route uses two adjacent CUDA calls. The Phase-2 route starts one
+call earlier and treats out-projection, norm/gated-FFN, and down-residual as an
+atomic three-call transaction. Weight packing is cached during warmup and is
+absent from CUDA graph replay.
 """
 
 from __future__ import annotations
@@ -34,14 +34,28 @@ class _FFNState:
             (_ffn.N_COUNTERS,), dtype=torch.int32, device=device)
         self.legacy_factor = torch.empty(
             (M,), dtype=torch.bfloat16, device=device)
+        self.square_partials = torch.empty(
+            (4, 32, 16), dtype=torch.float32, device=device)
         self.packed: dict[tuple[int, ...], tuple[tuple[torch.Tensor, ...],
                                                  torch.Tensor]] = {}
+        self.pending_out_proj: _PendingOutProj | None = None
         self.pending: _PendingFFN | None = None
+
+
+@dataclass(frozen=True)
+class _PendingOutProj:
+    attention: torch.Tensor
+    weight: torch.Tensor
+    gate: torch.Tensor
+    residual: torch.Tensor
+    stream: int
 
 
 @dataclass(frozen=True)
 class _PendingFFN:
     hidden_ptr: int
+    stream: int
+    use_programmatic_dependency: bool
     scale: torch.Tensor
     gate_bias: torch.Tensor
     up_bias: torch.Tensor
@@ -90,14 +104,18 @@ def _packed(state: _FFNState, sources: tuple[torch.Tensor, ...], pack):
 
 
 WRAPPER_NAMES = frozenset({
+    "decoder_out_proj_residual",
     "decoder_norm_gated_ffn",
     "decoder_ffn_down_residual",
 })
 FUSED_WRAPPERS: dict = {}
 
 
-def make_wrappers() -> dict[str, object]:
+def make_wrappers(
+        selected_names: set[str] | None = None) -> dict[str, object]:
     """Create one FFN runtime whose lifetime follows its owning op table."""
+    selected = set(WRAPPER_NAMES if selected_names is None else selected_names)
+    fuse_out_proj = "decoder_out_proj_residual" in selected
     state: _FFNState | None = None
 
     def state_for(device: torch.device) -> _FFNState:
@@ -108,6 +126,35 @@ def make_wrappers() -> dict[str, object]:
             raise ValueError(
                 f"one CUDA FFN op table cannot span {state.device} and {device}")
         return state
+
+    def current_stream(device: torch.device) -> int:
+        return torch.cuda.current_stream(device).cuda_stream
+
+    def decoder_out_proj_residual(attention, weight, gate, out):
+        """Defer out projection to the adjacent residual/partial producer."""
+        runtime = state_for(out.device)
+        if not fuse_out_proj:
+            raise RuntimeError(
+                "CUDA out_proj_residual requires the fused three-op route")
+        if runtime.pending_out_proj is not None or runtime.pending is not None:
+            raise RuntimeError(
+                "decoder_out_proj_residual started with unfinished FFN state")
+        if (tuple(attention.shape) != (M, 2048)
+                or tuple(weight.shape) != (2048, _ffn.D)
+                or tuple(gate.shape) != (_ffn.D,)
+                or tuple(out.shape) != (M, _ffn.D)):
+            raise ValueError("invalid fixed-shape CUDA out-projection tensors")
+        tensors = (attention, weight, gate, out)
+        if any(tensor.dtype != torch.bfloat16 for tensor in tensors):
+            raise ValueError("CUDA out-projection tensors must be BF16")
+        if any(not tensor.is_contiguous() for tensor in tensors):
+            raise ValueError("CUDA out-projection tensors must be contiguous")
+        if any(tensor.device != out.device for tensor in tensors):
+            raise ValueError("CUDA out-projection tensors must share one device")
+        runtime.pending_out_proj = _PendingOutProj(
+            attention=attention, weight=weight, gate=gate,
+            residual=out, stream=current_stream(out.device))
+        return out
 
     def decoder_norm_gated_ffn(
             x, scale, gate_w, up_w, gate_b, up_b, out, norm_factor):
@@ -123,33 +170,59 @@ def make_wrappers() -> dict[str, object]:
             runtime, (gate_w, up_w), lambda: _pack_gate_up(gate_w, up_w))
         hidden_ready, down_ready = runtime.kernel.readiness_counter_buffers(
             runtime.counters)
-        _tilelang.decoder_rms_xfs(
-            x, scale, hidden_ready, down_ready, runtime.xfs,
-            trigger_programmatic_launch=True)
+        stream = current_stream(x.device)
+        if fuse_out_proj:
+            out_proj = runtime.pending_out_proj
+            if (out_proj is None
+                    or out_proj.residual.data_ptr() != x.data_ptr()
+                    or out_proj.stream != stream):
+                raise RuntimeError(
+                    "fused CUDA norm_gated_ffn requires adjacent out projection "
+                    "on the same residual and stream")
+            _tilelang.decoder_out_proj_residual_rms_xfs(
+                out_proj.attention, out_proj.weight, out_proj.gate, x, scale,
+                hidden_ready, down_ready, runtime.square_partials,
+                runtime.xfs)
+            runtime.pending_out_proj = None
+        else:
+            if runtime.pending_out_proj is not None:
+                raise RuntimeError("unexpected deferred out-projection state")
+            _tilelang.decoder_rms_xfs(
+                x, scale, hidden_ready, down_ready, runtime.xfs,
+                trigger_programmatic_launch=True)
         runtime.pending = _PendingFFN(
-            hidden_ptr=out.data_ptr(), scale=scale, gate_bias=gate_b,
+            hidden_ptr=out.data_ptr(), stream=stream,
+            use_programmatic_dependency=True,
+            scale=scale, gate_bias=gate_b,
             up_bias=up_b, packed_gate_up=packed_gate_up)
 
     def decoder_ffn_down_residual(x, weight, gate, out):
         """Launch the persistent FFN armed by norm/gated-FFN."""
         runtime = state_for(x.device)
         pending = runtime.pending
-        if pending is None or pending.hidden_ptr != x.data_ptr():
+        if (pending is None or pending.hidden_ptr != x.data_ptr()
+                or pending.stream != current_stream(x.device)):
             raise RuntimeError(
-                "CUDA down_residual requires adjacent CUDA norm_gated_ffn")
-        runtime.pending = None
+                "CUDA down_residual requires adjacent CUDA norm_gated_ffn "
+                "on the same stream")
         packed_down = _packed(runtime, (weight,), lambda: _pack_down(weight))
         hidden_pad = _padded_base(x, (_ffn.M_PAD, _ffn.FF))
         out_pad = _padded_base(out, (_ffn.M_PAD, _ffn.D))
-        runtime.kernel.launch(
-            runtime.table, runtime.xfs, runtime.legacy_factor, pending.scale,
-            pending.packed_gate_up, pending.packed_gate_up,
-            pending.gate_bias, pending.up_bias, packed_down, gate,
-            hidden_pad, out_pad, runtime.counters,
-            zero_counters=False, use_programmatic_dependency=True)
+        try:
+            runtime.kernel.launch(
+                runtime.table, runtime.xfs, runtime.legacy_factor,
+                pending.scale, pending.packed_gate_up,
+                pending.packed_gate_up, pending.gate_bias, pending.up_bias,
+                packed_down, gate, hidden_pad, out_pad, runtime.counters,
+                zero_counters=False,
+                use_programmatic_dependency=(
+                    pending.use_programmatic_dependency))
+        finally:
+            runtime.pending = None
         return out
 
     return {
+        "decoder_out_proj_residual": decoder_out_proj_residual,
         "decoder_norm_gated_ffn": decoder_norm_gated_ffn,
         "decoder_ffn_down_residual": decoder_ffn_down_residual,
     }

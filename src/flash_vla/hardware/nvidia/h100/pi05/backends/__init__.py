@@ -12,9 +12,10 @@ Contract for a stateless backend module:
     ALL_WRAPPERS   dict[str, Callable]   unfused call sites
     FUSED_WRAPPERS dict[str, Callable]   fused overlays (may be empty)
 
-A stateful backend instead exposes ``WRAPPER_NAMES`` and ``make_wrappers()``.
-The factory is called once per operation table so scratch and packed weights
-follow the owning engine's lifetime.
+A stateful backend instead exposes ``WRAPPER_NAMES`` and
+``make_wrappers(selected_names=...)``. The factory is called once per operation
+table so its route-specific state, scratch, and packed weights follow the
+owning engine's lifetime.
 """
 
 from __future__ import annotations
@@ -48,11 +49,14 @@ def backend_names(backend: str) -> set[str]:
     return set(unfused) | set(module.FUSED_WRAPPERS)
 
 
-def build_backend_table(backend: str, fused: bool = True) -> dict:
+def build_backend_table(
+        backend: str, fused: bool = True,
+        selected_names: set[str] | None = None) -> dict:
     """Instantiate one backend table, including engine-owned runtime state."""
     module = BACKENDS[backend]
     factory = getattr(module, "make_wrappers", None)
-    table = factory() if factory is not None else dict(module.ALL_WRAPPERS)
+    table = (factory(selected_names=selected_names)
+             if factory is not None else dict(module.ALL_WRAPPERS))
     if fused:
         table.update(module.FUSED_WRAPPERS)
     return table
