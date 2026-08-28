@@ -104,7 +104,12 @@ def tl_out_proj_residual_partials(
         HiddenReady, DownReady, SquarePartials,
         BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_STAGES: int,
         THREADS: int, M_PAD: int):
-    """Write the gated residual and its exact FP32 row-square partials."""
+    """Baseline-only split A: write residual and exact FP32 square partials.
+
+    Production uses ``tl_out_proj_residual_rms_xfs`` so the partials and XFS
+    tail share one cooperative launch. Keep this kernel for isolated/split
+    comparisons only.
+    """
     M, N, K = T.const("M, N, K")
     dtype = T.bfloat16
     accum_dtype = T.float32
@@ -162,7 +167,7 @@ def tl_out_proj_residual_rms_xfs(
         HiddenReady, DownReady, SquarePartials, XFS,
         BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_STAGES: int,
         THREADS: int, M_PAD: int):
-    """Cooperatively compose the current exact partial producer and XFS tail."""
+    """Production cooperative residual, exact RMS partials, and XFS producer."""
     M, N, K = T.const("M, N, K")
     dtype = T.bfloat16
     accum_dtype = T.float32
@@ -269,7 +274,11 @@ def tl_rms_xfs_from_partials(
         BLOCK_M: int, BLOCK_N: int, ROWS_PER_CTA: int,
         THREADS: int, M_PAD: int,
         TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH: bool):
-    """Reduce exact out-projection partials and emit contiguous K-major XFS."""
+    """Baseline-only split B: reduce partials and emit contiguous K-major XFS.
+
+    Production performs this tail after the grid sync inside
+    ``tl_out_proj_residual_rms_xfs``. Keep this kernel for split baselines.
+    """
     M, N = T.const("M, N")
     dtype = T.bfloat16
     accum_dtype = T.float32

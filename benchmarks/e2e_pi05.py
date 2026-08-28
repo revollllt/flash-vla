@@ -166,10 +166,13 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
             if ("_matmul_gated_res" in name
                 or "tl_rms_xfs_kmajor" in name)
         ]
-        fused_producer_nodes = [
+        cooperative_producer_nodes = [
             name for name in kernel_names
-            if ("tl_out_proj_residual_rms_xfs" in name
-                or "tl_out_proj_residual_partials" in name
+            if "tl_out_proj_residual_rms_xfs" in name
+        ]
+        split_producer_nodes = [
+            name for name in kernel_names
+            if ("tl_out_proj_residual_partials" in name
                 or "tl_rms_xfs_from_partials" in name)
         ]
         report["decoder_graph_check"] = {
@@ -178,7 +181,8 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
             "kernel_count": len(kernel_names),
             "reset_nodes": reset_nodes,
             "legacy_producer_nodes": legacy_producer_nodes,
-            "fused_producer_nodes": fused_producer_nodes,
+            "cooperative_producer_nodes": cooperative_producer_nodes,
+            "split_producer_nodes": split_producer_nodes,
         }
         if not replay_exact:
             raise RuntimeError("decoder graph changed output across reset replays")
@@ -194,9 +198,14 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
         if fused_producer and legacy_producer_nodes:
             raise RuntimeError(
                 "fused production graph contains legacy FFN producer nodes")
-        if fused_producer and not fused_producer_nodes:
+        if fused_producer and len(cooperative_producer_nodes) != 1:
             raise RuntimeError(
-                "fused production graph is missing the partial/XFS producers")
+                "fused production graph must contain exactly one cooperative "
+                f"producer name, got {cooperative_producer_nodes}")
+        if fused_producer and split_producer_nodes:
+            raise RuntimeError(
+                "fused production graph contains split producer nodes: "
+                f"{split_producer_nodes}")
     for name, graph in (("vision", engine.vision_graph),
                         ("prefix", engine.prefix_graph),
                         ("decoder", engine.decoder_graph)):
