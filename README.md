@@ -32,13 +32,17 @@ the first deployment, with RTX 5090 / RTX 4090 targets planned.
 ## Install
 
 ```
-pip install -e .
+uv venv --python 3.12
+uv pip install -r requirements.txt
+uv pip install -e .
 ```
 
-Torch is intentionally unpinned so the CUDA build can match your driver; TileLang
-is pinned to 0.1.11, which the kernels depend on for specific lowering behaviour
-(see *Constraints that bite*). Developed against torch 2.11.0+cu130 on an
-H100 SXM5 with driver 610.43.02.
+`requirements.txt` pins the environment the numbers below were measured in;
+`pip install -e .` alone leaves torch unpinned so the CUDA build can match your
+driver. TileLang is pinned to 0.1.11, which the kernels depend on for specific
+lowering behaviour (see *Constraints that bite*).
+
+Measured on an H100 SXM5, driver 610.43.02, python 3.12, torch 2.13.0.
 
 ## Use
 

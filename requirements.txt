@@ -1,0 +1,12 @@
+torch==2.13.0
+tilelang==0.1.11
+# Pinned with tilelang: 0.1.13 dlopens libtvm_runtime.so at import time and dies
+# on a libstdc++ symbol RHEL8 does not export.
+apache-tvm-ffi==0.1.11
+numpy==2.5.2
+sentencepiece==0.2.2
+safetensors==0.8.0
+# 13.3 requires nvidia-cuda-cupti ~=13.3; torch 2.13 ships 13.0.
+cupti-python==13.0.1
+pytest==9.1.1
+pyyaml==6.0.3

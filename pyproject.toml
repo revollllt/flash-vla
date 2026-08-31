@@ -17,19 +17,14 @@ classifiers = [
     "Environment :: GPU :: NVIDIA CUDA",
 ]
 
-# TileLang is pinned: the kernels depend on documented lowering behaviour of this
-# release (fragment layouts, the pipelined-body inlining rule, the combine-tile
-# limit in FlashDecoding). Torch is deliberately unpinned so the CUDA build can be
-# chosen to match the driver; developed against 2.11.0+cu130.
 dependencies = [
     "tilelang==0.1.11",
+    "apache-tvm-ffi==0.1.11",
     "torch>=2.4",
 ]
 
 [project.optional-dependencies]
-bench = []
-# Pi0.5 puts the state in the prompt, so its prompt path needs a tokenizer.
-pi05 = ["sentencepiece", "numpy"]
+pi05 = ["sentencepiece", "numpy", "safetensors"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

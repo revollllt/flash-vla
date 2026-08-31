@@ -14,3 +14,13 @@ venv/
 *.nsys-rep
 artifacts/
 logs/
+
+# profiler capture artifacts (reports are regenerated from the raw traces)
+profiles/
+*.sqlite
+
+# scratch prompt notes
+instruction.md
+
+# external checkout, not a submodule of this project
+third_party/sglang/
