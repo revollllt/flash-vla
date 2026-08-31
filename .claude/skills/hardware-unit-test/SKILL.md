@@ -208,8 +208,6 @@ be re-tested rather than assumed.
 All optional — nothing here imports them, and the skill is complete without any
 of them installed.
 
-- **`tile-dataflow`** — Phase 0 *is* this skill. Run these probes, cite the tags
-  in the spec's `toolchain` block, and every floor traces to a measurement.
 - **`benchmark-kernel`** — measures *a kernel*. This skill measures *the
   machine*. Use its harness inside a probe (the probes prefer its CUPTI timer
   and say so when they fall back to CUDA events).

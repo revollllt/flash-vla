@@ -4,9 +4,6 @@ Before modifying a component, read the skill that defines its contract. This
 is intentionally a small project-specific adaptation of SGLang's component
 gate: add a row only when a stable boundary and a maintained skill exist.
 
-- **Tile kernels, tiling, stages, warp roles, barriers, or instruction shape**
-  -> [`tile-dataflow`](../skills/tile-dataflow/SKILL.md) and the matching
-  backend reference.
 - **Per-kernel latency, benchmark harnesses, or timing claims**
   -> [`benchmark-kernel`](../skills/benchmark-kernel/SKILL.md).
 - **Machine constants, hardware microbenchmarks, or the denominator under a

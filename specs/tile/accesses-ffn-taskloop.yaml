@@ -1,6 +1,6 @@
 # L4 accesses for specs/tile/ffn_taskloop.md -- every gmem/smem touch in one
 # GU steady-state stage + both epilogues + the counter protocol.
-# python3 .claude/skills/tile-dataflow/scripts/tv_check.py <this file> --markdown
+# python3 .claude/skills-archived/tile-dataflow/scripts/tv_check.py <this file> --markdown
 accesses:
   - id: A_s / W1_s / W2_s / S_s fill
     unit: tma
