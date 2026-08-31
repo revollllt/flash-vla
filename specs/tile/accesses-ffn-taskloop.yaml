@@ -1,0 +1,78 @@
+# L4 accesses for specs/tile/ffn_taskloop.md -- every gmem/smem touch in one
+# GU steady-state stage + both epilogues + the counter protocol.
+# python3 .claude/skills/tile-dataflow/scripts/tv_check.py <this file> --markdown
+accesses:
+  - id: A_s / W1_s / W2_s / S_s fill
+    unit: tma
+
+  - id: smem A/W reads by wgmma
+    unit: wgmma-desc
+
+  - id: a_scale A_s read+write (in place)
+    space: smem
+    op: ld.shared.b128 + st.shared.b128
+    dtype: bf16
+    threads: 128
+    buffer: {kind: tile, rows: 64, cols: 128, swizzle: 128}
+    tv: {atom: linear, rows: 64, cols: 128, vals: 8, vec: 8}
+
+  - id: a_scale S_s read
+    space: smem
+    op: ld.shared.b128
+    dtype: bf16
+    threads: 128
+    buffer: {kind: layout, shape: [128], stride: [1]}
+    tv: {expr: "coord = (((tid + vid * 128) * 8 + elem) % 128,)", vals: 8, vec: 8}
+
+  - id: gu_c_store (hidden, row stride FF=4096)
+    space: gmem
+    op: st.global.b32
+    dtype: bf16
+    threads: 128
+    buffer: {kind: layout, shape: [64, 32], stride: [4096, 1]}
+    tv: {atom: wgmma_acc, n: 32, vec: 2, project: both}
+    expect: {sectors: 8, ideal: 4}   # deliberate: direct-RF bf16 store, 2x over-fetch
+                                     # on ~1 MB of traffic vs 25 MB weights; smem
+                                     # staging not worth it. Named in checks.vectorisation.
+
+  - id: dr_r_load (x_res, row stride D=1024)
+    space: gmem
+    op: ld.global.b32
+    dtype: bf16
+    threads: 128
+    buffer: {kind: layout, shape: [64, 32], stride: [1024, 1]}
+    tv: {atom: wgmma_acc, n: 32, vec: 2, project: both}
+    expect: {sectors: 8, ideal: 4}   # same named exception as gu_c_store
+
+  - id: dr_c_store (out, row stride D=1024)
+    space: gmem
+    op: st.global.b32
+    dtype: bf16
+    threads: 128
+    buffer: {kind: layout, shape: [64, 32], stride: [1024, 1]}
+    tv: {atom: wgmma_acc, n: 32, vec: 2, project: both}
+    expect: {sectors: 8, ideal: 4}   # same named exception as gu_c_store
+
+  - id: g_load (per-N gate vector)
+    space: gmem
+    op: ld.global.b16
+    dtype: bf16
+    threads: 128
+    buffer: {kind: layout, shape: [32], stride: [1]}
+    tv: {atom: wgmma_acc, n: 32, vec: 1, project: col}
+
+  - id: counter release (red.global.add, one elected lane per GU task)
+    space: gmem
+    op: red.global.add.u32
+    dtype: f32
+    threads: 1
+    buffer: {kind: layout, shape: [32], stride: [1]}
+    tv: {expr: "coord = (0,)", vals: 1, vec: 1}
+
+  - id: counter acquire (ld.global.acquire poll, one elected producer lane)
+    space: gmem
+    op: ld.acquire.gpu.global.u32
+    dtype: f32
+    threads: 1
+    buffer: {kind: layout, shape: [32], stride: [1]}
+    tv: {expr: "coord = (0,)", vals: 1, vec: 1}

@@ -18,17 +18,17 @@ authority for exact layouts and ABI fields.
 
 The H100 unit tests establish the following constraints:
 
-- `MMA-RATE`: BF16 `m64n32k16` is about 24.7 cycles/instruction, versus a
+- `wgmma.issue.wg.ss`: BF16 `m64n32k16` is about 24.7 cycles/instruction, versus a
   15.3-cycle architectural ideal; `m64n64k16` is about 33.1 cycles versus
   30.7 ideal. Therefore pairing gate/up at N=64 is the preferred compute
   shape, subject to register and occupancy checks.
-- `TMA-ISSUE`: the corrected single producer-warp interval is about 248 ns per
+- `tma.issue.warp`: the corrected single producer-warp interval is about 248 ns per
   transaction. A stage ring must cover the measured round trip; depth 4 is the
   default starting point.
-- `TMA-CEIL`: large cold-DRAM transfers reach about 3.09 TB/s with sufficient
+- `tma.bw.dev.dram`: large cold-DRAM transfers reach about 3.09 TB/s with sufficient
   in-flight bytes. Short kernels should use `max(issue_time, bytes/bandwidth)`
   as the lower bound instead of a datasheet peak.
-- `LAUNCH-RAMP` and barrier/counter probes are treated as fixed terms. They
+- `launch.lat.dev.ramp` and barrier/counter probes are treated as fixed terms. They
   cannot be amortized away by adding more CTAs to a single fixed-size request.
 
 ## Phased work

@@ -25,6 +25,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
+from pathlib import Path
 
 import torch
 from torch.profiler import ProfilerActivity, profile as torch_profile
@@ -87,14 +90,25 @@ def wave_report(chunk: int, keys: int) -> list[dict]:
     return rows
 
 
-def _profile_graph(graph, label: str, top: int) -> list[dict]:
+def _profile_graph(graph, label: str, top: int, trace_dir: str | Path | None = None) -> list[dict]:
     """Replay once under the profiler; return per-kernel self-device-time in us."""
+    if trace_dir:
+        trace_dir = Path(trace_dir)
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        trace_path = trace_dir / f"{re.sub(r'[^a-zA-Z0-9_.-]+', '_', label)}.json"
+    else:
+        trace_path = None
     for _ in range(3):
         graph.replay()
     torch.cuda.synchronize()
-    with torch_profile(activities=[ProfilerActivity.CUDA]) as prof:
+    activities = [ProfilerActivity.CUDA]
+    if trace_path:
+        activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
+    with torch_profile(activities=activities) as prof:
         graph.replay()
         torch.cuda.synchronize()
+    if trace_path:
+        prof.export_chrome_trace(str(trace_path))
 
     events = [e for e in prof.key_averages() if e.self_device_time_total > 0]
     events.sort(key=lambda e: -e.self_device_time_total)
@@ -113,8 +127,10 @@ def _profile_graph(graph, label: str, top: int) -> list[dict]:
 
 def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int = 18,
         top: int = 14, seed: int = 0, prompt: str = DEFAULT_PROMPT,
-        tokenizer_path: str | None = None) -> dict:
+        tokenizer_path: str | None = None, trace_dir: str | Path | None = None,
+        plan: dict[str, str] | None = None) -> dict:
     """Profile each stage and print both views."""
+    trace_dir = trace_dir or os.environ.get("GPU_PROFILE_OUTPUT_DIR")
     require_cuda()
     torch.cuda.init()
     device = "cuda"
@@ -131,7 +147,7 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
     from flash_vla.hardware.nvidia.h100.pi05 import Pi05Inference
 
     engine = Pi05Inference(checkpoint, tokenizer, num_views=num_views, chunk_size=chunk_size,
-                           steps=steps, layers=layers, device=device)
+                           steps=steps, layers=layers, device=device, plan=plan)
     del checkpoint
     torch.cuda.empty_cache()
     engine.set_task(prompt)
@@ -141,11 +157,12 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
     keys = engine.encoder_seq_len + chunk_size
     report = {"device": torch.cuda.get_device_name(0), "sm_count": SM_COUNT,
               "config": {"chunk": chunk_size, "steps": steps, "layers": layers,
-                         "decoder_keys": keys},
-              "stages": {}, "waves": wave_report(chunk_size, keys)}
+                         "decoder_keys": keys, "plan": engine.plan},
+              "stages": {}, "waves": wave_report(chunk_size, keys),
+              "trace_dir": str(trace_dir) if trace_dir else None}
     for name, graph in (("vision", engine.vision_graph), ("prefix", engine.prefix_graph),
                         ("decoder", engine.decoder_graph)):
-        rows, total = _profile_graph(graph, name, top)
+        rows, total = _profile_graph(graph, name, top, trace_dir=trace_dir)
         report["stages"][name] = {"total_us": total, "kernels": rows}
 
     print(json.dumps(report, indent=2))
@@ -162,9 +179,15 @@ def main(argv=None) -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
     parser.add_argument("--tokenizer", default=None)
+    parser.add_argument("--trace-dir", default=None,
+                        help="export stage Chrome traces here; defaults to GPU_PROFILE_OUTPUT_DIR")
+    parser.add_argument("--plan", default=None,
+                        help="call-site plan, a name from e2e_pi05.PLANS or a JSON object")
     args = parser.parse_args(argv)
+    from .e2e_pi05 import parse_plan
     run(args.num_views, args.chunk_size, args.steps, args.layers, args.top, args.seed,
-        args.prompt, args.tokenizer)
+        args.prompt, args.tokenizer, trace_dir=args.trace_dir,
+        plan=parse_plan(args.plan) if args.plan else None)
     return 0
 
 

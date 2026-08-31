@@ -14,6 +14,9 @@ attributed.
 from __future__ import annotations
 
 import argparse
+import os
+import re
+from pathlib import Path
 
 import torch
 from torch.profiler import ProfilerActivity, profile as torch_profile
@@ -33,14 +36,25 @@ def is_copy(name: str) -> bool:
             or ("elementwise" in lowered and "copy" in lowered))
 
 
-def _profile_replay(graph, top: int, label: str):
+def _profile_replay(graph, top: int, label: str, trace_dir: str | Path | None = None):
     """Replay once under the profiler; print and return per-kernel self-device-time in us."""
+    if trace_dir:
+        trace_dir = Path(trace_dir)
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        trace_path = trace_dir / f"{re.sub(r'[^a-zA-Z0-9_.-]+', '_', label)}.json"
+    else:
+        trace_path = None
     for _ in range(3):
         graph.replay()
     torch.cuda.synchronize()
-    with torch_profile(activities=[ProfilerActivity.CUDA]) as prof:
+    activities = [ProfilerActivity.CUDA]
+    if trace_path:
+        activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
+    with torch_profile(activities=activities) as prof:
         graph.replay()
         torch.cuda.synchronize()
+    if trace_path:
+        prof.export_chrome_trace(str(trace_path))
 
     events = [e for e in prof.key_averages() if e.self_device_time_total > 0]
     total = sum(e.self_device_time_total for e in events)
@@ -79,8 +93,9 @@ def _full_graph(fused: bool, num_views, chunk_size, prompt_len, steps, layers):
 
 def run(stage: str = "decoder", fused: bool = True, compare: bool = False, num_views: int = 3,
         prompt_len: int = 0, chunk_size: int = 50, steps: int = 10, layers: int = 18,
-        top: int = 16) -> dict:
+        top: int = 16, trace_dir: str | Path | None = None) -> dict:
     """Profile one or both configurations of `stage` and print the breakdown."""
+    trace_dir = trace_dir or os.environ.get("GPU_PROFILE_OUTPUT_DIR")
     require_cuda()
     torch.cuda.init()
     configs = [False, True] if compare else [fused]
@@ -97,7 +112,7 @@ def run(stage: str = "decoder", fused: bool = True, compare: bool = False, num_v
         else:
             graph, engine = _full_graph(use_fused, num_views, chunk_size, prompt_len, steps, layers)
             keep_alive.append(engine)
-        per_config[use_fused] = _profile_replay(graph, top, label)
+        per_config[use_fused] = _profile_replay(graph, top, label, trace_dir=trace_dir)
 
     if compare:
         unfused, fused_times = per_config[False][0], per_config[True][0]
@@ -126,9 +141,12 @@ def main(argv=None) -> int:
     p.add_argument("--steps", type=int, default=10)
     p.add_argument("--layers", type=int, default=18)
     p.add_argument("--top", type=int, default=16)
+    p.add_argument("--trace-dir", default=None,
+                   help="export a Chrome trace here; defaults to GPU_PROFILE_OUTPUT_DIR")
     a = p.parse_args(argv)
     run(stage=a.stage, fused=not a.unfused, compare=a.compare, num_views=a.num_views,
-        prompt_len=a.prompt_len, chunk_size=a.chunk_size, steps=a.steps, layers=a.layers, top=a.top)
+        prompt_len=a.prompt_len, chunk_size=a.chunk_size, steps=a.steps, layers=a.layers, top=a.top,
+        trace_dir=a.trace_dir)
     return 0
 
 

@@ -17,11 +17,13 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from . import cuda as _cuda
 from . import tilelang as _tilelang
 
 # name -> module exposing ALL_WRAPPERS / FUSED_WRAPPERS. A new backend registers here.
 BACKENDS = {
     "tilelang": _tilelang,
+    "cuda": _cuda,
 }
 
 # Default fused plan: every op the TileLang backend provides a fused overlay
