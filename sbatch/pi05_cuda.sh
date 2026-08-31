@@ -14,15 +14,14 @@ set -euo pipefail
 
 source "${SLURM_SUBMIT_DIR:-$PWD}/sbatch/_common.sh"
 
-# One interpreter for this target: the cuteDSL venv, torch 2.11.0+cu130 with
-# tilelang 0.1.11. `_common.sh` already defaults to it and honours a caller
-# override, so nothing is reassigned here -- an assignment after the source
-# would be a no-op anyway, which is exactly the bug this comment replaces.
-# `sentencepiece` was added to that venv on 2026-08-20 for Pi0.5 tokenization.
+# One interpreter for this target, resolved by `_common.sh` from
+# `requirements.txt`. It honours a caller override, so nothing is reassigned
+# here -- an assignment after the source would be a no-op anyway, which is
+# exactly the bug this comment replaces.
 #
-# Every number in specs/tile/pi05-decoder-fused-cuda.md must come from this
-# build. Mixing builds makes a kernel look faster or slower than its baseline
-# for reasons that have nothing to do with the kernel.
+# Every number reported under specs/tile/ must come from one build. Mixing
+# builds makes a kernel look faster or slower than its baseline for reasons
+# that have nothing to do with the kernel.
 export CUTLASS_DIR="${CUTLASS_DIR:-/data/user/jzou521/codes/cuda/cutlass}"
 # Pi0.5 tokenizes on the host, so anything touching the full pass needs the real
 # PaliGemma tokenizer. Kernel-level parity runs do not, which is why a missing
