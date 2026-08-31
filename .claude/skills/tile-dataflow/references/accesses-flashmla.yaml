@@ -1,4 +1,4 @@
-# L4 accesses for example-flashmla.md.
+# L4 accesses for specs/reference/flashmla.md. Also a tv_check known-answer fixture.
 #
 #     python3 ../scripts/tv_check.py accesses-flashmla.yaml --markdown
 #

@@ -4,7 +4,7 @@ A synthetic scaled FP8 GEMM, written out at L1–L4 so the notation and the
 level split have a concrete instance. SKILL.md's notation and "L4 is computed"
 sections point here; read it when writing a nest for the first time, or when a
 level boundary feels ambiguous. For real reverse-engineered kernels see
-`example-deepgemm.md` (producer/consumer) and `example-flashmla.md` (cooperating
+`specs/reference/deepgemm.md` (producer/consumer) and `specs/reference/flashmla.md` (cooperating
 math groups).
 
 ## Write the form the hardware computes
@@ -136,7 +136,7 @@ access's thread-value map. Write those two down and the rest is arithmetic over
 The failure prose invites is specific. `128 B swizzle atom, aligned -> 0-way`
 is a *conclusion*: it cannot be rechecked, cannot be regenerated when L2 changes
 a tile extent, and cannot be wrong out loud. Both worked examples marked nearly
-every conflict count `[I]`, and `example-deepgemm.md` had to open an
+every conflict count `[I]`, and the DeepGEMM spec had to open an
 `open_questions.bank_ways` entry because nobody could settle one by hand. They
 are all `[D]` now. So:
 

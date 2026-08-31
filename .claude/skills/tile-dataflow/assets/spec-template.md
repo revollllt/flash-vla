@@ -16,7 +16,7 @@ toolchain:
   compiler: TODO                # nvcc / gcc / library versions that the numbers were taken with
   harness: TODO                 # and it must be the one the kernel is ACCEPTED under
   clocks: TODO                  # pinned, or the noise floor if not -- decides what counts as a difference
-  measured:                     # Phase 0a; see references/example-phase0.md
+  measured:                     # cite hardware-unit-test tags + job ids, never restate numbers
     launch_floor: TODO          # empty kernel vs grid size -- the per-launch grid ramp
     bandwidth_fit: TODO         # t_us = a + MB/b, with the range it was fitted over
     bandwidth_vs_ctas: TODO     # smallest grid that reaches bandwidth

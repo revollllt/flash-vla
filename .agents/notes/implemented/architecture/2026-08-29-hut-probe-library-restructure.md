@@ -1,6 +1,6 @@
 # Agent Note: Restructure the hardware-unit-test probes into a shared device library with one uniform ABI
 
-Status: proposed
+Status: implemented
 
 ## Problem
 

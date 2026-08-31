@@ -44,8 +44,8 @@ remaining interview into confirmation.
 datasheet?** If it exists, ask for the four numbers (launch floor, the
 `a + MB/b` fit, the CTA-count knee, the best-known implementation on this shape).
 If it does not, say that every target in the spec will be provisional until it
-does — see `example-phase0.md`. This is the question that, unasked, produced a
-spec whose targets sat below their own floor.
+does — the `hardware-unit-test` skill is where those numbers live. This is the
+question that, unasked, produced a spec whose targets sat below their own floor.
 
 ## Universal: per-section questions
 

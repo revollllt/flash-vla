@@ -58,7 +58,7 @@ COUNTER_ARRIVE = 4
 # Split-K on DownResidual's FF contraction -- must match
 # DOWN_RESIDUAL_SPLIT in the kernel. Chosen
 # from the measured copy floor: txns_per_warp = K_per_CTA / BK and each costs
-# 248 ns [hardware-unit-test TMA-ISSUE], so S=4 takes DownResidual's 64 stages to 16
+# 248 ns [hardware-unit-test tma.issue.warp], so S=4 takes DownResidual's 64 stages to 16
 # (17.28 -> 4.32 us) and reaches the 2.78 us DRAM wall once BK is 128. S=4 also
 # happens to fit the existing two-slot table exactly: 32 tiles x 4 splits = 128
 # sub-tasks on the same 128 workers that already own a GatedUp tile.

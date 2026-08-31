@@ -1,4 +1,4 @@
-# L4 accesses for example-deepgemm.md.
+# L4 accesses for specs/reference/deepgemm.md. Also a tv_check known-answer fixture.
 #
 # Every number in that spec's PER-THREAD ACCESS table is computed from this file:
 #

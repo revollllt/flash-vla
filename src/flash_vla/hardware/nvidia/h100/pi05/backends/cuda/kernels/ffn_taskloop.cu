@@ -66,7 +66,7 @@ constexpr int GATED_UP_WGMMA_WAIT = 1;
 constexpr int DOWN_RESIDUAL_WEIGHT_DEPTH = 4;              // DownResidual weight ring, dep-free
 constexpr int DOWN_RESIDUAL_ACTIVATION_DEPTH = 4;          // DownResidual activation ring, counter-gated
 // Split-K on DownResidual's FF contraction. The copy column is `txns_per_warp x 248 ns`
-// [hardware-unit-test TMA-ISSUE], and txns_per_warp = K_per_CTA / BK -- so
+// [hardware-unit-test tma.issue.warp], and txns_per_warp = K_per_CTA / BK -- so
 // splitting K is one of only three levers that divides a copy floor, and the
 // only one available here (more CTAs does NOT move it; every CTA still walks
 // its own K). S=4 takes DownResidual from 32 stages to 8 and places the TMA
@@ -199,7 +199,7 @@ using GatedUpSmemLayoutB = decltype(tile_to_shape(
 // GatedUp consumes the interleaved [W1|W2] slab as ONE 64-wide B operand instead of
 // two 32-wide views of it. The slab was already contiguous -- the old code
 // sliced it back apart -- and N=64 is where the tensor core actually runs:
-// [hardware-unit-test MMA-RATE] measures m64n32k16 at 24.7 cycles against an
+// [hardware-unit-test wgmma.issue.wg.ss] measures m64n32k16 at 24.7 cycles against an
 // architectural 15.3 (62% of peak) and m64n64k16 at 33.1 against 30.7 (93%).
 // Two of the former cost 197.6 cycles per stage where one of the latter costs
 // 132.4 -- 1.49x, and register-neutral: a 64x64 accumulator is 32 f32/thread,

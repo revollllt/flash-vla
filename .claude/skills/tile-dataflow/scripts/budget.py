@@ -19,6 +19,19 @@ Verdicts:
 
 Exit status is 1 if anything FAILs. A SKIP is not a pass: `status: review`
 requires every check to be PASS, TIGHT or MANUAL, which `--gate` enforces.
+
+Design rule for adding a check
+------------------------------
+A check earns a FAIL only if it evaluates an equation over DECLARED fields.
+If it has to parse prose to find its operand, it is a linter, and it belongs at
+MANUAL: prose regexes look rigorous, fire where the question does not arise, and
+train the author to satisfy the pattern instead of thinking about the property.
+When a check genuinely needs to find something mechanically, change the SCHEMA
+so the field carries it -- a list instead of a sentence -- rather than making
+the prose rigid. Two checks were demoted on exactly this ground (2026-08-25):
+`loop_bounds` (its real content is already in `trip_count`, arithmetically) and
+`loop_carried` (it substring-matched a free-text field, so "C" matched "C1" and
+it reported PASS while verifying nothing).
 """
 
 from __future__ import division, print_function
@@ -489,6 +502,14 @@ def check_persistence(spec, opts):
     need = opts.sms * per_sm
     detail = "grid %d vs %d SMs x %d CTA/SM = %d" % (ctas, opts.sms, per_sm, need)
     if ctas < need:
+        # The canonical row (spec-schema §7) is "grid >= SM_count x cta_per_sm
+        # OR the shortfall is named" -- grid_realises_it is where it gets named,
+        # and a named shortfall is a claim for the reviewer, not arithmetic.
+        named = str(get(spec, "grid.persistence.grid_realises_it") or "").strip()
+        if len(named) > 10 and "todo" not in named.lower():
+            return Finding("persistence", "MANUAL",
+                           detail + " -- shortfall named, reviewer reads it: %r"
+                           % named[:90])
         return Finding("persistence", "FAIL",
                        detail + " -- a grid this size is spread one CTA per SM; "
                                 "the extra capacity is never used")
@@ -544,40 +565,82 @@ def check_arithmetic_intensity(spec, opts):
                             "the tile is memory-bound by construction" % (ridge / ai))
 
 
+def _carried_names(spec):
+    """mainloop.loop_carried as (set_of_names, exact).
+
+    Preferred form is a LIST, which can be compared exactly. A free-text string
+    is accepted for older specs, but then only crude tokens are available and
+    the caller must degrade to MANUAL rather than claim a match -- a substring
+    test over prose passes for the wrong reason ("C" matches "C1", "task"
+    matches any sentence containing it).
+    """
+    raw = get(spec, "mainloop.loop_carried")
+    if isinstance(raw, (list, tuple)):
+        return set(str(x).strip() for x in raw if str(x).strip()), True
+    if raw is None:
+        return set(), True
+    return set(t for t in re.findall(r"[A-Za-z_][A-Za-z_0-9]*", str(raw))), False
+
+
 def check_loop_bounds(spec, body, opts):
-    """Every `range` in the prose nest states start, stop and step."""
+    """ADVISORY: prose `range()` calls that omit start or step.
+
+    Deliberately not a gate. The tail question this used to police is already
+    decided arithmetically by check_trip_count, from mainloop.{axis,step,tail}
+    and problem.dims -- declared fields, not prose shape. A regex over markdown
+    stacked on top of that trains the author to satisfy the regex instead of
+    thinking about the tail, and it fires on loops where the question does not
+    arise at all (a parallel tile loop at L1 has no step semantics to spell
+    out). Where a check needs to find something mechanically, the schema should
+    carry it as a field; parsing prose is the fallback that looks rigorous and
+    is not.
+    """
+    if not re.search(r"\bL1\b|### L1", body):
+        return Finding("loop_bounds", "SKIP", "no L1-L4 nest found in the prose body")
     bare = []
     for m in re.finditer(r"range\(([^)]*)\)", body):
         args = [a for a in m.group(1).split(",") if a.strip()]
         if len(args) < 3:
             bare.append(m.group(0))
-    if not re.search(r"\bL1\b|### L1", body):
-        return Finding("loop_bounds", "SKIP", "no L1-L4 nest found in the prose body")
     if bare:
-        return Finding("loop_bounds", "FAIL",
-                       "%d range() without start/stop/step: %s"
+        return Finding("loop_bounds", "MANUAL",
+                       "%d range() omit start/step: %s -- fine on a parallel tile "
+                       "loop, worth a look on the contraction (trip_count owns "
+                       "the actual tail check)"
                        % (len(bare), ", ".join(sorted(set(bare))[:4])))
     return Finding("loop_bounds", "PASS", "every range() states start, stop and step")
 
 
 def check_loop_carried(spec, opts):
     """Every non_mma loop_carried name also appears in mainloop.loop_carried."""
-    declared = str(get(spec, "mainloop.loop_carried", ""))
     entries = get(spec, "non_mma") or []
-    missing = []
-    for e in entries:
-        for name in (e.get("loop_carried") or []):
-            if isinstance(name, str) and name not in declared:
-                missing.append("%s carries %r" % (e.get("id"), name))
     if not entries:
         return Finding("loop_carried", "SKIP", "non_mma is empty or still TODO")
+    declared, exact = _carried_names(spec)
     if not declared:
         return Finding("loop_carried", "SKIP", "mainloop.loop_carried still TODO")
+    claimed = []
+    for e in entries:
+        for name in (e.get("loop_carried") or []):
+            if isinstance(name, str) and name.strip():
+                claimed.append((e.get("id"), name.strip()))
+    if not claimed:
+        return Finding("loop_carried", "PASS",
+                       "%d non_mma entr(ies), none declares a carried name -- "
+                       "nothing to cross-check" % len(entries))
+    if not exact:
+        return Finding("loop_carried", "MANUAL",
+                       "mainloop.loop_carried is prose, so %d claimed name(s) (%s) "
+                       "cannot be matched exactly -- make it a LIST and this "
+                       "becomes arithmetic"
+                       % (len(claimed), ", ".join(n for _, n in claimed[:4])))
+    missing = ["%s carries %r" % (i, n) for i, n in claimed if n not in declared]
     if missing:
         return Finding("loop_carried", "FAIL",
-                       "%s -- absent from mainloop.loop_carried %r" % ("; ".join(missing), declared))
-    return Finding("loop_carried", "PASS", "%d non_mma entr(ies) trace to mainloop.loop_carried"
-                   % len(entries))
+                       "%s -- absent from mainloop.loop_carried %s"
+                       % ("; ".join(missing), sorted(declared)))
+    return Finding("loop_carried", "PASS",
+                   "%d carried name(s) trace to mainloop.loop_carried" % len(claimed))
 
 
 def check_non_mma_present(spec, opts):

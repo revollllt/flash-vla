@@ -45,8 +45,8 @@ spec shows you before the kernel exists.**
 ## Where the cycle counts come from, since Phase 0 does not measure them
 
 None of Phase 0's five measurements yields wgmma cycles per instruction,
-CUDA-core issue rate, or TMA issue latency (see `example-phase0.md`, "What Phase
-0 does NOT give you"). So:
+CUDA-core issue rate, or TMA issue latency. The `hardware-unit-test` skill measures
+some of these and marks the rest GAP -- check it before assuming a cycle. So:
 
 - **the ordering edges and which column is empty are structural** — they follow
   from the dependencies and need no cycles at all. That is the part that catches

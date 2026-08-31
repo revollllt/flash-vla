@@ -72,7 +72,16 @@ def git_metadata(repo_root: Path) -> dict[str, Any]:
     return {"commit": run("rev-parse", "HEAD"), "dirty": bool(status), "status_entries": len(status.splitlines()) if status else 0}
 
 
-def wrap_command(backend: str, command: list[str], output_dir: Path) -> list[str]:
+def wrap_command(backend: str, command: list[str], output_dir: Path,
+                 tool_args: list[str] | None = None) -> list[str]:
+    """`tool_args` are passed straight to nsys/ncu before the workload.
+
+    Nsight Compute is only useful once a kernel filter, launch count and
+    section set are pinned (references/ncu-backend.md), and none of those can
+    be expressed without a passthrough. They land in the manifest's
+    tool.command, so the capture stays reproducible from the run directory.
+    """
+    tool_args = list(tool_args or [])
     if backend == "torch":
         if not shutil.which(command[0]):
             raise FileNotFoundError(command[0])
@@ -90,6 +99,7 @@ def wrap_command(backend: str, command: list[str], output_dir: Path) -> list[str
             "--export=sqlite,jsonlines",
             "--output",
             str(output_dir / "profile"),
+            *tool_args,
             *command,
         ]
     tool = shutil.which("ncu")
@@ -102,6 +112,7 @@ def wrap_command(backend: str, command: list[str], output_dir: Path) -> list[str
         "node",
         "--export",
         str(output_dir / "profile.ncu-rep"),
+        *tool_args,
         *command,
     ]
 
@@ -152,6 +163,10 @@ def discover_artifacts(output_dir: Path, patterns: list[str]) -> list[dict[str, 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backend", choices=sorted(DEFAULT_ARTIFACTS), required=True)
+    parser.add_argument("--tool-arg", action="append", default=[],
+                        help="extra flag forwarded verbatim to nsys/ncu; "
+                             "repeat for each token, e.g. --tool-arg "
+                             "--kernel-name --tool-arg my_kernel")
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--plan", type=Path, help="JSON CapturePlan; mutually exclusive with the command")
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
@@ -166,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         command = command_from(args, plan)
         output_dir = args.output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
-        wrapped = wrap_command(args.backend, command, output_dir)
+        wrapped = wrap_command(args.backend, command, output_dir, args.tool_arg)
     except (FileNotFoundError, ValueError) as exc:
         parser.error(str(exc))
 

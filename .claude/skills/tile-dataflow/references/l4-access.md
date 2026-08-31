@@ -15,10 +15,12 @@ Write those two down and the rest is arithmetic over 32 lanes.
 **Why a file and not a paragraph.** The prose form of an L4 table states
 *conclusions* — `128 B swizzle atom, aligned -> 0-way bank conflict` — and a
 conclusion cannot be rechecked, cannot be regenerated when L2 changes a tile
-extent, and cannot be wrong out loud. Both worked examples marked most of their
-conflict counts `[I]`, and `example-deepgemm.md` had to open
-`open_questions.bank_ways` because nobody could settle one by hand. They are all
-`[D]` now, computed, and the DeepGEMM figure was right.
+extent, and cannot be wrong out loud. Evidence: when the two reference specs were written by hand they marked most
+conflict counts `[I]`, and the DeepGEMM one had to open an
+`open_questions.bank_ways` entry because nobody could settle a count by hand.
+Run through `tv_check.py` they are all `[D]`, and the DeepGEMM figure turned out
+right -- which is the point: it was right and unverifiable, so it was still a
+liability.
 
 ## Contents
 

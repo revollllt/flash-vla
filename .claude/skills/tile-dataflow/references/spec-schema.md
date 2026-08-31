@@ -76,7 +76,7 @@ stage.
 | `mainloop.trip_count` | derived | `ceil(extent / step)`. |
 | `mainloop.tail` | yes | `predication` / `pad` / `none-needed (extent % step == 0)`. The most commonly skipped field, and a correctness bug when skipped. |
 | `mainloop.operands_per_iter` | yes | Every tile that moves per iteration, with bytes. `via` decides the barrier kind: TMA needs a transaction-count mbarrier, `cp.async` needs a commit-group. |
-| `mainloop.loop_carried` | yes | What survives an iteration. For GEMM, the accumulator. For flash attention, accumulator **plus running max and running sum** — forgetting these is how attention specs silently become wrong. |
+| `mainloop.loop_carried` | yes | What survives an iteration. For GEMM, the accumulator. For flash attention, accumulator **plus running max and running sum** — forgetting these is how attention specs silently become wrong. **Write it as a LIST** (`[C1, C2]`), optionally with a prose `note:` alongside: `budget.py` cross-checks each `non_mma[].loop_carried` name against it by set membership, and a free-text value degrades that check to MANUAL rather than matching substrings. |
 | `mainloop.per_iter_math` | yes | A pointer, not a description: name the `non_mma` entries that fire each iteration. The detail lives in section 5b, because a one-line string is how a computation worth a quarter of the kernel's cycles hides in a spec. |
 
 ## 3. pipeline
@@ -182,6 +182,30 @@ primitive fixes the algorithm and its hazards, the schedule stays yours.
 Referencing a primitive does not excuse the per-kernel fields: `where`, `cost`,
 `touches`, `span` and `on_critical_path` still have to be filled in. The
 primitive fixes the *algorithm* and the *hazards*; the schedule is yours.
+
+## 5c. taskgraph — extension for multi-op task-loop kernels
+
+For a persistent kernel that executes a static task table of several op types
+(a megakernel / task-loop interpreter), the standard sections describe the
+**primary** task type — the one whose ring binds the smem budget — and this
+block carries the rest. First used by `specs/tile/ffn_taskloop.md`.
+
+| Field | Required | Notes |
+|---|---|---|
+| `queue` | yes | How a CTA gets its tasks. Static per-CTA lists in const memory is the no-atomic default; a descriptor names `{type, tile coord, counter ids}`. |
+| `dispatch` | yes | How one kernel body runs several op types, and the two costs the choice cannot dodge. Classes: **data-driven** (one body, descriptors carry pointers/extents — grouped GEMM / MoE megakernels), **opcode switch per task** (inlined bodies behind `switch(desc.type)` — instruction-interpreter megakernels), **branch-once-per-CTA** (single-type lists, monomorphic loops). Always state: the **register union** (allocation is per-kernel over all reachable bodies — CTA typing does not reduce it, `setmaxnreg` splits warp roles not op types, so the fattest body caps occupancy for everyone), and the **frame-layout story across a type switch** (drain, union frames, or a page-granular smem pool; only the pool preserves ring continuity through heterogeneous ops). Prefer collapsing op types into few **families** (one GEMM body + epilogue functor beats N GEMM bodies) — it is what keeps the union small. |
+| `planner` | yes | Where the offline table generator lives, and that it emits **truncated lists** — persistent-kernel bugs hang rather than fail, so run-to-task-k + compare is the debug loop and must exist from day 1. |
+| `task_types[]` | yes | One entry per op type: `count`, a `mainloop` mirror (`axis`, `step`, `trip_count`), `frame_bytes`, `ring` (depth, and **what gates it** — a dep-free weight ring and a counter-gated activation ring are different rings and should be split), `releases` (which counter it arrives on). |
+| `counters` | yes | Count, dtype, arrive count each, and the **reset story** — host memset is fine standalone; graph replay needs self-reset (the last consumer through zeroes), same rule as `grid.persistence` semaphores. |
+| `schedule` | yes | Points at `grid.rasterization`, which for a task-loop kernel is the task→CTA map and its ordering argument (counter-unlock order, stream continuity). |
+
+Checker notes: `budget.py` checks the primary type through the standard
+fields; secondary types' arithmetic (trip counts, frame bytes, coverage) is
+stated here and verified by hand in `checks` rows marked `(hand)`. `contracts`
+uses the inline `name=extent` form per task type. A grid smaller than
+`SM_count × cta_per_sm` is legal for a task-bound prototype when
+`grid.persistence.grid_realises_it` names the shortfall — `check_persistence`
+then reports MANUAL instead of FAIL, and the reviewer reads the claim.
 
 ## 6. epilogue
 
@@ -304,8 +328,10 @@ ping-pong, any hand-off through smem under a named barrier. It shows the
 ordering the loop nest cannot — who waits on whom, in what sequence, through
 which barrier. When the split is plain producer/consumer the L2 nest already
 shows every ordering that exists, and the section should be deleted with that
-reason stated (see `example-deepgemm.md`). When the groups cooperate, this
-section *is* the algorithm (see `example-flashmla.md`).
+reason stated -- a producer/consumer split is the common case. When the groups
+COOPERATE instead (two math groups alternating phases of one algorithm), this
+section *is* the algorithm and cannot be summarised by role names. Frozen
+examples of both: `specs/reference/deepgemm.md`, `specs/reference/flashmla.md`.
 
 **`## Why these numbers`** — one short paragraph per non-obvious choice. Make
 the reasoning attackable rather than asserting the conclusion; this is the

@@ -9,6 +9,11 @@ gate: add a row only when a stable boundary and a maintained skill exist.
   backend reference.
 - **Per-kernel latency, benchmark harnesses, or timing claims**
   -> [`benchmark-kernel`](../skills/benchmark-kernel/SKILL.md).
+- **Machine constants, hardware microbenchmarks, or the denominator under a
+  floor / roofline target**
+  -> [`hardware-unit-test`](../skills/hardware-unit-test/SKILL.md) and the unit
+  reference for the primitive concerned. A floor divides by a measured
+  constant with a tag, never by a datasheet peak.
 - **Profiler capture, trace export, offline analysis, or Nsight wrappers**
   -> [`gpu-profiler-analysis`](../skills/gpu-profiler-analysis/SKILL.md) and
   its relevant capture-mode reference.
