@@ -4,6 +4,9 @@ Before modifying a component, read the skill that defines its contract. This
 is intentionally a small project-specific adaptation of SGLang's component
 gate: add a row only when a stable boundary and a maintained skill exist.
 
+- **Writing a new kernel, porting an op to CUDA/TileLang, fusing ops, or an
+  optimization pass on an existing kernel**
+  -> [`kernel-design`](../skills/kernel-design/SKILL.md).
 - **Per-kernel latency, benchmark harnesses, or timing claims**
   -> [`benchmark-kernel`](../skills/benchmark-kernel/SKILL.md).
 - **Machine constants, hardware microbenchmarks, or the denominator under a

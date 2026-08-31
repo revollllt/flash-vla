@@ -75,7 +75,8 @@ backends do not set that variable unless the plan explicitly asks for it.
   `references/nsys-backend.md`.
 - Nsight Compute: select a small number of kernels and record the exact filter,
   replay mode, graph mode, and section set in metadata. See
-  `references/ncu-backend.md`.
+  `references/ncu-backend.md`. Interpreting the captured report is the
+  `ncu-report` skill's job.
 
 ## Reporting contract
 
