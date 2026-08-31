@@ -1,31 +1,38 @@
-// gmem_atomic.cu -- isolate global-atomic throughput and counter latency.
+// gmem_atomic.cuh -- global-atomic throughput and counter latency.
 //
 // Two kernels, because they answer two different questions and mixing them
 // would confound both:
 //
 //   rate_kernel      how many atomic ops per second, as a function of the
 //                    instruction (red vs atom), the width, the scope, and how
-//                    many threads share an address.  No memory traffic other
+//                    many threads share an address. No memory traffic other
 //                    than the atomics themselves.
 //   pingpong_kernel  how long from one CTA's release-increment to another
-//                    CTA's acquire-observe.  Measured as a ping-pong so the
-//                    number never crosses two SMs' unsynchronised clocks.
+//                    CTA's acquire-observe, as a ping-pong so the number never
+//                    crosses two SMs' unsynchronised clocks.
 //
 // Every axis is a runtime argument except the instruction, which has to be a
-// template parameter -- inline PTX cannot take an opcode from a variable, and
-// a switch inside the loop would put a branch in the thing being measured.
+// template parameter: inline PTX cannot take an opcode from a variable, and a
+// switch inside the loop would put a branch in the thing being measured.
 //
-// Build: nvcc -O3 -std=c++17 --shared -Xcompiler -fPIC -arch=sm_90a
-//        gmem_atomic.cu -lcuda
+// mode 0 = rate, mode 1 = pingpong.
 
-#include <cuda.h>
+#pragma once
+
 #include <cstdint>
 
-namespace atomprobe {
+#include "hut/common.cuh"
+#include "hut/unit.hpp"
+#include "hut/watchdog.cuh"
 
-// ~1.2 s at 1.8 GHz. A spin loop that never exits burns the whole Slurm
-// allocation and reports nothing; this reports WHERE it hung.
-constexpr long long WATCHDOG_CYCLES = 1ll << 31;
+namespace hut {
+namespace gmem_atomic {
+
+// Unit trap sites, numbered from the library's reserved base.
+enum : int32_t {
+  kSitePingpongAdvance = kSiteUnitBase + 0,
+  kSitePingpongObserve = kSiteUnitBase + 1,
+};
 
 enum Op {
   RED_U32 = 0, ATOM_U32, RED_F32, ATOM_F32, RED_F16X2, RED_BF16X2,
@@ -95,17 +102,19 @@ __device__ __forceinline__ void one_op(void* p, unsigned v, unsigned& acc) {
 // computed ONCE, outside the loop, so the measurement contains the atomic unit
 // and not the address arithmetic.
 template <int OP>
+
 __global__ void rate_kernel(uint8_t* __restrict__ base, int n_addr_mask,
-                            int stride_b, int trip, unsigned* __restrict__ sink) {
+                            int stride_b, int32_t k_tile_count, unsigned* __restrict__ sink) {
   const int gtid = blockIdx.x * blockDim.x + threadIdx.x;
   uint8_t* p = base + (size_t)(gtid & n_addr_mask) * stride_b;
   unsigned acc = 0;
-  for (int i = 0; i < trip; ++i) one_op<OP>(p, 1u, acc);
+  for (int i = 0; i < k_tile_count; ++i) one_op<OP>(p, 1u, acc);
   // Never true, but the compiler cannot prove it, so `acc` stays live.
   if (acc == 0xffffffffu) sink[gtid] = acc;
 }
 
-__device__ __forceinline__ unsigned ld_acq(const unsigned* p) {
+
+__device__ __forceinline__ unsigned ld_acquire(const unsigned* p) {
   unsigned v;
   asm volatile("ld.acquire.gpu.global.u32 %0, [%1];" : "=r"(v) : "l"(p) : "memory");
   return v;
@@ -113,81 +122,40 @@ __device__ __forceinline__ unsigned ld_acq(const unsigned* p) {
 
 // Ping-pong: CTA 0 advances the counter on even values, CTA 1 on odd. One full
 // round is two hops, so the host divides by 2*rounds and gets one arrive->
-// observe. Timing this from the host avoids comparing clock64() across two
-// SMs, which are not synchronised and would make the number unreadable.
+// observe. Timed from the host rather than with clock64, because the two CTAs
+// sit on SMs whose clocks are not synchronised.
 //
-// `advance_atomic` picks the idiom under test: a release-increment (what a
-// task-graph counter does) or a plain release-store (what a flag does).
-// `n_pollers` adds CTAs that only OBSERVE, to measure whether observation cost
-// grows with the number of observers -- the thing that decides how many
-// consumers one counter can feed.
-__global__ void pingpong_kernel(unsigned* __restrict__ ctr, int rounds,
-                                int advance_atomic, long long* __restrict__ dbg) {
+// `advance_atomic` picks the idiom under test: a release-increment, which is
+// what a task-graph counter does, or a plain release-store, which is what a
+// flag does. Extra CTAs beyond the first two only OBSERVE, so the sweep can ask
+// whether observation cost grows with the number of observers -- the thing that
+// decides how many consumers one counter can feed.
+__global__ void pingpong_kernel(unsigned* __restrict__ counter, int32_t rounds,
+                                int32_t advance_atomic,
+                                long long* __restrict__ dbg) {
   if (threadIdx.x != 0) { __syncthreads(); return; }
-  const int me = blockIdx.x;
-  const long long t0 = clock64();
+  const int32_t me = static_cast<int32_t>(blockIdx.x);
 
   if (me < 2) {
-    for (int r = 0; r < rounds; ++r) {
-      const unsigned want = (unsigned)(2 * r + me);
-      while (ld_acq(ctr) != want) {
-        if (clock64() - t0 > WATCHDOG_CYCLES) {
-          if (dbg) { dbg[me * 2] = 1; dbg[me * 2 + 1] = r; }
-          __threadfence_system(); __trap();
-        }
-      }
-      if (advance_atomic)
-        asm volatile("red.release.gpu.global.add.u32 [%0], 1;" :: "l"(ctr) : "memory");
-      else
+    for (int32_t r = 0; r < rounds; ++r) {
+      const unsigned want = static_cast<unsigned>(2 * r + me);
+      spin_until([&] { return ld_acquire(counter) == want; }, dbg,
+                 kSitePingpongAdvance);
+      if (advance_atomic) {
+        asm volatile("red.release.gpu.global.add.u32 [%0], 1;"
+                     :: "l"(counter) : "memory");
+      } else {
         asm volatile("st.release.gpu.global.u32 [%0], %1;"
-                     :: "l"(ctr), "r"(want + 1u) : "memory");
+                     :: "l"(counter), "r"(want + 1u) : "memory");
+      }
     }
   } else {
-    // Observer only: keep reading until the run is over, so it contributes
-    // acquire-load traffic to the same line without advancing anything.
-    const unsigned done = (unsigned)(2 * rounds);
-    while (ld_acq(ctr) < done) {
-      if (clock64() - t0 > WATCHDOG_CYCLES) {
-        if (dbg) { dbg[me * 2] = 2; }
-        __threadfence_system(); __trap();
-      }
-    }
+    const unsigned done = static_cast<unsigned>(2 * rounds);
+    spin_until([&] { return ld_acquire(counter) >= done; }, dbg,
+               kSitePingpongObserve);
   }
   __syncthreads();
 }
 
-}  // namespace atomprobe
-
-extern "C" {
-
-int atom_probe_rate(int op, void* base, int n_addr, int stride_b, int n_ctas,
-                    int n_threads, int trip, void* sink, void* stream) {
-  using namespace atomprobe;
-  if (n_addr < 1 || (n_addr & (n_addr - 1))) return 1201;   // must be 2^k
-  const int mask = n_addr - 1;
-  auto s = (cudaStream_t)stream;
-#define LAUNCH(K)                                                            \
-  case K: rate_kernel<K><<<n_ctas, n_threads, 0, s>>>(                       \
-              (uint8_t*)base, mask, stride_b, trip, (unsigned*)sink); break;
-  switch (op) {
-    LAUNCH(RED_U32) LAUNCH(ATOM_U32) LAUNCH(RED_F32) LAUNCH(ATOM_F32)
-    LAUNCH(RED_F16X2) LAUNCH(RED_BF16X2) LAUNCH(RED_V2F32) LAUNCH(RED_V4F32)
-    LAUNCH(ATOM_CAS) LAUNCH(ATOM_EXCH) LAUNCH(RED_U32_CTA) LAUNCH(RED_U32_SYS)
-    LAUNCH(ATOM_U32_CTA) LAUNCH(ATOM_U32_SYS)
-    default: return 1202;
-  }
-#undef LAUNCH
-  return (int)cudaGetLastError();
-}
-
-int atom_probe_pingpong(void* ctr, int rounds, int advance_atomic,
-                        int n_pollers, void* dbg, void* stream) {
-  using namespace atomprobe;
-  atomprobe::pingpong_kernel<<<2 + n_pollers, 32, 0, (cudaStream_t)stream>>>(
-      (unsigned*)ctr, rounds, advance_atomic, (long long*)dbg);
-  return (int)cudaGetLastError();
-}
-
-int atom_probe_op_count() { return atomprobe::OP_COUNT; }
-
-}  // extern "C"
+}  // namespace gmem_atomic
+}  // namespace hut

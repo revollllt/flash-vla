@@ -11,7 +11,7 @@ Arch-independent. Results live in `<arch>/unit-*.md`.
 
 | Unit | Probe | Measures |
 |---|---|---|
-| **mma** | `probes/compute/mma_rate.{cu,py}` | both tensor-core instructions: issue cadence against tile size, latency, in-flight depth, warp/warpgroup scaling, the clock under sustained load, and the crossover between them |
+| **mma** | `probes/units/mma_rate/mma_rate.{cu,py}` | both tensor-core instructions: issue cadence against tile size, latency, in-flight stages, warp/warpgroup scaling, the clock under sustained load, and the crossover between them |
 
 **Not yet a unit anywhere:** CUDA-core fp32/int throughput, transcendentals and
 the SFU, fp8 and f16-accumulate variants, operand-from-register forms, and the
@@ -64,10 +64,10 @@ failure. The details for this arch are in `sm90/unit-mma.md`.
 1. **Cost per instruction against tile size.** Flat means the cost is issue
    overhead and a bigger tile is free; scaling means the engine is the limit.
    The knee between the two is a tiling constraint, not a codegen detail.
-2. **Latency versus issue interval**, separated by a depth knob — how many
+2. **Latency versus issue interval**, separated by a stages knob — how many
    independent accumulators or outstanding groups are needed to cover it. This
    is simultaneously a register-budget decision, so it belongs to tiling.
-3. **What the wait/synchronisation primitive costs** at each depth. Draining
+3. **What the wait/synchronisation primitive costs** at each stages. Draining
    the pipeline every iteration is the natural thing to write and it is
    expensive.
 4. **Does one warp/warpgroup already saturate the engine?** If yes, a second is

@@ -1,1382 +1,395 @@
-# Machine constants for one H100 SXM5 on the acd_u partition.
+# Machine constants for sm90-h100-sxm5.
 #
-# THIS FILE IS THE SOURCE OF TRUTH FOR CLAIMS. A number that is a claim lives
-# here; a number that is EVIDENCE (a raw sweep row) lives in the unit reference
-# next to the rows it came from. Nothing is transcribed twice: the scripts read
-# this file, so render the human table with `python3 scripts/constants.py` and
-# compute floors with `scripts/frontier.py`.
-#
-# Every entry carries the six fields scripts/constants.py --validate enforces:
-#   claim / value+units / valid / isolation / falsifier / provenance
-# plus a design_rule saying how it enters a kernel budget. An entry missing one
-# is not a measurement, it is a recollection, and the validator fails it.
-
+# A RESULTS TABLE, not a lab notebook. Each entry is: the number, the condition
+# it holds under (`units`), the one-line answer (`short`), and the rule to apply
+# (`rule`). The measurement narrative that justified each number -- claim,
+# valid, isolation, falsifier, and per-job provenance -- was removed on
+# 2026-08-29; it is preserved outside the skill and in git history.
 machine:
   id: sm90-h100-sxm5
   gpu: NVIDIA H100 80GB HBM3
   arch: sm90a
   sms: 132
-  smem_per_cta_b: 232448        # 227 KB, the opt-in dynamic maximum
+  smem_per_cta_b: 232448
   smem_per_sm_b: 233472
-  hbm_peak_tbs: 3.35            # datasheet. NOT a floor denominator -- see BW-CEIL
+  hbm_peak_tbs: 3.35
   l2_mb: 50
-  clocks_pinned: false          # nvidia-smi -lgc denied for this user on this partition
-  noise_floor_pct: 6            # consequence of the line above; treat smaller deltas as noise
-  partition: acd_u
-  nodes_seen: [ACD1-31]
-  caution: >
-    One machine, two toolchains: the tma unit is torch 2.13.0+cu130 (2026-08-25)
-    and the launch unit is torch 2.11.0+cu130 (2026-08-20). They agree
-    independently on BW-CEIL, which is the only cross-check between them. Do not
-    combine a number from one with a number from the other without saying so.
-
+  clocks_pinned: false
+  noise_floor_pct: 6
+  caution: 'One machine, two toolchains: the tma unit is torch 2.13.0+cu130 (2026-08-25) and the launch
+    unit is torch 2.11.0+cu130 (2026-08-20). They agree independently on ld.bw.dev.dram, which is the
+    only cross-check between them. Do not combine a number from one with a number from the other without
+    saying so.'
 units:
-  - id: tma
-    status: measured
-    probe: probes/memory/tma_ring.py
-    reference: sm90/unit-tma.md
-    covers: >
-      Copy-engine delivery rate: what one producer warp sustains, what ring
-      depth buys, what box geometry costs, and where the saturation frontier
-      sits in (CTAs x warps x bytes-per-TMA).
-
-  - id: launch
-    status: measured
-    probe: none in-repo -- absorbed from tile-dataflow Phase 0 and its job logs
-    reference: sm90/unit-launch.md
-    covers: >
-      Per-launch grid ramp, cold streaming bandwidth vs transfer size and vs CTA
-      count, cluster declaration and barrier cost, cluster placement limits, and
-      the capacity-is-not-residency correction.
-
-  - id: atomic
-    status: measured
-    probe: probes/memory/gmem_atomic.py
-    reference: sm90/unit-atomic.md
-    covers: >
-      Global atomic throughput as a function of instruction, width, scope,
-      address placement and sharing, plus the arrive->observe latency of a
-      gmem counter and how it scales with observers. Everything here resolves
-      in L2, not DRAM -- see the constants' `valid` fields.
-
-  - id: mma
-    status: measured
-    probe: probes/compute/mma_rate.py
-    reference: sm90/unit-mma.md
-    covers: >
-      Both tensor-core instructions. For warpgroup `wgmma`: issue cadence
-      against N, the in-flight depth and wait_group setting needed to fill the
-      pipeline, whether a second math warpgroup buys anything, the sustained
-      clock under load, and the bytes-per-ns ratio against the TMA unit. For
-      warp-level `mma.sync`: issue rate, latency, the accumulator and warp
-      counts that saturate it, and the output-tile size at which the two
-      instructions cross over. Every rate is verified against a torch
-      reference before it is reported.
-
+- id: tma
+  status: measured
+  probe: probes/units/tma_ring/tma_ring.py
+  reference: sm90/unit-tma.md
+  covers: 'Copy-engine delivery rate: what one producer warp sustains, what ring stages buys, what box
+    geometry costs, and where the saturation frontier sits in (CTAs x warps x bytes-per-TMA).'
+- id: launch
+  status: measured
+  probe: none in-repo -- absorbed from tile-dataflow Phase 0 and its job logs
+  reference: sm90/unit-launch.md
+  covers: Per-launch grid ramp, cold streaming bandwidth vs transfer size and vs CTA count, cluster declaration
+    and barrier cost, cluster placement limits, and the capacity-is-not-residency correction.
+- id: atomic
+  status: measured
+  probe: probes/units/gmem_atomic/gmem_atomic.py
+  reference: sm90/unit-atomic.md
+  covers: Global atomic throughput as a function of instruction, width, scope, address placement and sharing,
+    plus the arrive->observe latency of a gmem counter and how it scales with observers. Everything here
+    resolves in L2, not DRAM.
+- id: mma
+  status: measured
+  probe: probes/units/mma_rate/mma_rate.py
+  reference: sm90/unit-mma.md
+  covers: 'Both tensor-core instructions. For warpgroup `wgmma`: issue cadence against N, the in-flight
+    stages and wait_group setting needed to fill the pipeline, whether a second math warpgroup buys anything,
+    the sustained clock under load, and the bytes-per-ns ratio against the TMA unit. For warp-level `mma.sync`:
+    issue rate, latency, the accumulator and warp counts that saturate it, and the output-tile size at
+    which the two instructions cross over. Every rate is verified against a torch reference before it
+    is reported.'
+- id: coop
+  status: measured
+  probe: probes/units/coop_launch/coop_launch.py
+  reference: sm90/unit-coop.md
+  covers: 'Cooperative launch: what one cooperative_groups grid_sync costs against grid size, how many
+    blocks cudaLaunchCooperativeKernel will actually place, and whether a grid_sync is cheaper than the
+    kernel relaunch it replaces.'
 constants:
-
-  # ------------------------------------------------------------------- tma
-  - tag: TMA-ISSUE
-    unit: tma
-    claim: >
-      One producer warp sustains one TMA every ~270 ns, essentially independent
-      of how many bytes that TMA carries. Delivered bandwidth is therefore
-      n_ctas x n_warps x frame_bytes / 270 ns, capped by BW-CEIL.
-    value: 270
-    units: ns per TMA per producer warp
-    short: 270 ns/txn/warp
-    valid: >
-      frame 1-32 KB, i.e. the whole legal range under SW128 (TMA-FRAME-CAP);
-      ring depth >= 4; 2-D tiled descriptor, 128 B box rows; source either DRAM
-      or L2. The binding condition is NOT the frame but the in-flight product:
-      265-270 ns holds wherever n_ctas x n_warps x frame <= ~256 KB. Above that
-      the observed interval rises (283 ns at 512 KB, 404 at 1 MB, 2863 at
-      8.4 MB) because bandwidth, not issue rate, has become the constraint --
-      that is TMA-CEIL showing through, not a different issue rate.
-      CORRECTION 2026-08-25 (job 547306): an earlier reading recorded a drift to
-      281 ns at 16 KB frames and treated it as frame-dependence. It was product
-      contamination -- that row was 32 CTAs x 16 KB = 512 KB, already at the
-      frontier. Measured at 8 CTAs, 8 / 16 / 32 KB give 264.7 / 266.4 / 271.9 ns.
-      The issue interval is frame-independent to the descriptor maximum.
-    isolation: >
-      The probe runs N producer warps per CTA, each owning a private depth-deep
-      ring, with no wgmma, no consumer warp, no counter polling and no
-      __syncthreads on the issue path. The coordinate walk is shifts and masks
-      so the integer divider is not in the loop. Each (CTA, warp) walks a
-      disjoint stream, so this is delivery and not L2 broadcast of one address.
-      ns/txn is computed as us*1000/trip -- a division that does not pass
-      through the byte accounting, so a miscounted footprint cannot produce it.
-    falsifier: >
-      If the limit were in-flight BYTES rather than transactions, GB/s would
-      depend only on depth x frame and the (depth 16, 2 KB) row would match the
-      (depth 2, 16 KB) row at equal in-flight bytes. Measured they differ 5.4x
-      (246 vs 1319 GB/s), so it is transactions. If it were the memory SOURCE,
-      the 4 MB L2-resident footprint would not reproduce the same ns/txn below
-      64 CTAs; it does, to within 1-3%. If it were frame-dependent, the 8-CTA
-      rows at 8 / 16 / 32 KB would diverge; they span 2.7%, inside noise.
-    design_rule: >
-      Bytes per TMA is a first-class design term, not a tiling detail: doubling
-      the frame nearly doubles the copy column for free. Budget the copy column
-      as max(txns_per_warp x 270 ns, total_bytes / BW-CEIL) before blaming the
-      copy engine for a gap. txns_per_warp = K_per_CTA / BK, so a bigger BK,
-      split-K, or spreading one ring across more producer warps all move it --
-      and MORE CTAs DOES NOT, because every CTA still walks its whole K.
-    provenance:
-      job: 545906
-      date: 2026-08-25
-      node: ACD1-31
-      toolchain: torch 2.13.0+cu130, CUDA 13.1, nvcc -arch=sm_90a
-      timer: cupti
-      source: probes/memory/tma_ring.py
-      sweep: A (32 CTAs, 1 warp, stride8k)
-
-  - tag: TMA-LATENCY
-    unit: tma
-    claim: >
-      A TMA round trip costs ~598 ns plus ~4.8 ns per KB of frame -- 636 ns at
-      8 KB, 677 at 16 KB, 751 at 32 KB. Mostly fixed, mildly size-dependent.
-    value: 598
-    units: ns fixed, plus 4.8 ns per KB of frame (fit within 0.4% over 8-32 KB)
-    short: 598 ns + 4.8/KB
-    valid: >
-      8 CTAs, 1 producer warp, ring DEPTH 1, 128 B box rows, stride8k, cold
-      DRAM. At 8 CTAs aggregate delivery is 3-12% of TMA-CEIL, so neither
-      bandwidth nor TMA-CTA-CEIL contributes. Measured 636.4 / 677.3 / 750.6 ns
-      at 8 / 16 / 32 KB.
-    isolation: >
-      Depth 1 leaves exactly one frame outstanding, so the warp waits for each
-      arrival before issuing the next and the measured interval IS the round
-      trip (plus one issue, ~265 ns of which is hidden inside it). Every other
-      depth overlaps and measures the issue rate instead -- which is why the
-      earlier estimate had to be inferred from a depth-2 row.
-    falsifier: >
-      If depth 1 measured issue overhead rather than latency, the depth-2 rows
-      would not be half of it. They are, at all three frame sizes: 322.1/636.4
-      = 0.506, 346.2/677.3 = 0.511, 390.9/750.6 = 0.521. If latency were
-      frame-independent, the three depth-1 rows would be equal; they span 18%.
-    design_rule: >
-      The ring depth that covers latency is ceil(latency / TMA-ISSUE) =
-      ceil((598 + 4.8 x frame_KB) / 270). That is 3 at 8 and 16 KB and 4 at
-      32 KB, and it is measured: at 8 KB depth 3 and 4 give 265.0 and 264.7 ns,
-      at 16 KB 267.2 and 266.4, but at 32 KB depth 3 is 281.6 against depth 4's
-      271.8 -- 3.6% short. So **depth 3 is enough at or below 16 KB frames**,
-      which frees a quarter of the ring's shared memory against the blanket
-      depth 4. Above the covering depth nothing improves at any frame.
-    provenance:
-      job: 548151
-      date: 2026-08-25
-      node: ACD1-*
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/tma_ring.py
-      sweep: J
-
-  - tag: TMA-DIP
-    unit: tma
-    claim: >
-      Between about 36 and 56 CTAs, a per-CTA product ABOVE the TMA-CTA-CEIL
-      knee produces a reproducible 5-8% anti-scaling band: adding CTAs makes the
-      kernel slower. Below the knee the same CTA ladder is monotone.
-    value: 7.5
-    units: percent worst slowdown against the 32-CTA point at the same config
-    short: 5-8% dip, 36-56 CTAs
-    valid: >
-      2 warps x 28 KB (56 KB per CTA), 32 / 36 / 40 / 44 / 48 / 56 / 64 CTAs =
-      2727 / 2610 / 2532 / 2556 / 2523 / 2615 / 2787 GB/s. At 2 warps x 24 KB
-      (48 KB per CTA) the dip is shallower and narrower, ~5% over 44-56 CTAs. At
-      1 warp x 32 KB (32 KB per CTA, below the knee) there is NO dip: the ladder
-      rises monotonically to a plateau by ~40 CTAs.
-    isolation: >
-      Only CTA count moves within a column. The onset is the clean point: 32 ->
-      36 CTAs moves the SAME 66.1 MB and takes 4.5% longer. Confound named
-      rather than hidden: from 40 CTAs up, the probe's trip floor makes those
-      rows move more bytes (73-176 MB), so they are not byte-matched to the
-      32-CTA row and only the onset is a controlled comparison.
-    falsifier: >
-      Noise would not span five consecutive CTA counts in one column and be
-      absent from another column measured in the same job at the same CTA
-      counts. A footprint artefact would not appear at the byte-matched 32 -> 36
-      onset.
-    design_rule: >
-      Do not size a grid into 36-56 CTAs with a per-CTA product above the ~36 KB
-      knee; 32 CTAs and >= 64 CTAs are both faster than anything between. The
-      CAUSE IS UNKNOWN -- this is a measured shape, not an explanation, and it
-      is the strongest reason in this unit to measure a candidate grid rather
-      than interpolate one off the curve.
-    provenance:
-      job: 548151
-      date: 2026-08-25
-      node: ACD1-*
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/tma_ring.py
-      sweep: I
-
-  - tag: TMA-DEPTH
-    unit: tma
-    claim: >
-      A producer warp's ring saturates at depth 4. Depth 2 is latency-bound;
-      depths 8 and 16 measure the same as 4, within noise and slightly below it.
-    value: 4
-    units: ring stages per producer warp
-    short: depth 4
-    valid: >
-      1-32 KB frames, 32 CTAs, 1 producer warp, DRAM source. Depth 4 still
-      suffices at the 32 KB maximum, but only just -- see the falsifier.
-    isolation: >
-      Depth is the only axis moved; frame, CTA count, warp count, geometry and
-      footprint are held. smem grows with depth, but at 1 CTA per SM occupancy
-      does not change, so the comparison is not confounded by residency.
-    falsifier: >
-      At 8 KB, depth 2 / 4 / 8 / 16 measures 770 / 972 / 967 / 956 GB/s. Depth 2
-      sits at 340 ns/txn against depth 4's 270: two frames in flight do not
-      cover the latency, four do. That implies a TMA latency near 2 x 340 =
-      ~680 ns at 8 KB [I -- inferred from the depth-2 interval, not measured
-      directly]. A deeper ring being worth anything would show as depth 8 >
-      depth 4; it is 1.5% BELOW, i.e. nothing. The margin is not large: the
-      depth-2 interval grows with frame (289 / 306 / 340 / 397 ns at 2 / 4 / 8 /
-      16 KB), so the implied latency grows too, and at 32 KB it approaches the
-      4 x 270 = 1080 ns that depth 4 covers. A clean latency-vs-frame curve
-      needs a depth sweep at LOW CTA count -- the existing depth-2 rows at 16
-      and 32 KB are bandwidth-contaminated and cannot supply it. OPEN GAP.
-    design_rule: >
-      Do not spend shared memory on ring depth beyond what covers the latency,
-      and TMA-LATENCY now says what that is: **3 at or below 16 KB frames**, 4
-      at 32 KB. The blanket "depth 4" this entry originally carried was measured
-      at 8 KB, where 3 is enough -- a quarter of the ring's smem, free. The smem
-      freed is worth more as a bigger frame (TMA-ISSUE) or as occupancy. This is
-      a statement about the COPY engine only: a mainloop whose consumer is slow
-      may still want depth for a reason this probe cannot see.
-    provenance:
-      job: 545906
-      date: 2026-08-25
-      node: ACD1-31
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/tma_ring.py
-      sweep: A
-
-  - tag: TMA-GEOM
-    unit: tma
-    claim: >
-      Box geometry is nearly free. At equal bytes and equal transaction count, a
-      fully contiguous box, 128 B strips at 2 KB stride, and 128 B strips at
-      8 KB stride deliver the same bandwidth.
-    value: 3.4
-    units: percent worst-case penalty for a strided box, at the bandwidth ceiling
-    short: <=3.4% strided
-    valid: >
-      128 B box rows throughout, depth 4, 8 KB frames. 0% penalty at 32 CTAs
-      (972.3 / 971.4 / 971.4 GB/s); 3.4% at 132 CTAs (2767.8 / 2717.4 / 2672.4).
-      In L2 the penalty is 0% at both (979 and 3755 GB/s for all three).
-    isolation: >
-      The three descriptors carry identical bytes per TMA and identical
-      transaction counts; only globalDim[0] (and therefore the stride between
-      box rows) differs. Same CTA count, warp count, depth, footprint and walk.
-    falsifier: >
-      The gather hypothesis predicts the 8 KB-stride descriptor costs
-      substantially more than the contiguous one at low occupancy, where no
-      other resource binds. It costs 0.1%.
-    design_rule: >
-      Do not pre-block an activation to shorten its gather -- that buys ~3%. Do
-      pre-block it to escape TMA-FRAME-CAP, which is worth ~2x. Same edit,
-      different and much larger reason; getting the reason right is what keeps
-      the next such decision correct.
-    provenance:
-      job: 545906 (DRAM) and 546955 (4 MB L2-resident footprint)
-      date: 2026-08-25
-      node: ACD1-31
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/tma_ring.py
-      sweep: B
-
-  - tag: TMA-FRAME-CAP
-    unit: tma
-    claim: >
-      boxDim[0] x elemSize must not exceed the swizzle width; beyond it
-      cuTensorMapEncodeTiled returns CUDA_ERROR_INVALID_VALUE. Under SW128 a box
-      ROW is therefore capped at 128 B, and a bigger TMA can only come from more
-      box rows (boxDim[1]).
-    value: 32768
-    units: >
-      bytes -- the largest single TMA under SW128, from a 128 B row cap and a
-      256 row cap (32 B/row under SW32, 64 B under SW64, unbounded unswizzled)
-    short: 32 KB max frame
-    valid: >
-      2-D tiled descriptors, bf16 elements, CUDA 13.1 driver. The companion cap
-      is on ROWS: boxDim[1] <= 256 (257 returns rc1), so the largest frame a
-      single TMA can carry under SW128 is 256 x 128 B = 32 KB, and that is the
-      hard ceiling on the whole "bigger TMA" lever.
-    isolation: >
-      Enumerated, not inferred: the probe calls the encoder once per (swizzle,
-      box width) pair and reports the driver's own return code.
-    falsifier: >
-      A single ok at (SW128, 256 B) would overturn the width cap; the table is
-      none:ok-everywhere, 32B:ok<=32, 64B:ok<=64, 128B:ok<=128. A single ok at
-      boxDim[1]=257 would overturn the row cap; 8 / 64 / 128 / 192 / 256 are ok
-      and 257 / 512 are rc1.
-    design_rule: >
-      A descriptor whose STRIDED dimension is short caps the frame size and
-      therefore caps the copy column via TMA-ISSUE. An activation shaped
-      (M_PAD=64, D) cannot exceed 64 rows x 128 B = 8 KB per TMA no matter how
-      the tile is chosen; pre-blocking moves the row count into the long
-      dimension and unlocks the larger frame. Check this BEFORE choosing BK.
-    provenance:
-      job: 545906, reconfirmed 546955
-      date: 2026-08-25
-      node: ACD1-31
-      toolchain: CUDA 13.1 driver, cuTensorMapEncodeTiled
-      timer: n/a -- return codes, not timing
-      source: probes/memory/tma_ring.py
-      sweep: Q4a (describe)
-
-  - tag: TMA-L2
-    unit: tma
-    claim: >
-      The per-warp issue interval is source-independent: an L2-resident read and
-      a cold DRAM read cost the same per transaction below 64 CTAs. They diverge
-      only once DRAM's ceiling binds, and L2 shows no ceiling of its own through
-      6.45 TB/s.
-    value: 6447
-    units: GB/s observed from L2 at 264 CTAs, still transaction-bound (335 ns/txn)
-    short: 6.45 TB/s, no cap
-    valid: >
-      4 MB footprint (L2-resident, 50 MB L2) against 256 MB (cold). 8 KB frames,
-      depth 4, 1 warp. Below 64 CTAs the two agree within 1-3%: 492/495,
-      970/979, 1854/1914 GB/s at 16/32/64 CTAs.
-    isolation: >
-      Only the walk footprint changes between the two jobs; descriptor,
-      geometry, ring, CTA count and trip count are identical.
-    falsifier: >
-      If the 270 ns were memory latency rather than issue rate, the L2 source
-      would be markedly faster at low CTA counts. It is 0.6% faster at 32 CTAs.
-    design_rule: >
-      Traffic that MULTIPLIES through L2 is nearly free -- an M-split that
-      re-reads the same weights M/T_t times costs essentially nothing as long as
-      the extra reads hit L2. Weigh a tiling that trades L2 re-reads for fewer
-      transactions accordingly. This does not license unbounded L2 traffic: the
-      launch unit measured a linear 0.23 us/MB of L2 activation re-read inside a
-      real kernel at only 26% DRAM utilisation.
-    provenance:
-      job: 546955 (L2) against 545906 (DRAM)
-      date: 2026-08-25
-      node: ACD1-31
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/tma_ring.py
-      sweeps: B, D at --footprint-mb 4
-
-  - tag: TMA-CTA-CEIL
-    unit: tma
-    claim: >
-      One CTA cannot absorb more than ~133 GB/s of TMA traffic, however many
-      producer warps it runs and however big their boxes. Per-CTA delivery is
-      min(n_warps x frame_bytes / 270 ns, 133 GB/s), and the knee is at 36 KB of
-      per-CTA product. Since one warp is capped at a 32 KB frame by
-      TMA-FRAME-CAP, a single producer already reaches 91% of this ceiling --
-      which is what the second producer warp is worth, and why the third is
-      worth nothing.
-    value: 132.7
-    units: GB/s delivered into one CTA, at >= 36 KB of n_warps x frame
-    short: 133 GB/s per CTA
-    valid: >
-      Measured at 8 CTAs, where aggregate delivery is 8% of TMA-CEIL and nothing
-      else can bind. depth 4, 128 B box rows, stride8k, cold DRAM. The knee in
-      4 KB steps of per-CTA product: 32 KB -> 121.3, 36 -> 131.5, 40 -> 132.1,
-      44 -> 132.4, 48 -> 132.6, 56 -> 132.8 GB/s. Linear extrapolation from
-      TMA-ISSUE would give 182 GB/s at 48 KB.
-    isolation: >
-      Only n_warps x frame moves; CTA count, depth, geometry and footprint are
-      held. Each per-CTA product is realised twice, once as 2 warps with a large
-      frame and once as 4 warps with a small one, so the axis being tested is
-      the product and not either factor.
-    falsifier: >
-      If the ceiling were per-WARP, the 4-warp column would reach twice the
-      2-warp column; they agree within 0.3% at all five knee points. If it were
-      a shared-memory capacity effect, 2 x 28 KB (224 KB in flight) and
-      2 x 18 KB (144 KB) would differ; they agree within 1%. If it were the
-      aggregate curve leaking in, it would move with CTA count; the same knee
-      shape appears at 16 CTAs.
-    design_rule: >
-      (a) The second producer warp buys ~10% per CTA, not 2x, because one warp
-      at the 32 KB descriptor cap already delivers 121 of the 133 GB/s a CTA can
-      take. The third and fourth buy nothing at all.
-      (b) How much per-CTA budget is useful DEPENDS ON THE GRID, and this is the
-      part that gets designed wrong in both directions. On a SMALL grid the
-      per-CTA ceiling binds, so stop at ~36 KB per CTA (2 x 18 KB): at 8 CTAs,
-      32 -> 48 KB per CTA is +9.3% and 48 -> 56 KB is +0.2%. On a FULL grid the
-      aggregate curve binds instead, extra per-CTA bytes still raise the total
-      in flight, and more IS better up to ~48 KB: at 132 CTAs, 32 -> 48 KB per
-      CTA measures +4.0% (2903 -> 3018 GB/s). What holds at every grid size is
-      the upper end -- 48 -> 56 KB per CTA is worth nothing anywhere (132 CTAs:
-      3018 -> 3006), so the 227 KB smem cap is NOT the constraint to design
-      against; ~48 KB x depth of in-flight smem is.
-      (c) No grid below TMA-CEIL / 133 = ~23 CTAs can carry this machine's
-      bandwidth however it is tiled; measured, ~48 CTAs are needed for 90%.
-    provenance:
-      job: 547353 (knee), 547349 (the 32-48 KB bracket)
-      date: 2026-08-25
-      node: ACD1-18
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/tma_ring.py
-      sweeps: H, G
-
-  - tag: TMA-WARPS
-    unit: tma
-    claim: >
-      Producer warps and CTAs are the same currency below TMA-CTA-CEIL: N CTAs
-      of 2 producer warps deliver what 2N CTAs of 1 warp deliver, across the
-      whole CTA range. Above the per-CTA ceiling the equivalence stops, because
-      extra warps in one CTA have nowhere to put the bytes.
-    value: 3.4
-    units: percent worst disagreement between (N CTAs x 2 warps) and (2N x 1 warp)
-    short: warps == CTAs, +-3.4%
-    valid: >
-      22 matched pairs spanning 8..132 CTAs and 1..24 KB frames, all with
-      per-CTA product <= 32 KB, depth 4, cold DRAM. Twenty of the 22 agree
-      within 1.3%; the two outliers are 3.4% and 2.2%, both inside the 6% noise
-      floor. Outside that per-CTA bound the pairs are NOT equivalent -- see
-      TMA-CTA-CEIL.
-    isolation: >
-      Each pair holds the product, the frame, the depth and the geometry fixed
-      and trades exactly one CTA for one warp. Sweeps E (1 warp) and G (2 and 4
-      warps) walk the same CTA ladder, so the comparison is a ladder against a
-      ladder rather than two isolated points.
-    falsifier: >
-      A per-warp resource (issue port, barrier slot) would make two warps in one
-      CTA cheaper or dearer than the same two warps in two CTAs; 22 pairs say
-      they cost the same to within noise. The one place it DOES break is the
-      per-CTA ceiling, and that break was found by this same comparison.
-    design_rule: >
-      Spend whichever is cheaper. A persistent kernel pinned at 1 CTA/SM buys
-      copy bandwidth with a second producer warp; a kernel free to grow its grid
-      buys the same with more CTAs and no extra smem. What must not be assumed
-      is that either scales past TMA-CTA-CEIL.
-    provenance:
-      job: 547349
-      date: 2026-08-25
-      node: ACD1-18
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/tma_ring.py
-      sweeps: E, F, G
-
-  - tag: TMA-CEIL
-    unit: tma
-    claim: >
-      Sustained TMA delivery from DRAM tops out at ~3.02 TB/s -- 90% of the 3.35
-      datasheet peak, and 9% ABOVE the 2.77 TB/s that the CUDA-core streaming
-      fit calls marginal bandwidth. Below that it is not a single number: the
-      reachable ceiling climbs with in-flight bytes, 2.61 TB/s at 1 MiB, 2.78 at
-      2 MiB, 2.94 at 4 MiB, 3.02 at 8.25 MiB.
-    value: 3.02
-    units: TB/s sustained, at >= 6 MiB in flight across the grid
-    short: 3.02 TB/s sustained
-    valid: >
-      Cold DRAM, 256 MiB walk, depth 4, 128 B box rows. Flat between 6.19 and
-      8.25 MiB in flight (3012 -> 3023 GB/s), so it is an asymptote rather than
-      the last point of a rising curve. Caveat on the top bin: it holds only ONE
-      distinct configuration (264 CTAs x 32 KB), measured twice; the 6.19 MiB bin
-      has two (264x1x24K, 132x2x24K) agreeing to 0.4%.
-    isolation: >
-      One kernel moving 277 MB in ~92 us, so grid ramp is 1.3% of the window
-      rather than a fitted term. That is exactly the difference from BW-CEIL,
-      which is fitted across 4-34 MB transfers where the 1.85 us fixed cost is a
-      large share. The two do not conflict; they are different regimes of one
-      machine, and the fit's marginal slope is the more pessimistic.
-    falsifier: >
-      If the 3.02 were L2 leakage it would not survive a 268 MB footprint
-      against a 50 MB L2 walked linearly, where LRU gives essentially no hits.
-      If it were an artefact of long kernels, the 8 KB rows at the same CTA
-      counts would show it too; they saturate at 2.77.
-    design_rule: >
-      Use 3.02 TB/s as the denominator for a TMA-fed copy floor at steady state,
-      and 1.85 + MB/2.77 for a short kernel whose ramp is a real share of its
-      time. Quoting BW-CEIL for a long TMA mainloop understates achievable
-      delivery by 9%, which makes a kernel look finished when it is not.
-    provenance:
-      job: 547306
-      date: 2026-08-25
-      node: ACD1-36
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/tma_ring.py
-      sweeps: E, F
-
-  - tag: TMA-FRONTIER
-    unit: tma
-    claim: >
-      Delivered bandwidth is a function of the PRODUCT n_ctas x n_warps x
-      frame_bytes alone, not of any factor separately. Configurations as
-      different as 8 CTAs x 32 KB and 264 CTAs x 1 KB land on one curve. CTA
-      count, producer-warp count and bytes-per-TMA are therefore interchangeable
-      currency, and the only question a tiling decision has to answer is how
-      many bytes it keeps in flight per issue round.
-    value: 6.9
-    units: percent worst-case spread between configurations at equal product
-    short: one curve, +-6.9%
-    valid: >
-      64 KB to 8.25 MiB of product (a 132x range), 22 bins, depth 4, 128 B box
-      rows, cold DRAM, AND per-CTA product <= 32 KB. That last condition is not
-      optional: past TMA-CTA-CEIL a configuration delivers up to 26% less than
-      its product predicts, so `scripts/curve_from_json.py` excludes those rows
-      and counts them rather than binning them. Worst within-bin spread 6.9%
-      against a 6% noise floor; the residual has a direction -- at equal
-      product, more CTAs with smaller per-CTA products beat fewer with larger
-      ones by ~4% (16 CTAs x 32 KB delivers 1795 where 64 x 8 KB delivers 1859),
-      which is BW-CTA's small-grid effect showing through. The curve itself is
-      `curves: tma-bw-vs-product` below.
-    isolation: >
-      The bins mix every axis on purpose -- CTA count 8..264, producer warps 1
-      and 2, frame 1..32 KB -- so a bin agreeing is evidence about the LAW and
-      not a repeat of one configuration. Depth is held at 4 throughout
-      (TMA-DEPTH) and geometry is held (TMA-GEOM bounds it at 3.4% anyway).
-    falsifier: >
-      Two equalities the product form predicts and a per-axis model does not,
-      both measured. (264 CTAs, 1 warp) and (132 CTAs, 2 warps) agree within
-      1.3% at all ten frame sizes. And doubling the frame halves the CTA count
-      needed for a given bandwidth: 90% of TMA-CEIL takes ~181 CTAs at 8 KB,
-      ~91 at 16 KB, ~46 at 32 KB. Either failing would have killed it, and the
-      first is now 22 matched pairs across the CTA ladder (TMA-WARPS), not one
-      point. The law has TWO edges. Below, it does not extend to arbitrarily
-      small grids: 16-24 CTA configurations sit ~4% under the curve at their
-      product. Above, it stops at TMA-CTA-CEIL -- 8 CTAs x 2 warps x 24 KB has
-      the product of a 1436 GB/s configuration and delivers 1061.
-    design_rule: >
-      Answers the two questions a tiling decision actually asks, off the curve
-      rather than off a peak. Large tile, how few SMs: for 90% of TMA-CEIL, ~181
-      CTAs (so >1 per SM) at 8 KB frames, ~96 at 16 KB, ~48 at 32 KB, one producer warp each.
-      Full grid, how small a TMA: at 132 CTAs x 1 warp, ~10.9 KB for 90% and
-      ~23.1 KB for 95%. Two consequences worth stating outright. (a) 99% of
-      TMA-CEIL needs ~5.6 MiB in flight, which at 132 CTAs x 1 warp would take a
-      43 KB frame -- above the 32 KB descriptor cap -- so one producer warp per
-      SM on a 132-CTA grid CANNOT pass ~97% however the tile is chosen; the fix
-      is a second producer warp or a second CTA per SM, never a bigger box.
-      (b) The naive frontier BW_ceil x t_issue = 730 KB lands at ~79% of
-      TMA-CEIL, not at 100%: budget ~2x it for 90% and ~4x for 95%.
-    provenance:
-      job: 547306
-      date: 2026-08-25
-      node: ACD1-36
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/tma_ring.py + scripts/curve_from_json.py
-      sweeps: E, F (plus A's depth-4 rows)
-
-  # ---------------------------------------------------------------- launch
-  - tag: LAUNCH-RAMP
-    unit: launch
-    claim: >
-      Every kernel starts in debt by the time it takes the grid to ramp:
-      ~1.24 us at 128 CTAs and above. This is grid ramp, not host launch
-      overhead, and capturing the launch in a CUDA graph does not remove it.
-    value: 1.24
-    units: us per launch at >= 128 CTAs (0.95 at 32, 1.20 at 64, 1.24 at 256)
-    short: 1.24 us/launch
-    valid: empty kernel body, real thread count, real dynamic smem
-    isolation: >
-      The kernel body is empty, so nothing but ramp is being timed. Corroborated
-      by three real kernels that do almost no work: 1.33, 1.49 and 1.76 us.
-    falsifier: >
-      Host-side launch overhead would be removed by graph capture. These numbers
-      are FROM the graph-capture harness, so what remains is not it.
-    design_rule: >
-      Launch COUNT is a first-class term in every fusion decision, ranking
-      alongside bytes moved. Six decoder launches floor at 6 x 1.85 us before a
-      byte moves; cutting to four saves 3.7 us per layer at the floor. If a
-      kernel's target is 5 us, a quarter of it is already spent.
-    provenance:
-      job: none recorded -- see sm90/example-phase0-run.md
-      date: 2026-08-20
-      node: ACD1-*
-      toolchain: torch 2.11.0+cu130, CUDA 13.0
-      timer: graph_time_cold (32 launches in one CUDA graph, rotating buffers)
-      source: flash_vla.runtime.cuda.graph_time_cold
-
-  - tag: BW-CEIL
-    unit: launch
-    claim: >
-      A cold read costs t_us = 1.85 + MB / 2.77 at 128 CTAs: ~1.85 us of fixed
-      cost, then a marginal 2.77 TB/s. The marginal rate is 83% of the 3.35 TB/s
-      datasheet peak, and bytes / peak_BW is not a floor.
-    value: 2.77
-    units: TB/s marginal, behind 1.85 us of fixed cost
-    short: 1.85us + MB/2.77
-    valid: >
-      4-34 MB transfers, 128 CTAs, cold. Fit holds within 6% across the range
-      (worst row 5.8%, the other three 0.6 / 3.7 / 2.1%). Average bandwidth is
-      far lower on small transfers because the fixed term dominates: 1256 GB/s
-      at 4.19 MB rising to 2353 at 33.55 MB.
-    isolation: >
-      Pure read, no compute. The fixed term is separated from the marginal rate
-      by fitting across a 8x range of sizes rather than dividing one point.
-    falsifier: >
-      cuBLAS on a matching shape should land on the fit if the model is
-      calibrated; mm (50,1024)@(1024,8192), 16.78 MB, measures 7.95 us against a
-      modelled 7.91. Landing far BELOW the model would mean it is too
-      pessimistic and every derived target is wrong in the safe-looking
-      direction. Independently reproduced by the tma unit on a different
-      toolchain, which tops out at 2.77-2.78 TB/s.
-    design_rule: >
-      Replace bytes / 3.35 TB/s with 1.85 + MB/2.77 in every floor, per launch.
-      A floor that omits the fixed term is unfalsifiable: two of three kernel
-      targets in this repo were set BELOW their own floors that way.
-    provenance:
-      job: none recorded -- see sm90/example-phase0-run.md
-      date: 2026-08-20
-      node: ACD1-*
-      toolchain: torch 2.11.0+cu130, CUDA 13.0
-      timer: graph_time_cold
-      source: flash_vla.runtime.cuda.graph_time_cold
-
-  - tag: BW-CTA
-    unit: launch
-    claim: >
-      Bandwidth depends on CTA count well past the point where the grid covers
-      the machine, and more CTAs is not monotonically better.
-    value: 128
-    units: CTAs at which a 4.19 MB cold read is fastest (3.33 us)
-    short: knee @128 CTA
-    valid: >
-      4.19 MB cold read: 8.91 / 5.43 / 3.85 / 3.33 / 3.60 us at 16 / 32 / 64 /
-      128 / 264 CTAs. Returns flatten past 64 (64->128 is only 1.16x) and 264 is
-      WORSE than 128.
-    isolation: Identical bytes at every point; only the grid changes.
-    falsifier: >
-      Confirmed end-to-end rather than only in a probe: a no-split-K gated
-      residual at 16 / 32 / 64 CTAs measures 8.95 / 6.67 / 6.41 us against 5.51
-      for the 128-CTA split-K version of the same maths.
-    design_rule: >
-      32 CTAs cost 1.63x what 128 do for identical bytes -- this is what
-      justifies split-K over a coarser tile, and what kills a grid sized to the
-      output tiling alone. Check the grid against this curve at L2, not after
-      the kernel is written.
-    provenance:
-      job: none recorded -- see sm90/example-phase0-run.md
-      date: 2026-08-20
-      node: ACD1-*
-      toolchain: torch 2.11.0+cu130, CUDA 13.0
-      timer: graph_time_cold
-      source: flash_vla.runtime.cuda.graph_time_cold
-
-  - tag: CLUSTER-SYNC
-    unit: launch
-    claim: >
-      Declaring a thread-block cluster is free; synchronising one is not. A
-      cluster_sync costs 0.65 us at cluster 8 and 0.51 us at cluster 4 -- at
-      ZERO skew, in an empty kernel. That is a floor, not the price: placement
-      dominates it.
-    value: 0.65
-    units: us per cluster_sync at cluster 8 (0.51 at cluster 4)
-    short: 0.65 us/barrier
-    valid: empty kernel, 128 CTAs, 85 KB dynamic smem, so every cluster places
-    isolation: >
-      Only the attribute and the barrier count change: no cluster / cluster 2 /
-      4 / 8 all measure 1.27-1.30 us, and each added barrier adds ~0.65.
-    falsifier: >
-      If the cost were the barrier instruction alone, moving one barrier within
-      a real kernel would not change the total. Hoisting K2's single barrier
-      from its reduction up beside the TMA issue -- on the theory that a
-      microsecond of load latency would hide it -- cost 5.49 -> 6.95 us.
-    design_rule: >
-      Design the NUMBER of barriers, not the cluster size. A barrier at the END
-      of a kernel is nearly free (the kernel's duration is already the max over
-      its CTAs, so it only absorbs skew already being paid); at the START it
-      ADDS fill skew to the critical path. Push partials before one barrier
-      rather than pulling after one (worth 0.67 us, bit-identical output), and
-      drop a trailing barrier entirely when a transaction barrier already covers
-      the cross-CTA access (worth 0.41 us).
-    provenance:
-      job: none recorded -- see sm90/example-phase0-run.md
-      date: 2026-08-20
-      node: ACD1-*
-      toolchain: torch 2.11.0+cu130, CUDA 13.0
-      timer: graph_time_cold
-      source: flash_vla.runtime.cuda.graph_time_cold
-
-  - tag: CLUSTER-PLACE
-    unit: launch
-    claim: >
-      Cluster placement is capped by cudaOccupancyMaxActiveClusters, not by the
-      SM count. At 1 CTA/SM this machine places 66 clusters of 2, 30 of 4, and
-      15 of 8 -- so a 128-CTA grid at cluster 8 is NOT co-resident.
-    value: 15
-    units: placeable clusters of 8 at 1 CTA/SM (120 CTAs, against 132 SMs)
-    short: 15 clusters of 8
-    valid: 256 threads, ~200 KB dynamic smem. At 100560 B (2 CTAs/SM) it returns 30 clusters of 8.
-    isolation: >
-      The two configurations differ only through the occupancy query, which is
-      the evidence that the placer follows the query rather than the SM count.
-    falsifier: >
-      Confirmed behaviourally, not only by the query: a probe kernel whose CTAs
-      spin until all arrive completes at 120 blocks under cluster 8 and times
-      out at 128.
-    design_rule: >
-      A 128-CTA grid at 1 CTA/SM cannot use cluster 4 or 8 without a deadlock
-      (if CTAs wait on each other) or a second wave (~2x, if they do not). The
-      lever is smem, not the grid: get under ~115712 B for 2 CTAs/SM and
-      clusters of 8 place again -- with __launch_bounds__(256, 2) so the
-      register limit follows. Cooperative launch and clusters are not available
-      together on sm90: cooperative + cluster 8 returns
-      cudaErrorCooperativeLaunchTooLarge, for the same 120-CTA reason.
-    provenance:
-      job: none recorded -- see sm90/example-phase0-run.md
-      date: 2026-08-20
-      node: ACD1-*
-      toolchain: torch 2.11.0+cu130, CUDA 13.0
-      timer: n/a -- occupancy query plus a spin-barrier probe
-      source: cudaOccupancyMaxActiveClusters
-
-  - tag: OCC-NOT-WARPS
-    unit: launch
-    claim: >
-      Occupancy CAPACITY is not resident warps. The scheduler spreads a grid
-      across SMs first, so 128 CTAs on 132 SMs land one per SM whatever
-      cudaOccupancyMaxActiveBlocksPerMultiprocessor reports.
-    value: 3
-    units: multiple of SM count the grid needs before extra blocks/SM become warps
-    short: grid >= 3x SMs
-    valid: sm90, any smem/register budget
-    isolation: >
-      Measured by moving only smem: dropping one kernel phase from 204288 to
-      72320 B took the query from 1 to 3 CTAs/SM and bought 0.74 us -- because
-      the warp count never moved, not because occupancy did.
-    falsifier: >
-      ncu on that kernel: 8 active warps/SM, 0.30 eligible warps per scheduler,
-      top stall short-scoreboard at 42.7%. The starvation is real; freeing smem
-      did not convert it.
-    design_rule: >
-      Grid = SM_count x cta_per_sm, never SM_count. Freeing smem to reach 3
-      CTAs/SM buys nothing until the grid reaches 3 x SM_count. Read Block Limit
-      REGISTERS as well as Block Limit Shared Mem -- at 216 regs/thread and 256
-      threads the register limit is also 1.
-    provenance:
-      job: none recorded -- see sm90/example-phase0-run.md
-      date: 2026-08-20
-      node: ACD1-*
-      toolchain: torch 2.11.0+cu130, CUDA 13.0
-      timer: graph_time_cold plus ncu --set full
-      source: cudaOccupancyMaxActiveBlocksPerMultiprocessor
-
-  # ---------------------------------------------------------------- atomic
-  - tag: ATOM-RETURN
-    unit: atomic
-    claim: >
-      The return value is what costs, not the operation. A fire-and-forget
-      `red.global.add` runs 1.30x faster than an `atom.global.add` that returns
-      the old value, and `atom` costs the same whatever it does -- add, exch and
-      cas are within 1% of each other.
-    value: 1.30
-    units: speedup of red over atom, uncontended
-    short: red is 1.30x atom
-    valid: >
-      132 CTAs x 256 threads, one distinct address per thread, 128 B apart, L2
-      resident. red.u32 85.19 vs atom.u32 65.54 Gop/s; red.f32 82.04 vs
-      atom.f32 64.50 (1.27x). atom.exch 64.47 and atom.cas 63.98 land on
-      atom.add. Under heavy sharing the difference VANISHES: at one address both
-      measure 1.36 Gop/s.
-    isolation: >
-      Same address pattern, same thread count, same op count; only the
-      instruction changes. Returned values are summed into a register that is
-      conditionally stored, so the compiler cannot drop them, and consecutive
-      ops are independent -- chaining them would measure latency instead.
-    falsifier: >
-      If the cost were in the arithmetic, cas (a compare, a select and a store)
-      would be dearer than add; it is 2% cheaper than atom.add and 25% cheaper
-      than nothing would predict. The three returning ops agreeing to 1% is what
-      isolates the return path.
-    design_rule: >
-      Any accumulate that does not need the old value should be `red`, not
-      `atom` -- 30% for a one-word edit. `atomicAdd()` in CUDA C emits the
-      returning form unless the result is unused and the compiler proves it, so
-      check the SASS or write the PTX. Where threads contend heavily the choice
-      is irrelevant; spend the effort on placement instead (ATOM-PLACE).
-    provenance:
-      job: 548164
-      date: 2026-08-25
-      node: ACD1-4
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/gmem_atomic.py
-      sweep: A1
-
-  - tag: ATOM-PLACE
-    unit: atomic
-    claim: >
-      Address PLACEMENT is the largest lever in this unit, and it cuts both
-      ways. With little sharing, packing a warp's 32 atomics into one 128 B line
-      is 6.3x faster than giving each thread its own line. With heavy sharing
-      the same packing funnels everything through too few lines and is 2.4x
-      SLOWER. The crossover is around 100 threads per address.
-    value: 6.3
-    units: speedup of 4 B spacing over 128 B spacing at equal address count and equal sharing
-    short: 6.3x from packing
-    valid: >
-      132 CTAs x 256 threads = 33792 threads, L2 resident, red.u32. At 16384
-      addresses (2 threads each): 525.6 Gop/s at 4 B spacing vs 83.1 at 128 B.
-      At 2048 (16 threads each): 165.4 vs 70.5. At 256 (132 threads each) it
-      REVERSES: 27.2 vs 64.9. At 4 addresses: 5.4 vs 2.3. At one address both
-      are 1.36 and placement is meaningless.
-    isolation: >
-      Address count -- and therefore the degree of sharing -- is held fixed
-      across each pair; only the byte spacing between distinct addresses moves.
-      Each thread's address is computed once outside the loop, so the loop
-      contains the atomic unit and nothing else.
-    falsifier: >
-      A pure per-address serialisation model predicts placement is irrelevant at
-      fixed sharing; it is worth 6.3x. A pure per-line-bandwidth model predicts
-      packing always wins; it loses 2.4x at 132 threads per address. Only a
-      model with both a coalescing win and a line-serialisation loss survives
-      both rows.
-    design_rule: >
-      Lay a reduction out so a warp's lanes hit ONE 128 B line and so few lanes
-      share an address. That is the natural layout for a split-K partial
-      accumulate over contiguous outputs, and it is 6.3x the scattered
-      alternative -- worth more than every other choice in this unit combined.
-      Conversely, a histogram-shaped op where many lanes hit the same few bins
-      should SPREAD its bins across lines, or privatise them.
-    provenance:
-      job: 548164
-      date: 2026-08-25
-      node: ACD1-4
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/gmem_atomic.py
-      sweep: A2
-
-  - tag: ATOM-CONTENTION
-    unit: atomic
-    claim: >
-      A single contended address sustains 1.36 Gop/s -- one op per 0.74 ns,
-      serialised in the L2 atomic unit -- and that is 386x below the best
-      uncontended rate. Throughput scales roughly linearly with the number of
-      distinct addresses until placement effects take over.
-    value: 1.36
-    units: Gop/s to one address, 33792 threads contending
-    short: 1.36 Gop/s, 1 address
-    valid: >
-      red.u32 and atom.u32 both 1.36 Gop/s at one address (identical, so the
-      return value is free here). 4 / 32 / 256 / 2048 / 16384 addresses at 4 B
-      spacing give 5.4 / 12.6 / 27.2 / 165.4 / 525.6 Gop/s. L2 resident
-      throughout; this is the L2 atomic unit, not DRAM.
-    isolation: >
-      Only the number of distinct addresses moves within a placement column.
-      Thread count, op count and instruction are held.
-    falsifier: >
-      If contention were resolved in the SM rather than in L2, the rate at one
-      address would scale with CTA count; it does not move with the return
-      value, the scope or the instruction, all of which change what the SM does
-      and none of which change 1.36.
-    design_rule: >
-      One global accumulator is worth 1.36 Gop/s and nothing will fix it but
-      more accumulators. Privatise per CTA and combine, or split the reduction
-      across addresses: 2048 addresses already buy 122x. This is also the number
-      that decides `red.global.add` versus a second kernel -- see the crossover
-      arithmetic in sm90/unit-atomic.md.
-    provenance:
-      job: 548164
-      date: 2026-08-25
-      node: ACD1-4
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/gmem_atomic.py
-      sweep: A2
-
-  - tag: ATOM-WIDTH
-    unit: atomic
-    claim: >
-      The atomic unit is per-TRANSACTION, not per-byte: u32, f32, f16x2, bf16x2,
-      v2.f32 and v4.f32 all retire at the same rate, so a wider atomic is free
-      bandwidth. `red.global.add.v4.f32` moves 3.8x the bytes of `red.u32` for
-      the same instruction count.
-    value: 3.8
-    units: reduction bandwidth of v4.f32 over u32 at equal op rate
-    short: v4.f32 free, 3.8x bytes
-    valid: >
-      Uncontended, 128 B spacing, L2 resident. All six widths measure 81.4-85.2
-      Gop/s -- a 4.6% spread, inside the 6% noise floor -- giving 340.6 GB/s for
-      u32 and 1301.8 GB/s for v4.f32. All six encode and run on sm_90a; the
-      vector forms were enumerated against the assembler, not assumed.
-    isolation: >
-      Same address pattern, thread count and op count; only the instruction
-      width changes. The comparison is at equal OP count, which is what makes
-      the byte column meaningful.
-    falsifier: >
-      A per-byte unit predicts v4.f32 runs at a quarter the op rate of u32. It
-      runs at 95.5% of it.
-    design_rule: >
-      Reduce in the widest atomic the data allows. A split-K partial accumulate
-      over f32 outputs should use `red.global.add.v4.f32`, which turns a
-      340 GB/s ceiling into 1.3 TB/s for no extra instructions. Combine with
-      ATOM-PLACE -- a warp issuing v4.f32 covers 512 B, so four lanes fill a
-      128 B line and the packing rule applies to groups of four.
-    provenance:
-      job: 548164
-      date: 2026-08-25
-      node: ACD1-4
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/gmem_atomic.py
-      sweep: A3
-
-  - tag: ATOM-SCOPE
-    unit: atomic
-    claim: >
-      Memory scope is free. `.cta`, `.gpu` and `.sys` on the same instruction
-      measure within 0.5% of each other, contended and uncontended alike.
-    value: 0.5
-    units: percent worst spread across cta / gpu / sys
-    short: scope is free
-    valid: >
-      red.u32 at cta/gpu/sys = 85.19 / 84.99 / 85.08 Gop/s uncontended and
-      10.46 / 10.46 / 10.47 at 32 addresses; atom.u32 = 65.18 / 65.26 / 65.47
-      and 10.40 / 10.40 / 10.40. Relaxed semantics throughout -- this says
-      nothing about the cost of `.acquire` / `.release`, which ATOM-HOP measures.
-    isolation: Only the scope qualifier changes; everything else is held.
-    falsifier: >
-      If a wider scope forced a flush or a different L2 path, `.sys` would be
-      measurably dearer than `.cta`. Across twelve rows the widest gap is 0.5%.
-    design_rule: >
-      Choose scope for CORRECTNESS, never for speed -- there is no performance
-      argument for narrowing it, and a too-narrow scope fails silently and
-      data-dependently. In particular, do not weaken a megakernel's
-      cross-CTA ordering to `.cta` hoping to save time; it saves nothing.
-    provenance:
-      job: 548164
-      date: 2026-08-25
-      node: ACD1-4
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/gmem_atomic.py
-      sweep: A4
-
-  - tag: ATOM-HOP
-    unit: atomic
-    claim: >
-      One gmem-counter hop -- a release advance on one CTA, observed by an
-      acquire load on another -- costs ~651 ns with an atomic increment and
-      ~564 ns with a plain release store. Adding observers is FREE: 130 CTAs
-      polling the same counter cost 0.4% more than none.
-    value: 651
-    units: ns per arrive->observe hop (564 ns for a plain release store)
-    short: 651 ns/hop, observers free
-    valid: >
-      Ping-pong between two CTAs, 2000 rounds, timed from the host. Atomic
-      advance with 0 / 6 / 30 / 130 extra observing CTAs: 651.1 / 648.5 / 648.4
-      / 653.8 ns. Release-store advance: 564.4 / 570.4 / 574.1 / 563.9 ns.
-    isolation: >
-      Timed as a ping-pong so the number never crosses two SMs' unsynchronised
-      clocks: the host times 2000 round trips and divides by 4000 hops. Only
-      thread 0 of each CTA participates, so no intra-CTA sync is in the loop.
-      Observers poll the same line but never advance it, which separates
-      observation cost from advance cost.
-    falsifier: >
-      If observation cost grew with observers, the 130-CTA row would exceed the
-      0-CTA row; it is within 0.4% for both idioms. If the hop were dominated by
-      the atomic ALU rather than by the round trip, the release-store variant
-      -- which has no atomic at all -- would be far cheaper than 87% of it.
-    design_rule: >
-      A task-graph counter hop costs ~650 ns, which is what a task must do more
-      work than to be worth ordering separately -- at TMA-CEIL that is about
-      2 MB of traffic. Broadcast is free, so one counter can gate the whole
-      machine: prefer one counter with many observers over a tree. And where a
-      single producer owns the counter, a `st.release` flag is 13% cheaper than
-      a `red.release.add`; use the atomic only when several producers must
-      accumulate into it.
-    provenance:
-      job: 548164
-      date: 2026-08-25
-      node: ACD1-4
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti
-      source: probes/memory/gmem_atomic.py
-      sweep: A5
-
-  # ------------------------------------------------------------------- mma
-  - tag: MMA-RATE
-    unit: mma
-    claim: >
-      At N >= 64 a `wgmma.mma_async.m64nNk16.f32.bf16.bf16` retires in
-      ~0.50 x N cycles, which is 94-95% of the architectural peak -- the tensor
-      core is the limit and nothing else is. Below N = 64 a per-instruction
-      floor of ~19 cycles takes over, so a small-N wgmma wastes most of the
-      unit: N = 8 runs at 20% of peak.
-    value: 0.502
-    units: cycles per unit of N, at N >= 64 (plus a ~19-cycle per-instruction floor)
-    short: 0.50 cyc/N, floor 19
-    valid: >
-      One warpgroup, 4 wgmma in flight, operands resident in smem, bf16 in with
-      f32 accumulate. Cycles per instruction at N = 8 / 16 / 32 / 64 / 96 / 128
-      / 192 / 256 = 18.9 / 20.7 / 24.7 / 32.8 / 48.7 / 65.0 / 97.1 / 129.3,
-      against an architectural 3.8 / 7.7 / 15.3 / 30.7 / 46.0 / 61.4 / 92.1 /
-      122.8. Identical at 1 CTA and at 132 CTAs, so it is a per-SM rate.
-    isolation: >
-      No TMA, no global traffic, no barriers in the loop; the same two smem
-      tiles are re-issued every iteration, which keeps address arithmetic out of
-      the measurement and matches how a real mainloop accumulates every k-step
-      into one register set. Cycles come from clock64 on the issuing SM, so the
-      number does not move with the unpinnable clock. TWO build-time traps had
-      to be cleared first, and either would have produced a plausible wrong
-      answer: `-arch=sm_90a` resolves to virtual arch compute_90 on this
-      toolchain and ptxas then rejects wgmma.fence / commit_group / wait_group
-      outright, and without `warpgroup_fence_operand` on every accumulator
-      ptxas emits C7515 and SERIALISES the pipeline. The probe fails its build
-      on C7515 rather than reporting the serialised rate.
-    falsifier: >
-      The measurement is checked against a reference before it is reported: one
-      wgmma on random data, D written out through the m64nNk16 accumulator
-      mapping, compared against torch at every N. Relative error 5e-8 to 1e-7 at
-      N = 8..256, so the descriptors and the register mapping are right. And the
-      architectural yardstick is itself a falsifier: landing at 94-95% of
-      2135 MAC/cycle/SM says no layout or bank effect is throttling the operand
-      path; a number far below it would have meant the opposite.
-    design_rule: >
-      **Choose the wgmma N >= 64, or do not use the tensor core.** At N = 8 the
-      instruction costs 18.9 cycles to do 3.8 cycles of work -- 5x waste -- and
-      the penalty is still 38% at N = 32. A GEMM whose N tile is small cannot
-      reach tensor-core peak however it is scheduled, which is a tiling
-      constraint, not a codegen one. Above 64, N is free: cycles scale exactly
-      with the FLOPs, so a bigger N costs nothing per FLOP and cuts the
-      instruction count.
-    provenance:
-      job: 548235
-      date: 2026-08-25
-      node: ACD1-*
-      toolchain: torch 2.13.0+cu130, CUDA 13.1, CUTLASS 4.5.1, -gencode arch=compute_90a
-      timer: cupti plus in-kernel clock64
-      source: probes/compute/mma_rate.py
-      sweep: M1
-
-  - tag: MMA-DEPTH
-    unit: mma
-    claim: >
-      The tensor core needs at least 4 wgmma in flight AND a wait_group depth of
-      at least 1. `wgmma.wait_group 0` drains the pipeline every iteration and
-      caps the unit at 69-80% however many instructions the group holds.
-    value: 4
-    units: wgmma in flight, with wait_group >= 1
-    short: 4 in flight, wait >= 1
-    valid: >
-      N = 64, one warpgroup, 132 CTAs. Cycles per instruction by (per-group,
-      wait): (1,0) 79.0 / (1,1) 42.0 / (1,3) 33.7 / (2,0) 55.6 / (2,1) 33.1 /
-      (4,0) 44.6 / (4,1) 32.3 / (8,0) 38.2, against an ideal 30.7. Confirmed at
-      N = 128: (1,0) 111.0 vs (4,1) 64.4 against an ideal 61.4.
-    isolation: >
-      Group size and wait depth are separate template parameters, so the two can
-      be moved independently and the same in-flight count reached two ways.
-      Everything else is held.
-    falsifier: >
-      If only the in-flight COUNT mattered, configurations with equal
-      `group x (wait+1)` would agree. They do not: at 4 in flight, (1,3) and
-      (2,1) give 33.7 and 33.1 while (4,0) gives 44.6; at 8, (4,1) gives 32.3
-      and (8,0) gives 38.2. The wait depth is a separate axis, and it is the one
-      that matters.
-    design_rule: >
-      **Never put `wgmma.wait_group 0` in a mainloop** -- it costs 20-30% and it
-      is the natural thing to write. Keep at least one group outstanding across
-      the loop boundary. Four instructions in flight is the knee, which is also
-      an L2 register budget: at N = 64 that is 32 accumulator registers per
-      thread per group, so the depth decision and the register decision are the
-      same decision.
-    provenance:
-      job: 548235
-      date: 2026-08-25
-      node: ACD1-*
-      toolchain: torch 2.13.0+cu130, CUDA 13.1, CUTLASS 4.5.1
-      timer: cupti plus in-kernel clock64
-      source: probes/compute/mma_rate.py
-      sweep: M2
-
-  - tag: MMA-WARPGROUPS
-    unit: mma
-    claim: >
-      One warpgroup saturates the tensor core. A second warpgroup on the same SM
-      exactly doubles the cycles each one spends per instruction, so aggregate
-      instruction throughput is unchanged.
-    value: 2.00
-    units: ratio of cycles per instruction, 2 warpgroups against 1
-    short: 1 WG saturates
-    valid: >
-      132 CTAs, N = 64 and 128, two in-flight settings. Cycles per instruction
-      1 WG -> 2 WG: 33.1 -> 64.4, 65.0 -> 128.7, 32.3 -> 64.3, 64.4 -> 128.5.
-      All four are 1.94-1.99x.
-    isolation: >
-      Only blockDim changes; each warpgroup runs identical code on its own
-      accumulators. Cycles are per-SM and clock-invariant, which is what makes
-      the comparison readable at all -- see the falsifier.
-    falsifier: >
-      **The TFLOP/s column says the opposite, and it is wrong.** Two warpgroups
-      measure 703.6 -> 842.7 TFLOP/s, a 20% "gain", because those runs happened
-      to sit at 1.57 GHz against 1.31. The cycle counts show the aggregate rate
-      did not move at all. A probe reporting only achieved TFLOP/s would have
-      concluded that a second math warpgroup is worth 20%; this is the single
-      strongest argument in this skill for measuring cycles on an unpinnable
-      machine.
-    design_rule: >
-      A second math warpgroup buys no tensor-core throughput. Add one only for a
-      reason this probe cannot see -- to hold more accumulator registers than
-      255 per thread allows, or to overlap an epilogue against the mainloop --
-      and never on the theory that it feeds the tensor core faster. The
-      warp-specialisation idiom of one producer plus one math warpgroup is
-      supported by this; a second math group needs its own justification.
-    provenance:
-      job: 548235
-      date: 2026-08-25
-      node: ACD1-*
-      toolchain: torch 2.13.0+cu130, CUDA 13.1, CUTLASS 4.5.1
-      timer: cupti plus in-kernel clock64
-      source: probes/compute/mma_rate.py
-      sweep: M4
-
-  - tag: MMA-CLOCK
-    unit: mma
-    claim: >
-      Under sustained wgmma load this GPU runs at 1.05-1.58 GHz, not the
-      1.755 GHz boost the datasheet TFLOP/s assumes. So the architectural peak
-      is reached in CYCLES and missed in wall clock: best observed is
-      ~850 TFLOP/s against a nominal 989.
-    value: 850
-    units: TFLOP/s bf16 observed at 94-95% of per-cycle peak
-    short: ~850 TFLOP/s, 1.0-1.6 GHz
-    valid: >
-      Derived per run as (clock64 delta) / (CUPTI kernel time), so it is the
-      clock during the measured window rather than a query. Across 35 runs it
-      spans 0.85-1.58 GHz and moves with configuration in ways the work does not
-      explain. Clocks are unpinnable for this user on this partition.
-    isolation: >
-      Both terms come from the same window: the in-kernel cycle counter and the
-      CUPTI kernel duration. Nothing else is involved.
-    falsifier: >
-      If the ratio were an artefact of clock64 not ticking at the SM clock, the
-      cycles-per-instruction numbers would not land within 5% of the
-      architectural ideal derived from the datasheet's own clock assumption.
-      They do, at every N >= 64.
-    design_rule: >
-      Never target a bf16 FLOP/s figure derived from 989 TFLOP/s -- it is
-      unreachable here for clock reasons that have nothing to do with the
-      kernel. Target CYCLES against MMA-RATE instead, and treat ~850 TFLOP/s as
-      the practical ceiling. This is the tensor-core analogue of BW-CEIL
-      replacing the 3.35 TB/s datasheet bandwidth.
-    provenance:
-      job: 548235
-      date: 2026-08-25
-      node: ACD1-*
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti plus in-kernel clock64
-      source: probes/compute/mma_rate.py
-      sweeps: M1, M2, M4
-
-  - tag: MMA-VS-TMA
-    unit: mma
-    claim: >
-      The ratio an L3 timeline needs. One math warpgroup at N = 128 consumes its
-      operands at ~126 B/ns; one TMA producer warp at 8 KB per box delivers
-      ~30 B/ns. So a CTA needs about **4.2 producer warps per math warpgroup**
-      at BLOCK_K = 16 with no reuse -- or, equivalently, each delivered byte
-      must be reused ~4x before one producer warp can keep the tensor core fed.
-    value: 4.2
-    units: producer warps per math warpgroup at BLOCK_K=16, 8 KB boxes, no reuse
-    short: 4.2 producers/math WG
-    valid: >
-      m64n128k16 retires in 64.4 cycles at 1.32 GHz = 48.8 ns and consumes
-      A(64x16) + B(128x16) bf16 = 6144 B, so 126 B/ns. TMA-ISSUE gives
-      8192 B / 270 ns = 30.3 B/ns per producer warp. At N = 64 the wgmma is
-      24.7 ns for 4096 B = 166 B/ns, so the ratio is worse, not better.
-    isolation: >
-      A composite of two constants measured in separate probes on the same
-      machine and toolchain, five hours apart. It is arithmetic over
-      MMA-RATE and TMA-ISSUE, not a third measurement -- and it is recorded
-      separately for exactly that reason.
-    falsifier: >
-      Not directly falsifiable as stated; it inherits the falsifiers of its two
-      inputs. What WOULD refute it is a fused kernel that keeps one producer
-      warp and one math warpgroup busy at BLOCK_K = 16 with no reuse and reaches
-      tensor-core peak -- which this predicts is impossible by 4x.
-    design_rule: >
-      Use it to check an L3 timeline's overlap claim by arithmetic instead of
-      assertion. A stage whose copy column holds one TMA and whose math column
-      holds one wgmma is NOT balanced: the copy column is ~4x longer. Fix it by
-      reusing each tile across more wgmma (larger BLOCK_M/BLOCK_N), by a larger
-      BLOCK_K per box, or by more producer warps -- and note that TMA-CTA-CEIL
-      caps the last of those at ~133 GB/s per CTA, which is 4.4 producer warps'
-      worth. That cap and this ratio meet almost exactly, which is the real
-      constraint on a one-CTA-per-SM fused kernel.
-    provenance:
-      job: 548235 with 545906
-      date: 2026-08-25
-      node: ACD1-*
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: n/a -- arithmetic over MMA-RATE and TMA-ISSUE
-      source: probes/compute/mma_rate.py + probes/memory/tma_ring.py
-      sweeps: M2 and A
-
-  - tag: MMA-SYNC-RATE
-    unit: mma
-    claim: >
-      The warp-level `mma.sync.aligned.m16n8k16.f32.bf16.bf16.f32` retires in
-      6.26 cycles per warp once enough accumulators are independent, and four
-      warps saturate the path. Its ceiling is ~2680 FLOP/cycle/SM -- **63% of
-      the architectural peak**, against wgmma's 95%. The tensor core cannot be
-      fully fed through the warp-level instruction.
-    value: 6.26
-    units: cycles per m16n8k16 per warp, at >= 4 independent accumulators
-    short: 6.26 cyc, 63% ceiling
-    valid: >
-      bf16 in, f32 accumulate, operands resident in registers, 132 CTAs. Warps
-      per SM 1 / 2 / 4 / 8 at 4 accumulators give 6.25 / 6.25 / 6.26 / 12.23
-      cycles per instruction, i.e. 655 / 1310 / 2618 / 2680 FLOP/cycle/SM.
-      Perfectly linear to 4 warps, then flat.
-    isolation: >
-      Operands are loaded into registers once, before the timed loop, so the
-      loop contains the instruction and nothing else -- no smem reads, no
-      ldmatrix, no address arithmetic. Cycles come from clock64 on the issuing
-      SM, so the number does not move with the unpinnable clock.
-    falsifier: >
-      Gated on a correctness check: one mma.sync on random data, D written out
-      through the m16n8k16 fragment mapping, compared against torch. Relative
-      error 1.1e-7, so the fragment layout is right rather than recalled. And
-      the 63% ceiling is not a probe limitation: the SAME probe, same SM, same
-      clock source, reaches 95% through wgmma, so the shortfall belongs to the
-      instruction.
-    design_rule: >
-      Reaching for `mma.sync` on Hopper costs a third of the tensor core even
-      when everything else is perfect. It is worth it only below the wgmma
-      crossover (MMA-CROSSOVER). Four warps saturate it, so a fifth warp of
-      math buys nothing -- the same shape of result as MMA-WARPGROUPS.
-      Incidentally its lower utilisation lets the GPU clock higher (1.49-1.61
-      GHz against wgmma's 1.06-1.34), which is why its achieved TFLOP/s looks
-      better than its FLOP/cycle does; read cycles, not rates.
-    provenance:
-      job: 548296
-      date: 2026-08-25
-      node: ACD1-*
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti plus in-kernel clock64
-      source: probes/compute/mma_rate.py
-      sweeps: MS1, MS2
-
-  - tag: MMA-SYNC-DEPTH
-    unit: mma
-    claim: >
-      One `mma.sync.m16n8k16` has a ~25-cycle dependent latency and a 6.26-cycle
-      issue interval, so a warp needs exactly **4 independent accumulators** to
-      cover it. Anything less runs at a fraction of the rate; anything more buys
-      nothing.
-    value: 4
-    units: independent accumulator sets per warp (25.14 / 6.26 = 4.02)
-    short: 4 accumulators
-    valid: >
-      132 CTAs, 4 warps. Accumulator sets 1 / 2 / 4 / 8 give 25.14 / 12.54 /
-      6.26 / 6.29 cycles per instruction. Each set is 4 f32 registers, so the
-      whole requirement is 16 registers per thread.
-    isolation: >
-      Only the number of independent accumulators moves; warps, CTAs, operands
-      and instruction are held. With one set every instruction accumulates into
-      the previous one's result, which is what makes that row a latency reading
-      rather than a slow throughput reading.
-    falsifier: >
-      If the 25.1 cycles were issue cost rather than latency, adding
-      accumulators would not help. Two sets halve it (12.54) and four quarter it
-      (6.26) -- exactly the 1/n a latency-bound pipeline gives -- and the fifth
-      through eighth do nothing, which locates the floor at the issue interval.
-    design_rule: >
-      Hold at least 4 independent accumulator sets per warp, 16 f32 registers.
-      This is the warp-level analogue of MMA-DEPTH's four wgmma in flight and of
-      the TMA ring's depth 4: on this machine every engine wants four things
-      outstanding, which is a useful default to reach for and a cheap one to
-      check.
-    provenance:
-      job: 548296
-      date: 2026-08-25
-      node: ACD1-*
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti plus in-kernel clock64
-      source: probes/compute/mma_rate.py
-      sweep: MS1
-
-  - tag: MMA-CROSSOVER
-    unit: mma
-    claim: >
-      The two tensor-core instructions cross over at an output-tile **N of 32**.
-      Below it the warp-level `mma.sync` wins, by 1.7x at N=16 and 3.1x at N=8;
-      at N=32 they tie; at N >= 64 wgmma wins by ~1.5x and stays there.
-    value: 32
-    units: wgmma tile N at which mma.sync and wgmma break even
-    short: crossover at N=32
-    valid: >
-      FLOP per cycle per SM, 132 CTAs, both instructions measured in the same
-      job on the same SMs. wgmma at N = 8 / 16 / 32 / 64 / 128 / 256 gives 871 /
-      1577 / 2623 / 3959 / 4036 / 4053; the best mma.sync configuration gives
-      2680. The N=32 row is a 2% difference, inside the 6% noise floor, so it is
-      a tie rather than a win either way.
-    isolation: >
-      Both columns are FLOP per cycle per SM, which is the only axis on which a
-      warp instruction and a warpgroup instruction are comparable at all. The
-      comparison is like-for-like in coverage: wgmma m64nNk16 covers a 64xN tile
-      with one instruction, and the mma.sync column covers the same tile with 4
-      warps of m16n8k16, which is what the 4-warp configuration measures.
-    falsifier: >
-      If the wgmma small-N penalty were a probe artefact rather than the
-      instruction, mma.sync -- measured in the same job, on the same SMs,
-      through the same clock source -- would show the same shape. It does not:
-      it is flat in tile size and beats wgmma by 3.1x exactly where wgmma's
-      per-instruction floor bites.
-    design_rule: >
-      **A kernel whose output tile N is below 32 should use `mma.sync`, not
-      `wgmma`** -- worth up to 3.1x, and it is the opposite of the usual "use
-      the newest instruction" instinct. At N >= 64 use wgmma and take the 1.5x.
-      This is the rule MMA-RATE left open when it found wgmma useless below
-      N=64, and it matters here because the decoder shapes in this repo are
-      small-N. Note the two instructions want different things from the tile:
-      wgmma wants N large, mma.sync wants 4 warps x 4 independent accumulators.
-    provenance:
-      job: 548296
-      date: 2026-08-25
-      node: ACD1-*
-      toolchain: torch 2.13.0+cu130, CUDA 13.1
-      timer: cupti plus in-kernel clock64
-      source: probes/compute/mma_rate.py
-      sweeps: M1, MS1, MS2
-
-# Measured curves. Regenerate with
-#   python3 scripts/curve_from_json.py <probe.json> --yaml
-# rather than editing by hand -- these are reduced from raw sweep rows, and a
-# hand-edited point is a number with no job behind it.
+- tag: tma.issue.warp
+  unit: tma
+  value: 248
+  units: ns per TMA per producer warp
+  short: 248 ns/txn/warp
+  rule: 'Bytes per TMA is a first-class design term, not a tiling detail: doubling the box nearly doubles
+    the copy column for free.'
+- tag: tma.lat.warp
+  unit: tma
+  value: 595
+  units: ns fixed plus 5.2 ns per KB of box, DRAM; 217 + 4.8 from L2
+  short: 595ns + 5.2/KB (DRAM), 217 + 4.8 (L2)
+  rule: 'This is the number a ring stages has to cover: stages is roughly `latency / issue_interval +
+    1`, which with tma.issue.warp''s 248 ns gives 3-4 stages on DRAM and 2 on L2 -- and that is exactly
+    what tma.stages.warp.knee measures.'
+- tag: tma.bw.dev.dip
+  unit: tma
+  value: 11.5
+  units: percent worst slowdown against the 32-CTA point at the same config, DRAM
+  short: -11.5% at 44-56 CTAs, DRAM only
+  rule: Do not interpolate a grid off the bandwidth curve in the 40-56 CTA band on cold traffic -- measure
+    the grid you intend to ship.
+- tag: tma.stages.warp.knee
+  unit: tma
+  value: 4
+  units: ring stages covering 8-32 KB boxes from DRAM; 2 suffices from L2
+  short: stages 4 (DRAM), 2 (L2), box-dependent
+  rule: Four stages for cold weights at any box up to 32 KB, two for a cache-hot re-read.
+- tag: tma.bw.cta.geom
+  unit: tma
+  value: 3.6
+  units: percent worst-case penalty for a strided box, DRAM-sourced; 0.2 on L2
+  short: <=3.6% DRAM, free on L2
+  rule: Do not restructure a tensor to make a TMA box contiguous.
+- tag: tma.bytes.txn.max
+  unit: tma
+  value: 32768
+  units: bytes -- the largest single TMA under SW128, from a 128 B row cap and a 256 row cap (32 B/row
+    under SW32, 64 B under SW64, unbounded unswizzled)
+  short: 32 KB max box
+  rule: A descriptor whose STRIDED dimension is short caps the box size and therefore caps the copy column
+    via tma.issue.warp.
+- tag: tma.bytes.txn.dtype
+  unit: tma
+  value: 128
+  units: bytes of box row for SW128, at every accepted element width
+  short: caps are bytes, not elements
+  rule: 'Size the contiguous dimension in BYTES, not elements: 128 B per box row is 64 bfloat16, 128 fp8,
+    32 float32.'
+- tag: tma.bw.dev.l2
+  unit: tma
+  value: 18152
+  units: GB/s sustained from L2 at 132 CTAs x 2 warps x 28 KB, one CTA per SM
+  short: 18.2 TB/s, knee 40 KB/SM
+  rule: Traffic that MULTIPLIES through L2 is nearly free -- an M-split that re-reads the same weights
+    M/T_t times costs essentially nothing as long as the extra reads hit L2.
+- tag: tma.bw.sm.cta.scale
+  unit: tma
+  value: 1.4
+  units: ratio, one CTA per SM over two, at 56 KB of per-SM num_producers x box
+  short: <=1.0, costs 1.40x
+  rule: When a tile is fed by TMA from cache-hot memory, prefer one wide CTA over two narrow ones at the
+    same shared-memory budget.
+- tag: tma.ctas.dev.dram.knee
+  unit: tma
+  value: 128
+  units: CTAs for 90% of the DRAM ceiling at 8 KB boxes; 64 at 16 KB, 32 at 32 KB
+  short: 128 CTAs at 8 KB, 32 at 32 KB
+  rule: 'A DRAM-bound copy at 8 KB boxes needs ~128 CTAs, not 32: there is NO large pool of SMs left over
+    for math at small boxes. The original entry had this backwards.'
+- tag: tma.bw.cta.warps
+  unit: tma
+  value: 0.9
+  units: percent worst disagreement between (N x 2 warps) and (2N x 1 warp), DRAM
+  short: free on DRAM, up to 22% on L2
+  rule: Choose warps or CTAs on other grounds (shared memory, occupancy, warp specialisation) when the
+    source is cold.
+- tag: tma.bw.dev.dram
+  unit: tma
+  value: 3172
+  units: GB/s aggregate, DRAM-sourced, L2 flushed; UPPER BOUND on the cold rate
+  short: <=3.17 TB/s, cold rate lower
+  rule: Divide bytes by 3.17 TB/s for an optimistic floor and by ld.bw.dev.dram's 2.77 for a conservative
+    one, and say which you used.
+- tag: tma.bw.dev.curve
+  unit: tma
+  value: 10
+  units: percent 90th-percentile disagreement at exactly equal product
+  short: product law to ~10%, tail 19-29%
+  rule: Use the product to SIZE a configuration and then measure the one you chose; do not use it to rank
+    two configurations within 10% of each other.
+- tag: launch.lat.dev.ramp
+  unit: launch
+  value: 1.24
+  units: us per launch at >= 128 CTAs (0.95 at 32, 1.20 at 64, 1.24 at 256)
+  short: 1.24 us/launch
+  rule: Launch COUNT is a first-class term in every fusion decision, ranking alongside bytes moved.
+- tag: ld.bw.dev.dram
+  unit: launch
+  value: 2.77
+  units: TB/s marginal, behind 1.85 us of fixed cost
+  short: 1.85us + MB/2.77
+  rule: Replace bytes / 3.35 TB/s with 1.85 + MB/2.77 in every floor, per launch.
+- tag: ld.ctas.dev.knee
+  unit: launch
+  value: 128
+  units: CTAs at which a 4.19 MB cold read is fastest (3.33 us)
+  short: knee @128 CTA
+  rule: 32 CTAs cost 1.63x what 128 do for identical bytes -- this is what justifies split-K over a coarser
+    tile, and what kills a grid sized to the output tiling alone.
+- tag: cluster.lat.sync
+  unit: launch
+  value: 0.65
+  units: us per cluster_sync at cluster 8 (0.51 at cluster 4)
+  short: 0.65 us/barrier
+  rule: Design the NUMBER of barriers, not the cluster size.
+- tag: cluster.count.max
+  unit: launch
+  value: 15
+  units: placeable clusters of 8 at 1 CTA/SM (120 CTAs, against 132 SMs)
+  short: 15 clusters of 8
+  rule: A 128-CTA grid at 1 CTA/SM cannot use cluster 4 or 8 without a deadlock (if CTAs wait on each
+    other) or a second wave (~2x, if they do not).
+- tag: sched.ctas.sm.knee
+  unit: launch
+  value: 3
+  units: multiple of SM count the grid needs before extra blocks/SM become warps
+  short: grid >= 3x SMs
+  rule: Grid = SM_count x cta_per_sm, never SM_count.
+- tag: atom.ratio.ret
+  unit: atomic
+  value: 1.3
+  units: speedup of red over atom, uncontended
+  short: red is 1.30x atom
+  rule: Any accumulate that does not need the old value should be `red`, not `atom` -- 30% for a one-word
+    edit.
+- tag: atom.ratio.place
+  unit: atomic
+  value: 5.4
+  units: speedup of 4 B spacing over 128 B spacing at equal address count and equal sharing; 5.4-6.3 across
+    three runs, the peak row does not reproduce
+  short: 5.4-6.3x from packing
+  rule: 'Lay a reduction out so a warp''s lanes hit ONE 128 B line and so few lanes share an address.
+    Take the LOW end, not the peak: every row of the sweep reproduces to ~1% except the one the ratio
+    is taken from, which read 6.30 / 5.61 / 5.39 across three runs at 0.4% within-run spread. The direction
+    and the crossover at ~100 threads per address are solid; the multiple is not.'
+- tag: atom.rate.addr
+  unit: atomic
+  value: 1.36
+  units: Gop/s to one address, 33792 threads contending
+  short: 1.36 Gop/s, 1 address
+  rule: One global accumulator is worth 1.36 Gop/s and nothing will fix it but more accumulators.
+- tag: atom.ratio.width
+  unit: atomic
+  value: 3.8
+  units: reduction bandwidth of v4.f32 over u32 at equal op rate
+  short: v4.f32 free, 3.8x bytes
+  rule: Reduce in the widest atomic the data allows.
+- tag: atom.ratio.scope
+  unit: atomic
+  value: 0.5
+  units: percent worst spread across cta / gpu / sys
+  short: scope is free
+  rule: Choose scope for CORRECTNESS, never for speed -- there is no performance argument for narrowing
+    it, and a too-narrow scope fails silently and data-dependently.
+- tag: atom.lat.dev.hop
+  unit: atomic
+  value: 651
+  units: ns per arrive->observe hop (564 ns for a plain release store)
+  short: 651 ns/hop, observers free
+  rule: A task-graph counter hop costs ~650 ns, which is what a task must do more work than to be worth
+    ordering separately -- at tma.bw.dev.dram that is about 2 MB of traffic.
+- tag: wgmma.issue.wg.ss
+  unit: mma
+  value: 0.502
+  units: cycles per unit of N, at N >= 64 (plus a ~19-cycle per-instruction floor)
+  short: 0.50 cyc/N, floor 19
+  rule: Choose the wgmma N >= 64, or do not use the tensor core. At N = 8 the instruction costs 18.9 cycles
+    to do 3.8 cycles of work -- 5x waste -- and the penalty is still 38% at N = 32.
+- tag: wgmma.stages.wg.knee
+  unit: mma
+  value: 4
+  units: wgmma in flight, with wait_group >= 1
+  short: 4 in flight, wait >= 1
+  rule: Never put `wgmma.wait_group 0` in a mainloop -- it costs 20-30% and it is the natural thing to
+    write.
+- tag: wgmma.ratio.sm.wg2
+  unit: mma
+  value: 2.0
+  units: ratio of cycles per instruction, 2 warpgroups against 1
+  short: 1 WG saturates
+  rule: A second math warpgroup buys no tensor-core throughput.
+- tag: wgmma.clock.sm
+  unit: mma
+  value: 850
+  units: TFLOP/s bf16 observed at 94-95% of per-cycle peak
+  short: ~850 TFLOP/s, 1.0-1.6 GHz
+  rule: Never target a bf16 FLOP/s figure derived from 989 TFLOP/s -- it is unreachable here for clock
+    reasons that have nothing to do with the kernel.
+- tag: wgmma.bytes.wg.tma
+  unit: mma
+  status: derived
+  value: 36
+  units: KB of in-flight num_producers x box per math warpgroup at N = 128, bf16
+  short: 36 KB in flight per WG
+  rule: Budget 36 KB of in-flight per math warpgroup and then choose warps and box to reach it -- do not
+    budget a warp count.
+- tag: overlap.eff.sm
+  unit: mma
+  value: 1.25
+  units: TMA issue slowdown with a concurrent wgmma warpgroup, issue-limited regime
+  short: TMA 1.25x slower, wgmma 1.05x
+  rule: Budget producer warps against the ratio TIMES 1.25, or expect the copy column to miss.
+- tag: pipeline.ratio.sm.dep
+  unit: mma
+  value: 1.06
+  units: ratio, coupled pipeline over its slower isolated side, contention removed
+  short: barrier ~1.02-1.06x, stages dominates
+  rule: Budget 1.25x for contention and ~1.05x for the dependency -- about 1.32x over the slower engine
+    at four stages, not the 1.00x an L3 timeline assumes.
+- tag: pipeline.stages.wg.knee
+  unit: mma
+  value: 4
+  units: pipeline stages, TMA producer feeding a wgmma consumer, cold source
+  short: 4 stages cold (3 only if L2-resident)
+  rule: Four stages for a cold-fed mainloop; six if the shared memory is spare, worth a further 4%.
+- tag: mma.issue.warp
+  unit: mma
+  value: 6.26
+  units: cycles per m16n8k16 per warp, at >= 4 independent accumulators
+  short: 6.26 cyc, 63% ceiling
+  rule: Reaching for `mma.sync` on Hopper costs a third of the tensor core even when everything else is
+    perfect.
+- tag: mma.stages.warp.knee
+  unit: mma
+  value: 4
+  units: independent accumulator sets per warp (25.14 / 6.26 = 4.02)
+  short: 4 accumulators
+  rule: Hold at least 4 independent accumulator sets per warp, 16 f32 registers.
+- tag: mma.xover.n.wgmma
+  unit: mma
+  value: 32
+  units: wgmma tile N at which mma.sync and wgmma break even
+  short: crossover at N=32
+  rule: A kernel whose output tile N is below 32 should use `mma.sync`, not `wgmma` -- worth up to 3.1x,
+    and it is the opposite of the usual "use the newest instruction" instinct.
+- tag: mma.feedtax.warp.ldmatrix
+  unit: mma
+  value: 1.18
+  units: worst cycles-per-mma multiplier over register-resident, at reuse >= 0.8
+  short: <=1.18x, cliff at 0.5
+  rule: The ldmatrix tax does not kill the mma.sync crossover, but it does change what the crossover is
+    made of. With the tax applied, mma.sync's raw throughput is 2566 FLOP/cycle/SM -- 2% BELOW wgmma m64n32k16's
+    2623.
+- tag: coop.lat.dev.sync
+  unit: coop
+  value: 1089
+  units: ns per cooperative_groups grid_sync at 132 blocks x 256 threads; 1066 at 32 blocks
+  short: 1.09 us per grid_sync
+  rule: 'Count grid barriers the way you count launches, not the way you count __syncthreads: one costs
+    ~1.09 us and the cost barely moves with grid size (1.02x over a 4x block range), so N barriers is
+    an N x 1.09 us term in any persistent-kernel budget.'
+- tag: coop.ctas.dev.max
+  unit: coop
+  value: 1056
+  units: blocks at 256 threads = max_active_blocks_per_sm x SMs, exactly; 1057 is refused
+  short: 1056 blocks, = the occupancy query
+  rule: Size a cooperative grid from cudaOccupancyMaxActiveBlocksPerMultiprocessor x SM count and trust
+    it exactly -- unlike cluster placement, the launch refuses one block past it with cudaErrorCooperativeLaunchTooLarge
+    rather than deadlocking, so this bound can be queried instead of discovered.
+- tag: coop.ratio.dev.relaunch
+  unit: coop
+  value: 1.29
+  units: device-side relaunch (1400 ns) over one grid_sync (1089 ns), same grid and body
+  short: a relaunch is 1.29x a grid_sync
+  rule: Do NOT replace launches with grid barriers to save launch cost -- a barrier buys ~22%, not an
+    order of magnitude. Persistent kernels have to earn their keep on state kept in registers and shared
+    memory across phases, which this constant says nothing about.
 curves:
-  - id: tma-bw-vs-product
-    unit: tma
-    constant: TMA-FRONTIER
-    x: product_kb          # n_ctas * n_warps * frame_bytes / 1024
-    y: gbs                 # median across every configuration in the bin
-    spread_pct_worst: 6.9
-    provenance: {job: 547353, date: 2026-08-25, node: ACD1-18, source: probes/memory/tma_ring.py}
-    filter: per-CTA product <= 32768 B; rows above TMA-CTA-CEIL are excluded, not binned
-    note: >
-      Raw binned medians, not smoothed. Two bins (1792, 2688 KB) sit ~0.5% below a
-      smaller-product bin; that is noise, since more in flight cannot deliver less,
-      and scripts/frontier.py applies a running maximum when inverting the curve.
-    points:
-      - [64, 249.4]
-      - [128, 495.8]
-      - [192, 739.0]
-      - [224, 853.6]
-      - [256, 977.7]
-      - [384, 1445.7]
-      - [448, 1658.6]
-      - [512, 1867.5]
-      - [672, 2230.9]
-      - [768, 2392.9]
-      - [896, 2534.0]
-      - [1024, 2605.3]
-      - [1344, 2629.8]
-      - [1536, 2737.9]
-      - [1792, 2723.5]
-      - [2048, 2751.5]
-      - [2688, 2747.0]
-      - [3072, 2860.7]
-      - [3584, 2869.4]
-      - [4096, 2934.4]
-      - [6336, 2988.5]
-      - [8448, 3004.8]
+- id: tma-bw-vs-product
+  unit: tma
+  constant: tma.bw.dev.curve
+  x: product_kb
+  y: gbs
+  spread_pct_worst: 13.4
+  filter: per-CTA product <= 32768 B; larger per-CTA rows are excluded, not binned
+  points:
+  - - 64
+    - 266.7
+  - - 128
+    - 529.5
+  - - 192
+    - 788.8
+  - - 224
+    - 909.7
+  - - 256
+    - 1043.4
+  - - 384
+    - 1539.4
+  - - 448
+    - 1754.5
+  - - 512
+    - 1960.1
+  - - 640
+    - 2307.5
+  - - 768
+    - 2483.9
+  - - 896
+    - 2596.8
+  - - 1024
+    - 2671.6
+  - - 1152
+    - 2752.5
+  - - 1280
+    - 2819.1
+  - - 1408
+    - 2812.2
+  - - 1536
+    - 2835.8
+  - - 1792
+    - 2859.3
+  - - 2048
+    - 2880.8
+  - - 2560
+    - 2868.1
+  - - 3072
+    - 2965.4
+  - - 3584
+    - 2991.9
+  - - 4096
+    - 3001.7
+  - - 6336
+    - 3088.2
+  - - 8448
+    - 3083.0

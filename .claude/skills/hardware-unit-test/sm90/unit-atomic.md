@@ -1,10 +1,11 @@
 # Unit: global atomics and gmem counters
 
-**Probe** `probes/memory/gmem_atomic.{cu,py}` · **Constants** `ATOM-RETURN`,
-`ATOM-PLACE`, `ATOM-CONTENTION`, `ATOM-WIDTH`, `ATOM-SCOPE`, `ATOM-HOP`
+**Probe** `probes/units/gmem_atomic/gmem_atomic.{cu,py}` · **Constants** `atom.ratio.ret`,
+`atom.ratio.place`, `atom.rate.addr`, `atom.ratio.width`, `atom.ratio.scope`, `atom.lat.dev.hop`
 
 ```
-sbatch sbatch/pi05_cuda.sh .claude/skills/hardware-unit-test/probes/memory/gmem_atomic.py \
+# launcher and output path are this host's; the probe itself takes neither
+sbatch sbatch/pi05_cuda.sh .claude/skills/hardware-unit-test/probes/units/gmem_atomic/gmem_atomic.py \
     --json profiles/hardware-unit-test/atomic.json
 ```
 
@@ -47,9 +48,16 @@ contended address sustains 1.36 Gop/s, 386× below the uncontended best.**
 
 Read the two columns against each other, not down one. **The crossover is at
 roughly 100 threads per address.** Below it, packing a warp into one line wins
-by up to 6.3× — the hardware merges lanes that land in the same line, and giving
+by 5.4–6.3× — the hardware merges lanes that land in the same line, and giving
 each lane its own line throws that away. Above it, the packed layout funnels
 every thread through a handful of lines and loses by 2.4×.
+
+**The peak multiple does not reproduce; the shape does.** Re-measured twice on
+2026-08-30, every row above agrees to ~1% except the two highest-address 4 B
+rows, which move in opposite directions at 0.4% within-run spread. The ratio is
+quoted from the 16384 row, so the constant inherits that: it has read **6.30 /
+5.61 / 5.39** across three runs. Design against the crossover and the direction,
+not the multiple. [protocol.md rule 14b]
 
 That single table decides a reduction's layout, and it decides it in opposite
 directions for a split-K accumulate (few lanes per address → pack) and a
@@ -69,7 +77,7 @@ crosses two SMs' unsynchronised clocks:
 
 Two results, both load-bearing for a task-graph megakernel:
 
-- **A hop costs ~650 ns.** At `TMA-CEIL` that is the time to move ~2 MB. A task
+- **A hop costs ~650 ns.** At `tma.bw.dev.dram` that is the time to move ~2 MB. A task
   doing less work than that is dominated by the ordering around it.
 - **Observers are free.** 130 CTAs polling the same counter cost 0.4% more than
   none — so **one counter can gate the whole machine**, and a broadcast tree is
@@ -85,7 +93,7 @@ The question is usually asked as "how many partials before atomics lose". That
 framing is wrong here — **it is layout, not size, that decides it.**
 
 Accumulating `N×P` f32 partials, against writing them out and running a reduce
-kernel (`LAUNCH-RAMP` = 1240 ns, `TMA-CEIL` = 3.02 B/ns, and the two-kernel path
+kernel (`launch.lat.dev.ramp` = 1240 ns, `tma.bw.dev.dram` = 3.02 B/ns, and the two-kernel path
 moves the partials twice):
 
 ```
@@ -104,21 +112,21 @@ like a size threshold when the atomics were going to be scattered anyway.
 
 ## Open gaps
 
-- **Packed *and* wide is unmeasured.** `ATOM-PLACE` was measured at u32 and
-  `ATOM-WIDTH` at 128 B spacing; the combination — `v4.f32` at 16 B spacing, so
+- **Packed *and* wide is unmeasured.** `atom.ratio.place` was measured at u32 and
+  `atom.ratio.width` at 128 B spacing; the combination — `v4.f32` at 16 B spacing, so
   four lanes fill a line — is the configuration a good split-K reduction would
   actually use, and its rate is an inference from two separate sweeps rather
   than a reading. **The 2.1 TB/s in the arithmetic above is the packed-u32
   number, not a measured packed-v4 number.** Measure it before trusting it.
 - **Cold atomics.** Everything here is L2-resident. An atomic to an address that
   misses L2 pays a DRAM round trip that none of these numbers include.
-- **A6 — what polling costs the neighbours.** `ATOM-HOP` says observers are free
+- **A6 — what polling costs the neighbours.** `atom.lat.dev.hop` says observers are free
   *to each other*. It does not say what 130 spinning CTAs do to a concurrent
   kernel's TMA bandwidth, which is the version of the question a megakernel
   actually asks. The probe needs a mode that runs pollers alongside the
   streaming loop and reports the bandwidth loss.
-- **`.acquire` / `.release` cost.** `ATOM-SCOPE` shows scope is free under
+- **`.acquire` / `.release` cost.** `atom.ratio.scope` shows scope is free under
   *relaxed* semantics. The ordering qualifiers themselves are only measured
-  inside `ATOM-HOP`'s round trip, where they cannot be separated from it.
+  inside `atom.lat.dev.hop`'s round trip, where they cannot be separated from it.
 - **Contention within a CTA** — `.cta`-scoped atomics to shared memory are a
   different unit entirely and are not covered.

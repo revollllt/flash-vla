@@ -8,7 +8,7 @@ into a number nobody can re-derive.
 
     python3 constants.py                     # the summary table
     python3 constants.py --unit tma          # one unit
-    python3 constants.py --tag TMA-ISSUE     # one constant, in full
+    python3 constants.py --tag tma.issue.warp     # one constant, in full
     python3 constants.py --validate          # what `status: measured` must clear
 
 Design-time only: pure python plus PyYAML, no torch and no CUDA, so it runs on
@@ -31,11 +31,17 @@ ROOT = os.path.dirname(HERE)
 # directory, so porting is "add sm120/, re-run the probes" rather than "edit
 # every file and hope".
 
-# The fields that turn a number into a measurement. Dropping any one of them is
-# how a probe result becomes folklore, so they are required, not encouraged.
-REQUIRED = ["claim", "value", "units", "short", "valid", "isolation",
-            "falsifier", "design_rule", "provenance"]
-REQUIRED_PROV = ["job", "date", "toolchain", "timer", "source"]
+# What an entry must carry to be USABLE as a reference: the number, the
+# condition it holds under, the one-line answer, and the rule to apply.
+#
+# The measurement narrative -- claim, valid, isolation, falsifier and per-job
+# provenance -- was removed on 2026-08-29 when this became a distributable
+# results manual rather than a lab notebook. It is not "optional"; it is out of
+# scope for this file. The evidence still exists in git history and in the
+# snapshot named in the file header, and the unit references under <arch>/ carry
+# the sweep design.
+REQUIRED = ["value", "units", "short", "rule"]
+
 
 
 def arch_dirs():
@@ -73,22 +79,30 @@ def wrap(label, text, indent=4):
     return "  %s\n%s" % (label, body)
 
 
+def resolve_tag(constants, tag):
+    """Constants by tag.
+
+    One spelling only: `<engine>.<quantity>.<scope>[.<condition>]`, so the scope
+    and the unit are recoverable from the name. An earlier UPPER-KEBAB scheme,
+    invented here with no vendor meaning, was removed from the repo on
+    2026-08-30 along with the map that resolved it. Nothing resolves it now.
+    """
+    hits = [c for c in constants if c["tag"] == tag]
+    if hits:
+        return hits
+    return []
+
+
 def show_full(c):
     print("=" * 80)
     st = c.get("status", "measured")
-    print("%-16s unit=%-8s value=%s %s%s"
+    print("%-28s unit=%-8s value=%s %s%s"
           % (c["tag"], c.get("unit", "?"), c.get("value"), c.get("units", ""),
              "" if st == "measured" else "   [status: %s]" % st))
     print("=" * 80)
-    for field in ("claim", "valid", "isolation", "falsifier", "design_rule"):
+    for field in ("short", "rule"):
         if field in c:
             print(wrap(field.upper(), c[field]))
-    prov = c.get("provenance", {})
-    print("  PROVENANCE")
-    for k in ("job", "date", "node", "toolchain", "timer", "source", "sweep",
-              "sweeps"):
-        if k in prov:
-            print("    %-10s %s" % (k + ":", prov[k]))
     print()
 
 
@@ -104,25 +118,20 @@ def validate(path, doc):
         tag = c.get("tag", "<untagged>")
         for f in REQUIRED:
             if f not in c or c[f] in (None, ""):
-                print("FAIL   %-14s missing %s" % (tag, f))
+                print("FAIL   %-28s missing %s" % (tag, f))
                 bad += 1
         if c.get("unit") not in known_units:
-            print("FAIL   %-14s unit %r is not declared in units:"
+            print("FAIL   %-28s unit %r is not declared in units:"
                   % (tag, c.get("unit")))
             bad += 1
-        prov = c.get("provenance", {}) or {}
-        for f in REQUIRED_PROV:
-            if f not in prov:
-                print("FAIL   %-14s provenance.%s missing" % (tag, f))
-                bad += 1
         if bad == 0 or True:
             st = c.get("status", "measured")
             if st != "measured":
-                print("NOTE   %-14s status: %s -- not a measurement; do not "
+                print("NOTE   %-28s status: %s -- not a measurement; do not "
                       "cite it as one" % (tag, st))
     for u in doc.get("units", []):
         if u.get("status") == "unmeasured":
-            print("GAP    %-14s unit declared but NOT MEASURED -- a floor that "
+            print("GAP    %-28s unit declared but NOT MEASURED -- a floor that "
                   "needs it is blocked" % u["id"])
     print("%s  %s: %d constants, %d problems"
           % ("FAIL" if bad else "PASS",
@@ -160,24 +169,24 @@ def main(argv=None):
         if a.unit:
             cs = [c for c in cs if c.get("unit") == a.unit]
         if a.tag:
-            cs = [c for c in cs if c["tag"] == a.tag]
+            cs = resolve_tag(cs, a.tag)
             if not cs:
                 sys.exit("no constant tagged %r" % a.tag)
         if a.tag or a.unit:
             for c in cs:
                 show_full(c)
         else:
-            print("%-16s %-7s %-18s %s" % ("TAG", "UNIT", "VALUE", "CLAIM"))
-            print("-" * 104)
+            print("%-28s %-7s %-34s %s" % ("TAG", "UNIT", "ANSWER", "RULE"))
+            print("-" * 140)
             for c in cs:
                 val = c.get("short") or "%s %s" % (c.get("value"),
                                                    c.get("units", ""))
                 mark = "" if c.get("status", "measured") == "measured" else " *"
-                print("%-16s %-7s %-18s %s"
+                print("%-28s %-7s %-34s %s"
                       % (c["tag"] + mark, c.get("unit", "?"),
-                         one_line(val, 18), one_line(c["claim"], 60)))
-            print("  * = derived, not a direct measurement -- see --tag for what "
-                  "would refute it")
+                         one_line(val, 34), one_line(c.get("rule", ""), 70)))
+            print("  * = retracted or derived, not a direct measurement -- see "
+                  "--tag <name> for the full entry")
             print()
             for u in doc.get("units", []):
                 if u.get("status") != "measured":

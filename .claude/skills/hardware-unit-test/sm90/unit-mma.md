@@ -1,15 +1,19 @@
 # Unit: MMA / wgmma — the tensor core's issue rate
 
-**Probe** `probes/compute/mma_rate.{cu,py}` · **Constants** `MMA-RATE`, `MMA-DEPTH`,
-`MMA-WARPGROUPS`, `MMA-CLOCK`, `MMA-VS-TMA`, `MMA-SYNC-RATE`,
-`MMA-SYNC-DEPTH`, `MMA-CROSSOVER`
+**Probe** `probes/units/mma_rate/mma_rate.{cu,py}` · **Constants** `wgmma.issue.wg.ss`, `wgmma.stages.wg.knee`,
+`wgmma.ratio.sm.wg2`, `wgmma.clock.sm`, `wgmma.bytes.wg.tma`, `overlap.eff.sm`, `mma.issue.warp`,
+`mma.stages.warp.knee`, `mma.xover.n.wgmma`, `mma.feedtax.warp.ldmatrix`,
+`pipeline.ratio.sm.dep`, `pipeline.stages.wg.knee`
+**Second probe** `probes/units/pipeline_ws/pipeline_ws.{cu,py}` (the coupled
+mainloop below), **third** `probes/units/overlap/overlap.{cu,py}` (contention)
 
 Two instructions, measured in one job on the same SMs: the warpgroup
 `wgmma.mma_async` and the warp-level `mma.sync`. They are not
 interchangeable and the choice between them is a tiling decision.
 
 ```
-sbatch sbatch/pi05_cuda.sh .claude/skills/hardware-unit-test/probes/compute/mma_rate.py \
+# launcher and output path are this host's; the probe itself takes neither
+sbatch sbatch/pi05_cuda.sh .claude/skills/hardware-unit-test/probes/units/mma_rate/mma_rate.py \
     --json profiles/hardware-unit-test/mma.json
 ```
 
@@ -42,15 +46,15 @@ every iteration and costs 20–30%:
 
 | per group → | 1 | 1 | 1 | 2 | 2 | 4 | 4 | 8 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| wait depth | 0 | 1 | 3 | 0 | 1 | 0 | 1 | 0 |
+| wait stages | 0 | 1 | 3 | 0 | 1 | 0 | 1 | 0 |
 | in flight | 1 | 2 | 4 | 2 | **4** | 4 | **8** | 8 |
 | cycles/instruction | 79.0 | 42.0 | 33.7 | 55.6 | **33.1** | 44.6 | **32.3** | 38.2 |
 
 At *equal* in-flight count the configurations disagree — 4 in flight is 33.1
-with `wait 1` and 44.6 with `wait 0` — so the wait depth is its own axis, and
+with `wait 1` and 44.6 with `wait 0` — so the `wait_group` setting is its own axis, and
 it is the one that matters. **Four in flight with wait ≥ 1** is the knee. That
 is also a register decision: at N = 64 each group in flight is 32 accumulator
-registers per thread, so pipeline depth and register budget are one choice.
+registers per thread, so pipeline stages and register budget are one choice.
 
 **3. One warpgroup saturates the tensor core.** A second exactly doubles the
 cycles each spends per instruction (33.1 → 64.4, 65.0 → 128.7, 32.3 → 64.3,
@@ -116,41 +120,127 @@ wgmma's 1.06–1.34), so its achieved TFLOP/s flatters it relative to its
 FLOP/cycle. Read cycles, not rates — again.
 
 **Every engine on this machine wants four things outstanding**: 4 wgmma in
-flight (`MMA-DEPTH`), 4 accumulator sets per warp (`MMA-SYNC-DEPTH`), a TMA ring
-of depth 4 (`TMA-DEPTH`). A useful default to reach for, and a cheap one to
+flight (`wgmma.stages.wg.knee`), 4 accumulator sets per warp (`mma.stages.warp.knee`), a TMA ring
+of stages 4 (`tma.stages.warp.knee`). A useful default to reach for, and a cheap one to
 check.
 
-## The ratio this unit exists for
+## The ratio this unit exists for -- and why it is a BYTE count
 
-An L3 timeline that claims the math column covers the copy column is asserting
-a ratio. Here it is:
+An L3 timeline that claims the math column covers the copy column is asserting a
+ratio. The ratio was long written as "a CTA needs ~4.2 producer warps per math
+warpgroup", and that wording hid its own most important term:
 
 ```
-one wgmma m64n128k16 : 64.4 cycles @ 1.32 GHz = 48.8 ns
-  consumes A(64×16) + B(128×16) bf16 = 6144 B   ->  126 B/ns
-one TMA producer warp: 8192 B per 270 ns        ->   30 B/ns   [TMA-ISSUE]
+one wgmma m64n128k16 : 65.0 cycles @ 1.32 GHz = 49.2 ns
+  consumes A(64x16) + B(128x16) bf16 = 6144 B   ->  124.8 B/ns
+one TMA producer warp: box / 248 ns                   [tma.issue.warp]
 ```
 
-**A CTA needs ~4.2 producer warps per math warpgroup** at `BLOCK_K = 16` with no
-reuse — equivalently, each delivered byte must be reused ~4× before one producer
-warp can keep the tensor core fed. At N = 64 the ratio is *worse* (166 B/ns
-consumed), not better.
+Warps needed = 124.8 x 248 / box -- so the answer depends entirely on the
+box size, which "4.2 warps" never stated:
 
-And it collides with the TMA unit's other ceiling: `TMA-CTA-CEIL` caps one CTA
-at 133 B/ns, which is **4.4 producer warps' worth**. The two numbers meet almost
-exactly, so a one-CTA-per-SM fused kernel at `BLOCK_K = 16` with no reuse sits
-right on the edge of feedable. The fix is reuse — a larger `BLOCK_M`/`BLOCK_N`
-so each tile feeds more wgmma — not more producer warps.
+| box | B/ns per warp | warps, isolated | warps, with contention |
+|---|---|---|---|
+| 8 KB | 33.0 | 3.78 | 4.50 |
+| 16 KB | 66.1 | 1.89 | 2.25 |
+| 32 KB (cap) | 132.1 | **0.94** | **1.12** |
+
+At the descriptor cap ONE warp is enough. The recorded 4.2 was 36 KB expressed
+at an unstated 8 KB box. Since `tma.bw.cta.warps` already establishes that
+warps and box are interchangeable currency, the invariant is the product:
+
+**~36 KB of in-flight `num_producers x box` per math warpgroup**, with
+`overlap.eff.sm`'s measured contention included; 30 KB without it.
+
+More than one producer warp is needed only because `tma.bytes.txn.max` caps one
+transaction at 32 KB, just under the 36 KB required -- not because of anything
+about warps.
+
+## The pipeline, coupled -- E5b · `pipeline.stages.wg.knee`, `pipeline.ratio.sm.dep`
+
+`overlap.eff.sm` removed the barrier on purpose. Adding it back with CUTLASS's
+own `PipelineTmaAsync` warp-specialized mainloop (`sm90_pipeline.hpp`, mirrored
+from `sm90_mma_tma_gmma_ss_warpspecialized.hpp`):
+
+| N | stages | prod alone | cons alone | coupled | / slower | dependency | consumer duty |
+|---|---|---|---|---|---|---|---|
+| 128 | 2 | 94771 | 65809 | 226965 | **2.39** | 1.92 | 29% |
+| 128 | 3 | 89014 | 65813 | 118937 | 1.34 | **1.07** | 55% |
+| 128 | 4 | 88488 | 65789 | 118443 | 1.34 | **1.07** | 56% |
+| 128 | 6 | 89165 | 65815 | 118734 | 1.33 | **1.07** | 55% |
+| 64 | 4 | 89235 | 40130 | 114562 | 1.28 | 1.03 | 35% |
+
+Cycles, 132 CTAs, median of 7. Coupled, the producer's and consumer's measured
+spans agree to **0.03%** -- they are one window, which is what says the pipeline
+is really coupled and not two things running loose.
+
+**Measured twice, and the source changed the answer.** The first run had the
+producer re-reading a single 24 KB tile: 132 CTAs shared one working set, the
+walk never left L2, and it was fed at 9.9-14.8 TB/s -- above the DRAM ceiling,
+so not a DRAM measurement at all. Re-run with a walking k-tile coordinate over
+302 MB (5.8x L2):
+
+| N=128, stages | L2-resident | cold |
+|---|---|---|
+| 2 | 2.39 | 2.21 |
+| **3** | **1.34** | **1.57** |
+| 4 | 1.34 | 1.32 |
+| 6 | 1.33 | 1.27 |
+
+The two regimes agree at 2 and 4 and **cross over at 3**. L2-resident, three
+stages look sufficient; cold they cost 24% more than six. That is
+`pipeline.stages.wg.knee` = **4 stages cold**, and the earlier reading of three
+came from the L2-resident run.
+
+**Falsifier.** If three stages really sufficed, S=3 and S=6 would agree cold as
+they do L2-resident. They differ by 24%. And if the source did not matter, the
+two regimes would not cross over exactly at S=3. `tma.stages.warp.knee`
+says the same thing about the copy ring alone -- 4 stages for DRAM, 2 for L2 --
+so the pipeline is inheriting its stages requirement from the source's latency,
+exactly as `tma.lat.warp` predicts.
+
+**The hand-off is still nearly free** -- `pipeline.ratio.sm.dep` = **1.06**.
+1.32x over the slower side at four stages, of which `overlap.eff.sm` explains
+1.25x as engine contention, leaving the barrier at ~1.05x. Both numbers are now
+cold, so the division no longer mixes regimes.
+
+**Falsifier.** If the barrier were the dominant term rather than stages, S=4 and
+S=6 would differ as much as S=2 and S=4 do. They differ by 4% against 67%. And
+the consumer-only baseline reproduces `wgmma.issue.wg.ss` independently, so the
+denominators are not the probe's own invention.
+
+**Isolation.** One kernel, three modes on the same SMs: coupled, producer-only
+(self-draining its own full barrier) and consumer-only (re-reading a resident
+stage, no waits). Coupled, the two sides' spans agree to 0.03%, which is the
+check that they are one window.
+
+REGIME (rule 6b): cold on both sides -- the producer walks 302 MB (5.8x L2) and
+`overlap.eff.sm`'s 1.25x divisor was itself measured on a cold 256 MB walk.
+132 CTAs, N=128, BK=64, 12288 k-tiles, median of 7. Job 568758 (supersedes
+567094), `probes/units/pipeline_ws/pipeline_ws.py`.
+
+**The consumer is starved 54% of the time** at four stages -- worse cold than
+the 44% measured in cache. Whether the copy path can feed one warpgroup at
+N = 128 is the open question `wgmma.bytes.wg.tma` boxes, and this is the
+strongest evidence yet that it cannot.
+
+> **The N = 256 row is excluded.** Its producer is DRAM-bandwidth-bound, and
+> there cycles are the wrong unit -- a concurrent consumer lowers the clock, the
+> same wall-clock wait spans fewer cycles, and the row reads a spurious 0.72x
+> "speedup" at 56.6% run-to-run spread. Protocol rule 10 was refined for exactly
+> this, and re-measuring on 2026-08-30 confirmed the instability rather than
+> resolving it: 62.9% spread pre-migration and 64.3% post, against <= 9.3% on
+> every other row of the sweep. No constant rests on it. [rule 14b]
 
 ## The clock, and why cycles are the unit
 
 Under sustained wgmma load this GPU runs at **1.05–1.58 GHz**, not the 1.755 GHz
 the datasheet's 989 TFLOP/s assumes. So the architectural peak is reached *in
 cycles* and missed *in wall clock*: best observed ≈ **850 TFLOP/s**. Target
-cycles against `MMA-RATE`; treat 850 as the practical ceiling, the way `BW-CEIL`
+cycles against `wgmma.issue.wg.ss`; treat 850 as the practical ceiling, the way `ld.bw.dev.dram`
 replaces the 3.35 TB/s datasheet bandwidth.
 
-## Two build traps, either of which yields a plausible wrong answer
+## Three build traps, either of which yields a plausible wrong answer
 
 - **`-arch=sm_90a` is not enough.** On this toolchain it resolves to virtual
   arch `compute_90`, and ptxas then rejects `wgmma.fence`,
@@ -161,6 +251,21 @@ replaces the 3.35 TB/s datasheet bandwidth.
   `C7515` and *serialises* the wgmma pipeline; the loop still runs and still
   produces a number, and that number is the serialised rate. The probe treats
   C7515 as a **build failure**, not a warning.
+- **The instruction must be selected, not spelled.** The wgmma path reaches its
+  atom through `GMMA::ss_op_selector` — the same dispatch CUTLASS itself uses —
+  so the probe cannot measure an instruction production code would never have
+  issued. A `static_assert` per swept N pins that choice to the
+  `MMA_64xNx16_F32BF16BF16_SS` atom the constants above were measured on, so a
+  library update that changes the dispatch fails the build rather than quietly
+  re-measuring a different instruction under these tags. The accumulator's
+  `(row, col)` mapping comes from `partition_C` for the same reason: it is
+  correct by construction at every N, where a hand-decoded m64nNk16 layout was a
+  second table to keep in step.
+
+The warp-level `mma.sync` and `ldmatrix` probes keep their inline PTX
+deliberately: their subject *is* the raw instruction and its documented fragment
+layout, both already gated on a torch comparison, and routing them through a
+`TiledMMA` would add the partitioning the measurement exists to exclude.
 
 ## Open gaps
 
@@ -168,20 +273,9 @@ replaces the 3.35 TB/s datasheet bandwidth.
   instructions. The published ridge point doubles with fp8, so a single bf16
   number would condemn every fp8 tile ever written — measure both or claim
   neither.
-- **`mma.sync` operand loading.** The probe holds fragments in registers and
-  never reloads them, so it measures the instruction and not `ldmatrix`. A real
-  small-N kernel pays for the fragment loads too, and that cost is not in
-  `MMA-CROSSOVER` — which therefore states the crossover under conditions
-  favourable to `mma.sync`.
 - **A from registers.** Only the smem–smem (`_SS`) form is measured; the `_RS`
   form's cost, and whether it is worth its register pressure, is untested.
 - **Swizzled operand layouts.** The probe uses the unswizzled `Layout_K_INTER`
   atom. Landing at 94–95% of peak says the layout is not throttling *this*
   measurement, but it does not measure what a swizzled layout costs or saves.
-- **The overlap itself.** `MMA-VS-TMA` is arithmetic over two constants measured
-  in separate kernels. Whether the copy engine and the tensor core actually run
-  concurrently at these rates — rather than contending — is the assumption every
-  fused kernel in this repo rests on, and **it is still untested**. The probe
-  needs a mode that runs the TMA ring and the wgmma loop in one kernel and
-  reports both rates against their solo values.
 - **Why the clock moves** with configuration in ways the work does not explain.

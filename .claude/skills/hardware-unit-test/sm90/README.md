@@ -22,13 +22,13 @@ combine a number from one with a number from the other without saying so.
 
 ```bash
 python3 scripts/constants.py --machine sm90            # every constant, one line each
-python3 scripts/constants.py --tag TMA-ISSUE           # one, with what would refute it
+python3 scripts/constants.py --tag tma.issue.warp           # one, with what would refute it
 python3 scripts/constants.py --unit mma                # one unit, in full
 python3 scripts/frontier.py --table                    # the TMA saturation frontier
 python3 scripts/frontier.py --copy-floor --txns-per-warp 32 --bytes 4194304
 ```
 
-Cite tags — `[TMA-ISSUE]`, `[MMA-CROSSOVER]` — so a floor traces to a job id.
+Cite tags — `[tma.issue.warp]`, `[mma.xover.n.wgmma]` — so a floor traces to a job id.
 **Read the `valid:` range before spending a constant**: quoting one outside the
 range it was measured over is the mistake this format exists to catch.
 
@@ -37,12 +37,13 @@ range it was measured over is the mistake this format exists to catch.
 ### 访存 — memory (`references/category-memory.md`)
 
 **`unit-tma.md`** — delivered bandwidth is a function of the product
-`CTAs × warps × bytes-per-box` and nothing else (22 bins, ±6.9%), **but one CTA
-saturates at ~133 GB/s**, which one producer warp at the 32 KB descriptor cap
-already reaches 91% of — so a second producer warp is worth ~10% and a third
-nothing. Issue interval 270 ns per warp, frame-independent; latency 598 ns +
-4.8 ns/KB, so ring depth 3 suffices at ≤16 KB. Sustained ceiling 3.02 TB/s.
-Plus a real, unexplained 5–8% anti-scaling dip at 36–56 CTAs.
+`CTAs × warps × bytes-per-box` and nothing else, to ~10% at the 90th percentile
+with a 19–29% tail driven by CTA count. There is **no per-CTA ceiling**: the issue interval stays flat while delivery
+rises linearly to at least 40 KB per CTA, so a second producer warp is worth
+close to 2x there. Issue interval **248 ns** per warp, box-independent; latency **595 ns +
+5.2 ns/KB** on DRAM (217 + 4.8 from L2), so ring **stages 4 for DRAM, 2 for L2**.
+Sustained ceiling **≤3.17 TB/s** (an upper bound; the cold rate is lower). Plus a
+real, unexplained **11.5%** anti-scaling dip at 44–56 CTAs, DRAM only.
 
 **`unit-atomic.md`** — **address layout is worth 6.3×, every other lever ≤1.3×.**
 Per-transaction, so `red.global.add.v4.f32` moves 3.8× the bytes for free;
@@ -61,22 +62,33 @@ datasheet's 989, because the clock drops under load.
 
 ### 执行 — execution (`references/category-execution.md`)
 
+> The `launch` unit's six constants carry **no Slurm job ids** -- only a date,
+> harness and toolchain. That is the weakest provenance in this directory;
+> `unit-launch.md` is where they and their tables live.
+
 **`unit-launch.md`** — every kernel starts ~1.24 µs in debt (grid ramp, not
 removed by graph capture), so launch count is a first-class fusion term. A cold
 read costs `1.85 + MB/2.77` µs; `bytes / 3.35 TB/s` is not a floor. Declaring a
 cluster is free, synchronising one is 0.65 µs at cluster 8 — and placement
 dominates that floor. Occupancy capacity is not residency.
 
-`example-phase0-run.md` is the original calibration run behind the `launch`
-unit and its only provenance — **those constants carry no job ids**, which is
-the weakest evidence in this directory and the reason that unit still wants a
-probe of its own.
+**`unit-coop.md`** — a `cooperative_groups` `grid_sync` costs **1.09 µs** and
+barely moves with grid size (1.02× over a 4× block range). A cooperative launch
+accepts exactly `max_active_blocks_per_sm × SMs` blocks — 1056 here, with 1057
+refused — so the bound can be queried rather than discovered. A device-side
+relaunch costs 1.40 µs, only **1.29×** a barrier: replacing launches with grid
+barriers buys ~22%, not an order of magnitude.
 
 ## The biggest thing still untested here
 
-`MMA-VS-TMA` says a CTA needs ~4.2 producer warps per math warpgroup, and it
-collides almost exactly with `TMA-CTA-CEIL`'s 4.4 warps' worth of per-CTA
-bandwidth. **But it is arithmetic over two constants measured in separate
-kernels.** Whether the copy engine and the tensor core actually run concurrently
-at those rates — rather than contending — is what every fused kernel here
-assumes, and no probe has run them together.
+**No per-SM bandwidth ceiling has been measured cold.** `tma.bw.dev.dram` bounds
+the device and `tma.issue.warp` bounds one producer warp, but nothing measures
+what one SM can absorb, so the middle of the hierarchy is empty.
+The frontier still climbs past `tma.bw.dev.dip` at 44-56 CTAs with no model that
+explains the shape.
+
+*Previously in this slot:* whether the copy engine and the tensor core actually
+run concurrently rather than contending. They were measured together --
+`overlap.eff.sm` puts TMA 1.25x slower and wgmma 1.05x under contention, and
+`pipeline.ratio.sm.dep` adds ~1.05x for the barrier on top. Budget ~1.32x over
+the slower engine, not the 1.00x a timeline assumes.

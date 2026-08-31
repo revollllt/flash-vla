@@ -11,8 +11,8 @@ measure and how to think about it when a new architecture arrives.
 
 | Unit | Probe | Measures |
 |---|---|---|
-| **tma** | `probes/memory/tma_ring.{cu,py}` | copy-engine delivery: per-warp issue rate, latency, ring depth, box geometry, descriptor limits, the saturation frontier, the per-CTA ceiling |
-| **atomic** | `probes/memory/gmem_atomic.{cu,py}` | atomic throughput by instruction, width, scope, address placement and sharing; gmem-counter arrive→observe latency |
+| **tma** | `probes/units/tma_ring/tma_ring.{cu,py}` | copy-engine delivery: per-warp issue rate, latency, ring stages, box geometry, descriptor limits, the saturation frontier |
+| **atomic** | `probes/units/gmem_atomic/gmem_atomic.{cu,py}` | atomic throughput by instruction, width, scope, address placement and sharing; gmem-counter arrive→observe latency |
 
 **Not yet a unit anywhere:** shared memory (`ldmatrix`/`stmatrix` bandwidth,
 bank conflicts as a measured cost rather than a computed one), L2 as a unit in
@@ -30,7 +30,7 @@ vary the width.** If the op rate does not move, the path is per-transaction and
 the extra bytes are free.
 
 > On sm90 *both* measured units came back per-transaction, and neither was
-> expected to. TMA: ~270 ns per box from 1 KB to the 32 KB descriptor maximum.
+> expected to. TMA: ~248 ns per box from 1 KB to the 32 KB descriptor maximum.
 > Atomics: `u32` and `v4.f32` retire at the same rate, so the wide one moves
 > 3.8× the bytes for free. **Treat this as a hypothesis to test on a new arch,
 > not as a property of GPUs.**
@@ -58,20 +58,20 @@ actually counts. The test is an **iso-product sweep**: reach the same nominal
 concurrency by different splits of the knobs, and see whether they agree.
 
 > On sm90 the TMA answer was that delivery depends on the *product*
-> `CTAs × warps × bytes-per-box` and on nothing else, to within the noise floor
-> — but only up to a per-CTA ceiling, past which one CTA cannot absorb more
-> however the product is reached. Both halves of that were found by iso-product
-> sweeps; neither would have appeared in a one-axis-at-a-time sweep.
+> `CTAs × warps × bytes-per-box` and on nothing else, to within the noise floor.
+> An apparent per-CTA ceiling on top of that turned out to be an artefact of a
+> walk that never left L2 -- which is the second lesson: an iso-product sweep
+> finds the law, and only a COLD one tells you whether an extra term is real.
 
 ## Latency versus rate
 
-Separate them explicitly, with a depth knob: **depth 1 measures latency, deeper
-measures the issue rate.** Then the covering depth is `ceil(latency / interval)`
+Separate them explicitly, with a stages knob: **stages 1 measures latency, deeper
+measures the issue rate.** Then the covering stage count is `ceil(latency / interval)`
 and it is a derived number, not a guess.
 
 Do not infer latency from a partially-overlapped configuration. On sm90 an
-earlier reading inferred TMA latency from a depth-2 row that was already
-bandwidth-contaminated, and the recorded constant was wrong until a depth-1
+earlier reading inferred TMA latency from a stages-2 row that was already
+bandwidth-contaminated, and the recorded constant was wrong until a stages-1
 sweep at low occupancy replaced it.
 
 ## Reporting rules specific to this category
