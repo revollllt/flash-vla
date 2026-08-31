@@ -331,6 +331,23 @@ _DEC_XFS = dict(
     THREADS=128,
     M_PAD=64,
     TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
+    RESET_READINESS_COUNTERS=True,
+)
+_DEC_OUT_PROJ_PARTIALS = dict(
+    BLOCK_M=16,
+    BLOCK_N=32,
+    BLOCK_K=256,
+    NUM_STAGES=4,
+    THREADS=128,
+    M_PAD=64,
+)
+_DEC_XFS_FROM_PARTIALS = dict(
+    BLOCK_M=16,
+    BLOCK_N=32,
+    ROWS_PER_CTA=16,
+    THREADS=128,
+    M_PAD=64,
+    TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=True,
 )
 
 # NUM_SPLIT is a request, not the realized count -- `_num_splits` shrinks it.
@@ -355,7 +372,9 @@ def _rms_factor(x, out, cfg=_DEC_RMS):
     return out
 
 
-def decoder_rms_xfs(x, scale, out, *, trigger_programmatic_launch=False):
+def decoder_rms_xfs(
+        x, scale, hidden_ready, down_ready, out,
+        *, trigger_programmatic_launch=False, reset_readiness=True):
     """Write the next FFN's exact BF16 input as contiguous ``[1024,64]``.
 
     ``x`` is the BF16 ``decoder_x`` *after* ``decoder_out_proj_residual`` has
@@ -363,7 +382,7 @@ def decoder_rms_xfs(x, scale, out, *, trigger_programmatic_launch=False):
     persistent GatedProjection path; neither the row factor nor a row-major
     normalized activation is materialized.  When ``trigger_programmatic_launch``
     is true, the persistent consumer must be the direct successor on the same
-    stream; move readiness-counter resets before this call.
+    stream. The producer resets both readiness arrays before publishing XFS.
     """
     M, K = x.shape
     if (M != 50 or K != 1024 or tuple(scale.shape) != (1024,)
@@ -375,10 +394,58 @@ def decoder_rms_xfs(x, scale, out, *, trigger_programmatic_launch=False):
         raise ValueError("decoder_rms_xfs tensors must be BF16")
     if not x.is_contiguous() or not scale.is_contiguous() or not out.is_contiguous():
         raise ValueError("decoder_rms_xfs tensors must be contiguous")
+    for name, counters in (("hidden_ready", hidden_ready),
+                           ("down_ready", down_ready)):
+        if (tuple(counters.shape) != (32,)
+                or counters.dtype != torch.int32
+                or not counters.is_contiguous()):
+            raise ValueError(f"{name} must be contiguous int32[32]")
     config = dict(_DEC_XFS)
     config["TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH"] = trigger_programmatic_launch
-    _compiled(xfs_kernels.tl_rms_xfs_kmajor, M=M, K=K, **config)(x, scale, out)
+    config["RESET_READINESS_COUNTERS"] = reset_readiness
+    _compiled(xfs_kernels.tl_rms_xfs_kmajor, M=M, K=K, **config)(
+        x, scale, hidden_ready, down_ready, out)
     return out
+
+
+def decoder_out_proj_residual_rms_xfs(
+        attention, weight, attention_gate, residual, ffn_scale,
+        hidden_ready, down_ready, square_partials, xfs):
+    """Cooperatively produce the exact residual and contiguous K-major XFS."""
+    if (tuple(attention.shape) != (50, 2048)
+            or tuple(weight.shape) != (2048, 1024)
+            or tuple(attention_gate.shape) != (1024,)
+            or tuple(residual.shape) != (50, 1024)
+            or tuple(ffn_scale.shape) != (1024,)
+            or tuple(square_partials.shape) != (4, 32, 16)
+            or tuple(xfs.shape) != (1024, 64)):
+        raise ValueError("invalid fixed-shape fused out-projection/XFS tensors")
+    bf16_tensors = (
+        attention, weight, attention_gate, residual, ffn_scale,
+        xfs,
+    )
+    if any(tensor.dtype != torch.bfloat16 for tensor in bf16_tensors):
+        raise ValueError("fused out-projection/XFS data tensors must be BF16")
+    if square_partials.dtype != torch.float32:
+        raise ValueError("square_partials must be FP32 [4,32,16]")
+    if any(not tensor.is_contiguous() for tensor in (
+            *bf16_tensors, square_partials)):
+        raise ValueError(
+            "fused out-projection/XFS tensors must be contiguous")
+    for name, counters in (("hidden_ready", hidden_ready),
+                           ("down_ready", down_ready)):
+        if (tuple(counters.shape) != (32,)
+                or counters.dtype != torch.int32
+                or not counters.is_contiguous()):
+            raise ValueError(f"{name} must be contiguous int32[32]")
+    _compiled(
+        xfs_kernels.tl_out_proj_residual_rms_xfs,
+        M=50, N=1024, K=2048, **_DEC_OUT_PROJ_PARTIALS,
+    )(
+        attention, weight, attention_gate, residual, ffn_scale,
+        hidden_ready, down_ready, square_partials, xfs,
+    )
+    return residual, xfs
 
 
 def decoder_action_in_proj(x, weight, bias, out):

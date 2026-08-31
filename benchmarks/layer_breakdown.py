@@ -56,8 +56,10 @@ PREFIX_TAIL = PREFIX_LAYER[:3]          # the final layer's QKV-only pass
 #: The per-layer body depends on the call-site plan the engine was built with
 #: (`--plan`); each variant below is the exact launch sequence its wrappers
 #: emit. The cuda attention pair keeps the TileLang rms_factor node; the cuda
-#: FFN pair replaces {rms_factor, gate_up, down} with {counter reset, K-major
-#: XFS producer, one persistent kernel} (`backends/cuda/wrappers.py`).
+#: FFN pair replaces {rms_factor, gate_up, down} with {K-major XFS producer,
+#: one persistent kernel}; the producer resets the readiness counters itself.
+#: The fused-producer route folds o_proj into that producer
+#: (`backends/cuda/wrappers.py`).
 DECODER_PROLOGUE = [("action_in_proj", "_matmul_bias_kernel")]
 _QKV_TILELANG = [("qkv:rms_factor", "tl_rms_factor_kernel"),
                  ("qkv:gemm_rope", "tl_ada_qkv_gemm_rope_kernel")]
@@ -71,14 +73,20 @@ _OPROJ = [("o_proj", "_matmul_gated_res_kernel")]
 _FFN_TILELANG = [("ffn:rms_factor", "tl_rms_factor_kernel"),
                  ("ffn:gate_up", "tl_ada_scaled_gate_kernel"),
                  ("ffn:down", "_matmul_gated_res_kernel")]
-_FFN_CUDA = [("ffn:reset", "reset_ffn_counters_kernel"),
-             ("ffn:xfs", "tl_rms_xfs_kmajor"),
+_FFN_CUDA = [("ffn:xfs", "tl_rms_xfs_kmajor"),
              ("ffn:persistent", "ffn_taskloop_kernel")]
+# The fused producer is one cooperative kernel in place of {o_proj, ffn:xfs}.
+_OPROJ_FFN_CUDA_FUSED = [("o_proj+ffn:xfs", "tl_out_proj_residual_rms_xfs"),
+                         ("ffn:persistent", "ffn_taskloop_kernel")]
 DECODER_LAYER_BY_PLAN = {
     "tilelang": _QKV_TILELANG + _ATTN_TILELANG + _OPROJ + _FFN_TILELANG,
     "attn-cuda": _QKV_CUDA + _ATTN_CUDA + _OPROJ + _FFN_TILELANG,
     "ffn-cuda": _QKV_TILELANG + _ATTN_TILELANG + _OPROJ + _FFN_CUDA,
+    "ffn-cuda-fused-producer":
+        _QKV_TILELANG + _ATTN_TILELANG + _OPROJ_FFN_CUDA_FUSED,
     "attn-ffn-cuda": _QKV_CUDA + _ATTN_CUDA + _OPROJ + _FFN_CUDA,
+    "attn-ffn-cuda-fused-producer":
+        _QKV_CUDA + _ATTN_CUDA + _OPROJ_FFN_CUDA_FUSED,
 }
 DECODER_EPILOGUE = [("action_out_proj", "tl_fused_rms_matmul_bias_res_kernel")]
 

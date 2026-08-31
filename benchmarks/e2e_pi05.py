@@ -44,10 +44,32 @@ DEFAULT_PROMPT = "pick up the plate and put it in the sink"
 #: Named plans for `--plan`. A JSON object is accepted too.
 PLANS = {
     "tilelang": None,
-    "attn-cuda": {"decoder_norm_qkv_rope": "cuda", "decoder_attention": "cuda"},
-    "ffn-cuda": {"decoder_norm_gated_ffn": "cuda", "decoder_ffn_down_residual": "cuda"},
-    "attn-ffn-cuda": {"decoder_norm_qkv_rope": "cuda", "decoder_attention": "cuda",
-                      "decoder_norm_gated_ffn": "cuda", "decoder_ffn_down_residual": "cuda"},
+    "attn-cuda": {
+        "decoder_norm_qkv_rope": "cuda",
+        "decoder_attention": "cuda",
+    },
+    "ffn-cuda": {
+        "decoder_norm_gated_ffn": "cuda",
+        "decoder_ffn_down_residual": "cuda",
+    },
+    "ffn-cuda-fused-producer": {
+        "decoder_out_proj_residual": "cuda",
+        "decoder_norm_gated_ffn": "cuda",
+        "decoder_ffn_down_residual": "cuda",
+    },
+    "attn-ffn-cuda": {
+        "decoder_norm_qkv_rope": "cuda",
+        "decoder_attention": "cuda",
+        "decoder_norm_gated_ffn": "cuda",
+        "decoder_ffn_down_residual": "cuda",
+    },
+    "attn-ffn-cuda-fused-producer": {
+        "decoder_norm_qkv_rope": "cuda",
+        "decoder_attention": "cuda",
+        "decoder_out_proj_residual": "cuda",
+        "decoder_norm_gated_ffn": "cuda",
+        "decoder_ffn_down_residual": "cuda",
+    },
 }
 
 #: Analytic per-stage floors from PLAN.md §1.2, at 3 views / prompt 200 /
@@ -91,7 +113,8 @@ def _time_wall(call, reps: int, warmup: int = 3) -> dict[str, float]:
 
 def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int = 18,
         reps: int = 30, seed: int = 0, prompt: str = DEFAULT_PROMPT,
-        tokenizer_path: str | None = None, plan: dict[str, str] | None = None) -> dict:
+        tokenizer_path: str | None = None, plan: dict[str, str] | None = None,
+        profile_decoder_graph: bool = False) -> dict:
     """Build one engine, time the whole pass and each stage, and print a report."""
     require_cuda()
     torch.cuda.init()
@@ -133,6 +156,74 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
         "host_tokenize": _time_wall(lambda: engine.inputs.build(state), reps, warmup=50),
         "stages": {},
     }
+    if profile_decoder_graph:
+        engine.buffers["diffusion_noise"].copy_(noise)
+        engine.decoder_graph.replay()
+        torch.cuda.synchronize()
+        replay_reference = engine.buffers["diffusion_noise"].clone()
+        for _ in range(20):
+            engine.buffers["diffusion_noise"].copy_(noise)
+            engine.decoder_graph.replay()
+        torch.cuda.synchronize()
+        replay_exact = torch.equal(
+            replay_reference, engine.buffers["diffusion_noise"])
+        with torch.profiler.profile(
+                activities=[torch.profiler.ProfilerActivity.CUDA]) as trace:
+            engine.buffers["diffusion_noise"].copy_(noise)
+            engine.decoder_graph.replay()
+            torch.cuda.synchronize()
+        kernel_names = sorted({
+            event.key for event in trace.key_averages()
+            if (getattr(event, "device_time_total", 0) > 0
+                or getattr(event, "self_device_time_total", 0) > 0)
+        })
+        reset_nodes = [name for name in kernel_names
+                       if "reset_ffn_counters_kernel" in name]
+        legacy_producer_nodes = [
+            name for name in kernel_names
+            if ("_matmul_gated_res" in name
+                or "tl_rms_xfs_kmajor" in name)
+        ]
+        cooperative_producer_nodes = [
+            name for name in kernel_names
+            if "tl_out_proj_residual_rms_xfs" in name
+        ]
+        split_producer_nodes = [
+            name for name in kernel_names
+            if ("tl_out_proj_residual_partials" in name
+                or "tl_rms_xfs_from_partials" in name)
+        ]
+        report["decoder_graph_check"] = {
+            "replays": 20,
+            "bf16_exact": replay_exact,
+            "kernel_count": len(kernel_names),
+            "reset_nodes": reset_nodes,
+            "legacy_producer_nodes": legacy_producer_nodes,
+            "cooperative_producer_nodes": cooperative_producer_nodes,
+            "split_producer_nodes": split_producer_nodes,
+        }
+        if not replay_exact:
+            raise RuntimeError("decoder graph changed output across reset replays")
+        if reset_nodes:
+            raise RuntimeError(
+                "production decoder graph contains standalone FFN counter reset")
+        fused_producer = plan is not None and all(
+            plan.get(name) == "cuda" for name in (
+                "decoder_out_proj_residual",
+                "decoder_norm_gated_ffn",
+                "decoder_ffn_down_residual",
+            ))
+        if fused_producer and legacy_producer_nodes:
+            raise RuntimeError(
+                "fused production graph contains legacy FFN producer nodes")
+        if fused_producer and len(cooperative_producer_nodes) != 1:
+            raise RuntimeError(
+                "fused production graph must contain exactly one cooperative "
+                f"producer name, got {cooperative_producer_nodes}")
+        if fused_producer and split_producer_nodes:
+            raise RuntimeError(
+                "fused production graph contains split producer nodes: "
+                f"{split_producer_nodes}")
     for name, graph in (("vision", engine.vision_graph),
                         ("prefix", engine.prefix_graph),
                         ("decoder", engine.decoder_graph)):
@@ -178,26 +269,34 @@ def main(argv=None) -> int:
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
     parser.add_argument("--tokenizer", default=None,
                         help="paligemma_tokenizer.model (default: $PALIGEMMA_TOKENIZER)")
-    parser.add_argument("--plan", action="append", default=None,
-                        help=f"call-site plan: one of {sorted(PLANS)} or a JSON object; "
-                             "repeat to time several plans in one process, same node")
+    parser.add_argument(
+        "--profile-decoder-graph", action="store_true",
+        help="check 20 exact production replays and list counter-reset nodes")
+    parser.add_argument(
+        "--plan", action="append", default=None,
+        help=f"call-site plan: one of {sorted(PLANS)} or JSON; repeat for A/B/A")
     args = parser.parse_args(argv)
     plans = args.plan or ["tilelang"]
-    reports = []                                  # in run order; a plan may repeat (A/B/A)
+    reports = []                              # in run order; a plan may repeat (A/B/A)
     for name in plans:
         print(f"== plan {name}")
-        reports.append((name, run(args.num_views, args.chunk_size, args.steps, args.layers,
-                                  args.reps, args.seed, args.prompt, args.tokenizer,
-                                  plan=parse_plan(name))))
+        reports.append((name, run(
+            args.num_views, args.chunk_size, args.steps, args.layers,
+            args.reps, args.seed, args.prompt, args.tokenizer,
+            plan=parse_plan(name),
+            profile_decoder_graph=args.profile_decoder_graph)))
     if len(reports) > 1:
-        ref = reports[0][1]["stages"]["decoder"]
-        print(f"== decoder stage vs first run ({plans[0]}), same process; median and min ms")
+        reference = reports[0][1]["stages"]["decoder"]
+        print(f"== decoder stage vs first run ({plans[0]}), same process")
         for name, report in reports:
-            dec = report["stages"]["decoder"]
+            decoder = report["stages"]["decoder"]
             wall = report["forward_wall"]
-            print(f"  {name:12s} decoder median {dec['median_ms']:8.3f} ({dec['median_ms'] - ref['median_ms']:+.3f})"
-                  f"  min {dec['min_ms']:8.3f} ({dec['min_ms'] - ref['min_ms']:+.3f})"
-                  f"   forward_wall min {wall['min_ms']:8.3f}")
+            print(
+                f"  {name:28s} median {decoder['median_ms']:8.3f} "
+                f"({decoder['median_ms'] - reference['median_ms']:+.3f}) "
+                f"min {decoder['min_ms']:8.3f} "
+                f"({decoder['min_ms'] - reference['min_ms']:+.3f}) "
+                f"forward_wall min {wall['min_ms']:8.3f}")
     return 0
 
 

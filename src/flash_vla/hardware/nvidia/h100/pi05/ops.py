@@ -15,7 +15,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from .backends import BACKENDS, build_table as _build_table
+from .backends import (
+    BACKENDS,
+    backend_names as _backend_names,
+    build_backend_table as _build_backend_table,
+    build_table as _build_table,
+)
 
 
 def op_table(fused: bool = True, backend: str = "tilelang",
@@ -34,27 +39,63 @@ def op_table(fused: bool = True, backend: str = "tilelang",
         if chosen not in BACKENDS:
             raise KeyError(f"plan names unknown backend {chosen!r} for {op_name!r}; "
                            f"known: {sorted(BACKENDS)}")
-        module = BACKENDS[chosen]
-        if op_name not in module.ALL_WRAPPERS and op_name not in module.FUSED_WRAPPERS:
+        names = _backend_names(chosen)
+        if op_name not in names:
             raise KeyError(
                 f"backend {chosen!r} does not implement call site {op_name!r}; "
-                f"it provides {sorted(set(module.ALL_WRAPPERS) | set(module.FUSED_WRAPPERS))}")
+                f"it provides {sorted(names)}")
+
+    # The CUDA qkv wrapper leaves the pipeline's token-major Q unwritten: its
+    # real Q is head-major scratch its own attention reads. A plan that splits
+    # the pair would feed TileLang attention a stale buffer, so reject it here
+    # rather than at the first step.
+    attn_names = ("decoder_norm_qkv_rope", "decoder_attention")
+    attn_route = tuple(plan.get(name, backend) for name in attn_names)
+    if len(set(attn_route)) != 1:
+        raise ValueError(
+            "norm-qkv-rope and attention must select the same backend, got "
+            f"{dict(zip(attn_names, attn_route))}")
+
+    ffn_names = (
+        "decoder_out_proj_residual",
+        "decoder_norm_gated_ffn",
+        "decoder_ffn_down_residual",
+    )
+    ffn_route = tuple(plan.get(name, backend) for name in ffn_names)
+    allowed_ffn_routes = {
+        ("tilelang", "tilelang", "tilelang"),
+        ("tilelang", "cuda", "cuda"),
+        ("cuda", "cuda", "cuda"),
+    }
+    if ffn_route not in allowed_ffn_routes:
+        raise ValueError(
+            "out-projection/norm-gated/down-residual must select an atomic "
+            f"FFN route, got {dict(zip(ffn_names, ffn_route))}")
 
     table = {}
-    for op_name in _op_names(backend):
-        chosen = plan.get(op_name, backend)
-        module = BACKENDS[chosen]
-        if op_name in module.FUSED_WRAPPERS and fused:
-            table[op_name] = module.FUSED_WRAPPERS[op_name]
-        elif op_name in module.ALL_WRAPPERS:
-            table[op_name] = module.ALL_WRAPPERS[op_name]
+    assignments = {
+        op_name: plan.get(op_name, backend) for op_name in _op_names(backend)
+    }
+    selected_by_backend: dict[str, set[str]] = {}
+    for op_name, chosen in assignments.items():
+        selected_by_backend.setdefault(chosen, set()).add(op_name)
+    backend_tables = {
+        chosen: _build_backend_table(
+            chosen, fused=fused, selected_names=selected_names)
+        for chosen, selected_names in selected_by_backend.items()
+    }
+    for op_name, chosen in assignments.items():
+        if chosen not in backend_tables:
+            raise AssertionError(f"missing backend table for {chosen}")
+        chosen_table = backend_tables[chosen]
+        if op_name in chosen_table:
+            table[op_name] = chosen_table[op_name]
     return SimpleNamespace(**table)
 
 
 def _op_names(backend: str) -> list[str]:
     """Union of op names a backend can provide (unfused + fused)."""
-    module = BACKENDS[backend]
-    return sorted(set(module.ALL_WRAPPERS) | set(module.FUSED_WRAPPERS))
+    return sorted(_backend_names(backend))
 
 
 def op_names(fused: bool = True, backend: str = "tilelang") -> list[str]:

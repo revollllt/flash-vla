@@ -17,8 +17,38 @@ from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels.xfs import (
 )
 
 
-M, M_PAD, K = 50, 64, 1024
+M, M_PAD, K, ATTENTION_K = 50, 64, 1024, 2048
 EPS = 1e-6
+
+
+def out_proj_residual_rms_xfs_reference(
+        attention: torch.Tensor,
+        weight: torch.Tensor,
+        attention_gate: torch.Tensor,
+        residual: torch.Tensor,
+        ffn_scale: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Pure-Torch contract for the complete Phase-2 producer boundary.
+
+    The FP32 matmul is an algebra reference. TileLang WGMMA may accumulate in a
+    different reduction order, so exact candidate gating compares against the
+    existing TileLang out-projection at the BF16 ``x`` boundary.
+    """
+    expected = (
+        ("attention", attention, (M, ATTENTION_K)),
+        ("weight", weight, (ATTENTION_K, K)),
+        ("attention_gate", attention_gate, (K,)),
+        ("residual", residual, (M, K)),
+        ("ffn_scale", ffn_scale, (K,)),
+    )
+    for name, tensor, shape in expected:
+        if tensor.dtype != torch.bfloat16 or tuple(tensor.shape) != shape:
+            raise ValueError(f"{name} must be BF16 {list(shape)}")
+        if not tensor.is_contiguous():
+            raise ValueError(f"{name} must be contiguous")
+    projected = attention.float() @ weight.float()
+    return residual_rms_xfs_reference(
+        residual, projected, attention_gate, ffn_scale)
 
 
 def residual_rms_xfs_reference(
@@ -85,6 +115,8 @@ def main() -> None:
     scale = (1.0 + torch.randn((K,), generator=gen, device="cuda") * 0.1).bfloat16()
     out = torch.empty((K, M_PAD), dtype=torch.bfloat16, device="cuda")
     factor = torch.empty((M,), dtype=torch.bfloat16, device="cuda")
+    hidden_ready = torch.empty((32,), dtype=torch.int32, device="cuda")
+    down_ready = torch.empty((32,), dtype=torch.int32, device="cuda")
 
     reference = rms_xfs_reference(x, scale)
     wrappers._rms_factor(x, factor)
@@ -94,18 +126,30 @@ def main() -> None:
                                 * scale[None, :]).bfloat16().T
     configs = (
         ("bm8_ok32", dict(BLOCK_M=8, BLOCK_K=256, OUTPUT_K=32,
-                          THREADS=128, M_PAD=M_PAD)),
+                          THREADS=128, M_PAD=M_PAD,
+                          TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
+                          RESET_READINESS_COUNTERS=True)),
         ("bm8_ok64", dict(BLOCK_M=8, BLOCK_K=256, OUTPUT_K=64,
-                          THREADS=128, M_PAD=M_PAD)),
+                          THREADS=128, M_PAD=M_PAD,
+                          TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
+                          RESET_READINESS_COUNTERS=True)),
         ("bm4_ok32", dict(BLOCK_M=4, BLOCK_K=256, OUTPUT_K=32,
-                          THREADS=128, M_PAD=M_PAD)),
+                          THREADS=128, M_PAD=M_PAD,
+                          TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
+                          RESET_READINESS_COUNTERS=True)),
         ("bm16_ok64", dict(BLOCK_M=16, BLOCK_K=256, OUTPUT_K=64,
-                           THREADS=128, M_PAD=M_PAD)),
+                           THREADS=128, M_PAD=M_PAD,
+                           TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
+                           RESET_READINESS_COUNTERS=True)),
     )
     for name, config in configs:
         producer = wrappers._compiled(tl_rms_xfs_kmajor, M=M, K=K, **config)
-        producer(x, scale, out)
+        hidden_ready.fill_(7)
+        down_ready.fill_(9)
+        producer(x, scale, hidden_ready, down_ready, out)
         torch.cuda.synchronize()
+        if hidden_ready.count_nonzero() or down_ready.count_nonzero():
+            raise SystemExit(f"{name}: readiness counters were not reset")
         exact = torch.equal(out, reference)
         max_abs = (out.float() - reference.float()).abs().max().item()
         max_abs_old_path = (
@@ -123,7 +167,8 @@ def main() -> None:
                 f"{name}: differs from factor path: max_abs={max_abs_old_path}")
         for launches in args.launches:
             producer_us = _median_graph_us(
-                lambda: producer(x, scale, out), launches, args.reps)
+                lambda: producer(x, scale, hidden_ready, down_ready, out),
+                launches, args.reps)
             print(f"[xfs] {name} launches={launches} producer={producer_us:.3f} us")
 
     for launches in args.launches:
