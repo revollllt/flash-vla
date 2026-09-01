@@ -88,6 +88,12 @@ def make_inputs(gen, device, ablate=frozenset()):
 
     x_pad = torch.zeros((M_PAD, D), dtype=torch.bfloat16, device=device)
     x_pad[:CHUNK] = x50
+    # The kernel's GU tasks consume the producer's K-major XFS [D, M_PAD]
+    # (pre-scaled activation; the F/S launch params are legacy dead fields).
+    # Build it with the same bf16 chain torch_ref uses, after ablations.
+    a50 = (x50 * f50[:, None]) * s[None, :]
+    xfs = torch.zeros((D, M_PAD), dtype=torch.bfloat16, device=device)
+    xfs[:, :CHUNK] = a50.t()
     f_pad = torch.zeros((M_PAD,), dtype=torch.bfloat16, device=device)
     f_pad[:CHUNK] = f50
     hidden = torch.zeros((M_PAD, FF), dtype=torch.bfloat16, device=device)
@@ -96,8 +102,8 @@ def make_inputs(gen, device, ablate=frozenset()):
     counters = torch.zeros((N_COUNTERS,), dtype=torch.int32, device=device)
     return dict(x50=x50, f50=f50, s=s, w1=w1, w2=w2, b1=b1, b2=b2, wd=wd, g=g,
                 w1b=w1b, w2b=w2b, wdb=_block(wd),
-                xres=xres, x_pad=x_pad, f_pad=f_pad, hidden=hidden, out=out,
-                counters=counters)
+                xres=xres, x_pad=x_pad, f_pad=f_pad, xfs=xfs, hidden=hidden,
+                out=out, counters=counters)
 
 
 def torch_ref(t):
@@ -124,7 +130,7 @@ def run_parity(kt, mode, gen, device, ablate=frozenset()):
     dbg = torch.zeros((table.shape[0], 4), dtype=torch.int64, pin_memory=True)
     tag = mode + (f"[{'+'.join(sorted(ablate))}]" if ablate else "")
     print(f"[phase] launch mode={tag} grid={table.shape[0]}", flush=True)
-    kt.launch(table, t["x_pad"], t["f_pad"], t["s"], t["w1b"], t["w2b"],
+    kt.launch(table, t["xfs"], t["f_pad"], t["s"], t["w1b"], t["w2b"],
               t["b1"], t["b2"], t["wdb"], t["g"], t["hidden"], t["out"],
               t["counters"], dbg=dbg, zero_counters=zero)
     try:
