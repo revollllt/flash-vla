@@ -166,7 +166,7 @@ def tl_out_proj_residual_rms_xfs(
         A, W, AttentionGate, Residual, FFNScale,
         HiddenReady, DownReady, SquarePartials, XFS,
         BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_STAGES: int,
-        THREADS: int, M_PAD: int):
+        THREADS: int, M_PAD: int, TRIGGER_AT_ENTRY: bool):
     """Production cooperative residual, exact RMS partials, and XFS producer."""
     M, N, K = T.const("M, N, K")
     dtype = T.bfloat16
@@ -184,6 +184,15 @@ def tl_out_proj_residual_rms_xfs(
     with T.Kernel(T.ceildiv(N, BLOCK_N), T.ceildiv(M_PAD, BLOCK_M),
                   threads=THREADS) as (pid_n, pid_m):
         thread_id = T.get_thread_binding()
+        # Entry trigger (PDL-chain variant): scheduling-only. The consumer's
+        # grid-dependency wait spans full completion and visibility (its
+        # role-split form releases only warps that read static weights), so
+        # releasing here lets the persistent FFN's CTAs place during this
+        # grid's lifetime and retirement wave instead of after it.
+        if TRIGGER_AT_ENTRY:
+            if thread_id == 0:
+                T.evaluate(T.call_extern(
+                    "void", "cudaTriggerProgrammaticLaunchCompletion"))
         A_shared = T.alloc_shared((BLOCK_M, BLOCK_K), dtype)
         W_shared = T.alloc_shared((BLOCK_K, BLOCK_N), dtype)
         gate_local = T.alloc_fragment((BLOCK_N,), dtype)
@@ -224,9 +233,10 @@ def tl_out_proj_residual_rms_xfs(
         # The cooperative launch makes every residual/partial/reset visible
         # before any CTA starts the current N32/R16 XFS tail.
         T.sync_grid()
-        if thread_id == 0:
-            T.evaluate(T.call_extern(
-                "void", "cudaTriggerProgrammaticLaunchCompletion"))
+        if not TRIGGER_AT_ENTRY:
+            if thread_id == 0:
+                T.evaluate(T.call_extern(
+                    "void", "cudaTriggerProgrammaticLaunchCompletion"))
 
         scalar_sum = T.alloc_fragment((1,), accum_dtype)
         scale_local = T.alloc_fragment((BLOCK_N,), dtype)

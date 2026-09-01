@@ -353,13 +353,17 @@ class FFNTaskloop:
                b1, b2, Wd, g_gate,
                hidden, out, counters, *, dbg=None,
                zero_counters: bool = True,
-               use_programmatic_dependency: bool = False) -> None:
+               use_programmatic_dependency: int = 0) -> None:
         """Launch the fixed persistent FFN schedule.
 
         ``use_programmatic_dependency`` requires the triggering XFS producer
-        to be the direct predecessor on the current stream. Production passes
-        both readiness arrays to that producer and uses ``zero_counters=False``
-        here; the explicit reset entry point remains for diagnostics.
+        to be the direct predecessor on the current stream. It is a wait mode:
+        0 launches plainly with no device wait; 1 (== the former ``True``)
+        holds every warp at the entry grid-dependency wait; 2 releases the
+        dependency-free weight-loader warps ahead of the wait so their TMA
+        issue overlaps the producer's tail. Production passes both readiness
+        arrays to that producer and uses ``zero_counters=False`` here; the
+        explicit reset entry point remains for diagnostics.
 
         ``dbg`` is an optional host-pinned ``(n_ctas, 4)`` int64 tensor.  On a
         watchdog trap the kernel writes ``{site, g, tid, 1}`` per stuck CTA.

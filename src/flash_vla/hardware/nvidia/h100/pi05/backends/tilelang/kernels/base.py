@@ -342,7 +342,8 @@ def tl_matmul_bias_silu(A, B, Bias, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NU
 # fragment, which would spill the register file at the block sizes used here.
 # ---------------------------------------------------------------------------
 @kernel
-def tl_rms_factor(A, F, BLOCK_M: int, BLOCK_K: int, THREADS: int):
+def tl_rms_factor(A, F, BLOCK_M: int, BLOCK_K: int, THREADS: int,
+                  TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH: bool):
     """F[m] = rsqrt(mean_k(A[m, k]^2) + 1e-6), the decoder's RMSNorm scale factor.
 
     Emits the factor, not the normalized tensor: the consuming GEMM applies it,
@@ -355,6 +356,15 @@ def tl_rms_factor(A, F, BLOCK_M: int, BLOCK_K: int, THREADS: int):
     F: T.Tensor((M,), dtype)
 
     with T.Kernel(T.ceildiv(M, BLOCK_M), threads=THREADS) as bx:
+        # Release the programmatic launch dependency at entry: the PDL qkv
+        # consumer performs the mandatory grid-dependency wait before it reads
+        # F, so this early signal only exposes scheduling overlap; it does not
+        # provide memory visibility.
+        if TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH:
+            thread_id = T.get_thread_binding()
+            if thread_id == 0:
+                T.evaluate(T.call_extern(
+                    "void", "cudaTriggerProgrammaticLaunchCompletion"))
         A_local = T.alloc_fragment((BLOCK_M, BLOCK_K), dtype)
         A_pow_local = T.alloc_fragment((BLOCK_M, BLOCK_K), accum_dtype)
         A_powsum = T.alloc_fragment((BLOCK_M,), accum_dtype)

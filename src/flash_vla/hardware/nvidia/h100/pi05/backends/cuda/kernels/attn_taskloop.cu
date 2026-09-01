@@ -420,6 +420,11 @@ struct Params {
   // partial and a reduce/combine kernel folds them.  Same bodies, so a
   // per-op number and the task-loop number measure the same code.
   bool standalone;
+  // PDL standalone: this grid carries the programmatic stream-serialization
+  // attribute, so it may start before its stream predecessor retires.
+  // Kernel-order dependencies then hold only behind an explicit
+  // cudaGridDependencySynchronize at every read of predecessor-written state.
+  bool pdl;
   uint8_t* pool;
   Bars bars;
 };
@@ -718,6 +723,12 @@ __device__ void qkv_math(const Params& p, const TaskDesc& t, int tid, int slot) 
   // order, then own the epilogue.  Per-row / per-column epilogue operands are
   // loaded before the wait so their latency overlaps it.
   if (QKV_SPLIT > 1) arrive_drain(p, tid);
+  // PDL: rms_factor is the ONE operand the prerequisite grid writes
+  // (tl_rms_factor reads x and writes only the factor), so the whole
+  // mainloop above -- weights, x, ada_scale -- legally ran pre-wait and this
+  // is the first dependent read. Valid only while the immediate stream
+  // predecessor does not write x; revisit if the chain is ever deepened.
+  if (p.standalone && p.pdl) cudaGridDependencySynchronize();
   const QkvEpilogueOperands ops = qkv_epilogue_load(p, n0, cC);   // overlaps the wait
   if (QKV_SPLIT > 1) wait_bar_wd(p.bars.raw(p.bars.full_q()), 0, kSiteQkvJoin, tile, p.dbg);
   stamp(p, slot, 3);
@@ -750,8 +761,14 @@ __device__ void attn_weight_producer(const Params& p, const TaskDesc& t, int lan
       wait_bar_wd(p.bars.raw(p.bars.empty_w(s)), ((g / ATTN_DEPTH) - 1) & 1, kSiteAttnProdEmpty, g, p.dbg);
     __syncwarp();
     if (lane == 0) {
-      if (!p.standalone && !kv_ready && frame_needs_kv(key0, g)) {
-        counter_wait(&p.counters[CM::kKv], CM::kKvArrive, kSiteAttnDep, 0, p.dbg);
+      // A frame overlapping the suffix rows qkv writes must wait: on the kKv
+      // counter in the task loop, on the prerequisite grid under PDL. Pure
+      // prefix frames issue pre-wait in both modes. Either way qkv's
+      // generic-proxy cache stores need the proxy fence before this warp's
+      // async-proxy TMA reads them.
+      if (!kv_ready && frame_needs_kv(key0, g) && (!p.standalone || p.pdl)) {
+        if (p.standalone) cudaGridDependencySynchronize();
+        else counter_wait(&p.counters[CM::kKv], CM::kKvArrive, kSiteAttnDep, 0, p.dbg);
         fence_proxy_async_global();
         kv_ready = true;
       }
@@ -779,8 +796,10 @@ __device__ void attn_act_producer(const Params& p, const TaskDesc& t, int lane) 
       wait_bar_wd(p.bars.raw(p.bars.empty_a(s)), ((g / ATTN_DEPTH) - 1) & 1, kSiteAttnProdEmpty, g, p.dbg);
     __syncwarp();
     if (lane == 0) {
-      if (!p.standalone && !kv_ready && frame_needs_kv(key0, g)) {
-        counter_wait(&p.counters[CM::kKv], CM::kKvArrive, kSiteAttnDep, 2, p.dbg);
+      // Same suffix-frame dependency as the K producer above.
+      if (!kv_ready && frame_needs_kv(key0, g) && (!p.standalone || p.pdl)) {
+        if (p.standalone) cudaGridDependencySynchronize();
+        else counter_wait(&p.counters[CM::kKv], CM::kKvArrive, kSiteAttnDep, 2, p.dbg);
         fence_proxy_async_global();
         kv_ready = true;
       }
@@ -792,6 +811,11 @@ __device__ void attn_act_producer(const Params& p, const TaskDesc& t, int lane) 
   if (lane == 0) {
     if (!p.standalone) {
       counter_wait(&p.counters[t.dependency], CM::kQArrive, kSiteAttnDep, 1, p.dbg);
+      fence_proxy_async_global();
+    } else if (p.pdl) {
+      // q_buf is published by the prerequisite qkv grid via generic stores;
+      // wait, then fence the generic->async proxy hop before the Q TMA.
+      cudaGridDependencySynchronize();
       fence_proxy_async_global();
     }
     issue_tma_3d(p.tm_q, p.pool + OFF_Q, 0, head * M_PAD, 0, p.bars.raw(p.bars.full_q()));
@@ -1166,13 +1190,13 @@ __device__ void out_math(const Params& p, const TaskDesc& t, int tid, int slot) 
     __nv_bfloat16* k_cache, __nv_bfloat16* v_cache, __nv_bfloat16* out,                    \
     __nv_bfloat16* q_buf, __nv_bfloat16* o_buf,                                            \
     float* qkv_partial, __nv_bfloat16* attn_partial, float* attn_lse, float* out_partial,  \
-    uint32_t* counters, long long* dbg, long long* timeline
+    uint32_t* counters, long long* dbg, long long* timeline, int pdl_flag
 #define ATTN_MAKE_PARAMS(pool_, standalone_)                                            \
     Params{&tm_x, &tm_wqkv, &tm_q, &tm_k, &tm_v, &tm_o, &tm_wo,                         \
            rms_factor, ada_scale, qkv_bias, rope, key_mask, ada_gate,                    \
            k_cache, v_cache, out, q_buf, o_buf,                                          \
            qkv_partial, attn_partial, attn_lse, out_partial, counters, dbg, timeline,    \
-           standalone_, pool_,                                                           \
+           standalone_, pdl_flag != 0, pool_,                                            \
            Bars{(pool_) ? reinterpret_cast<uint64_t*>((pool_) + OFF_BARS) : nullptr}}
 
 // One task: fresh rings (one producer arrival + tx per full barrier, four
@@ -1232,6 +1256,13 @@ __global__ void __launch_bounds__(THREADS, 1)
 attn_standalone_kernel(ATTN_KERNEL_PARAMS) {
   extern __shared__ __align__(1024) uint8_t pool[];
   const Params p = ATTN_MAKE_PARAMS(pool, true);
+  // Fire the programmatic-launch trigger at entry: the dependent grid's
+  // griddepcontrol.wait carries correctness (it spans full completion and
+  // visibility), the trigger only schedules, and with no attribute-carrying
+  // successor it is a no-op. Entry placement maximizes the overlap window;
+  // the qkv->attention pair fits co-resident (40 + 64 CTAs < 132 SMs at
+  // 1 CTA/SM).
+  if (threadIdx.x == 0) cudaTriggerProgrammaticLaunchCompletion();
   const int c = static_cast<int>(blockIdx.x);
   TaskDesc t;
   if constexpr (KIND == 0)      t = {TaskKind::kQkvProj,   c / QKV_SPLIT,     0, c % QKV_SPLIT};
@@ -1300,6 +1331,11 @@ combine_rows_kernel(ATTN_KERNEL_PARAMS) {
   const int row = (blockIdx.x % (M_PAD / SA_COMBINE_ROWS)) * SA_COMBINE_ROWS + tid / (DH / 4);
   const int c0 = (tid % (DH / 4)) * 4;
   if (kTokenMajor && row >= M) return;
+  // PDL: the very next loads read attn_lse/attn_partial from the prerequisite
+  // attention grid. Rows past M exited above without waiting -- legal, they
+  // read nothing. The prerequisite's bulk-store flush guarantee carries over:
+  // griddepcontrol.wait spans full grid completion.
+  if (p.pdl) cudaGridDependencySynchronize();
   float m_s[ATTN_SPLIT], l_s[ATTN_SPLIT];
   float m_max = -CUDART_INF_F;
   CUTE_UNROLL
@@ -1429,7 +1465,7 @@ extern "C" int attn_taskloop_launch(
   Maps m;
   if (int rc = encode_maps(m, x, w_qkv, q_buf, k_cache, v_cache, o_buf, w_o)) return rc;
   attn_taskloop_kernel<<<N_CTAS, THREADS, hdr::SMEM_B, (cudaStream_t)stream>>>(
-      (const TaskDesc*)table, ATTN_HOST_ARGS(m));
+      (const TaskDesc*)table, ATTN_HOST_ARGS(m), 0);
   return (int)cudaGetLastError();
 }
 
@@ -1438,7 +1474,7 @@ extern "C" int attn_taskloop_launch(
 //   2 attention split (ATTN_TASKS)   3 combine (COMBINE_TASKS)
 //   4 o_proj split (OUT_TASKS)       5 o_proj reduce (OUT_TILES)
 extern "C" int attn_standalone_launch(
-    int op, int prefix_len,
+    int op, int prefix_len, int use_programmatic_dependency,
     const void* x, const void* rms_factor, const void* ada_scale,
     const void* w_qkv, const void* qkv_bias, const void* rope,
     const void* key_mask, const void* w_o, const void* ada_gate,
@@ -1448,28 +1484,73 @@ extern "C" int attn_standalone_launch(
     void* counters, void* dbg, void* timeline, void* stream) {
   using namespace attn;
   if (prefix_len != PREFIX_LEN) return 1102;
+  if (use_programmatic_dependency < 0 || use_programmatic_dependency > 1) return 1104;
   static bool attr[4] = {false, false, false, false};
   Maps m;
   if (int rc = encode_maps(m, x, w_qkv, q_buf, k_cache, v_cache, o_buf, w_o)) return rc;
   cudaStream_t st = (cudaStream_t)stream;
+  // PDL applies to the production chain only (ops 0, 2, 6): the attribute
+  // lets the grid begin under its stream predecessor, and the kernel-side
+  // `pdl_flag` arms the griddepcontrol waits at every dependent read. Ops
+  // 1/3/4/5 always launch plainly -- their dependency structure is not
+  // audited for early launch.
+  const bool pdl = use_programmatic_dependency != 0;
+  const int pdl_flag = pdl ? 1 : 0;
+  cudaLaunchAttribute dependency_attribute{};
+  dependency_attribute.id = cudaLaunchAttributeProgrammaticStreamSerialization;
+  dependency_attribute.val.programmaticStreamSerializationAllowed = 1;
+  cudaLaunchConfig_t launch_config{};
+  launch_config.stream = st;
+  launch_config.attrs = &dependency_attribute;
+  launch_config.numAttrs = 1;
   switch (op) {
     case 0:
       if (int rc = set_smem_once(attn_standalone_kernel<0>, attr[0])) return rc;
-      attn_standalone_kernel<0><<<QKV_TASKS, THREADS, hdr::SMEM_B, st>>>(ATTN_HOST_ARGS(m)); break;
+      if (pdl) {
+        launch_config.gridDim = dim3(QKV_TASKS, 1, 1);
+        launch_config.blockDim = dim3(THREADS, 1, 1);
+        launch_config.dynamicSmemBytes = hdr::SMEM_B;
+        cudaError_t e = cudaLaunchKernelEx(
+            &launch_config, attn_standalone_kernel<0>, ATTN_HOST_ARGS(m), pdl_flag);
+        if (e != cudaSuccess) return (int)e;
+      } else {
+        attn_standalone_kernel<0><<<QKV_TASKS, THREADS, hdr::SMEM_B, st>>>(ATTN_HOST_ARGS(m), 0);
+      }
+      break;
     case 1:
-      qkv_reduce_kernel<<<QKV_TILES * REDUCE_GROUPS, kMathThreads, 0, st>>>(ATTN_HOST_ARGS(m)); break;
+      qkv_reduce_kernel<<<QKV_TILES * REDUCE_GROUPS, kMathThreads, 0, st>>>(ATTN_HOST_ARGS(m), 0); break;
     case 2:
       if (int rc = set_smem_once(attn_standalone_kernel<1>, attr[1])) return rc;
-      attn_standalone_kernel<1><<<ATTN_TASKS, THREADS, hdr::SMEM_B, st>>>(ATTN_HOST_ARGS(m)); break;
+      if (pdl) {
+        launch_config.gridDim = dim3(ATTN_TASKS, 1, 1);
+        launch_config.blockDim = dim3(THREADS, 1, 1);
+        launch_config.dynamicSmemBytes = hdr::SMEM_B;
+        cudaError_t e = cudaLaunchKernelEx(
+            &launch_config, attn_standalone_kernel<1>, ATTN_HOST_ARGS(m), pdl_flag);
+        if (e != cudaSuccess) return (int)e;
+      } else {
+        attn_standalone_kernel<1><<<ATTN_TASKS, THREADS, hdr::SMEM_B, st>>>(ATTN_HOST_ARGS(m), 0);
+      }
+      break;
     case 3:
-      combine_rows_kernel<false><<<H * (M_PAD / SA_COMBINE_ROWS), kMathThreads, 0, st>>>(ATTN_HOST_ARGS(m)); break;
+      combine_rows_kernel<false><<<H * (M_PAD / SA_COMBINE_ROWS), kMathThreads, 0, st>>>(ATTN_HOST_ARGS(m), 0); break;
     case 6:
-      combine_rows_kernel<true><<<H * (M_PAD / SA_COMBINE_ROWS), kMathThreads, 0, st>>>(ATTN_HOST_ARGS(m)); break;
+      if (pdl) {
+        launch_config.gridDim = dim3(H * (M_PAD / SA_COMBINE_ROWS), 1, 1);
+        launch_config.blockDim = dim3(kMathThreads, 1, 1);
+        launch_config.dynamicSmemBytes = 0;
+        cudaError_t e = cudaLaunchKernelEx(
+            &launch_config, combine_rows_kernel<true>, ATTN_HOST_ARGS(m), pdl_flag);
+        if (e != cudaSuccess) return (int)e;
+      } else {
+        combine_rows_kernel<true><<<H * (M_PAD / SA_COMBINE_ROWS), kMathThreads, 0, st>>>(ATTN_HOST_ARGS(m), 0);
+      }
+      break;
     case 4:
       if (int rc = set_smem_once(attn_standalone_kernel<2>, attr[2])) return rc;
-      attn_standalone_kernel<2><<<OUT_TASKS, THREADS, hdr::SMEM_B, st>>>(ATTN_HOST_ARGS(m)); break;
+      attn_standalone_kernel<2><<<OUT_TASKS, THREADS, hdr::SMEM_B, st>>>(ATTN_HOST_ARGS(m), 0); break;
     case 5:
-      out_reduce_kernel<<<OUT_TILES * REDUCE_GROUPS, kMathThreads, 0, st>>>(ATTN_HOST_ARGS(m)); break;
+      out_reduce_kernel<<<OUT_TILES * REDUCE_GROUPS, kMathThreads, 0, st>>>(ATTN_HOST_ARGS(m), 0); break;
     default: return 1103;
   }
   return (int)cudaGetLastError();

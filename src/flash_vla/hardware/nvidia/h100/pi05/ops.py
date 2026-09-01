@@ -66,6 +66,10 @@ def op_table(fused: bool = True, backend: str = "tilelang",
         ("tilelang", "tilelang", "tilelang"),
         ("tilelang", "cuda", "cuda"),
         ("cuda", "cuda", "cuda"),
+        # The PDL variant keeps the cuda buffer contract; mixing cuda and
+        # cuda-pdl inside one atomic route is rejected like any other mix.
+        ("tilelang", "cuda-pdl", "cuda-pdl"),
+        ("cuda-pdl", "cuda-pdl", "cuda-pdl"),
     }
     if ffn_route not in allowed_ffn_routes:
         raise ValueError(

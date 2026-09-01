@@ -20,15 +20,28 @@ owning engine's lifetime.
 
 from __future__ import annotations
 
+from functools import partial
 from types import SimpleNamespace
 
 from . import cuda as _cuda
 from . import tilelang as _tilelang
 
+# PDL-chain variant of the CUDA backend: identical wrappers, launched with the
+# programmatic-dependency chain armed (early triggers, dependent-launch
+# attributes, waits at first dependent read). Which boundaries overlap is
+# decided by which call sites a plan routes here, so one registration serves
+# both the FFN-only and the full-chain plans.
+_cuda_pdl = SimpleNamespace(
+    WRAPPER_NAMES=_cuda.WRAPPER_NAMES,
+    FUSED_WRAPPERS=_cuda.FUSED_WRAPPERS,
+    make_wrappers=partial(_cuda.make_wrappers, pdl_chain=True),
+)
+
 # name -> module exposing the backend contract above. A new backend registers here.
 BACKENDS = {
     "tilelang": _tilelang,
     "cuda": _cuda,
+    "cuda-pdl": _cuda_pdl,
 }
 
 # Default fused plan: every op the TileLang backend provides a fused overlay

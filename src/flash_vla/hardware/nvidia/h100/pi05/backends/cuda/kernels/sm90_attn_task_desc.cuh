@@ -307,8 +307,12 @@ extern "C" int attn_taskloop_launch(
 // combine, o_proj split, o_proj reduce).  Same tensors, no table/counters
 // (the pointer is accepted and ignored).  This is how one op's number is
 // compared with the TileLang kernel for that op.
+// `use_programmatic_dependency` != 0 launches ops 0/2/6 with the PDL
+// stream-serialization attribute and enables their device-side dependency
+// waits; the other ops ignore it (their dependency structure is not audited
+// for early launch and they are off the production route).
 extern "C" int attn_standalone_launch(
-    int op, int prefix_len,
+    int op, int prefix_len, int use_programmatic_dependency,
     const void* x, const void* rms_factor, const void* ada_scale,
     const void* w_qkv, const void* qkv_bias, const void* rope,
     const void* key_mask, const void* w_o, const void* ada_gate,

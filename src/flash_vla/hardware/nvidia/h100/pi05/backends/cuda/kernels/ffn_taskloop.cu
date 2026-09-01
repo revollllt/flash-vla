@@ -842,7 +842,7 @@ __global__ void __launch_bounds__(WarpRoles::kThreads, 1)
     float* __restrict__ down_residual_partial,
     uint32_t* __restrict__ down_residual_counters,
     long long* __restrict__ dbg,
-    bool wait_for_xfs_producer) {
+    int32_t xfs_wait_mode) {
   // The dynamic extent is supplied by the launch; typed views below own all
   // frame and barrier addressing.
   extern __shared__ uint8_t smem_buffer[];
@@ -871,10 +871,23 @@ __global__ void __launch_bounds__(WarpRoles::kThreads, 1)
     cutlass::arch::fence_barrier_init();
     __syncthreads();
     // Address calculation and barrier initialization above are independent of
-    // the primary XFS producer.  The dependency wait must remain before any
-    // warp can issue an XFS TMA load.
-    if (wait_for_xfs_producer && slot == 0) {
-      cudaGridDependencySynchronize();
+    // the primary XFS producer.  Mode 1 holds every warp here (shipped
+    // behavior).  Mode 2 releases the weight-loader and reserved warps: both
+    // weight loaders read only static weight tensor maps and smem rings, so
+    // their TMA issue (and the gate/up L2 prefetch) runs under the producer's
+    // tail, while every reader of producer-written state -- XFS activations,
+    // the readiness-counter arrays the producer resets, the residual -- still
+    // waits per thread.  This wait must stay after the __syncthreads() above:
+    // moved before it, the waiting warps would hold the weight warps at the
+    // barrier and the early release would be void.  Wait only at slot 0; warp
+    // roles are tid-fixed across slots, so program order covers slot 1.
+    if (slot == 0 && xfs_wait_mode != 0) {
+      const bool releases_early =
+          xfs_wait_mode == 2 && (WarpRoles::is_weight_producer(tid) ||
+                                 WarpRoles::is_reserved(tid));
+      if (!releases_early) {
+        cudaGridDependencySynchronize();
+      }
     }
     if (ref::is_gated_up(kind)) {
       GatedProjectionTask task{
@@ -1032,8 +1045,13 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
       CU_TENSOR_MAP_SWIZZLE_128B, &rc);
   if (rc) return 1000 + (int)rc;
 
-  const bool wait_for_xfs_producer = use_programmatic_dependency != 0;
-  if (wait_for_xfs_producer) {
+  // 0 = plain launch, no wait; 1 = programmatic launch, every warp waits at
+  // entry; 2 = programmatic launch, weight-loader warps released early.
+  if (use_programmatic_dependency < 0 || use_programmatic_dependency > 2) {
+    return 1103;
+  }
+  const int32_t xfs_wait_mode = use_programmatic_dependency;
+  if (xfs_wait_mode != 0) {
     cudaLaunchAttribute dependency_attribute{};
     dependency_attribute.id =
         cudaLaunchAttributeProgrammaticStreamSerialization;
@@ -1056,7 +1074,7 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
         (const __nv_bfloat16*)g_gate, (__nv_bfloat16*)hidden,
         (__nv_bfloat16*)out, (uint32_t*)counters,
         (float*)down_residual_partial, (uint32_t*)down_residual_counters,
-        (long long*)dbg, wait_for_xfs_producer);
+        (long long*)dbg, xfs_wait_mode);
     if (launch_error != cudaSuccess) return (int)launch_error;
   } else {
     ffn_taskloop_kernel<<<N_CTAS, WarpRoles::kThreads, SHARED_MEMORY_BYTES,
@@ -1069,7 +1087,7 @@ int ffn_taskloop_launch(const void* table, int n_ctas,
         (const __nv_bfloat16*)g_gate, (__nv_bfloat16*)hidden,
         (__nv_bfloat16*)out, (uint32_t*)counters,
         (float*)down_residual_partial, (uint32_t*)down_residual_counters,
-        (long long*)dbg, wait_for_xfs_producer);
+        (long long*)dbg, xfs_wait_mode);
   }
   return (int)cudaGetLastError();
 }

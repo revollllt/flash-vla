@@ -20,7 +20,8 @@ The FFN pair runs the persistent 132-CTA task loop of `kernels/ffn_taskloop.cu`
 (`taskloop.FFNTaskloop`). `decoder_norm_gated_ffn` launches the K-major XFS
 producer, which resets the readiness counters itself, with a
 programmatic-dependent-launch trigger; `decoder_ffn_down_residual` immediately
-launches the persistent consumer with `use_programmatic_dependency=True`. The
+launches the persistent consumer with wait mode 1 (every warp waits at entry)
+or, on the `pdl_chain` variant, mode 2 (weight loaders released early). The
 two calls are adjacent in the pipeline, which is the direct-predecessor
 contract PDL requires. The Phase-2 route starts one call earlier and treats
 out-projection, norm/gated-FFN, and down-residual as an atomic three-call
@@ -105,7 +106,8 @@ class _PendingOutProj:
 class _PendingFFN:
     hidden_ptr: int
     stream: int
-    use_programmatic_dependency: bool
+    # FFN wait mode: 1 = entry wait (shipped), 2 = role-split wait (PDL chain).
+    use_programmatic_dependency: int
     scale: torch.Tensor
     gate_bias: torch.Tensor
     up_bias: torch.Tensor
@@ -168,10 +170,20 @@ FUSED_WRAPPERS: dict = {}
 
 
 def make_wrappers(
-        selected_names: set[str] | None = None) -> dict[str, object]:
-    """Create one CUDA runtime whose lifetime follows its owning op table."""
+        selected_names: set[str] | None = None,
+        pdl_chain: bool = False) -> dict[str, object]:
+    """Create one CUDA runtime whose lifetime follows its owning op table.
+
+    ``pdl_chain`` extends PDL over every boundary this backend owns: the rms
+    factor kernel triggers early, qkv / attention / combine launch with the
+    programmatic attribute and wait at their first dependent read, and the
+    persistent FFN uses the role-split wait (mode 2) that releases its
+    dependency-free weight loaders ahead of the XFS producer. Off, launch
+    semantics are exactly the shipped ones.
+    """
     selected = set(WRAPPER_NAMES if selected_names is None else selected_names)
     fuse_out_proj = "decoder_out_proj_residual" in selected
+    ffn_wait_mode = 2 if pdl_chain else 1
     attn: _AttnState | None = None
     ffn: _FFNState | None = None
 
@@ -221,14 +233,17 @@ def make_wrappers(
                                first_row=_at.PREFIX_LEN)
 
         # Same rms_factor node as the TileLang call site; pad rows stay zero.
-        _tilelang._rms_factor(x, norm_factor[:M])
+        # On the PDL chain it triggers at entry and qkv waits before reading
+        # the factor (its weights and x are not written by this predecessor).
+        _tilelang._rms_factor(x, norm_factor[:M],
+                              trigger_programmatic_launch=pdl_chain)
         for op in _at.STANDALONE_OP_GROUPS["qkv"]:
             _at.launch_standalone(
                 runtime.kernel._lib, op, runtime.workspace,
                 x=x_pad, rms_factor=factor_pad, ada_scale=scale,
                 w_qkv=weight_qkv, qkv_bias=bias, rope=rope_pad, key_mask=None,
                 w_o=None, ada_gate=None, k_cache=k_cache, v_cache=v_cache,
-                out=None)
+                out=None, use_programmatic_dependency=pdl_chain)
         runtime.q_owner = Q.data_ptr()
 
     def decoder_attention(Q, K, V, mask, out):
@@ -254,9 +269,11 @@ def make_wrappers(
             v_cache=_padded_base(V, (_at.KEYS_PAD, _at.DH)))
         split_op, _combine_head_major = _at.STANDALONE_OP_GROUPS["attention"]
         _at.launch_standalone(runtime.kernel._lib, split_op, runtime.workspace,
-                              out=None, **common)
+                              out=None, use_programmatic_dependency=pdl_chain,
+                              **common)
         _at.launch_standalone(runtime.kernel._lib, _at.OP_ATTN_COMBINE_TOK,
-                              runtime.workspace, out=out, **common)
+                              runtime.workspace, out=out,
+                              use_programmatic_dependency=pdl_chain, **common)
         return out
 
     def decoder_out_proj_residual(attention, weight, gate, out):
@@ -311,7 +328,7 @@ def make_wrappers(
             _tilelang.decoder_out_proj_residual_rms_xfs(
                 out_proj.attention, out_proj.weight, out_proj.gate, x, scale,
                 hidden_ready, down_ready, runtime.square_partials,
-                runtime.xfs)
+                runtime.xfs, trigger_at_entry=pdl_chain)
             runtime.pending_out_proj = None
         else:
             if runtime.pending_out_proj is not None:
@@ -321,7 +338,7 @@ def make_wrappers(
                 trigger_programmatic_launch=True)
         runtime.pending = _PendingFFN(
             hidden_ptr=out.data_ptr(), stream=stream,
-            use_programmatic_dependency=True,
+            use_programmatic_dependency=ffn_wait_mode,
             scale=scale, gate_bias=gate_b,
             up_bias=up_b, packed_gate_up=packed_gate_up)
 

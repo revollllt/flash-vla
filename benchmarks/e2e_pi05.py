@@ -70,6 +70,25 @@ PLANS = {
         "decoder_norm_gated_ffn": "cuda",
         "decoder_ffn_down_residual": "cuda",
     },
+    # PDL-chain variants: same routes through the cuda-pdl backend. -pdlffn
+    # arms only the FFN half (role-split wait releases the weight loaders
+    # under the XFS producer); -pdl additionally chains rms -> qkv ->
+    # attention -> combine with early triggers and waits at the first
+    # dependent read.
+    "attn-ffn-cuda-fused-producer-pdlffn": {
+        "decoder_norm_qkv_rope": "cuda",
+        "decoder_attention": "cuda",
+        "decoder_out_proj_residual": "cuda-pdl",
+        "decoder_norm_gated_ffn": "cuda-pdl",
+        "decoder_ffn_down_residual": "cuda-pdl",
+    },
+    "attn-ffn-cuda-fused-producer-pdl": {
+        "decoder_norm_qkv_rope": "cuda-pdl",
+        "decoder_attention": "cuda-pdl",
+        "decoder_out_proj_residual": "cuda-pdl",
+        "decoder_norm_gated_ffn": "cuda-pdl",
+        "decoder_ffn_down_residual": "cuda-pdl",
+    },
 }
 
 #: Analytic per-stage floors from PLAN.md §1.2, at 3 views / prompt 200 /

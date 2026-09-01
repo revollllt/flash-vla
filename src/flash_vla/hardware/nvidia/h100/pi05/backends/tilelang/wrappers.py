@@ -323,7 +323,8 @@ _DEC_QKV = dict(BLOCK_M=64, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=4, THREADS=128)
 _DEC_RESIDUAL = dict(BLOCK_M=16, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=4, THREADS=128)
 _DEC_GATE = dict(BLOCK_M=64, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128)
 _DEC_OUT_PROJ = dict(BLOCK_M=16, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128, PRO_K=128)
-_DEC_RMS = dict(BLOCK_M=2, BLOCK_K=256, THREADS=128)
+_DEC_RMS = dict(BLOCK_M=2, BLOCK_K=256, THREADS=128,
+                TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False)
 _DEC_XFS = dict(
     BLOCK_M=8,
     BLOCK_K=256,
@@ -359,16 +360,21 @@ _FD_COMBINE_BLOCK_M = 2
 _LOG2E = 1.4426950408889634
 
 
-def _rms_factor(x, out, cfg=_DEC_RMS):
+def _rms_factor(x, out, cfg=_DEC_RMS, *, trigger_programmatic_launch=False):
     """Write rsqrt(mean(x^2)+eps) into `out`, which the consuming GEMM then scales by.
 
     Pi0's fused path folded this into `tl_fused_rms_gate`. Pi0.5 cannot: that
     kernel accumulates the row sum of squares from the same shared tile the GEMM
     consumes, and AdaRMSNorm needs the tile unscaled for the norm and scaled for
     the GEMM. v1 pays the extra launch; see the spec for what v2 would need.
+
+    ``trigger_programmatic_launch`` selects the JIT variant that releases the
+    PDL dependency at entry; the successor must carry the wait.
     """
     M, K = x.shape
-    _compiled(kernels.tl_rms_factor, M=M, K=K, **cfg)(x, out)
+    config = dict(cfg)
+    config["TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH"] = trigger_programmatic_launch
+    _compiled(kernels.tl_rms_factor, M=M, K=K, **config)(x, out)
     return out
 
 
@@ -410,8 +416,14 @@ def decoder_rms_xfs(
 
 def decoder_out_proj_residual_rms_xfs(
         attention, weight, attention_gate, residual, ffn_scale,
-        hidden_ready, down_ready, square_partials, xfs):
-    """Cooperatively produce the exact residual and contiguous K-major XFS."""
+        hidden_ready, down_ready, square_partials, xfs,
+        *, trigger_at_entry=False):
+    """Cooperatively produce the exact residual and contiguous K-major XFS.
+
+    ``trigger_at_entry`` selects the JIT variant that releases the PDL
+    dependency at kernel entry instead of after the grid sync; the persistent
+    consumer's grid-dependency wait carries correctness either way.
+    """
     if (tuple(attention.shape) != (50, 2048)
             or tuple(weight.shape) != (2048, 1024)
             or tuple(attention_gate.shape) != (1024,)
@@ -441,6 +453,7 @@ def decoder_out_proj_residual_rms_xfs(
     _compiled(
         xfs_kernels.tl_out_proj_residual_rms_xfs,
         M=50, N=1024, K=2048, **_DEC_OUT_PROJ_PARTIALS,
+        TRIGGER_AT_ENTRY=trigger_at_entry,
     )(
         attention, weight, attention_gate, residual, ffn_scale,
         hidden_ready, down_ready, square_partials, xfs,

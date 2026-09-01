@@ -289,7 +289,7 @@ class AttnTaskloop:
             [ctypes.c_void_p, ctypes.c_int, ctypes.c_int] + [ctypes.c_void_p] * 22)
         self._lib.attn_standalone_launch.restype = ctypes.c_int
         self._lib.attn_standalone_launch.argtypes = (
-            [ctypes.c_int, ctypes.c_int] + [ctypes.c_void_p] * 22)
+            [ctypes.c_int, ctypes.c_int, ctypes.c_int] + [ctypes.c_void_p] * 22)
 
     def launch(self, table, ws: Workspace, *, x, rms_factor, ada_scale, w_qkv, qkv_bias,
                rope, key_mask, w_o, ada_gate, k_cache, v_cache, out,
@@ -372,11 +372,17 @@ def _check_shapes(op: int = -1, **tensors) -> None:
 
 def launch_standalone(lib, op: int, ws: "Workspace", *, x, rms_factor, ada_scale, w_qkv, qkv_bias,
                       rope, key_mask, w_o, ada_gate, k_cache, v_cache, out,
-                      q_buf=None, o_buf=None, timeline=None) -> None:
+                      q_buf=None, o_buf=None, timeline=None,
+                      use_programmatic_dependency: bool = False) -> None:
     """One standalone op (see STANDALONE_OPS) on the current stream; the caller
     issues them in order.  Same tensors and scratch as `launch`; no counters.
     An operand the op does not read may be `None` (its tensor map is left
-    unencoded).  Graph-capturable."""
+    unencoded).  Graph-capturable.
+
+    ``use_programmatic_dependency`` launches ops 0/2/6 with the PDL attribute
+    (the grid may start under its stream predecessor; dependent reads sit
+    behind device grid-dependency waits). It requires the op's true producer
+    to be its immediate stream predecessor; other ops ignore the flag."""
     q_buf = ws.q_buf if q_buf is None else q_buf
     o_buf = ws.o_buf if o_buf is None else o_buf
     _check_shapes(op, x=x, rms_factor=rms_factor, ada_scale=ada_scale, w_qkv=w_qkv, qkv_bias=qkv_bias,
@@ -385,7 +391,7 @@ def launch_standalone(lib, op: int, ws: "Workspace", *, x, rms_factor, ada_scale
     stream = torch.cuda.current_stream().cuda_stream
     ptr = lambda t: ctypes.c_void_p(t.data_ptr() if t is not None else 0)  # noqa: E731
     rc = lib.attn_standalone_launch(
-        int(op), PREFIX_LEN,
+        int(op), PREFIX_LEN, int(use_programmatic_dependency),
         ptr(x), ptr(rms_factor), ptr(ada_scale), ptr(w_qkv), ptr(qkv_bias), ptr(rope),
         ptr(key_mask), ptr(w_o), ptr(ada_gate), ptr(k_cache), ptr(v_cache), ptr(out),
         ptr(q_buf), ptr(o_buf),
