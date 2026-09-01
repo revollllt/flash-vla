@@ -176,7 +176,7 @@ def run_replay_check(kt, gen, device, reps):
         t["hidden"].zero_()
         t["out"].copy_(out_seed)
         t["counters"].zero_()
-        kt.launch(table, t["x_pad"], t["f_pad"], t["s"], t["w1b"], t["w2b"],
+        kt.launch(table, t["xfs"], t["f_pad"], t["s"], t["w1b"], t["w2b"],
                   t["b1"], t["b2"], t["wdb"], t["g"], t["hidden"], t["out"],
                   t["counters"], dbg=dbg)
         try:
@@ -209,7 +209,7 @@ def run_bench(kt, gen, device, reps):
 
     print("[phase] bench warmup fused", flush=True)
     for t in sets:
-        kt.launch(table, t["x_pad"], t["f_pad"], t["s"], t["w1b"], t["w2b"],
+        kt.launch(table, t["xfs"], t["f_pad"], t["s"], t["w1b"], t["w2b"],
                   t["b1"], t["b2"], t["wdb"], t["g"], shared["hidden"],
                   shared["out"], shared["counters"])
     torch.cuda.synchronize()
@@ -217,7 +217,7 @@ def run_bench(kt, gen, device, reps):
     g_fused = torch.cuda.CUDAGraph()
     with torch.cuda.graph(g_fused):
         for t in sets:
-            kt.launch(table, t["x_pad"], t["f_pad"], t["s"], t["w1b"], t["w2b"],
+            kt.launch(table, t["xfs"], t["f_pad"], t["s"], t["w1b"], t["w2b"],
                       t["b1"], t["b2"], t["wdb"], t["g"], shared["hidden"],
                       shared["out"], shared["counters"])
 
@@ -245,7 +245,7 @@ def run_bench(kt, gen, device, reps):
     table_dr = build_table("dr").to(device)
     for t in sets:
         shared["counters"].fill_(COUNTER_ARRIVE)
-        kt.launch(table_dr, t["x_pad"], t["f_pad"], t["s"], t["w1b"], t["w2b"],
+        kt.launch(table_dr, t["xfs"], t["f_pad"], t["s"], t["w1b"], t["w2b"],
                   t["b1"], t["b2"], t["wdb"], t["g"], shared["hidden"],
                   shared["out"], shared["counters"], zero_counters=False)
     torch.cuda.synchronize()
@@ -256,7 +256,7 @@ def run_bench(kt, gen, device, reps):
             for t in sets:
                 if prefill:
                     shared["counters"].fill_(COUNTER_ARRIVE)
-                kt.launch(table, t["x_pad"], t["f_pad"], t["s"], t["w1b"],
+                kt.launch(table, t["xfs"], t["f_pad"], t["s"], t["w1b"],
                           t["w2b"], t["b1"], t["b2"], t["wdb"], t["g"],
                           shared["hidden"], shared["out"], shared["counters"],
                           zero_counters=not prefill)

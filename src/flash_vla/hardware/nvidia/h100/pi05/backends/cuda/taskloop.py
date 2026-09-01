@@ -191,9 +191,21 @@ def validate_splitk_plan(queue: torch.Tensor,
             raise ValueError(f"bad reduction dependency for output tile {d}")
 
 
+def _extra_flags() -> list[str]:
+    """Extra nvcc flags from FFN_NVCC_DEFINES (e.g. -lineinfo). Part of the
+    build hash, so an instrumented build caches separately and never
+    displaces the production .so (mirrors ATTN_NVCC_DEFINES)."""
+    return [f for f in os.environ.get("FFN_NVCC_DEFINES", "").split() if f]
+
+
 def _build_dir() -> Path:
-    src = _SRC.read_bytes()
-    tag = hashlib.sha256(src).hexdigest()[:16]
+    hasher = hashlib.sha256(_SRC.read_bytes())
+    # The headers carry the geometry and barrier structure; without them in
+    # the hash a .cuh edit would silently reuse a stale .so.
+    for header in sorted(_SRC.parent.glob("sm90_ffn_*.cuh")):
+        hasher.update(header.read_bytes())
+    hasher.update(" ".join(_extra_flags()).encode())
+    tag = hasher.hexdigest()[:16]
     d = _REPO / ".cache" / "cuda_ext" / f"ffn_taskloop_{tag}"
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -207,7 +219,7 @@ def build(verbose: bool = False) -> Path:
     cuda_home = os.environ.get("CUDA_HOME", "/data/apps/cuda/13.1")
     cmd = [
         "nvcc", "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
-        "-arch=sm_90a", "--expt-relaxed-constexpr",
+        "-arch=sm_90a", "--expt-relaxed-constexpr", *_extra_flags(),
         f"-I{_CUTLASS}/include",
         f"-I{_FLASHMLA}",
         "-o", str(out), str(_SRC),
