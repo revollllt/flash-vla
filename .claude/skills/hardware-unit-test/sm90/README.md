@@ -43,7 +43,7 @@ rises linearly to at least 40 KB per CTA, so a second producer warp is worth
 close to 2x there. Issue interval **248 ns** per warp, box-independent; latency **595 ns +
 5.2 ns/KB** on DRAM (217 + 4.8 from L2), so ring **stages 4 for DRAM, 2 for L2**.
 Sustained ceiling **≤3.17 TB/s** (an upper bound; the cold rate is lower). Plus a
-real, unexplained **11.5%** anti-scaling dip at 44–56 CTAs, DRAM only.
+real, unexplained **11.5%** anti-scaling dip at 44–56 CTAs, DRAM only. A single cold burst never sees that ceiling: **16.8 MB delivers 1.8 TB/s** end-to-end whatever the ring, box or CTA count (`tma.bw.dev.burst`); only warmth or continuity moves it.
 
 **`unit-atomic.md`** — **address layout is worth 6.3×, every other lever ≤1.3×.**
 Per-transaction, so `red.global.add.v4.f32` moves 3.8× the bytes for free;

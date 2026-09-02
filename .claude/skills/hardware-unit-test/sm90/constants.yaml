@@ -142,6 +142,17 @@ constants:
   short: <=3.17 TB/s, cold rate lower
   rule: Divide bytes by 3.17 TB/s for an optimistic floor and by ld.bw.dev.dram's 2.77 for a conservative
     one, and say which you used.
+- tag: tma.bw.dev.burst
+  unit: tma
+  value: 1814
+  units: GB/s delivered END-TO-END by one cold 16.8 MB burst (128 CTAs x 1 warp x 4 x 32 KB, ring stages
+    3, L2 flushed before the launch, CUPTI kernel time so the ~1.2 us grid ramp is inside it); the rate
+    climbs with burst size -- 2.02 TB/s at 33.6 MB, 2.19 at 67, 2.53 at 134, 2.80 at 268 -- and is flat
+    in ring stages (2-6), box (16 vs 32 KB) and CTA count (32-132)
+  short: cold burst ramps -- 16.8 MB in ~9.3 us (1.8 TB/s), not 5.6
+  rule: A phase that streams a cold weight set of tens of MB is bounded by THIS curve, not by tma.bw.dev.dram
+    -- ring depth, box size and CTA count cannot move it; only warmth (the set already in L2) or
+    continuity (one longer stream instead of several bursts) can.
 - tag: tma.bw.dev.curve
   unit: tma
   value: 10
