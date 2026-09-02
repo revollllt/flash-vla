@@ -153,6 +153,21 @@ constants:
   rule: A phase that streams a cold weight set of tens of MB is bounded by THIS curve, not by tma.bw.dev.dram
     -- ring depth, box size and CTA count cannot move it; only warmth (the set already in L2) or
     continuity (one longer stream instead of several bursts) can.
+- tag: tma.bw.dev.burst.warm
+  unit: tma
+  value: 4480
+  units: GB/s delivered END-TO-END by the same 16.8 MB burst (128 CTAs x 1 warp x 4 x 32 KB, stages
+    3, CUPTI kernel time with the ~1.2 us grid ramp inside) when the set was left in L2 by a TMA LOAD --
+    3.7 us against 9.3 cold -- and it still reads so after 10.5 and 21 MB of clean streaming traffic
+    (3.74 / 3.90 us), falling back to cold-like after 32 MB (6.8). Lines brought in by
+    cp.async.bulk.prefetch.tensor.L2 read at only 6.6 us and are cold-like after 21 MB; lines brought
+    in by a plain SM streaming read do not warm the burst at all (8.1 us). With L2 full of dirty lines
+    before the warming load (2 x L2 zeroed), the TMA-warmed set is half gone after 10.5 MB (6.9 us).
+  short: TMA-load warmth = 3.7 us for 16.8 MB, survives ~21 MB clean traffic; prefetch.L2 and SM reads do not warm
+  rule: To warm a phase's weight set for a later TMA burst, LOAD it with TMA (into a scratch frame and
+    discard); do not use cp.async.bulk.prefetch.tensor.L2 or an SM read for that purpose. Budget the
+    warmed set to survive <= ~20 MB of intervening clean traffic, and expect half of it lost when the
+    intervening traffic is dirty.
 - tag: tma.bw.dev.curve
   unit: tma
   value: 10

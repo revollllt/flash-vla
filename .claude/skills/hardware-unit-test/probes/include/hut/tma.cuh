@@ -18,6 +18,15 @@ namespace hut {
 //      .mbarrier::complete_tx::bytes`. The `.tile` load mode is the default and
 // is written out for the same reason the rest of the mnemonic is: so the source
 // says which instruction it means.
+// L2 prefetch of one box through the tensor map: no shared memory, no
+// barrier, no completion to wait on. The copy engine moves the lines toward
+// L2 and the issuing warp continues.
+__device__ __forceinline__ void cp_async_bulk_prefetch_tensor_2d_l2(
+    const CUtensorMap* tensor_map, int32_t coord_0, int32_t coord_1) {
+  asm volatile("cp.async.bulk.prefetch.tensor.2d.L2.global [%0, {%1, %2}];"
+               :: "l"(tensor_map), "r"(coord_0), "r"(coord_1) : "memory");
+}
+
 __device__ __forceinline__ void cp_async_bulk_tensor_2d(
     const CUtensorMap* tensor_map, void* smem_dst,
     int32_t coord_0, int32_t coord_1, TransactionBarrier* bar) {

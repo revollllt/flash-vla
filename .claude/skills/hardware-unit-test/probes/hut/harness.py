@@ -60,7 +60,7 @@ def load(src, **kw) -> Unit:
     return Unit(build(Path(src), **kw))
 
 
-def time_us(run, *, reps=None, flush_l2=False):
+def time_us(run, *, reps=None, flush_l2=False, kernel_filter=None):
     """Median GPU time in us and the run-to-run spread, as (median, spread).
 
     Prefers the repo's CUPTI harness -- the one every recorded constant was
@@ -78,9 +78,14 @@ def time_us(run, *, reps=None, flush_l2=False):
     try:
         from flash_vla.bench import bench_gpu_time
         samples = bench_gpu_time(run, enable_cupti=True, cold_l2_cache=flush_l2,
-                                 dry_run_iters=3, repeat_iters=reps)
+                                 dry_run_iters=3, repeat_iters=reps,
+                                 kernel_filter=kernel_filter)
         TIMER_USED = "cupti"
     except ImportError:
+        if kernel_filter is not None:
+            # A filtered window needs CUPTI's per-kernel records; events would
+            # time every kernel `run` issued and call it the launch under test.
+            raise RuntimeError("kernel_filter needs the CUPTI harness")
         for _ in range(3):
             run()
         torch.cuda.synchronize()

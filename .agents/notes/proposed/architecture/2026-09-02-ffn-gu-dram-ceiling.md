@@ -40,6 +40,32 @@ cannot reach on this machine however it is issued. The mechanism is the
 **cold-burst ramp**: DRAM delivery for one cold stream rises over its first
 ~100 MB, so a phase-sized burst averages ~60% of steady state.
 
+## Finding 2 -- the warmth pair (jobs 588751 / 588754 / 588761, sweep Q, `tma.bw.dev.burst.warm`)
+
+Acceptance criterion 1 was run before any kernel edit, with one correction to
+its bar: ">= 3x faster than cold" was unreachable by construction, because
+the L2 ceiling of the same 16.8 MB burst is itself 2.5x (3.7 us vs 9.3). The
+pair is therefore read against that ceiling.
+
+- A set brought into L2 by a **TMA load** reads at the ceiling (3.75 us) and
+  keeps it through 10.5 and 21 MB of clean streaming traffic (3.74 / 3.90);
+  it is half gone after 32 MB, and half gone after only 10.5 MB when L2 was
+  full of dirty lines when the load ran.
+- A set brought in by **`cp.async.bulk.prefetch.tensor.L2`** -- the
+  instruction the proposal named -- reads at 6.6 us and is cold-like after
+  21 MB. A plain SM streaming read leaves the burst cold (8.2 us).
+- Collision control: an 8.4 MB DownResidual-sized burst is 5.7 us alone and
+  5.9-6.1 us under a concurrent 16.8 MB read (inside the rows' spread).
+
+So warming works, but only through real loads. The kernel candidate is
+adjusted accordingly: the GatedUp-only CTAs (96 of 128, which have no
+DownResidual slot and would exit) load layer L+1's gate/up column tiles into
+their retired GatedUp weight frames and discard them, each also covering one
+DownResidual owner's column; nothing is prefetched by instruction. Flag
+`FFN_GU_NEXT_WARM`; the launch's legacy second packed pointer becomes the
+next layer's set (the wrappers learn the cyclic layer order during the eager
+warm-up forward that precedes capture).
+
 ## Proposal
 
 Stop treating GatedUp's TMA geometry as the lever; it is measured flat. The

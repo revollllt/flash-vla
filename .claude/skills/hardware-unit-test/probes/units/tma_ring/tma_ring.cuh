@@ -40,10 +40,11 @@ __device__ __forceinline__ void walk(int32_t idx, const HutParams& p,
   coord_1 = ((idx >> p.shift0) & p.mask1) * p.step1;
 }
 
-__global__ __launch_bounds__(kMaxWarps * 32, 1)
-void rate_kernel(const __grid_constant__ CUtensorMap tensor_map,
-                 HutParams p, long long* __restrict__ dbg,
-                 int32_t* __restrict__ sm_id_out) {
+__device__ __forceinline__ void rate_body(const CUtensorMap* tensor_map_ptr,
+                                          const HutParams& p,
+                                          long long* __restrict__ dbg,
+                                          int32_t* __restrict__ sm_id_out) {
+  const CUtensorMap& tensor_map = *tensor_map_ptr;
   const int32_t warp = warp_id();
   // Read back from the launch geometry rather than taken from p, so a
   // host/device disagreement about the producer count shows up here.
@@ -105,6 +106,46 @@ void rate_kernel(const __grid_constant__ CUtensorMap tensor_map,
     ring.flip(stage);
   }
   __syncthreads();
+}
+
+__global__ __launch_bounds__(kMaxWarps * 32, 1)
+void rate_kernel(const __grid_constant__ CUtensorMap tensor_map,
+                 HutParams p, long long* __restrict__ dbg,
+                 int32_t* __restrict__ sm_id_out) {
+  rate_body(&tensor_map, p, dbg, sm_id_out);
+}
+
+// mode 3: the SAME load-and-discard walk under a different symbol, so a sweep
+// can warm L2 with real TMA loads (an idle CTA pulling the next phase's set
+// through a scratch frame) and then time the burst that follows it alone.
+__global__ __launch_bounds__(kMaxWarps * 32, 1)
+void warm_kernel(const __grid_constant__ CUtensorMap tensor_map,
+                 HutParams p, long long* __restrict__ dbg,
+                 int32_t* __restrict__ sm_id_out) {
+  rate_body(&tensor_map, p, dbg, sm_id_out);
+}
+
+// mode 2: the same walk as rate_kernel, issued as L2 PREFETCHES -- what a
+// kernel that wants the next phase's set warm would do from an idle warp. No
+// smem, no barriers, nothing to drain; the kernel exits as soon as the
+// prefetches are issued, so its own duration says nothing and the sweep times
+// the burst that follows it.
+__global__ __launch_bounds__(kMaxWarps * 32, 1)
+void prefetch_kernel(const __grid_constant__ CUtensorMap tensor_map,
+                     HutParams p) {
+  const int32_t warp = warp_id();
+  const int32_t num_producers = static_cast<int32_t>(blockDim.x) >> 5;
+  const int32_t base = static_cast<int32_t>(blockIdx.x) * num_producers + warp;
+  const int32_t k_tile_count = p.k_tile_count;
+  const int32_t mask0 = p.mask0, shift0 = p.shift0, step0 = p.step0;
+  const int32_t mask1 = p.mask1, step1 = p.step1;
+  if (!is_lane_zero()) return;
+  for (int32_t k = 0; k < k_tile_count; ++k) {
+    const int32_t idx = base * k_tile_count + k;
+    const int32_t coord_0 = (idx & mask0) * step0;
+    const int32_t coord_1 = ((idx >> shift0) & mask1) * step1;
+    cp_async_bulk_prefetch_tensor_2d_l2(&tensor_map, coord_0, coord_1);
+  }
 }
 
 // A rate measured on boxes nobody verified is a measurement of an unknown: a

@@ -43,6 +43,7 @@ const char* hut_opt_name(int32_t i) {
 }
 
 int32_t hut_smem(const HutParams* p) {
+  if (p->mode == 2) return 0;
   if (p->mode == 1) return p->box_bytes + static_cast<int32_t>(sizeof(uint64_t));
   return p->num_producers * p->stages * p->box_bytes
        + p->num_producers * p->stages * static_cast<int32_t>(sizeof(uint64_t));
@@ -70,10 +71,27 @@ int32_t hut_check(const HutParams* p, const HutBuffers* b, void* stream) {
 
 int32_t hut_launch(const HutParams* p, const HutBuffers* b, void* stream) {
   if (p->mode == 1) return hut_check(p, b, stream);
+  if (p->mode == 2) {
+    if (p->num_producers > tr::kMaxWarps || p->num_producers < 1)
+      return HUT_ERR_BAD_PARAM;
+    tr::prefetch_kernel<<<p->n_ctas, p->num_producers * 32, 0,
+                          static_cast<cudaStream_t>(stream)>>>(
+        *static_cast<const CUtensorMap*>(p->tensor_map), *p);
+    return static_cast<int32_t>(cudaGetLastError());
+  }
   if (p->stages > tr::kMaxStages || p->stages < 1 ||
       p->num_producers > tr::kMaxWarps || p->num_producers < 1)
     return HUT_ERR_BAD_PARAM;
   const int32_t smem = hut_smem(p);
+  if (p->mode == 3) {
+    int32_t rc = set_smem(reinterpret_cast<const void*>(tr::warm_kernel), smem);
+    if (rc != 0) return rc;
+    tr::warm_kernel<<<p->n_ctas, p->num_producers * 32, smem,
+                      static_cast<cudaStream_t>(stream)>>>(
+        *static_cast<const CUtensorMap*>(p->tensor_map), *p,
+        static_cast<long long*>(b->dbg), static_cast<int32_t*>(b->sm_id));
+    return static_cast<int32_t>(cudaGetLastError());
+  }
   int32_t rc = set_smem(reinterpret_cast<const void*>(tr::rate_kernel), smem);
   if (rc != 0) return rc;
   tr::rate_kernel<<<p->n_ctas, p->num_producers * 32, smem,

@@ -324,8 +324,15 @@ def bench_gpu_time_with_cupti(
     input_args: tuple = (),
     input_kwargs: Optional[dict] = None,
     cold_l2_cache: bool = True,
+    kernel_filter: Optional[str] = None,
 ) -> list[float]:
     """CUPTI hardware-level kernel timing: measures pure GPU execution time.
+
+    ``kernel_filter`` restricts each iteration's span to the activity records
+    whose kernel name contains the substring: a call that has to prepare
+    cache state with other kernels (a prefetch, unrelated traffic) before
+    the launch under test is then timed on that launch alone. Without it the
+    span covers every kernel the call issued.
 
     Requires ``cupti-python >= 13.0.0`` (CUDA 13+). Per-iteration GPU time is
     derived from CUPTI activity kernel start/end timestamps, excluding the
@@ -520,8 +527,11 @@ def bench_gpu_time_with_cupti(
         iter_kernels = []
         for cid in corr_ids:
             iter_kernels.extend(corr_id_to_kernels.get(cid, []))
+        if kernel_filter is not None:
+            iter_kernels = [k for k in iter_kernels if kernel_filter in str(k[0])]
         if not iter_kernels:
-            raise ValueError(f"No kernel activities recorded for an iteration")
+            raise ValueError(f"No kernel activities recorded for an iteration"
+                             + (f" matching {kernel_filter!r}" if kernel_filter else ""))
         current_names = {f"{k[0]}_{k[4]}_{k[5]}_{k[6]}_{k[7]}" for k in iter_kernels}
         if kernel_names is None:
             kernel_names = current_names
@@ -545,6 +555,7 @@ def bench_gpu_time(
     input_args: tuple = (),
     input_kwargs: Optional[dict] = None,
     cold_l2_cache: bool = True,
+    kernel_filter: Optional[str] = None,
 ) -> list[float]:
     """Unified GPU kernel timing entry point.
 
@@ -567,6 +578,7 @@ def bench_gpu_time(
             input_args=input_args,
             input_kwargs=input_kwargs,
             cold_l2_cache=cold_l2_cache,
+            kernel_filter=kernel_filter,
         )
     if use_cuda_graph:
         return bench_gpu_time_with_cudagraph(

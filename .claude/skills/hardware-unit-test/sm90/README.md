@@ -92,3 +92,8 @@ run concurrently rather than contending. They were measured together --
 `overlap.eff.sm` puts TMA 1.25x slower and wgmma 1.05x under contention, and
 `pipeline.ratio.sm.dep` adds ~1.05x for the barrier on top. Budget ~1.32x over
 the slower engine, not the 1.00x a timeline assumes.
+
+Warmth (sweep Q, `tma.bw.dev.burst.warm`): only a TMA LOAD leaves a weight
+set in L2 for a later burst (3.7 us vs 9.3 cold for 16.8 MB, surviving ~21 MB
+of clean traffic); `cp.async.bulk.prefetch.tensor.L2` (6.6 us) and plain SM
+reads (8.2 us) do not.

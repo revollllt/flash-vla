@@ -737,10 +737,151 @@ def sweep_P(unit, buf, dbg, buf_bytes):
     return out
 
 
+def sweep_Q(unit, buf, dbg, buf_bytes):
+    """Q12: WARMTH -- is a phase-sized weight set still in L2 after the traffic between two phases?
+
+    The decisive pair for prefetching the next layer's weight set into L2 while
+    an earlier phase runs: the same 16.8 MB burst as sweep P (128 CTAs x 1
+    warp x 4 x 32 KB, stages 3), timed cold, timed right after the set was
+    pulled through L2, and timed after the set was pulled through L2 AND T MB
+    of unrelated streaming traffic went by. If the warm rows are not >= 3x
+    faster than the cold row the set does not survive in L2 and prefetching is
+    dead before any kernel edit; the T ladder says how much intervening
+    traffic it survives. A hot row (no flush, burst twice) is the L2 ceiling
+    reference for the same launch.
+
+    Collision control (criterion 3 of the proposal): an 8.4 MB burst (the
+    DownResidual weight stream, 128 x 2 x 32 KB) timed alone, and timed while
+    a 16.8 MB streaming read runs concurrently on a second stream -- what the
+    prefetch costs the phase it hides under, when both are DRAM-sourced.
+
+    Every sample is L2-flushed FIRST (2 x L2 zeroed), then the sample's
+    preparation runs, then the burst is timed alone under CUDA events; the
+    cold row is timed the same way so the pair is same-timer.
+    """
+    import torch
+    g = GEOMS["contig"]
+    side = torch.cuda.Stream()
+    traffic = torch.empty(64 * 1024 * 1024 // 2, dtype=torch.bfloat16, device="cuda")
+    traffic.normal_()
+
+    def point(n_ctas, k):
+        pre = measure(unit, g, n_ctas=n_ctas, num_producers=1, stages=3,
+                      box_dim_1=256, buf_bytes=buf_bytes, k_tiles=k)
+        mapbuf, rc = encode(unit, buf.data_ptr(), pre["plan"])
+        assert rc == 0, f"encode rc={rc}"
+        p = make_params(pre["plan"], n_ctas=n_ctas, num_producers=1, stages=3,
+                        box_bytes=pre["box_bytes"], k_tile_count=pre["k_tile_count"],
+                        tensor_map=mapbuf[1])
+        return pre, p, abi.buffers(dbg=dbg), mapbuf
+
+    gu_pre, gu_p, gu_bufs, _keep0 = point(128, 4)       # 16.8 MB, the GatedUp set
+    pf_p = make_params(gu_pre["plan"], n_ctas=128, num_producers=1, stages=3,
+                       box_bytes=gu_pre["box_bytes"], k_tile_count=gu_pre["k_tile_count"],
+                       tensor_map=gu_p.tensor_map, mode=2)   # the same walk as L2 prefetches
+    dr_pre, dr_p, dr_bufs, _keep1 = point(128, 2)       # 8.4 MB, the DownResidual set
+    set_bytes = gu_pre["total_b"]
+    # The contig walk with one warp per CTA reads box idx = cta * k + j, so the
+    # set is the first total_b bytes of the buffer, in order.
+    gu_set = buf.view(torch.int32)[:set_bytes // 4]
+    other_set = buf.view(torch.int32)[buf_bytes // 8: buf_bytes // 8 + set_bytes // 4]
+
+    def touch(t):
+        # A plain streaming read: every line allocated in L2 on the way
+        # through, as a TMA load with the default policy would leave it.
+        torch.sum(t)
+
+    def read_mb(mb):
+        torch.sum(traffic[:int(mb * 1e6) // 2])
+
+    def gu_run():
+        unit.launch(gu_p, gu_bufs)
+
+    def pf_run():
+        unit.launch(pf_p, gu_bufs)
+
+    wm_p = make_params(gu_pre["plan"], n_ctas=128, num_producers=1, stages=3,
+                       box_bytes=gu_pre["box_bytes"], k_tile_count=gu_pre["k_tile_count"],
+                       tensor_map=gu_p.tensor_map, mode=3)   # real TMA loads, discarded
+
+    def wm_run():
+        unit.launch(wm_p, gu_bufs)
+
+    def dr_run():
+        unit.launch(dr_p, dr_bufs)
+
+    rows = []
+
+    def add(label, run, total_b, *, flush, note=""):
+        # The harness flushes L2 before every sample (flush=True), then `run`
+        # prepares the cache state it wants and launches the burst; only the
+        # burst's own kernel records are timed (kernel_filter). [rule 8]
+        dbg.zero_()
+        us, spread = harness.time_us(run, flush_l2=flush, kernel_filter="rate_kernel")
+        torch.cuda.synchronize()
+        harness.check_watchdog(dbg, SITES)
+        rows.append(dict(label=label, geom=g.name, n_ctas=128, num_producers=1,
+                         stages=3, box_bytes=gu_pre["box_bytes"], total_mb=total_b / 1e6,
+                         us=us, spread=spread, gbs=total_b / (us * 1e-6) / 1e9,
+                         timer=harness.TIMER_USED, flush_l2=flush, note=note))
+        print(f"    {label:<40s} {us:8.2f} us  spread {spread:5.1%}  "
+              f"{rows[-1]['gbs']:7.0f} GB/s  {note}", flush=True)
+
+    gu_b = gu_pre["total_b"]
+    add("gu cold", gu_run, gu_b, flush=True, note="the sweep P 128x4 row")
+    add("gu hot (no flush; previous sample's burst)", gu_run, gu_b, flush=False,
+        note="L2 ceiling reference, TMA-warmed")
+    add("gu warm: prefetch set (plain read)", lambda: (touch(gu_set), gu_run()), gu_b, flush=True)
+    for mb in (10.5, 21, 32, 42, 64):
+        add(f"gu warm + {mb:g} MB traffic", lambda mb=mb: (touch(gu_set), read_mb(mb), gu_run()),
+            gu_b, flush=True, note="attention chain between FFN launches is ~10.5 MB")
+    for mb in (0, 10.5, 21, 32):
+        add(f"gu TMA-warm (prev burst) + {mb:g} MB traffic",
+            lambda mb=mb: (read_mb(mb) if mb else None, gu_run()), gu_b, flush=False,
+            note="the set left in L2 by a TMA LOAD, then traffic")
+    add("gu TMA-load warm (warm_kernel, flushed first) then burst",
+        lambda: (wm_run(), gu_run()), gu_b, flush=True,
+        note="an idle CTA pulling the set through smem and discarding it")
+    for mb in (10.5, 21):
+        add(f"gu TMA-load warm + {mb:g} MB traffic",
+            lambda mb=mb: (wm_run(), read_mb(mb), gu_run()), gu_b, flush=True)
+    add("gu TMA-load warm + 10.5 MB traffic + 8.4 MB DR-like read",
+        lambda: (wm_run(), read_mb(10.5), touch(other_set[: (8 << 20) // 4]), gu_run()),
+        gu_b, flush=True, note="the real gap: attention chain, then the next FFN's DR")
+    add("gu TMA-prefetch (cp.async.bulk.prefetch.tensor.L2) then burst",
+        lambda: (pf_run(), gu_run()), gu_b, flush=True,
+        note="what an idle warp in the previous phase would issue")
+    for mb in (10.5, 21, 32):
+        add(f"gu TMA-prefetch + {mb:g} MB traffic",
+            lambda mb=mb: (pf_run(), read_mb(mb), gu_run()), gu_b, flush=True)
+    add("gu TMA-prefetch + 10.5 MB traffic + 8.4 MB DR-like read",
+        lambda: (pf_run(), read_mb(10.5), touch(other_set[: (8 << 20) // 4]), gu_run()),
+        gu_b, flush=True, note="the next FFN's own DownResidual traffic before its GU")
+    add("gu warm + 10.5 MB traffic + 8.4 MB DR-like read",
+        lambda: (touch(gu_set), read_mb(10.5), touch(other_set[: (8 << 20) // 4]), gu_run()),
+        gu_b, flush=True, note="the next FFN's own DownResidual traffic before its GU")
+
+    dr_b = dr_pre["total_b"]
+    add("dr cold alone", dr_run, dr_b, flush=True, note="8.4 MB, 128 x 2 x 32 KB")
+
+    def dr_with_side():
+        # A 16.8 MB streaming read on a side stream, issued just before the DR
+        # burst so the two overlap: the collision price of hiding a prefetch of
+        # that size under the phase, both DRAM-sourced.
+        side.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(side):
+            torch.sum(other_set)
+        dr_run()
+        torch.cuda.current_stream().wait_stream(side)
+    add("dr cold + concurrent 16.8 MB read", dr_with_side, dr_b, flush=True,
+        note="collision control (proposal criterion 3)")
+    return rows
+
+
 SWEEPS = {"A": sweep_A, "B": sweep_B, "C": sweep_C, "D": sweep_D,
           "E": sweep_E, "F": sweep_F, "G": sweep_G, "H": sweep_H,
           "I": sweep_I, "J": sweep_J, "K": sweep_K, "L": sweep_L, "M": sweep_M,
-          "N": sweep_N, "O": sweep_O, "P": sweep_P}
+          "N": sweep_N, "O": sweep_O, "P": sweep_P, "Q": sweep_Q}
 
 
 
@@ -949,9 +1090,10 @@ def main(argv=None):
               flush=True)
         rows = SWEEPS[key](unit, buf, dbg, buf_bytes)
         results["sweeps"][key] = rows
-        renderer = (render_dtype if key in DTYPE_SWEEPS else
-                    render_place if key in PLACE_SWEEPS else render)
-        print(renderer(rows), flush=True)
+        if key != "Q":                     # Q prints its own rows as it goes
+            renderer = (render_dtype if key in DTYPE_SWEEPS else
+                        render_place if key in PLACE_SWEEPS else render)
+            print(renderer(rows), flush=True)
 
     results["timer"] = harness.TIMER_USED
     results["reps"] = a.reps

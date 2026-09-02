@@ -395,6 +395,59 @@ reps, spread <= 11%. The k = 128 rows of that sweep wrap the 256 MB footprint
 and are not flushed-once cold; they are in the JSON unflagged and must not be
 read as DRAM rows.
 
+## Warmth -- what leaves a set in L2 for a later burst (sweep Q, `tma.bw.dev.burst.warm`)
+
+The cold-burst ramp above says a phase-sized cold burst is bounded at ~1.8
+TB/s however it is issued, and that the lever is warmth. Sweep Q asks the
+question a prefetching kernel needs answered: which instruction leaves the
+set in L2, and how much intervening traffic it survives. The burst is the
+128 x 1 warp x 4 x 32 KB row; every sample flushes L2 (2 x L2 zeroed),
+prepares the cache state it wants, and times the burst alone through the
+CUPTI harness's kernel-name filter (`kernel_filter="rate_kernel"`), so the
+preparation kernels are in the iteration but not in the number.
+
+**Claim.** Only a TMA LOAD warms the set. Lines it brings in read at the
+L2 ceiling of the same launch and survive ~21 MB of clean traffic;
+`cp.async.bulk.prefetch.tensor.L2` and a plain SM streaming read do not
+produce that state.
+
+| preparation before the burst | us | vs cold 9.3 |
+|---|---:|---:|
+| none (flushed) | 9.31 | 1.0x |
+| previous sample's burst, no flush (L2 ceiling reference) | 3.71 | 2.5x |
+| TMA load-and-discard of the set (warm_kernel), flushed first | 3.75 | 2.5x |
+| ... + 10.5 MB clean traffic (dirty flush lines still resident) | 6.88 | 1.4x |
+| ... + 21 MB | 9.47 | 1.0x |
+| TMA-loaded set (no flush) + 10.5 / 21 / 32 MB clean traffic | 3.74 / 3.90 / 6.82 | 2.5x / 2.4x / 1.4x |
+| `cp.async.bulk.prefetch.tensor.L2` of the set, flushed first | 6.62 | 1.4x |
+| ... + 10.5 / 21 / 32 MB | 7.62 / 9.25 / 9.57 | 1.2x / 1.0x / 1.0x |
+| plain SM streaming read of the set (torch reduction), flushed first | 8.19 | 1.1x |
+| ... + 10.5 .. 64 MB | 7.9 - 9.1 | ~1.1x |
+
+The decisive pair is the third and the eighth rows: the same bytes brought
+in through the same tensor map, once as a load and once as a prefetch, differ
+by 1.8x at the burst that follows. The plain-read row is the control that
+the L2 does not simply hold whatever was last touched.
+
+Collision control (proposal criterion 3): an 8.4 MB DownResidual-sized
+burst reads 5.73 us alone and 5.86-6.11 us with a concurrent 16.8 MB
+streaming read on another stream -- within the 15-25% spread of those rows.
+
+Two regimes in one table, and they answer differently. With L2 clean
+(no-flush ladder) the TMA-warmed set survives 21 MB and dies by 32 MB; with
+L2 full of dirty lines when the warming load runs (flushed ladder) half of
+it is gone after 10.5 MB. A kernel that warms a set for a later phase should
+budget for the dirty case unless it knows the intervening writes are small.
+
+**Reading it in a design.** The idle warp that wants the next phase's set
+warm must issue real TMA loads into a scratch frame and discard them (the
+`warm_kernel` mode), not prefetch instructions. What the load-and-discard
+costs the phase it hides under is the collision row: small.
+
+Jobs 588751 / 588754 / 588761 (ACD1-58, ACD1-11, ACD1-11), `--sweeps Q
+--flush-l2 --footprint-mb 256 --reps 15 / 25 / 25`, CUPTI, spreads 2-17%
+(the noisier rows are the DRAM-sourced ones, as everywhere in this unit).
+
 ## Open gaps
 
 - **Whether L2 has more than 18.2 TB/s.** Per-SM shared memory caps in-flight
