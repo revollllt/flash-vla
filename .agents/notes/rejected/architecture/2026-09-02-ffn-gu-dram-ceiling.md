@@ -1,6 +1,6 @@
 # Agent Note: The FFN GatedUp phase is at its cold-burst ceiling; warm the weights, do not retile the stream
 
-Status: proposed
+Status: rejected — L2-warming the next layer's gate/up set is measured null end to end (jobs 588775/588788 vs 588776/588789); the measurement that the GatedUp burst sits at its cold-burst ceiling stands, and the continuity lever is untested
 
 Date: 2026-09-02
 
@@ -125,3 +125,37 @@ second GatedUp producer warp, more or fewer GatedUp CTAs.
 - The burst constant is CUPTI kernel time with the grid ramp inside; inside a
   persistent kernel the ceiling is ~1.2 us lower, which strengthens rather
   than weakens the "already at ceiling" reading.
+
+## Verdict -- rejected in situ (jobs 588775 / 588788 vs 588776 / 588789)
+
+Candidate `FFN_GU_NEXT_WARM`: the 96 GatedUp-only CTAs TMA-load layer L+1's
+gate/up column tiles into their retired weight frames (each also covering
+one DownResidual owner's column) while the 32 DownResidual CTAs run; the
+launch's legacy second packed pointer carries the next layer's set and the
+wrappers learn the cyclic layer order during the eager warm-up forward.
+Kernel gate passed (588774, worst cosine 0.99999994). Same-node A/B, pdl
+plan, `plan_e2e.sh` A/B/A, decoder min:
+
+| node | warm | no warm | delta |
+|---|---:|---:|---:|
+| ACD1-33 | 7.392 | 7.358 | +0.034 |
+| ACD1-1 | 7.417 | 7.360 | +0.057 |
+
+Both inside the 6% floor, both in the wrong direction; the tilelang control
+legs agree to 0.03 ms across the four jobs. The candidate is removed from
+the tree (the precedent for rejected flags).
+
+What the null says, given the warmth pair: the warmed lines exist, so
+either (a) they do not survive the real inter-launch traffic -- the
+attention chain streams 9.4 MB of weights and writes activations, and the
+pair showed only half the set surviving 10.5 MB when L2 held dirty lines --
+or (b) the GatedUp phase is not bound by its weight DRAM stream as tightly
+as the burst model implied (NCU gu-alone 12.6 us against a 9.3 us burst
+leaves ~3 us of non-stream work), or (c) the warming loads cost
+DownResidual what GatedUp gained. The A/B cannot separate these; the next
+diagnostic is a non-PDL trace of the decoder with the flag on, reading the
+per-launch `ffn_taskloop` durations -- if the launch itself did not shorten,
+(a) or (b); if it shortened and the stage did not, the tail moved elsewhere.
+
+The continuity lever (one weight stream across the GatedUp -> DownResidual
+seam, ~2 us/layer) is untested and stays with the megakernel direction.
