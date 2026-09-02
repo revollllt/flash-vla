@@ -34,10 +34,22 @@ def is_cold(touched_bytes: int) -> bool:
     return l2_ratio(touched_bytes) >= COLD_MIN_L2_RATIO
 
 
-def guard(unit, regime: str, touched_bytes: int, *, where: str = "") -> None:
-    """Refuse a measurement whose regime the unit's flags do not permit."""
+def guard(unit, regime: str, touched_bytes: int, *, where: str = "",
+          flushed_once: bool = False) -> None:
+    """Refuse a measurement whose regime the unit's flags do not permit.
+
+    `flushed_once` is the caller's assertion that L2 is flushed before EVERY
+    timed launch and the launch's walk touches each byte at most once. Under
+    both, the walk is cold whatever its size: the footprint rule exists to
+    catch wrap-around within a launch and residue from the previous row, and
+    the flush removes the residue while single-touch removes the wrap. A
+    short stream (a few transactions per CTA) can only be measured cold this
+    way, and the row is stamped so the constant says which.
+    """
     from .abi import NEEDS_COLD, NO_SOURCE
     if unit.flags & NO_SOURCE:
+        return
+    if regime == DRAM and flushed_once:
         return
     if regime == DRAM and unit.flags & NEEDS_COLD and not is_cold(touched_bytes):
         raise RuntimeError(
@@ -48,7 +60,9 @@ def guard(unit, regime: str, touched_bytes: int, *, where: str = "") -> None:
             f"moved per launch, or record it as the l2 regime instead.")
 
 
-def stamp(regime: str, touched_bytes: int, flush_l2: bool) -> dict:
+def stamp(regime: str, touched_bytes: int, flush_l2: bool,
+          flushed_once: bool = False) -> dict:
     """The regime fields every JSON row carries, so a constant can cite them."""
     return {"regime": regime, "touched_mb": touched_bytes / 1e6,
-            "l2_ratio": l2_ratio(touched_bytes), "flush_l2": flush_l2}
+            "l2_ratio": l2_ratio(touched_bytes), "flush_l2": flush_l2,
+            "flushed_once": flushed_once}

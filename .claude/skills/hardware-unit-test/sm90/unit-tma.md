@@ -2,7 +2,7 @@
 
 **Probe** `probes/units/tma_ring/tma_ring.{cu,py}` · **Constants** `tma.issue.warp`, `tma.stages.warp.knee`,
 `tma.bw.cta.geom`, `tma.bytes.txn.max`, `tma.bw.dev.l2`, `tma.bw.cta.warps`, `tma.bw.dev.dram`,
-`tma.bw.dev.curve` · **Curve** `tma-bw-vs-product`
+`tma.bw.dev.curve`, `tma.bw.dev.burst` · **Curve** `tma-bw-vs-product`
 
 ```
 # launcher and output path are this host's; the probe itself takes neither
@@ -339,6 +339,61 @@ cost that is itself element-width-independent, that exactly cancels fp8's byte
 saving on the copy path.
 
 Job 565743, `probes/units/tma_ring/tma_ring.py`.
+
+## Short streams -- the cold-burst ramp (sweep P, `tma.bw.dev.burst`)
+
+Every sweep above holds `k_tile_count >= 8 x stages` so the ring fill is
+amortised and the row reads the steady state. A task in a persistent
+task-loop kernel never gets there: it issues a handful of transactions per
+CTA and the ring drains, so the whole stream lives inside the fill. Sweep P
+measures that regime directly -- one warp per CTA, 32 KB boxes, every launch
+flushed cold, the walk touching each byte once (`flushed_once` in the row
+stamp; the regime guard accepts a sub-3xL2 footprint only under that pair).
+
+**Claim.** Delivered bandwidth for ONE cold burst is a function of the
+burst's bytes and of nothing the producer controls. 16.8 MB (128 CTAs x 4 x
+32 KB) takes ~9.3 us end-to-end -- 1.8 TB/s -- and the rate climbs with burst
+size toward the steady-state ceiling:
+
+| bytes per burst | 16.8 MB | 33.6 | 67.1 | 134 | 268 |
+|---|---:|---:|---:|---:|---:|
+| us (CUPTI, incl. ~1.2 us grid ramp) | 9.25 | 16.64 | 30.59 | 52.99 | 95.84 |
+| TB/s end-to-end | 1.81 | 2.02 | 2.19 | 2.53 | 2.80 |
+| TB/s with the grid ramp subtracted | 2.10 | 2.18 | 2.29 | 2.59 | 2.84 |
+
+A two-term fit does NOT hold: `5.1 us + MB/2.96` over-predicts the 16.8 MB
+point by 17%, so the ramp is not one fixed cost but a bandwidth that keeps
+rising over the first ~100 MB. Against the launch unit's plain-load model
+(`1.85 + MB/2.77`, other toolchain) the TMA burst is 17% slower at 16.8 MB and
+3% faster at 268 MB.
+
+**Falsifiers, all at 16.8 MB, all within the 6% floor of each other:**
+
+| axis | rows | us |
+|---|---|---|
+| ring stages 2 / 3 / 4 / 6 at 128 x 4 | 9.28 / 9.25 / 9.31 / 9.41 | depth is not the lever inside the fill |
+| box 32 KB x 4 vs 16 KB x 8, stages 3 / 4 / 6 | 9.25 vs 9.44 / 9.44 / 9.50 | bytes, not transactions, even inside the fill |
+| 132 vs 128 CTAs | 9.54 vs 9.25 (stages 3) | -- |
+| same bytes, fewer longer streams: 128x4 / 64x8 / 32x16 / 16x32 / 8x64 | 9.41 / 9.66 / 10.43 / 13.73 / 21.89 | flat down to 32 CTAs; below that the per-warp chain binds (8 x 64 = 342 ns/txn) |
+
+Had ring depth mattered, stages 6 would have beaten stages 2 by the missing
+fill; had the transaction count mattered, the 16 KB control would have read
+twice the issue column; had it been a per-CTA ramp, 32 x 16 would have been
+much faster than 128 x 4. None of those happened.
+
+**Reading it in a design.** A phase that streams a cold weight set of tens of
+MB is bounded by this curve, not by `tma.bw.dev.dram`, and its "percent of
+DRAM" should be quoted against it: 16.8 MB at 1.8 TB/s is the ceiling, and a
+kernel there is not leaving bandwidth on the table. What moves a short burst
+is either *warmth* -- the set already in L2 when the phase begins, where the
+L2 ceiling applies -- or *continuity* -- one longer stream instead of several
+bursts (the second 16.8 MB of a 33.6 MB stream costs 7.4 us, the first 9.3).
+Ring depth, box size and CTA count above ~32 are measured nulls here.
+
+Job 585478 (this run), `--sweeps P --flush-l2 --footprint-mb 256`, CUPTI, 7
+reps, spread <= 11%. The k = 128 rows of that sweep wrap the 256 MB footprint
+and are not flushed-once cold; they are in the JSON unflagged and must not be
+read as DRAM rows.
 
 ## Open gaps
 

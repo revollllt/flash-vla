@@ -81,16 +81,18 @@ SITES = {}
 
 
 def measure(unit, geom, *, n_ctas, num_producers, stages, box_dim_1,
-            buf_bytes) -> dict:
+            buf_bytes, k_tiles=None) -> dict:
     box_bytes = geom.box_bytes(box_dim_1)
     smem = num_producers * stages * box_bytes + num_producers * stages * 8
     if smem > MAX_SMEM:
         return dict(skipped=f"smem {smem} > {MAX_SMEM}")
     plan = geom.plan(box_dim_1, buf_bytes)
     # k_tile_count must be well past the ring fill so the measurement is steady
-    # state: 8x stages holds the fill under 13%.
+    # state: 8x stages holds the fill under 13%. A sweep that is ABOUT the
+    # fill -- a stream only a few transactions long, which is what a task in
+    # a task-loop kernel issues -- passes k_tiles explicitly and says so.
     per_issue = n_ctas * num_producers * box_bytes
-    k = max(8 * stages, TARGET_BYTES // per_issue)
+    k = k_tiles if k_tiles is not None else max(8 * stages, TARGET_BYTES // per_issue)
     return dict(plan=plan, box_bytes=box_bytes, k_tile_count=k,
                 total_b=per_issue * k, smem=smem,
                 touched_b=geom.touched_bytes(plan, n_ctas, num_producers, k))
@@ -111,9 +113,10 @@ def make_params(plan, *, n_ctas, num_producers, stages, box_bytes,
 
 
 def run_point(unit, buf, geom, *, n_ctas, num_producers, stages, box_dim_1,
-              buf_bytes, dbg, sm_id=None) -> dict:
+              buf_bytes, dbg, sm_id=None, k_tiles=None) -> dict:
     pre = measure(unit, geom, n_ctas=n_ctas, num_producers=num_producers,
-                  stages=stages, box_dim_1=box_dim_1, buf_bytes=buf_bytes)
+                  stages=stages, box_dim_1=box_dim_1, buf_bytes=buf_bytes,
+                  k_tiles=k_tiles)
     base = dict(geom=geom.name, n_ctas=n_ctas, num_producers=num_producers,
                 stages=stages, box_bytes=geom.box_bytes(box_dim_1))
     if "skipped" in pre:
@@ -123,7 +126,8 @@ def run_point(unit, buf, geom, *, n_ctas, num_producers, stages, box_dim_1,
         return dict(**base, skipped=f"encode rc={rc}")
 
     regime.guard(unit, regime.DRAM if FLUSH_L2 else regime.L2,
-                 pre["touched_b"], where=f"{geom.name} {n_ctas}x{num_producers}")
+                 pre["touched_b"], where=f"{geom.name} {n_ctas}x{num_producers}",
+                 flushed_once=FLUSH_L2 and pre["touched_b"] >= pre["total_b"])
 
     p = make_params(pre["plan"], n_ctas=n_ctas, num_producers=num_producers,
                     stages=stages, box_bytes=pre["box_bytes"],
@@ -148,7 +152,8 @@ def run_point(unit, buf, geom, *, n_ctas, num_producers, stages, box_dim_1,
                smem_kb=pre["smem"] / 1024,
                addressable_mb=pre["plan"]["addressable_bytes"] / 1e6,
                **regime.stamp(regime.DRAM if FLUSH_L2 else regime.L2,
-                              pre["touched_b"], FLUSH_L2))
+                              pre["touched_b"], FLUSH_L2,
+                              flushed_once=FLUSH_L2 and pre["touched_b"] >= pre["total_b"]))
     row["footprint_mb"] = row["touched_mb"]
     if sm_id is not None:
         ids = sm_id[:n_ctas].tolist()
@@ -684,10 +689,58 @@ def sweep_O(unit, buf, dbg, buf_bytes):
 
 
 
+def sweep_P(unit, buf, dbg, buf_bytes):
+    """Q11: a SHORT stream -- the ring fill, not the steady state.
+
+    Every other sweep forces k_tile_count >= 8 x stages so the ring fill is
+    amortised. A task in a persistent task-loop kernel does not get that: it
+    issues a handful of transactions and then the ring drains, so the whole
+    stream lives inside the fill. This sweep measures that regime directly,
+    at one warp per CTA and 32 KB boxes.
+
+    Three decisive pairs, all at the same 32 KB box and one producer warp:
+    * stages ladder at 4 transactions per CTA (128 CTAs): if stages 3 vs 4
+      vs 6 do not separate here, ring depth is not the short-stream lever.
+    * stream length at FIXED total bytes (128x4, 64x8, 32x16, 16x32, 8x64):
+      equal bytes, fewer and longer streams. If time per byte falls with
+      stream length, the short stream is ramp/latency-bound and the cure is
+      continuity (longer streams per CTA), not more CTAs.
+    * stream length at FIXED CTA count (128 x k): the ramp cost as a fraction
+      of a stream, read against the steady-state ns/txn.
+    A 16 KB box at 8 transactions per CTA is the same bytes per CTA and twice
+    the transactions -- the control that separates bytes from transactions
+    inside the fill.
+
+    Each launch is flushed cold and the walk touches every byte at most once
+    (regime dram, flushed_once), so the rows are DRAM-sourced although a
+    single launch touches less than 3x L2.
+    """
+    out = []
+    g = GEOMS["contig"]
+    for stages in (2, 3, 4, 6):
+        out.append(run_point(unit, buf, g, n_ctas=128, num_producers=1, stages=stages,
+                             box_dim_1=256, buf_bytes=buf_bytes, dbg=dbg, k_tiles=4))
+    for stages in (3, 4):
+        out.append(run_point(unit, buf, g, n_ctas=132, num_producers=1, stages=stages,
+                             box_dim_1=256, buf_bytes=buf_bytes, dbg=dbg, k_tiles=4))
+    for stages in (3, 4):
+        for n_ctas, k in ((128, 4), (64, 8), (32, 16), (16, 32), (8, 64)):
+            out.append(run_point(unit, buf, g, n_ctas=n_ctas, num_producers=1, stages=stages,
+                                 box_dim_1=256, buf_bytes=buf_bytes, dbg=dbg, k_tiles=k))
+    for stages in (3, 4):
+        for k in (8, 16, 32, 64, 128):
+            out.append(run_point(unit, buf, g, n_ctas=128, num_producers=1, stages=stages,
+                                 box_dim_1=256, buf_bytes=buf_bytes, dbg=dbg, k_tiles=k))
+    for stages in (3, 4, 6):
+        out.append(run_point(unit, buf, g, n_ctas=128, num_producers=1, stages=stages,
+                             box_dim_1=128, buf_bytes=buf_bytes, dbg=dbg, k_tiles=8))
+    return out
+
+
 SWEEPS = {"A": sweep_A, "B": sweep_B, "C": sweep_C, "D": sweep_D,
           "E": sweep_E, "F": sweep_F, "G": sweep_G, "H": sweep_H,
           "I": sweep_I, "J": sweep_J, "K": sweep_K, "L": sweep_L, "M": sweep_M,
-          "N": sweep_N, "O": sweep_O}
+          "N": sweep_N, "O": sweep_O, "P": sweep_P}
 
 
 
@@ -718,7 +771,8 @@ def render(rows: list[dict]) -> str:
             f"{r['us']:>8.2f} {r['gbs']:>8.1f} {r['ns_per_txn']:>7.1f} "
             f"{r['pct_peak']:>5.1f}% {100.0 * r['gbs'] / (BW_CEIL_GBS):>5.1f}% "
             f"{r.get('l2_ratio', 0):>4.1f}"
-            + ("!" if r.get('l2_ratio', 9) < regime.COLD_MIN_L2_RATIO else " "))
+            + ("f" if r.get('flushed_once') else
+               "!" if r.get('l2_ratio', 9) < regime.COLD_MIN_L2_RATIO else " "))
     return "\n".join(lines)
 
 
