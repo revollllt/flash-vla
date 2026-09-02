@@ -158,8 +158,16 @@ def _matmul_bias(A, B, Bias, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_ST
                  THREADS: int):
     """C = A @ B + bias[None, :].
 
-    Body shared by `tl_matmul_bias` (encoder projector, WS on) and
-    `tl_matmul_bias_nows` (vision QKV, WS off).
+    `tl_matmul_bias` (encoder projector and decoder action in-projection, WS
+    on). The vision QKV site that used a no-WS variant of this body now runs
+    cuBLASLt (`torch.addmm`), see `wrappers.py`.
+
+    The result is staged through a bf16 shared tile before the global store.
+    Storing the accumulator fragment directly leaves each thread writing
+    4-byte pieces in the wgmma layout, and at K=1152 (M=768 vision shapes)
+    that traffic capped the body at ~300 TFLOP/s regardless of tiling; the
+    staged store recovered 8-19% at the same tile configs (sweeps 585341-3
+    vs 585399-402, artifacts/ktasks/vision-gemm-retune).
     """
     M, N, K = T.const("M, N, K")
     dtype = T.bfloat16
@@ -172,6 +180,7 @@ def _matmul_bias(A, B, Bias, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_ST
     with T.Kernel(T.ceildiv(N, BLOCK_N), T.ceildiv(M, BLOCK_M), threads=THREADS) as (pid_n, pid_m):
         A_shared = T.alloc_shared((BLOCK_M, BLOCK_K), dtype)
         B_shared = T.alloc_shared((BLOCK_K, BLOCK_N), dtype)
+        C_shared = T.alloc_shared((BLOCK_M, BLOCK_N), dtype)
         Bias_local = T.alloc_fragment((BLOCK_N,), dtype)
         C_local = T.alloc_fragment((BLOCK_M, BLOCK_N), accum_dtype)
 
@@ -185,17 +194,24 @@ def _matmul_bias(A, B, Bias, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_ST
         for i, j in T.Parallel(BLOCK_M, BLOCK_N):
             C_local[i, j] = C_local[i, j] + Bias_local[j].astype(accum_dtype)
 
-        T.copy(C_local, C[pid_m * BLOCK_M, pid_n * BLOCK_N])
+        T.copy(C_local, C_shared)
+        T.copy(C_shared, C[pid_m * BLOCK_M, pid_n * BLOCK_N])
 
 
 tl_matmul_bias = variant(_matmul_bias, "tl_matmul_bias", warp_spec=True)
-tl_matmul_bias_nows = variant(_matmul_bias, "tl_matmul_bias_nows", warp_spec=False)
 
 
 @kernel
 def tl_matmul_bias_res(A, B, Bias, R, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_STAGES: int,
                        THREADS: int):
-    """C = A @ B + bias[None, :] + R."""
+    """C = A @ B + bias[None, :] + R. R and C may alias (in-place residual).
+
+    The residual tile arrives through one shared-memory copy and the result
+    leaves through the same tile: per-element bf16 residual loads and
+    fragment-layout stores were the binding cost of this body at K=1152
+    (vision o_proj / ffn_down), see `_matmul_bias`. Aliasing is safe because
+    the whole R tile is read into smem before any element of C is written.
+    """
     M, N, K = T.const("M, N, K")
     dtype = T.bfloat16
     accum_dtype = T.float32
@@ -208,6 +224,7 @@ def tl_matmul_bias_res(A, B, Bias, R, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: in
     with T.Kernel(T.ceildiv(N, BLOCK_N), T.ceildiv(M, BLOCK_M), threads=THREADS) as (pid_n, pid_m):
         A_shared = T.alloc_shared((BLOCK_M, BLOCK_K), dtype)
         B_shared = T.alloc_shared((BLOCK_K, BLOCK_N), dtype)
+        R_shared = T.alloc_shared((BLOCK_M, BLOCK_N), dtype)
         Bias_local = T.alloc_fragment((BLOCK_N,), dtype)
         C_local = T.alloc_fragment((BLOCK_M, BLOCK_N), accum_dtype)
 
@@ -218,14 +235,16 @@ def tl_matmul_bias_res(A, B, Bias, R, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: in
             T.copy(B[ko * BLOCK_K, pid_n * BLOCK_N], B_shared)
             T.gemm(A_shared, B_shared, C_local)
 
+        T.copy(R[pid_m * BLOCK_M, pid_n * BLOCK_N], R_shared)
         for i, j in T.Parallel(BLOCK_M, BLOCK_N):
             C_local[i, j] = (
                 C_local[i, j]
                 + Bias_local[j].astype(accum_dtype)
-                + R[pid_m * BLOCK_M + i, pid_n * BLOCK_N + j].astype(accum_dtype)
+                + R_shared[i, j].astype(accum_dtype)
             )
 
-        T.copy(C_local, C[pid_m * BLOCK_M, pid_n * BLOCK_N])
+        T.copy(C_local, R_shared)
+        T.copy(R_shared, C[pid_m * BLOCK_M, pid_n * BLOCK_N])
 
 
 @kernel(warp_spec=False)
@@ -267,37 +286,6 @@ def tl_matmul_bias_res_mod(A, B, Bias, R, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K
 
         T.copy(C_local, C[pid_m * BLOCK_M, pid_n * BLOCK_N])
 
-
-@kernel
-def tl_matmul_bias_gelu(A, B, Bias, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_STAGES: int,
-                        THREADS: int):
-    """C = gelu_tanh(A @ B + bias[None, :])."""
-    M, N, K = T.const("M, N, K")
-    dtype = T.bfloat16
-    accum_dtype = T.float32
-    A: T.Tensor((M, K), dtype)
-    B: T.Tensor((K, N), dtype)
-    Bias: T.Tensor((N,), dtype)
-    C: T.Tensor((M, N), dtype)
-
-    with T.Kernel(T.ceildiv(N, BLOCK_N), T.ceildiv(M, BLOCK_M), threads=THREADS) as (pid_n, pid_m):
-        A_shared = T.alloc_shared((BLOCK_M, BLOCK_K), dtype)
-        B_shared = T.alloc_shared((BLOCK_K, BLOCK_N), dtype)
-        Bias_local = T.alloc_fragment((BLOCK_N,), dtype)
-        C_local = T.alloc_fragment((BLOCK_M, BLOCK_N), accum_dtype)
-
-        T.copy(Bias[pid_n * BLOCK_N], Bias_local)
-        T.clear(C_local)
-        for ko in T.Pipelined(T.ceildiv(K, BLOCK_K), num_stages=NUM_STAGES):
-            T.copy(A[pid_m * BLOCK_M, ko * BLOCK_K], A_shared)
-            T.copy(B[ko * BLOCK_K, pid_n * BLOCK_N], B_shared)
-            T.gemm(A_shared, B_shared, C_local)
-
-        for i, j in T.Parallel(BLOCK_M, BLOCK_N):
-            C_local[i, j] = C_local[i, j] + Bias_local[j].astype(accum_dtype)
-            C_local[i, j] = _gelu(C_local[i, j])
-
-        T.copy(C_local, C[pid_m * BLOCK_M, pid_n * BLOCK_N])
 
 
 @kernel(infer_output=True)

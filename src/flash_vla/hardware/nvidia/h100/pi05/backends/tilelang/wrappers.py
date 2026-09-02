@@ -82,16 +82,20 @@ def _compiled(kernel, **const):
 # ---------------------------------------------------------------------------
 # Vision (27 layers, LayerNorm, M = num_views * 256 = 768, hidden 1152, FFN 4304)
 #
-# High occupancy, so warp specialization pays off everywhere except the patch
-# embedding and QKV projection. Two axes here divide no practical block size
-# (4304 = 16 * 269 with 269 prime, and K=588); they run unpadded on the kernel's
-# masking, same as Triton.
+# Every vision GEMM has K=1152 or a 1152-wide output, so the epilogue bytes are
+# a large share of each kernel and the tile shape is not the lever: a 132-config
+# sweep per site (jobs 585341-585343) could not beat the shipped tiles, while
+# staging the epilogue through shared memory (kernels/base.py) and cuBLAS(Lt)
+# epilogues did. The two bias-only / bias+GELU sites therefore run cuBLASLt
+# (`torch.addmm` 13.5 us vs 15.5 us best TileLang; `_addmm_activation` 16.6 us
+# vs 18.8 us; job 585399, cold weights, same timer) and the two residual sites
+# keep TileLang, whose fused bias+residual epilogue cuBLAS has no equivalent
+# for. Two axes here divide no practical block size (4304 = 16 * 269 with 269
+# prime, and K=588); they run unpadded on the kernel's masking, same as Triton.
 # ---------------------------------------------------------------------------
 _VIS_PATCH = dict(BLOCK_M=64, BLOCK_N=128, BLOCK_K=64, NUM_STAGES=3, THREADS=128)
 _VIS_NORM = dict(BLOCK_M=1, BLOCK_K=1152, THREADS=128)
-_VIS_QKV = dict(BLOCK_M=128, BLOCK_N=64, BLOCK_K=64, NUM_STAGES=2, THREADS=128)
 _VIS_OUT_PROJ = dict(BLOCK_M=64, BLOCK_N=128, BLOCK_K=128, NUM_STAGES=4, THREADS=256)
-_VIS_FFN_UP = dict(BLOCK_M=128, BLOCK_N=128, BLOCK_K=64, NUM_STAGES=4, THREADS=256)
 _VIS_FFN_DOWN = dict(BLOCK_M=64, BLOCK_N=128, BLOCK_K=128, NUM_STAGES=3, THREADS=128)
 
 VISION_TOKENS = 256
@@ -129,8 +133,10 @@ def vision_norm_qkv(x, norm_w, norm_b, qkv_w, qkv_b, out, x_norm):
     hidden = qkv_w.shape[1]
     x2, x_norm2 = x.view(M, VISION_DIM), x_norm.view(M, VISION_DIM)
     _vision_layer_norm(x2, norm_w, norm_b, x_norm2)
-    _compiled(kernels.tl_matmul_bias_nows, M=M, N=hidden, K=VISION_DIM,
-              **_VIS_QKV)(x_norm2, qkv_w, qkv_b, out.view(M, hidden))
+    # cuBLASLt with its bias epilogue; `out=` keeps the call allocation-free
+    # and graph-capturable. fp32 accumulate, bf16 out -- the same rounding as
+    # the TileLang body it replaced.
+    torch.addmm(qkv_b, x_norm2, qkv_w, out=out.view(M, hidden))
     return out
 
 
@@ -151,8 +157,10 @@ def vision_norm_ffn_up(x, norm_w, norm_b, weight, bias, out, x_norm):
     M = x.shape[0] * VISION_TOKENS
     x2, x_norm2 = x.view(M, VISION_DIM), x_norm.view(M, VISION_DIM)
     _vision_layer_norm(x2, norm_w, norm_b, x_norm2)
-    _compiled(kernels.tl_matmul_bias_gelu, M=M, N=VISION_FFN, K=VISION_DIM,
-              **_VIS_FFN_UP)(x_norm2, weight, bias, out.view(M, VISION_FFN))
+    # cuBLASLt's GELU epilogue is the tanh approximation (CUBLASLT_EPILOGUE_GELU),
+    # i.e. upstream's gelu_pytorch_tanh; parity vs the fp32 tanh-GELU reference
+    # is at bf16 rounding (cos 0.9999987, job 585402), same as the TileLang body.
+    torch._addmm_activation(bias, x_norm2, weight, use_gelu=True, out=out.view(M, VISION_FFN))
     return out
 
 
