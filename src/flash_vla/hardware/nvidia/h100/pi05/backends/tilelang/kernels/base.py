@@ -84,8 +84,8 @@ def _gelu(v):
 def _matmul(A, B, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_STAGES: int, THREADS: int):
     """C = A @ B.
 
-    Body shared by `tl_matmul` (decoder attn @ V, sub-wave, WS off) and
-    `tl_matmul_ws` (encoder QKV, high occupancy, WS on).
+    `tl_matmul` (decoder attn @ V, sub-wave, WS off). The encoder QKV site
+    that used the WS variant now runs `tl_matmul_rope_scatter`.
     """
     M, N, K = T.const("M, N, K")
     dtype = T.bfloat16
@@ -109,7 +109,6 @@ def _matmul(A, B, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_STAGES: int, 
 
 
 tl_matmul = variant(_matmul, "tl_matmul", warp_spec=False)
-tl_matmul_ws = variant(_matmul, "tl_matmul_ws", warp_spec=True)
 
 
 def _matmul_res(A, B, R, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_STAGES: int,
@@ -679,61 +678,74 @@ def tl_qkv_gemm_rope(A, F, W, Rope, OutQ, OutK, OutV, BLOCK_M: int, BLOCK_N: int
             T.copy(C_shared, OutV[pid_m * BLOCK_M, n0 - q_dim - HEAD_DIM])
 
 
-@kernel
-def tl_rope_scatter_bf16(C, Rope, OutQ, OutK, OutV, BLOCK_M: int, BLOCK_PAIR: int, THREADS: int,
-                         HEAD_DIM: int, NUM_HEADS: int):
-    """Encoder RoPE + scatter, applied to an already-projected bf16 buffer.
+@kernel(warp_spec=False)
+def tl_matmul_rope_scatter(A, W, Rope, OutQ, OutK, OutV, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int,
+                           NUM_STAGES: int, THREADS: int, HEAD_DIM: int, NUM_HEADS: int):
+    """Encoder QKV: project, round to bf16, rotate Q/K pairs in fp32, scatter to Q/K/V.
 
-    Rounds to bf16 before rotating, matching the upstream encoder kernel -- the
-    opposite order from `tl_qkv_gemm_rope`, which is why the two are separate.
-    Requires BLOCK_PAIR to divide HEAD_DIM // 2; the loop is over column pairs,
-    so each tile stays inside one of Q, K, V.
+    A is the already-normalized (M, K) activation, W (K, N) with
+    N = (NUM_HEADS + 2) * HEAD_DIM packed as [Q | K | V], Rope (M, HEAD_DIM)
+    interleaved (cos, sin). OutQ is (M, NUM_HEADS * HEAD_DIM), OutK and OutV
+    are (M, HEAD_DIM); every row < M of each is written, nothing else.
+
+    The order is round-then-rotate, the opposite of `tl_qkv_gemm_rope`: the
+    fp32 accumulator is staged through a bf16 shared tile, which is exactly
+    the rounding the former packed projection buffer applied, and the rotation
+    runs in fp32 on those rounded values before the final bf16 store. The
+    output is therefore bit-identical to the retired GEMM + rope-scatter pair.
+
+    Requires BLOCK_N to divide HEAD_DIM so a tile never straddles a head or
+    the Q/K/V boundary. M need not be a multiple of BLOCK_M: the rope read is
+    row-guarded and the stores rely on T.copy's boundary predication. Warp
+    specialization is off: at the encoder shape the no-WS 128x64 tiling is
+    what makes the epilogue free (see the owning Agent Note).
     """
-    M, N = T.const("M, N")
+    M, N, K = T.const("M, N, K")
     dtype = T.bfloat16
     accum_dtype = T.float32
     q_dim = NUM_HEADS * HEAD_DIM
-    C: T.Tensor((M, N), dtype)
+    A: T.Tensor((M, K), dtype)
+    W: T.Tensor((K, N), dtype)
     Rope: T.Tensor((M, HEAD_DIM), dtype)
     OutQ: T.Tensor((M, q_dim), dtype)
     OutK: T.Tensor((M, HEAD_DIM), dtype)
     OutV: T.Tensor((M, HEAD_DIM), dtype)
     rope_cols = (NUM_HEADS + 1) * HEAD_DIM
 
-    with T.Kernel(T.ceildiv(N // 2, BLOCK_PAIR), T.ceildiv(M, BLOCK_M), threads=THREADS) as (pid_p, pid_m):
-        pair0 = pid_p * BLOCK_PAIR
-        j0_tile = pair0 * 2
-        if j0_tile < q_dim:
-            for i, p in T.Parallel(BLOCK_M, BLOCK_PAIR):
+    with T.Kernel(T.ceildiv(N, BLOCK_N), T.ceildiv(M, BLOCK_M), threads=THREADS) as (pid_n, pid_m):
+        A_shared = T.alloc_shared((BLOCK_M, BLOCK_K), dtype)
+        W_shared = T.alloc_shared((BLOCK_K, BLOCK_N), dtype)
+        C_shared = T.alloc_shared((BLOCK_M, BLOCK_N), dtype)
+        C_local = T.alloc_fragment((BLOCK_M, BLOCK_N), accum_dtype)
+
+        T.clear(C_local)
+        for ko in T.Pipelined(T.ceildiv(K, BLOCK_K), num_stages=NUM_STAGES):
+            T.copy(A[pid_m * BLOCK_M, ko * BLOCK_K], A_shared)
+            T.copy(W[ko * BLOCK_K, pid_n * BLOCK_N], W_shared)
+            T.gemm(A_shared, W_shared, C_local)
+
+        # The bf16 staging tile IS the packed-buffer rounding of the old route.
+        T.copy(C_local, C_shared)
+
+        n0 = pid_n * BLOCK_N
+        if n0 < rope_cols:
+            for i, p in T.Parallel(BLOCK_M, BLOCK_N // 2):
                 row = pid_m * BLOCK_M + i
-                j0 = (pair0 + p) * 2
-                j1 = j0 + 1
-                rj0 = j0 % HEAD_DIM
-                x0 = C[row, j0].astype(accum_dtype)
-                x1 = C[row, j1].astype(accum_dtype)
-                cos_v = Rope[row, rj0].astype(accum_dtype)
-                sin_v = Rope[row, rj0 + 1].astype(accum_dtype)
-                OutQ[row, j0] = (x0 * cos_v - x1 * sin_v).astype(dtype)
-                OutQ[row, j1] = (x1 * cos_v + x0 * sin_v).astype(dtype)
-        elif j0_tile < rope_cols:
-            for i, p in T.Parallel(BLOCK_M, BLOCK_PAIR):
-                row = pid_m * BLOCK_M + i
-                j0 = (pair0 + p) * 2
-                j1 = j0 + 1
-                rj0 = j0 % HEAD_DIM
-                x0 = C[row, j0].astype(accum_dtype)
-                x1 = C[row, j1].astype(accum_dtype)
-                cos_v = Rope[row, rj0].astype(accum_dtype)
-                sin_v = Rope[row, rj0 + 1].astype(accum_dtype)
-                OutK[row, j0 - q_dim] = (x0 * cos_v - x1 * sin_v).astype(dtype)
-                OutK[row, j1 - q_dim] = (x1 * cos_v + x0 * sin_v).astype(dtype)
+                if row < M:
+                    rj0 = (n0 + 2 * p) % HEAD_DIM
+                    x0 = C_shared[i, 2 * p].astype(accum_dtype)
+                    x1 = C_shared[i, 2 * p + 1].astype(accum_dtype)
+                    cos_v = Rope[row, rj0].astype(accum_dtype)
+                    sin_v = Rope[row, rj0 + 1].astype(accum_dtype)
+                    C_shared[i, 2 * p] = (x0 * cos_v - x1 * sin_v).astype(dtype)
+                    C_shared[i, 2 * p + 1] = (x1 * cos_v + x0 * sin_v).astype(dtype)
+
+        if n0 < q_dim:
+            T.copy(C_shared, OutQ[pid_m * BLOCK_M, n0])
+        elif n0 < q_dim + HEAD_DIM:
+            T.copy(C_shared, OutK[pid_m * BLOCK_M, n0 - q_dim])
         else:
-            for i, p in T.Parallel(BLOCK_M, BLOCK_PAIR):
-                row = pid_m * BLOCK_M + i
-                j0 = (pair0 + p) * 2
-                j1 = j0 + 1
-                OutV[row, j0 - q_dim - HEAD_DIM] = C[row, j0]
-                OutV[row, j1 - q_dim - HEAD_DIM] = C[row, j1]
+            T.copy(C_shared, OutV[pid_m * BLOCK_M, n0 - q_dim - HEAD_DIM])
 
 
 # ---------------------------------------------------------------------------

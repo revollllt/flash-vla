@@ -182,8 +182,10 @@ VISION_WRAPPERS = {
 _ENC_PROJ_NORM = dict(BLOCK_M=1, BLOCK_K=1152, THREADS=128)
 _ENC_PROJ = dict(BLOCK_M=128, BLOCK_N=128, BLOCK_K=128, NUM_STAGES=3, THREADS=256)
 _ENC_RMS = dict(BLOCK_M=1, BLOCK_K=128, THREADS=128)
-_ENC_QKV = dict(BLOCK_M=128, BLOCK_N=128, BLOCK_K=64, NUM_STAGES=4, THREADS=256)
-_ENC_ROPE = dict(BLOCK_M=64, BLOCK_PAIR=128, THREADS=256)
+# No-WS 128x64 is load-bearing for the fused QKV kernel: at the old GEMM's
+# 128x128 WS config the same body measures 42 us against 29 us here (job
+# 585370, cold weights, same timer). BLOCK_N must divide HEAD_DIM.
+_ENC_QKV_ROPE = dict(BLOCK_M=128, BLOCK_N=64, BLOCK_K=64, NUM_STAGES=3, THREADS=128)
 _ENC_OUT_PROJ = dict(BLOCK_M=128, BLOCK_N=128, BLOCK_K=64, NUM_STAGES=4, THREADS=256, SWIZZLE=0)
 _ENC_GATE = dict(BLOCK_M=128, BLOCK_N=128, BLOCK_K=128, NUM_STAGES=2, THREADS=256, SWIZZLE=8)
 _ENC_FFN_DOWN = dict(BLOCK_M=128, BLOCK_N=128, BLOCK_K=128, NUM_STAGES=3, THREADS=256, SWIZZLE=8)
@@ -204,11 +206,14 @@ def encoder_projector(x, norm_w, norm_b, proj_w, proj_b, out, x_norm):
 
 
 def encoder_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, x_norm):
-    """RMSNorm, QKV projection, then RoPE scattered into Q/K/V (upstream rms_matmul_n_2048_2560_qkv_rope).
+    """RMSNorm, then one kernel that projects, rotates and scatters into Q/K/V (upstream rms_matmul_n_2048_2560_qkv_rope).
 
-    Three kernels rather than the decoder's one: the encoder normalizes x before
-    the GEMM instead of folding a factor into it, and rounds to bf16 before
-    rotating. Both orderings match upstream and are not interchangeable.
+    Two kernels rather than the decoder's one: the encoder normalizes x to bf16
+    before the GEMM instead of folding a per-row factor into it, and rounds the
+    projection to bf16 before rotating. Both orderings match upstream and are
+    not interchangeable. The bf16 rounding of the former packed projection
+    buffer survives as the fused kernel's staging tile, so the output is
+    bit-identical to the retired GEMM + rope-scatter pair.
     """
     M, Kdim = x.shape
     N = weight_qkv.shape[1]
@@ -216,10 +221,9 @@ def encoder_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, x_norm):
     num_heads = Q.shape[0] // M
 
     _compiled(kernels.tl_rms_norm, M=M, K=Kdim, **_ENC_RMS)(x, x_norm[:M])
-    projected = scratch("encoder_qkv", (M, N), x.dtype, x.device)
-    _compiled(kernels.tl_matmul_ws, M=M, N=N, K=Kdim, **_ENC_QKV)(x_norm[:M], weight_qkv, projected)
-    _compiled(kernels.tl_rope_scatter_bf16, M=M, N=N, HEAD_DIM=head_dim, NUM_HEADS=num_heads,
-              **_ENC_ROPE)(projected, rope, Q.view(M, num_heads * head_dim), K, V)
+    _compiled(kernels.tl_matmul_rope_scatter, M=M, N=N, K=Kdim, HEAD_DIM=head_dim,
+              NUM_HEADS=num_heads, **_ENC_QKV_ROPE)(
+        x_norm[:M], weight_qkv, rope, Q.view(M, num_heads * head_dim), K, V)
 
 
 def encoder_out_proj_residual(x, weight, out):

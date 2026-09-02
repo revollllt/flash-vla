@@ -41,8 +41,7 @@ PREFIX_PROLOGUE = [("encoder_projector", "tl_layer_norm_kernel"),
                    ("encoder_embed_prompt", "vectorized_gather_kernel"),
                    ("encoder_embed_prompt", "elementwise_kernel")]
 PREFIX_LAYER = [("qkv:rms_norm", "tl_rms_norm_kernel"),
-                ("qkv:gemm", "_matmul_kernel"),
-                ("qkv:rope_scatter", "tl_rope_scatter_bf16_kernel"),
+                ("qkv:gemm_rope", "tl_matmul_rope_scatter_kernel"),
                 ("attn:qk", "nvjet"),
                 ("attn:softmax", "triton_per_fused"),
                 ("attn:pv", "nvjet"),
@@ -50,7 +49,7 @@ PREFIX_LAYER = [("qkv:rms_norm", "tl_rms_norm_kernel"),
                 ("ffn:rms_norm", "tl_rms_norm_kernel"),
                 ("ffn:gate_up", "tl_matmul_gate_kernel"),
                 ("ffn:down", "_matmul_res_kernel")]
-PREFIX_TAIL = PREFIX_LAYER[:3]          # the final layer's QKV-only pass
+PREFIX_TAIL = PREFIX_LAYER[:2]          # the final layer's QKV-only pass
 
 #: `pipeline.decoder`, one flow step: an in-projection, 18 layers, an out-projection.
 #: The per-layer body depends on the call-site plan the engine was built with
