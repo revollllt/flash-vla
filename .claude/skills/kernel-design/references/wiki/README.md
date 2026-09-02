@@ -24,6 +24,8 @@ consults this table before proposing a move; a human reads it the same way.
 | TMA reads stale data after a counter wait; smem swizzle offset bugs | [layout-production-budget](layout-production-budget.md) caveats |
 | cluster_sync placement, DSMEM reduction, mbarrier scope | [cluster-barrier-placement](cluster-barrier-placement.md) |
 | persistent-kernel timing looks absurd; cross-job deltas unstable | [measuring-persistent-kernels](measuring-persistent-kernels.md) |
+| short-K GEMM at ~30% MFU; tile sweep flat; cuBLAS faster at the same shape | [epilogue-staging-short-k](epilogue-staging-short-k.md) |
+| cold weight stream at ~40-60% of DRAM; ring depth / box / CTA count all null | [cold-burst-ceiling](cold-burst-ceiling.md) |
 | unfamiliar archetype: small-M GEMM / decode attention / megakernel | `ext-deepgemm-sm90`, `ext-flashmla-sm90`, `ext-fa3-pingpong`, `ext-mpk-megakernel` |
 
 ## Entry format
