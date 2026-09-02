@@ -39,8 +39,8 @@ import torch
 _HERE = Path(__file__).resolve().parent
 _SRC = _HERE / "kernels" / "ffn_taskloop.cu"
 _REPO = _HERE.parents[7]  # .../backends/cuda -> src/flash_vla/... -> repo root
-_CUTLASS = Path(os.environ.get("CUTLASS_DIR", "/data/user/jzou521/codes/cuda/cutlass"))
-_FLASHMLA = _REPO / "third_party" / "flashmla" / "csrc"
+_CUTLASS = Path(os.environ.get("CUTLASS_DIR", _REPO / "third_party" / "cutlass"))
+_TILE_ROOT = _REPO / "src" / "flash_vla" / "hardware" / "nvidia" / "cuda"
 
 N_CTAS_FULL = 132
 FF = 4096
@@ -204,6 +204,8 @@ def _build_dir() -> Path:
     # the hash a .cuh edit would silently reuse a stale .so.
     for header in sorted(_SRC.parent.glob("sm90_ffn_*.cuh")):
         hasher.update(header.read_bytes())
+    for header in sorted((_TILE_ROOT / "tile" / "sm90").glob("*.cuh")):
+        hasher.update(header.read_bytes())
     hasher.update(" ".join(_extra_flags()).encode())
     tag = hasher.hexdigest()[:16]
     d = _REPO / ".cache" / "cuda_ext" / f"ffn_taskloop_{tag}"
@@ -221,7 +223,7 @@ def build(verbose: bool = False) -> Path:
         "nvcc", "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
         "-arch=sm_90a", "--expt-relaxed-constexpr", *_extra_flags(),
         f"-I{_CUTLASS}/include",
-        f"-I{_FLASHMLA}",
+        f"-I{_TILE_ROOT}",
         "-o", str(out), str(_SRC),
         f"-L{cuda_home}/lib64/stubs", "-lcuda",
     ]

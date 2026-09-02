@@ -13,7 +13,8 @@
 // per-CTA descriptor row, with no runtime scheduler or work queue.
 //
 // Build: nvcc -O3 -std=c++17 --shared -Xcompiler -fPIC -arch=sm_90a
-//        --expt-relaxed-constexpr -I$CUTLASS_DIR/include ffn_taskloop.cu -lcuda
+//        --expt-relaxed-constexpr -I$CUTLASS_DIR/include
+//        -I<repo>/src/flash_vla/hardware/nvidia/cuda ffn_taskloop.cu -lcuda
 
 #include <cuda.h>
 #include <cuda_bf16.h>
@@ -28,13 +29,15 @@
 #include "sm90_ffn_barriers.cuh"
 #include "sm90_ffn_gemm.cuh"
 #include "sm90_ffn_warp_roles.cuh"
-#include "sm90/helpers.h"
+#include "tile/sm90/sm90.cuh"
+#include "tile/sm90/tma_host.cuh"
 
 namespace ffn {
 
 using namespace cute;
 using BF = cutlass::bfloat16_t;
 namespace ref = flash_vla::pi05::sm90::ffn;
+namespace tile = flash_vla::sm90;
 using TaskDescriptor = ref::TaskDescriptor;
 using TaskKind = ref::TaskKind;
 using WarpRoles = ref::WarpRoles;
@@ -205,15 +208,15 @@ using GatedUpSmemLayoutB = decltype(tile_to_shape(
 // 132.4 -- 1.49x, and register-neutral: a 64x64 accumulator is 32 f32/thread,
 // exactly what acc1 + acc2 cost. DownResidual keeps the N=32 atom; its output tile is
 // 32 wide and it has no second operand to pair.
-using FullBar  = cutlass::arch::ClusterTransactionBarrier;  // mbarrier-tx
-using EmptyBar = cutlass::arch::ClusterBarrier;             // mbarrier
-using TiledMma = typename ref::DownResidualGemm::TiledMma;
+using FullBar  = tile::FullBarrier;   // mbarrier-tx
+using EmptyBar = tile::EmptyBarrier;  // mbarrier
+using TiledMma = ref::Gemm<M_PAD, BN, DOWN_RESIDUAL_BLOCK_K, GMMA::Major::K,
+                           GMMA::Major::MN>::TiledMma;
 // Global XFS is logical [K,M] and TMA makes M the contiguous 128-byte row.
 // The resulting shared operand is therefore MN-major for GMMA, matching the
 // measured BK256 upper-bound profile rather than the row-major production A.
-using TiledMmaWide = decltype(make_tiled_mma(
-    SM90_64x64x16_F32BF16BF16_SS<GMMA::Major::MN,
-                                  GMMA::Major::MN>{}));
+using TiledMmaWide = ref::Gemm<M_PAD, 2 * BN, GATED_UP_BLOCK_K, GMMA::Major::MN,
+                               GMMA::Major::MN>::TiledMma;
 using TaskDesc = TaskDescriptor;  // taskgraph.queue; binary ABI is unchanged
 using BarrierViews = ref::BarrierViews<FullBar, EmptyBar, GATED_UP_WEIGHT_DEPTH,
                                        DOWN_RESIDUAL_WEIGHT_DEPTH, DOWN_RESIDUAL_ACTIVATION_DEPTH>;
@@ -290,60 +293,10 @@ struct DownProjectionResidualSharedStorageView {
 };
 
 // --------------------------------------------------------------- device utils
-__device__ __forceinline__ uint32_t smem_u32(const void* p) {
-  return static_cast<uint32_t>(__cvta_generic_to_shared(p));
-}
+using tile::smem_u32;
 
-namespace tma {
-
-// Device-side issue layer. Host descriptor construction is kept separate.
-// Every helper is called by one elected producer lane; coords are {inner, outer}.
-__device__ __forceinline__ void load_2d(
-    const CUtensorMap* map, void* dst, int32_t c_inner, int32_t c_outer,
-    uint64_t* bar) {
-  uint32_t d = smem_u32(dst), b = smem_u32(bar);
-  asm volatile(
-      "cp.async.bulk.tensor.2d.shared::cluster.global.mbarrier::complete_tx::bytes"
-      " [%0], [%1, {%2, %3}], [%4];"
-      :: "r"(d), "l"(map), "r"(c_inner), "r"(c_outer), "r"(b) : "memory");
-}
-
-// DeepGEMM marks one-shot TMA loads EVICT_FIRST so streamed weights do not
-// displace the reused XFS working set from L2. Keep activation loads normal.
-__device__ __forceinline__ void load_weight_2d_evict_first(
-    const CUtensorMap* map, void* dst, int32_t c_inner, int32_t c_outer,
-    uint64_t* bar) {
-  uint32_t d = smem_u32(dst), b = smem_u32(bar);
-  constexpr uint64_t hint = static_cast<uint64_t>(
-      cute::TMA::CacheHintSm90::EVICT_FIRST);
-  asm volatile(
-      "cp.async.bulk.tensor.2d.shared::cluster.global.mbarrier::complete_tx::bytes"
-      ".L2::cache_hint [%0], [%1, {%2, %3}], [%4], %5;"
-      :: "r"(d), "l"(map), "r"(c_inner), "r"(c_outer), "r"(b), "l"(hint)
-      : "memory");
-}
-
-// Tensor prefetch has no shared-memory destination and no completion barrier.
-// It moves the tensor-map tile toward L2; the later ordinary TMA load remains
-// the sole operation that owns the weight transaction barrier.
-__device__ __forceinline__ void prefetch_2d_to_l2(
-    const CUtensorMap* map, int32_t c_inner, int32_t c_outer) {
-  asm volatile(
-      "cp.async.bulk.prefetch.tensor.2d.L2.global [%0, {%1, %2}];"
-      :: "l"(map), "r"(c_inner), "r"(c_outer) : "memory");
-}
-
-// Plain 1D bulk-copy helper retained for profiles that transport side data.
-__device__ __forceinline__ void load_1d(
-    void* dst, const void* src, uint32_t bytes, uint64_t* bar) {
-  uint32_t d = smem_u32(dst), b = smem_u32(bar);
-  asm volatile(
-      "cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes"
-      " [%0], [%1], %2, [%3];"
-      :: "r"(d), "l"(src), "r"(bytes), "r"(b) : "memory");
-}
-
-}  // namespace tma
+// TMA issue goes through tile/sm90/copy_g2s.cuh; host descriptor
+// construction stays in the host section below.
 
 // spec: grid.persistence.phase_ordering -- release: fence then red.add
 __device__ __forceinline__ void counter_release(uint32_t* c) {
@@ -369,15 +322,10 @@ __device__ __forceinline__ void wd_fire(long long* dbg, int site, int g) {
 // mbarrier parity wait with the watchdog; replaces the cutlass .wait() loop
 __device__ __forceinline__ void wait_bar_wd(uint64_t* bar, uint32_t phase,
                                             int site, int g, long long* dbg) {
-  uint32_t addr = smem_u32(bar);
   uint32_t done = 0;
   long long t0 = clock64();
   while (!done) {
-    asm volatile(
-        "{\n .reg .pred p;\n"
-        " mbarrier.try_wait.parity.shared::cta.b64 p, [%1], %2;\n"
-        " selp.u32 %0, 1, 0, p;\n}"
-        : "=r"(done) : "r"(addr), "r"(phase));
+    done = tile::mbarrier_try_wait_parity(bar, phase);
     if (!done && clock64() - t0 > WATCHDOG_CYCLES) wd_fire(dbg, site, g);
   }
 }
@@ -443,8 +391,8 @@ __device__ __forceinline__ void gated_projection_activation_loader(
     BF* activation_frame = shared.activation_frame(i);
     if (cute::elect_one_sync()) {
       full_a[i].arrive_and_expect_tx(GATED_UP_ACTIVATION_FRAME_BYTES);
-      tma::load_2d(task.xfs_tensor_map, activation_frame, 0, k,
-                   reinterpret_cast<uint64_t*>(&full_a[i]));
+      tile::tma_load_2d(task.xfs_tensor_map, activation_frame, 0, k,
+                        reinterpret_cast<uint64_t*>(&full_a[i]));
     }
   }
 }
@@ -468,7 +416,10 @@ __device__ __forceinline__ void gated_projection_weight_loader(
     // Interleaved gate/up weights: each blocked row is [W1(32), W2(32)].
     if (cute::elect_one_sync()) {
       full_w[s].arrive_and_expect_tx(GATED_UP_WEIGHT_FRAME_BYTES);
-      tma::load_weight_2d_evict_first(
+      // One-shot weight stream: EVICT_FIRST (as DeepGEMM marks streamed
+      // operands) keeps it from displacing the reused XFS working set in L2;
+      // activation loads stay at the default policy.
+      tile::tma_load_2d<tile::L2Hint::kEvictFirst>(
           task.weight_tensor_map, shared.weight_frame(s),
           0, (n >> 5) * D + i * GATED_UP_BLOCK_K,
           reinterpret_cast<uint64_t*>(&full_w[s]));
@@ -476,7 +427,7 @@ __device__ __forceinline__ void gated_projection_weight_loader(
       // resources, then move stage 1 toward L2 immediately before its load.
       // Prefetching at loader entry delays the critical stage-0 transaction.
       if (i == 0) {
-        tma::prefetch_2d_to_l2(
+        tile::tma_prefetch_2d_l2(
             task.weight_tensor_map, 0,
             (n >> 5) * D + (i + 1) * GATED_UP_BLOCK_K);
       }
@@ -520,9 +471,9 @@ __device__ __forceinline__ void gated_projection_math(
                                   GatedUpSmemLayoutB{});
       Tensor tCrA = thr.make_fragment_A(thr.partition_A(sA));
       Tensor tCrB = thr.make_fragment_B(thr.partition_B(sBwide));
-      // FlashMLA's CuTe wrapper keeps the fence/arrive/commit ordering next
-      // to the GEMM contract instead of repeating raw choreography here.
-      ::sm90::gemm<false, -1, true, true>(mma, tCrA, tCrB, acc);
+      // tile::gemm owns the fence/arrive/commit choreography (ported from
+      // FlashMLA / FA3), so the call site states only the batch policy.
+      tile::gemm<false, -1, true, true>(mma, tCrA, tCrB, acc);
       // Keep one committed group outstanding. Once g-1 retires, release its
       // shared-memory frame independently of the three-stage TMA ring depth.
       if (g >= GATED_UP_WGMMA_WAIT) {
@@ -618,7 +569,7 @@ __device__ __forceinline__ void down_projection_weight_loader(
           // prefetch. The handshake protects the full_a[0] phase from ABA;
           // it does not make the prefetch part of activation's dependency.
           stage4_prefetch_ready->arrive();
-          tma::prefetch_2d_to_l2(
+          tile::tma_prefetch_2d_l2(
               task.weight_tensor_map, 0, (n >> 5) * FF + k);
         }
       }
@@ -631,7 +582,7 @@ __device__ __forceinline__ void down_projection_weight_loader(
     // whole warp runs the producer body it must be explicit here.
     if (cute::elect_one_sync()) {
       full_w[sw].arrive_and_expect_tx(DOWN_RESIDUAL_WEIGHT_FRAME_BYTES);
-      tma::load_2d(
+      tile::tma_load_2d(
           task.weight_tensor_map, shared.weight_frame(sw),
           0, (n >> 5) * FF + k,
           reinterpret_cast<uint64_t*>(&full_w[sw]));
@@ -675,15 +626,15 @@ __device__ __forceinline__ void down_projection_activation_loader(
     if (cute::elect_one_sync()) {
       // GatedProjection publishes hidden through generic global stores while
       // this TMA load reads it through the async proxy.
-      asm volatile("fence.proxy.async.global;" ::: "memory");
+      tile::fence_proxy_async_global();
       full_a[sa].arrive_and_expect_tx(
           DOWN_RESIDUAL_ACTIVATION_FRAME_BYTES);
       // SW128 limits the hidden descriptor's innermost box to [K64, M64].
       // Two adjacent 8 KiB loads fill this BK128 frame and share one 16 KiB
       // completion barrier, so math observes the stage atomically.
-      tma::load_2d(task.hidden_tensor_map, Ah, k, 0,
-                   reinterpret_cast<uint64_t*>(&full_a[sa]));
-      tma::load_2d(
+      tile::tma_load_2d(task.hidden_tensor_map, Ah, k, 0,
+                        reinterpret_cast<uint64_t*>(&full_a[sa]));
+      tile::tma_load_2d(
           task.hidden_tensor_map,
           reinterpret_cast<uint8_t*>(Ah) +
               DOWN_RESIDUAL_HIDDEN_TMA_BYTES,
@@ -723,7 +674,7 @@ __device__ __forceinline__ void down_projection_math(
                                DownResidualSmemLayoutB{});
       Tensor tCrA = thr.make_fragment_A(thr.partition_A(sAh));
       Tensor tCrB = thr.make_fragment_B(thr.partition_B(sWd));
-      ::sm90::gemm<false, -1, true, true>(mma, tCrA, tCrB, acc);
+      tile::gemm<false, -1, true, true>(mma, tCrA, tCrB, acc);
       if (g > 0) {
         warpgroup_wait<1>();
         __syncwarp();
@@ -954,21 +905,15 @@ __global__ void reset_ffn_counters_kernel(
 }
 
 // ------------------------------------------------------ host TMA descriptors
-// Descriptor preparation is separate from the device-side `tma::load_*` layer.
+// Descriptor preparation is separate from the device-side tile::tma_load_* layer.
 static CUtensorMap encode_bf16_tensor_map_2d(
     const void* global_address, uint64_t inner_extent, uint64_t outer_extent,
     uint32_t box_inner, uint32_t box_outer, CUtensorMapSwizzle swizzle,
     CUresult* result) {
   CUtensorMap tensor_map{};
-  uint64_t dims[2] = {inner_extent, outer_extent};
-  uint64_t strides[1] = {inner_extent * 2};
-  uint32_t box[2] = {box_inner, box_outer};
-  uint32_t element_strides[2] = {1, 1};
-  *result = cuTensorMapEncodeTiled(
-      &tensor_map, CU_TENSOR_MAP_DATA_TYPE_BFLOAT16, 2,
-      const_cast<void*>(global_address), dims, strides, box, element_strides,
-      CU_TENSOR_MAP_INTERLEAVE_NONE, swizzle,
-      CU_TENSOR_MAP_L2_PROMOTION_L2_128B, CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
+  *result = tile::encode_tensor_map_2d<BF>(
+      &tensor_map, global_address, inner_extent, outer_extent,
+      inner_extent * sizeof(BF), box_inner, box_outer, swizzle);
   return tensor_map;
 }
 

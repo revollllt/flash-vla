@@ -19,8 +19,10 @@ not imported into this fixed offline task graph.
 - Packed gate/up weights are documented as one interleaved 64-column tensor;
   the legacy second pointer remains ABI-compatible and unused by the kernel.
 - The current BK=64, 224-thread, 132-CTA geometry is unchanged in this pass.
-- FlashMLA's CuTe `sm90::gemm` wrapper is reused for WGMMA choreography, while
-  repository-specific task dependencies and static dispatch remain local.
+- WGMMA choreography and TMA issue come from the shared SM90 tile primitive
+  library (see `2026-09-02-sm90-tile-primitive-library.md`), which carries
+  the FlashMLA / FlashAttention-3 gemm contract; repository-specific task
+  dependencies and static dispatch remain local.
 - This cleanup is not claimed as a speedup: the next optimization pass must
   recover the small benchmark regression before changing geometry.
 

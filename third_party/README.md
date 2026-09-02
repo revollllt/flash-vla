@@ -1,13 +1,18 @@
-# Vendored CUDA kernel references
+# Vendored CUDA dependencies and references
 
-These are read-only submodule checkouts used as SM90 reference sources for the
-action-expert kernel. The top-level `.gitmodules` records the official URLs;
-`git clone --recurse-submodules` restores the pinned revisions and their
-upstream LICENSE files, so a clean checkout has the headers required by the
-CuTe build.
+Submodule checkouts. The top-level `.gitmodules` records the official URLs;
+`git clone --recurse-submodules` (or `git submodule update --init`) restores
+the pinned revisions and their upstream LICENSE files.
+
+CUTLASS is the one build dependency: the CUDA backends and the SM90 tile
+primitives (`src/flash_vla/hardware/nvidia/cuda/tile/`) include CuTe from
+`third_party/cutlass/include`. The build wrappers default `CUTLASS_DIR` to
+this checkout; set the variable to point at another tree. FlashMLA and
+DeepGEMM are read-only reference sources and are not on any include path.
 
 | component | upstream | pinned revision | upstream submodules | license |
 | --- | --- | --- | --- | --- |
+| CUTLASS | https://github.com/NVIDIA/cutlass | `v4.7.1` (latest stable release at pin time) | none required for the header-only CuTe build | `cutlass/LICENSE.txt` |
 | FlashMLA | https://github.com/deepseek-ai/FlashMLA | `15f13e5030374295491c5ce31b02d7e63a7772c6` | CUTLASS `147f5673d0c1c3dcf66f78d677fd647e4a020219` | `flashmla/LICENSE` |
 | DeepGEMM | https://github.com/deepseek-ai/DeepGEMM | `559d79fb6994a58b8a15b4b93bf13ccc16edf247` | CUTLASS `f3fde58372d33e9a5650ba7b80fc48b3b49d40c8`, fmt `553ec11ec06fbe0beebfbb45f9dc3c9eabd83d28` | `deepgemm/LICENSE` |
 
@@ -47,7 +52,10 @@ CuTe build.
   machine-profile-driven choice of block sizes, swizzle modes, stage count,
   shared-memory budget, warp counts, and wave-efficiency scoring.
 
-The references are not included in the FFN build as runtime dependencies. New code should copy
-only the small helper or contract needed, preserve upstream attribution, and
-keep repository-specific task descriptors and dependency protocols outside
-the vendored trees.
+The references are not build dependencies. The reusable contracts they
+demonstrate (the WGMMA fence/arrive/commit choreography, the TMA box
+splitting by swizzle span, the instruction selector tables) live in
+`src/flash_vla/hardware/nvidia/cuda/tile/` with upstream attribution; new
+code composes that library rather than copying from the vendored trees, and
+keeps repository-specific task descriptors and dependency protocols outside
+them.

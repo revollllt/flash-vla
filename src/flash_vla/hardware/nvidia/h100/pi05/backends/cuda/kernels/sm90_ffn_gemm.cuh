@@ -1,21 +1,19 @@
 #pragma once
 
+#include "tile/sm90/gemm.cuh"
+
 namespace flash_vla::pi05::sm90::ffn {
 
-// CuTe-facing names for the two GEMM contracts.  Keeping the atom selection
-// in one place makes the N=64 GatedUp and N=32 DownResidual choices visible at the call site.
-template <typename Atom>
-struct GemmTraits {
-  using AtomType = Atom;
-  using TiledMma = decltype(cute::make_tiled_mma(Atom{}));
-};
-
-using DownResidualGemm = GemmTraits<
-    cute::SM90_64x32x16_F32BF16BF16_SS<
-        cute::GMMA::Major::K, cute::GMMA::Major::MN>>;
-
-using GatedUpGemm = GemmTraits<
-    cute::SM90_64x64x16_F32BF16BF16_SS<
-        cute::GMMA::Major::K, cute::GMMA::Major::MN>>;
+// The FFN GEMM contract: bf16 operands in shared memory, f32 accumulation,
+// one math warpgroup.  The tile library selects the wgmma instruction from
+// (M, N, K, majors); the task bodies name their geometry through this alias
+// so the N=64 GatedUp and N=32 DownResidual choices stay visible at the call
+// site instead of as spelled-out instruction names.
+template <int M, int N, int K, flash_vla::sm90::Major MajorA,
+          flash_vla::sm90::Major MajorB>
+using Gemm = flash_vla::sm90::MmaSelector<
+    flash_vla::sm90::BF16, flash_vla::sm90::BF16, M, N, K,
+    flash_vla::sm90::Operand::kSmem, flash_vla::sm90::Operand::kSmem,
+    MajorA, MajorB>;
 
 }  // namespace flash_vla::pi05::sm90::ffn

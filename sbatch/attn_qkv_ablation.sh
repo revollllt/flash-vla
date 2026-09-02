@@ -10,7 +10,7 @@
 #SBATCH --error=sbatch/logs/%x_%j.err
 set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$PWD}/sbatch/_common.sh"
-export CUTLASS_DIR="${CUTLASS_DIR:-/data/user/jzou521/codes/cuda/cutlass}"
+export CUTLASS_DIR="${CUTLASS_DIR:-${REPO_DIR}/third_party/cutlass}"
 require_cuda
 report_env
 for d in "" "-DATTN_ABL_QKV_NO_X -DATTN_ABL_QKV_NO_W" "-DATTN_ABL_QKV_NO_X -DATTN_ABL_QKV_NO_W -DATTN_ABL_QKV_NO_SCALE" "-DATTN_ABL_QKV_NO_X -DATTN_ABL_QKV_NO_W -DATTN_ABL_QKV_NO_MMA" "-DATTN_ABL_QKV_NO_X -DATTN_ABL_QKV_NO_W -DATTN_ABL_QKV_NO_SCALE -DATTN_ABL_QKV_NO_MMA"; do

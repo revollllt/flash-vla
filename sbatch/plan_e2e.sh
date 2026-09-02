@@ -14,7 +14,7 @@
 #   PLAN=attn-cuda E2E_REPS=30 sbatch sbatch/plan_e2e.sh
 set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$PWD}/sbatch/_common.sh"
-export CUTLASS_DIR="${CUTLASS_DIR:-/data/user/jzou521/codes/cuda/cutlass}"
+export CUTLASS_DIR="${CUTLASS_DIR:-${REPO_DIR}/third_party/cutlass}"
 export PALIGEMMA_TOKENIZER="${PALIGEMMA_TOKENIZER:-/data/user/jzou521/models/openpi/big_vision/paligemma_tokenizer.model}"
 export FLASH_VLA_BUILD_VERBOSE=1
 PLAN="${PLAN:-attn-cuda}"

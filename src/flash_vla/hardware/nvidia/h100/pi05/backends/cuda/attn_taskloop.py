@@ -33,8 +33,8 @@ _HERE = Path(__file__).resolve().parent
 _SRC = _HERE / "kernels" / "attn_taskloop.cu"
 _HEADER = _HERE / "kernels" / "sm90_attn_task_desc.cuh"
 _REPO = _HERE.parents[7]
-_CUTLASS = Path(os.environ.get("CUTLASS_DIR", "/data/user/jzou521/codes/cuda/cutlass"))
-_FLASHMLA = _REPO / "third_party" / "flashmla" / "csrc"
+_CUTLASS = Path(os.environ.get("CUTLASS_DIR", _REPO / "third_party" / "cutlass"))
+_TILE_ROOT = _REPO / "src" / "flash_vla" / "hardware" / "nvidia" / "cuda"
 
 G = ref.geometry()
 N_CTAS, TASK_SLOTS = G["N_CTAS"], G["TASK_SLOTS"]
@@ -238,7 +238,11 @@ def _extra_flags() -> list[str]:
 
 
 def _build_dir() -> Path:
-    tag = hashlib.sha256(_SRC.read_bytes() + _HEADER.read_bytes()
+    # The tile primitive headers are part of the kernel; hash them so an
+    # edit there never reuses a stale .so.
+    tile_headers = b"".join(h.read_bytes() for h in
+                            sorted((_TILE_ROOT / "tile" / "sm90").glob("*.cuh")))
+    tag = hashlib.sha256(_SRC.read_bytes() + _HEADER.read_bytes() + tile_headers
                         + " ".join(_extra_flags()).encode()).hexdigest()[:16]
     d = _REPO / ".cache" / "cuda_ext" / f"attn_taskloop_{tag}"
     d.mkdir(parents=True, exist_ok=True)
@@ -255,7 +259,7 @@ def build(verbose: bool = False) -> Path:
     cmd = [
         nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
         "-arch=sm_90a", "--expt-relaxed-constexpr", *_extra_flags(),
-        f"-I{_CUTLASS}/include", f"-I{_FLASHMLA}",
+        f"-I{_CUTLASS}/include", f"-I{_TILE_ROOT}",
         "-o", str(out), str(_SRC),
         f"-L{cuda_home}/lib64/stubs", "-lcuda",
     ]

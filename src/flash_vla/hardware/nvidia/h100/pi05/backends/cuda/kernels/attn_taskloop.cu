@@ -18,7 +18,8 @@
 // slot boundary, so a slot never inherits phase state from the previous kind.
 //
 // Build: nvcc -O3 -std=c++17 --shared -Xcompiler -fPIC -arch=sm_90a
-//        --expt-relaxed-constexpr -I$CUTLASS_DIR/include -I$FLASHMLA_CSRC
+//        --expt-relaxed-constexpr -I$CUTLASS_DIR/include
+//        -I<repo>/src/flash_vla/hardware/nvidia/cuda
 //        attn_taskloop.cu -lcuda
 
 #include <cuda.h>
@@ -31,13 +32,15 @@
 #include <cutlass/arch/barrier.h>
 
 #include "sm90_attn_task_desc.cuh"
-#include "sm90/helpers.h"
+#include "tile/sm90/sm90.cuh"
+#include "tile/sm90/tma_host.cuh"
 
 namespace attn {
 
 using namespace cute;
 using BF = cutlass::bfloat16_t;
 namespace hdr = flash_vla::pi05::sm90::attn;
+namespace tile = flash_vla::sm90;
 using TaskDesc = hdr::TaskDescriptor;
 using TaskKind = hdr::TaskKind;
 using CM = hdr::CounterMap;
@@ -149,8 +152,8 @@ using SmemLayoutK = decltype(tile_to_shape(
 using SmemLayoutV = decltype(tile_to_shape(
     GMMA::Layout_MN_SW128_Atom<BF>{}, Shape<Int<DH>, Int<ATTN_BKK>>{}, Step<_2, _1>{}));
 
-using FullBar  = cutlass::arch::ClusterTransactionBarrier;
-using EmptyBar = cutlass::arch::ClusterBarrier;
+using FullBar  = tile::FullBarrier;   // mbarrier-tx
+using EmptyBar = tile::EmptyBarrier;  // mbarrier
 
 // spec math: wgmma atoms.  A second math warpgroup buys nothing [wgmma.ratio.sm.wg2].
 using MmaProj = decltype(make_tiled_mma(
@@ -173,9 +176,6 @@ using MmaQkv = decltype(make_tiled_mma(
 using MmaQkv = decltype(make_tiled_mma(
     SM90_64x64x16_F32BF16BF16_RS<GMMA::Major::K, GMMA::Major::MN>{}));
 #endif
-using SmemCopyAtomA = Copy_Atom<SM75_U32x4_LDSM_N, BF>;
-template <class TiledCopy>
-__device__ __forceinline__ auto smem_thr_copy_A_slice(const TiledCopy& c, int tid) { return c.get_thread_slice(tid); }
 using MmaS = decltype(make_tiled_mma(
     SM90_64x64x16_F32BF16BF16_SS<GMMA::Major::K, GMMA::Major::K>{}));
 static_assert(ATTN_BKK == 64, "MmaS atom N must equal the key block");
@@ -183,64 +183,28 @@ using MmaO = decltype(make_tiled_mma(
     SM90_64x256x16_F32BF16BF16_RS<GMMA::Major::K, GMMA::Major::MN>{}));
 
 // --------------------------------------------------------------- utilities
-__device__ __forceinline__ uint32_t smem_u32(const void* p) {
-  return static_cast<uint32_t>(__cvta_generic_to_shared(p));
-}
+using tile::smem_u32;
 
-__device__ __forceinline__ void issue_tma_2d(
-    const CUtensorMap* map, void* dst, int32_t c0, int32_t c1, uint64_t* bar) {
-  uint32_t d = smem_u32(dst), b = smem_u32(bar);
-  asm volatile(
-      "cp.async.bulk.tensor.2d.shared::cluster.global.mbarrier::complete_tx::bytes"
-      " [%0], [%1, {%2, %3}], [%4];"
-      :: "r"(d), "l"(map), "r"(c0), "r"(c1), "r"(b) : "memory");
-}
-
-__device__ __forceinline__ void issue_tma_3d(
-    const CUtensorMap* map, void* dst, int32_t c0, int32_t c1, int32_t c2, uint64_t* bar) {
-  uint32_t d = smem_u32(dst), b = smem_u32(bar);
-  asm volatile(
-      "cp.async.bulk.tensor.3d.shared::cluster.global.mbarrier::complete_tx::bytes"
-      " [%0], [%1, {%2, %3, %4}], [%5];"
-      :: "r"(d), "l"(map), "r"(c0), "r"(c1), "r"(c2), "r"(b) : "memory");
-}
-
-__device__ __forceinline__ void issue_bulk_1d(
-    void* dst, const void* src, uint32_t bytes, uint64_t* bar) {
-  uint32_t d = smem_u32(dst), b = smem_u32(bar);
-  asm volatile(
-      "cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes"
-      " [%0], [%1], %2, [%3];"
-      :: "r"(d), "l"(src), "r"(bytes), "r"(b) : "memory");
-}
-
-// Bulk store of a contiguous smem image to global, issued by one thread.
-// Publishing a partial as thousands of 4-16 B generic stores made the release
-// fence wait for every one of them (job 555286: 3.9 us per attention task);
-// one bulk group is a single completion.
-__device__ __forceinline__ void issue_bulk_store_1d(void* gdst, const void* ssrc, uint32_t bytes) {
-  uint32_t src = smem_u32(ssrc);
-  asm volatile("cp.async.bulk.global.shared::cta.bulk_group [%0], [%1], %2;"
-               :: "l"(gdst), "r"(src), "r"(bytes) : "memory");
-}
+// Completion pairs for the bulk-store publish path.  Publishing a partial as
+// thousands of 4-16 B generic stores made the release fence wait for every
+// one of them (job 555286: 3.9 us per attention task); one bulk group is a
+// single completion.
 __device__ __forceinline__ void bulk_store_commit_and_wait() {
-  asm volatile("cp.async.bulk.commit_group;" ::: "memory");
-  asm volatile("cp.async.bulk.wait_group 0;" ::: "memory");
+  tile::store_commit_group();
+  tile::store_wait_group<0>();
 }
 // only the smem source must stay valid: enough when nothing in this kernel
 // consumes the destination (a later kernel does)
 __device__ __forceinline__ void bulk_store_commit_and_wait_read() {
-  asm volatile("cp.async.bulk.commit_group;" ::: "memory");
-  asm volatile("cp.async.bulk.wait_group.read 0;" ::: "memory");
+  tile::store_commit_group();
+  tile::store_wait_group_read<0>();
 }
 
 // Generic-proxy stores by another CTA, published through a release/acquire
 // counter, are visible to THIS thread's generic loads after the acquire, but
 // not yet to its async-proxy (TMA) reads: the proxy fence closes that gap.
 // Executed by the issuing lane, after its acquire and before its first TMA.
-__device__ __forceinline__ void fence_proxy_async_global() {
-  asm volatile("fence.proxy.async.global;" ::: "memory");
-}
+using tile::fence_proxy_async_global;
 
 // release: every prior generic store of this CTA precedes the count.  A
 // release reduction carries the fence itself; [atom.ratio.ret] prices red at
@@ -270,15 +234,10 @@ __device__ __forceinline__ void wd_fire(long long* dbg, int site, int g) {
 
 __device__ __forceinline__ void wait_bar_wd(uint64_t* bar, uint32_t phase,
                                             int site, int g, long long* dbg) {
-  uint32_t addr = smem_u32(bar);
   uint32_t done = 0;
   long long t0 = clock64();
   while (!done) {
-    asm volatile(
-        "{\n .reg .pred p;\n"
-        " mbarrier.try_wait.parity.shared::cta.b64 p, [%1], %2;\n"
-        " selp.u32 %0, 1, 0, p;\n}"
-        : "=r"(done) : "r"(addr), "r"(phase));
+    done = tile::mbarrier_try_wait_parity(bar, phase);
     if (!done && clock64() - t0 > WATCHDOG_CYCLES) wd_fire(dbg, site, g);
   }
 }
@@ -443,11 +402,11 @@ __device__ __forceinline__ void stamp(const Params& p, int slot, int idx) {
 // region) to global with one bulk group, then release the counter.
 __device__ __forceinline__ void publish_staged(const Params& p, int tid, void* gdst0, uint32_t bytes0,
                                                void* gdst1, uint32_t bytes1, uint32_t* counter) {
-  cutlass::arch::fence_view_async_shared();   // generic smem writes -> async proxy
+  tile::fence_proxy_async_shared();           // generic smem writes -> async proxy
   mathwg_sync();
   if (tid == 0) {
-    issue_bulk_store_1d(gdst0, p.pool, bytes0);
-    if (bytes1) issue_bulk_store_1d(gdst1, p.pool + bytes0, bytes1);
+    tile::bulk_store_1d(gdst0, p.pool, bytes0);
+    if (bytes1) tile::bulk_store_1d(gdst1, p.pool + bytes0, bytes1);
     if (counter) {
       bulk_store_commit_and_wait();
       fence_proxy_async_global();             // async-proxy writes -> generic readers
@@ -584,9 +543,9 @@ __device__ void qkv_weight_producer(const Params& p, const TaskDesc& t, int lane
 #else
       p.bars.full_w(s)->arrive_and_expect_tx(QKV_F_B);
 #ifdef ATTN_QKV_WT
-      issue_tma_3d(p.tm_wqkv, p.pool + OFF_W + s * QKV_F_B, 0, n0, k / 64, p.bars.raw(p.bars.full_w(s)));
+      tile::tma_load_3d(p.tm_wqkv, p.pool + OFF_W + s * QKV_F_B, 0, n0, k / 64, p.bars.raw(p.bars.full_w(s)));
 #else
-      issue_tma_2d(p.tm_wqkv, p.pool + OFF_W + s * QKV_F_B, n0, k, p.bars.raw(p.bars.full_w(s)));
+      tile::tma_load_2d(p.tm_wqkv, p.pool + OFF_W + s * QKV_F_B, n0, k, p.bars.raw(p.bars.full_w(s)));
 #endif
 #endif
     }
@@ -604,9 +563,9 @@ __device__ void qkv_act_producer(const Params& p, const TaskDesc& t, int lane) {
       p.bars.full_a(s)->arrive_and_expect_tx(S_FRAME_B);  // ablation: no activation traffic
 #else
       p.bars.full_a(s)->arrive_and_expect_tx(QKV_F_B + S_FRAME_B);
-      issue_tma_3d(p.tm_x, p.pool + OFF_A + s * QKV_F_B, 0, 0, k / 64, p.bars.raw(p.bars.full_a(s)));
+      tile::tma_load_3d(p.tm_x, p.pool + OFF_A + s * QKV_F_B, 0, 0, k / 64, p.bars.raw(p.bars.full_a(s)));
 #endif
-      issue_bulk_1d(p.pool + OFF_S + s * S_FRAME_B, p.ada_scale + k, S_FRAME_B,
+      tile::bulk_load_1d(p.pool + OFF_S + s * S_FRAME_B, p.ada_scale + k, S_FRAME_B,
                     p.bars.raw(p.bars.full_a(s)));
     }
   }
@@ -619,7 +578,7 @@ __device__ void qkv_act_producer(const Params& p, const TaskDesc& t, int lane) {
   fence_proxy_async_global();
   p.bars.full_q()->arrive_and_expect_tx((QKV_SPLIT - 1) * QKV_PARTIAL_B);
   for (int sp = 1; sp < QKV_SPLIT; ++sp)
-    issue_bulk_1d(p.pool + OFF_FOLD + (sp - 1) * QKV_PARTIAL_B,
+    tile::bulk_load_1d(p.pool + OFF_FOLD + (sp - 1) * QKV_PARTIAL_B,
                   p.qkv_partial + ((size_t)(sp - 1) * QKV_TILES + tile) * (64 * 64),
                   QKV_PARTIAL_B, p.bars.raw(p.bars.full_q()));
 }
@@ -630,8 +589,8 @@ __device__ void qkv_math(const Params& p, const TaskDesc& t, int tid, int slot) 
   Tensor acc = partition_fragment_C(mma, Shape<Int<64>, Int<64>>{});
   Tensor cC = thr.partition_C(make_identity_tensor(Shape<Int<64>, Int<64>>{}));
   clear(acc);
-  auto smem_tiled_copy_A = make_tiled_copy_A(SmemCopyAtomA{}, mma);
-  auto smem_thr_copy_A = smem_thr_copy_A_slice(smem_tiled_copy_A, tid);
+  auto smem_tiled_copy_A = tile::make_s2r_copy_A<BF>(mma);
+  auto smem_thr_copy_A = smem_tiled_copy_A.get_thread_slice(tid);
   // (m, k) of every A-fragment element: the per-K scale needs k
   Tensor tCcA = thr.partition_A(make_identity_tensor(Shape<Int<64>, Int<QKV_BK>>{}));
   // TWO register A fragments, alternated by stage parity.  A wgmma reads its
@@ -652,9 +611,7 @@ __device__ void qkv_math(const Params& p, const TaskDesc& t, int tid, int slot) 
 
     Tensor sA = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(p.pool + OFF_A + s * QKV_F_B)), SmemLayoutA_QKV{});
     Tensor sW = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(p.pool + OFF_W + s * QKV_F_B)), SmemLayoutW_QKV{});
-    Tensor tCsA = smem_thr_copy_A.partition_S(sA);
-    Tensor tCrA_view = smem_thr_copy_A.retile_D(tCrA);
-    cute::copy(smem_tiled_copy_A, tCsA, tCrA_view);                 // ldmatrix through the swizzle
+    tile::copy_s2r(smem_tiled_copy_A, smem_thr_copy_A, sA, tCrA);  // ldmatrix through the swizzle
 
     // contract 4.1: a = bf16(x * s), formed in registers.  Adjacent fragment
     // slots (i, i+1) hold columns (k, k+1), one bf16x2 of s.
@@ -671,7 +628,7 @@ __device__ void qkv_math(const Params& p, const TaskDesc& t, int tid, int slot) 
 #endif
     Tensor tCrB = thr.make_fragment_B(thr.partition_B(sW));
 #ifndef ATTN_ABL_QKV_NO_MMA
-    ::sm90::gemm<false, -1, true, true>(mma, tCrA, tCrB, acc);
+    tile::gemm<false, -1, true, true>(mma, tCrA, tCrB, acc);
 #endif
     // Release on retirement, one group outstanding: frame g-1 is free once
     // its batch retired (A was already consumed by ldmatrix; W by the wgmma).
@@ -773,7 +730,7 @@ __device__ void attn_weight_producer(const Params& p, const TaskDesc& t, int lan
         kv_ready = true;
       }
       p.bars.full_w(s)->arrive_and_expect_tx(KV_FRAME_B);
-      issue_tma_3d(p.tm_k, p.pool + OFF_K + s * KV_FRAME_B, 0, key0 + g * ATTN_BKK, 0,
+      tile::tma_load_3d(p.tm_k, p.pool + OFF_K + s * KV_FRAME_B, 0, key0 + g * ATTN_BKK, 0,
                    p.bars.raw(p.bars.full_w(s)));
     }
   }
@@ -787,7 +744,7 @@ __device__ void attn_act_producer(const Params& p, const TaskDesc& t, int lane) 
   // them and the Q load joins the same barrier once its head has published.
   if (lane == 0) {
     p.bars.full_q()->arrive_and_expect_tx(Q_FRAME_B + MASK_SLICE_B);
-    issue_bulk_1d(p.pool + OFF_MASK, p.key_mask + key0, MASK_SLICE_B, p.bars.raw(p.bars.full_q()));
+    tile::bulk_load_1d(p.pool + OFF_MASK, p.key_mask + key0, MASK_SLICE_B, p.bars.raw(p.bars.full_q()));
   }
   __syncwarp();
   for (int g = 0; g < ATTN_TRIP; ++g) {
@@ -804,7 +761,7 @@ __device__ void attn_act_producer(const Params& p, const TaskDesc& t, int lane) 
         kv_ready = true;
       }
       p.bars.full_a(s)->arrive_and_expect_tx(KV_FRAME_B);
-      issue_tma_3d(p.tm_v, p.pool + OFF_V + s * KV_FRAME_B, 0, key0 + g * ATTN_BKK, 0,
+      tile::tma_load_3d(p.tm_v, p.pool + OFF_V + s * KV_FRAME_B, 0, key0 + g * ATTN_BKK, 0,
                    p.bars.raw(p.bars.full_a(s)));
     }
   }
@@ -818,7 +775,7 @@ __device__ void attn_act_producer(const Params& p, const TaskDesc& t, int lane) 
       cudaGridDependencySynchronize();
       fence_proxy_async_global();
     }
-    issue_tma_3d(p.tm_q, p.pool + OFF_Q, 0, head * M_PAD, 0, p.bars.raw(p.bars.full_q()));
+    tile::tma_load_3d(p.tm_q, p.pool + OFF_Q, 0, head * M_PAD, 0, p.bars.raw(p.bars.full_q()));
   }
 }
 
@@ -862,7 +819,7 @@ __device__ void attn_math(const Params& p, const TaskDesc& t, int tid, int slot)
 #ifdef ATTN_ABL_NO_S
     clear(acc_s); warpgroup_wait<0>();
 #else
-    ::sm90::gemm<true, 0, true, true>(mma_s, tSrQ, tSrK, acc_s);
+    tile::gemm<true, 0, true, true>(mma_s, tSrQ, tSrK, acc_s);
 #endif
     __syncwarp();
     if (lane == 0) {
@@ -912,7 +869,7 @@ __device__ void attn_math(const Params& p, const TaskDesc& t, int tid, int slot)
     Tensor sV = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(p.pool + OFF_V + s * KV_FRAME_B)), SmemLayoutV{});
     Tensor tOrV = thr_o.make_fragment_B(thr_o.partition_B(sV));
 #ifndef ATTN_ABL_NO_PV
-    ::sm90::gemm<false, -1, true, true>(mma_o, tOrP, tOrV, acc_o);
+    tile::gemm<false, -1, true, true>(mma_o, tOrP, tOrV, acc_o);
 #else
     acc_o(0) += float(p_regs[0]);
 #endif
@@ -1036,7 +993,7 @@ __device__ void out_weight_producer(const Params& p, const TaskDesc& t, int lane
     __syncwarp();
     if (lane == 0) {
       p.bars.full_w(s)->arrive_and_expect_tx(F256_B);
-      issue_tma_2d(p.tm_wo, p.pool + OFF_W + s * F256_B, n0, k, p.bars.raw(p.bars.full_w(s)));
+      tile::tma_load_2d(p.tm_wo, p.pool + OFF_W + s * F256_B, n0, k, p.bars.raw(p.bars.full_w(s)));
     }
   }
 }
@@ -1055,7 +1012,7 @@ __device__ void out_act_producer(const Params& p, const TaskDesc& t, int lane) {
     __syncwarp();
     if (lane == 0) {
       p.bars.full_a(s)->arrive_and_expect_tx(F256_B);
-      issue_tma_3d(p.tm_o, p.pool + OFF_A + s * F256_B, 0, head * M_PAD, g * (OUT_BK / 64),
+      tile::tma_load_3d(p.tm_o, p.pool + OFF_A + s * F256_B, 0, head * M_PAD, g * (OUT_BK / 64),
                    p.bars.raw(p.bars.full_a(s)));
     }
   }
@@ -1069,7 +1026,7 @@ __device__ void out_act_producer(const Params& p, const TaskDesc& t, int lane) {
   fence_proxy_async_global();
   p.bars.full_q()->arrive_and_expect_tx((OUT_SPLIT - 1) * OUT_PARTIAL_B);
   for (int sp = 1; sp < OUT_SPLIT; ++sp)
-    issue_bulk_1d(p.pool + OFF_FOLD + (sp - 1) * OUT_PARTIAL_B,
+    tile::bulk_load_1d(p.pool + OFF_FOLD + (sp - 1) * OUT_PARTIAL_B,
                   p.out_partial + ((size_t)(sp - 1) * OUT_TILES + tile) * (64 * 64),
                   OUT_PARTIAL_B, p.bars.raw(p.bars.full_q()));
 }
@@ -1091,7 +1048,7 @@ __device__ void out_math(const Params& p, const TaskDesc& t, int tid, int slot) 
     Tensor sW = make_tensor(make_smem_ptr(reinterpret_cast<BF*>(p.pool + OFF_W + s * F256_B)), SmemLayoutW256{});
     Tensor tCrA = thr.make_fragment_A(thr.partition_A(sA));
     Tensor tCrB = thr.make_fragment_B(thr.partition_B(sW));
-    ::sm90::gemm<false, -1, true, true>(mma, tCrA, tCrB, acc);
+    tile::gemm<false, -1, true, true>(mma, tCrA, tCrB, acc);
     if (g >= 1) {
       warpgroup_wait<1>();
       __syncwarp();
@@ -1125,7 +1082,7 @@ __device__ void out_math(const Params& p, const TaskDesc& t, int tid, int slot) 
     mathwg_sync();
     uint32_t* flag = reinterpret_cast<uint32_t*>(p.pool + OFF_MASK);   // unused by o_proj
     if (tid == 0) {
-      issue_bulk_store_1d(p.out_partial + ((size_t)head * OUT_TILES + tile) * (64 * 64), p.pool, OUT_PARTIAL_B);
+      tile::bulk_store_1d(p.out_partial + ((size_t)head * OUT_TILES + tile) * (64 * 64), p.pool, OUT_PARTIAL_B);
       bulk_store_commit_and_wait();
       fence_proxy_async_global();
       uint32_t* c = &p.counters[CM::kSaOutBegin + tile];
@@ -1374,14 +1331,8 @@ combine_rows_kernel(ATTN_KERNEL_PARAMS) {
 static CUtensorMap enc2d(const void* ptr, uint64_t inner, uint64_t outer,
                          uint32_t box_inner, uint32_t box_outer, CUresult* rc) {
   CUtensorMap m{};
-  uint64_t dims[2] = {inner, outer};
-  uint64_t strides[1] = {inner * 2};
-  uint32_t box[2] = {box_inner, box_outer};
-  uint32_t es[2] = {1, 1};
-  *rc = cuTensorMapEncodeTiled(
-      &m, CU_TENSOR_MAP_DATA_TYPE_BFLOAT16, 2, const_cast<void*>(ptr), dims, strides,
-      box, es, CU_TENSOR_MAP_INTERLEAVE_NONE, CU_TENSOR_MAP_SWIZZLE_128B,
-      CU_TENSOR_MAP_L2_PROMOTION_L2_128B, CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
+  *rc = tile::encode_tensor_map_2d<BF>(&m, ptr, inner, outer, inner * sizeof(BF),
+                                       box_inner, box_outer, 128);
   return m;
 }
 
@@ -1391,14 +1342,8 @@ static CUtensorMap enc2d(const void* ptr, uint64_t inner, uint64_t outer,
 static CUtensorMap enc3d_chunks(const void* ptr, uint64_t cols, uint64_t rows, uint32_t box_rows,
                                 uint32_t box_chunks, CUresult* rc) {
   CUtensorMap m{};
-  uint64_t dims[3] = {64, rows, cols / 64};
-  uint64_t strides[2] = {cols * 2, 64 * 2};
-  uint32_t box[3] = {64, box_rows, box_chunks};
-  uint32_t es[3] = {1, 1, 1};
-  *rc = cuTensorMapEncodeTiled(
-      &m, CU_TENSOR_MAP_DATA_TYPE_BFLOAT16, 3, const_cast<void*>(ptr), dims, strides,
-      box, es, CU_TENSOR_MAP_INTERLEAVE_NONE, CU_TENSOR_MAP_SWIZZLE_128B,
-      CU_TENSOR_MAP_L2_PROMOTION_L2_128B, CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
+  *rc = tile::encode_tensor_map_3d<BF>(&m, ptr, 64, rows, cols / 64, cols * sizeof(BF),
+                                       64 * sizeof(BF), 64, box_rows, box_chunks, 128);
   return m;
 }
 

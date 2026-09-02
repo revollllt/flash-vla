@@ -36,6 +36,8 @@ src/flash_vla/
     loop.py                       the sweep loop, with build/invoke injected
   hardware/
     nvidia/
+      cuda/
+        tile/sm90/              shared SM90 tile primitives (copies, MMA tables, gemm)
       h100/
         pi0/                      one deployable target
           engine.py               weights, capture, and public forward
@@ -62,6 +64,7 @@ models            -> no hardware target
 runtime           -> no model or hardware target
 tuning            -> runtime only; no model, backend or hardware target
 backend kernels   -> their backend and its own toolchain (TileLang / CUDA)
+CUDA kernels      -> hardware/nvidia/cuda/tile (primitives) -> third_party/cutlass
 backend adapters  -> tuning + their own device spec
 ```
 

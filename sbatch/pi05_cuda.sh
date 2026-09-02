@@ -22,7 +22,7 @@ source "${SLURM_SUBMIT_DIR:-$PWD}/sbatch/_common.sh"
 # Every number reported under specs/tile/ must come from one build. Mixing
 # builds makes a kernel look faster or slower than its baseline for reasons
 # that have nothing to do with the kernel.
-export CUTLASS_DIR="${CUTLASS_DIR:-/data/user/jzou521/codes/cuda/cutlass}"
+export CUTLASS_DIR="${CUTLASS_DIR:-${REPO_DIR}/third_party/cutlass}"
 # Pi0.5 tokenizes on the host, so anything touching the full pass needs the real
 # PaliGemma tokenizer. Kernel-level parity runs do not, which is why a missing
 # one shows up only at e2e -- set it here so both paths behave the same.
