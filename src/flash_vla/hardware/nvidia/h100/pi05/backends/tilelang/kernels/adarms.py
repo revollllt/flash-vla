@@ -245,7 +245,7 @@ def _matmul_gated_res(A, B, G, R, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, N
         T.copy(C_local, C[pid_m * BLOCK_M, pid_n * BLOCK_N])
 
 
-# Warp specialization off, matching `tl_matmul_res`: at BLOCK_M=16 the decoder's
+# Warp specialization off, like `tl_matmul`: at BLOCK_M=16 the decoder's
 # residual GEMM is far below one wave, where the producer warp sits idle and
 # still costs warps and mbarrier traffic. The spec's `warp_groups` section
 # assumed the decorator default of on; recorded as a deviation.

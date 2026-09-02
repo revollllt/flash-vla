@@ -185,7 +185,13 @@ VISION_WRAPPERS = {
 # Encoder (18 layers, RMSNorm, M = encoder_seq_len, hidden 2048, FFN 16384)
 #
 # Same high-occupancy regime as vision: warp specialization on throughout. The
-# gated FFN here is the single largest kernel in the model.
+# gated FFN here is the single largest kernel in the model. The two plain
+# residual sites (o_proj, ffn:down) run cuBLAS `addmm_`: its in-place
+# residual epilogue is the exact contract, and at M=968 it measured 13.9 vs
+# 21.4 us (o_proj) and 86.4 vs 97.3 us (ffn:down) against the best TileLang
+# bodies, smem-staged epilogue included (job 588745, cold weights, same
+# timer; artifacts/ktasks/prefix-gemm-epilogue). A fixed-shape sm90 kernel
+# may take either site back when it beats these numbers in the same timer.
 # ---------------------------------------------------------------------------
 _ENC_PROJ_NORM = dict(BLOCK_M=1, BLOCK_K=1152, THREADS=128)
 _ENC_PROJ = dict(BLOCK_M=128, BLOCK_N=128, BLOCK_K=128, NUM_STAGES=3, THREADS=256)
@@ -194,9 +200,7 @@ _ENC_RMS = dict(BLOCK_M=1, BLOCK_K=128, THREADS=128)
 # 128x128 WS config the same body measures 42 us against 29 us here (job
 # 585370, cold weights, same timer). BLOCK_N must divide HEAD_DIM.
 _ENC_QKV_ROPE = dict(BLOCK_M=128, BLOCK_N=64, BLOCK_K=64, NUM_STAGES=3, THREADS=128)
-_ENC_OUT_PROJ = dict(BLOCK_M=128, BLOCK_N=128, BLOCK_K=64, NUM_STAGES=4, THREADS=256, SWIZZLE=0)
 _ENC_GATE = dict(BLOCK_M=128, BLOCK_N=128, BLOCK_K=128, NUM_STAGES=2, THREADS=256, SWIZZLE=8)
-_ENC_FFN_DOWN = dict(BLOCK_M=128, BLOCK_N=128, BLOCK_K=128, NUM_STAGES=3, THREADS=256, SWIZZLE=8)
 
 ENCODER_DIM = 2048
 DECODER_HEADS = 8
@@ -235,10 +239,13 @@ def encoder_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, x_norm):
 
 
 def encoder_out_proj_residual(x, weight, out):
-    """out += attn @ weight, in place (upstream matmul_n_2048_2048_res)."""
-    M, K = x.shape
-    _compiled(kernels.tl_matmul_res_ws, M=M, N=weight.shape[1], K=K,
-              **_ENC_OUT_PROJ)(x, weight, out, out)
+    """out += attn @ weight, in place (upstream matmul_n_2048_2048_res).
+
+    cuBLAS with fp32 accumulation and a bf16 in-place residual; no allocation,
+    graph-capturable. `out` is (M, 2048) contiguous and is both residual and
+    result.
+    """
+    out.addmm_(x, weight)
     return out
 
 
@@ -254,12 +261,10 @@ def encoder_norm_gated_ffn(x, gate_w, up_w, out, x_norm):
 def encoder_ffn_down_residual(x, weight, out):
     """out += hidden @ weight, in place (upstream matmul_n_16384_2048_res).
 
-    K=16384 makes the weight far larger than L2, so this one runs with the L2
-    swizzle enabled.
+    cuBLAS, same contract as `encoder_out_proj_residual`; K=16384 streams a
+    64 MB weight, which cuBLAS rasterizes for L2 on its own.
     """
-    M, K = x.shape
-    _compiled(kernels.tl_matmul_res_ws, M=M, N=weight.shape[1], K=K,
-              **_ENC_FFN_DOWN)(x, weight, out, out)
+    out.addmm_(x, weight)
     return out
 
 

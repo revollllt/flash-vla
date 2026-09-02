@@ -3,7 +3,7 @@
 `profile_pi05` aggregates by KERNEL NAME, and both stages reuse one kernel at
 two call sites, so their largest rows arrive undifferentiated:
 
-    prefix   `_matmul_res_kernel`        34 calls = 17 o_proj + 17 ffn_down
+    prefix   cuBLAS `nvjet*` GEMMs      o_proj, ffn_down, attn:qk and attn:pv
     decoder  `_matmul_gated_res_kernel`  360 calls = 180 o_proj + 180 ffn_down
 
 Between them that is 27.6% of the prefix stage and 29.4% of the decoder, with
@@ -45,10 +45,10 @@ PREFIX_LAYER = [("qkv:rms_norm", "tl_rms_norm_kernel"),
                 ("attn:qk", "nvjet"),
                 ("attn:softmax", "triton_per_fused"),
                 ("attn:pv", "nvjet"),
-                ("o_proj", "_matmul_res_kernel"),
+                ("o_proj", "nvjet"),
                 ("ffn:rms_norm", "tl_rms_norm_kernel"),
                 ("ffn:gate_up", "tl_matmul_gate_kernel"),
-                ("ffn:down", "_matmul_res_kernel")]
+                ("ffn:down", "nvjet")]
 PREFIX_TAIL = PREFIX_LAYER[:2]          # the final layer's QKV-only pass
 
 #: `pipeline.decoder`, one flow step: an in-projection, 18 layers, an out-projection.

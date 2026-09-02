@@ -111,47 +111,12 @@ def _matmul(A, B, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_STAGES: int, 
 tl_matmul = variant(_matmul, "tl_matmul", warp_spec=False)
 
 
-def _matmul_res(A, B, R, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_STAGES: int,
-                THREADS: int, SWIZZLE: int = 0):
-    """C = A @ B + R.
-
-    The wrapper passes one buffer as both R and C for an in-place residual: each
-    thread reads its R element into the accumulator before the copy writes that
-    same element, so the aliasing is safe.
-
-    SWIZZLE > 0 groups threadblocks into L2-sized panels. It matters only when
-    the weight working set exceeds L2 (encoder ffn-down streams a 64 MB weight at
-    K=16384); leave it at 0 otherwise.
-    """
-    M, N, K = T.const("M, N, K")
-    dtype = T.bfloat16
-    accum_dtype = T.float32
-    A: T.Tensor((M, K), dtype)
-    B: T.Tensor((K, N), dtype)
-    R: T.Tensor((M, N), dtype)
-    C: T.Tensor((M, N), dtype)
-
-    with T.Kernel(T.ceildiv(N, BLOCK_N), T.ceildiv(M, BLOCK_M), threads=THREADS) as (pid_n, pid_m):
-        if SWIZZLE > 0:
-            T.use_swizzle(panel_size=SWIZZLE, order="row")
-        A_shared = T.alloc_shared((BLOCK_M, BLOCK_K), dtype)
-        B_shared = T.alloc_shared((BLOCK_K, BLOCK_N), dtype)
-        C_local = T.alloc_fragment((BLOCK_M, BLOCK_N), accum_dtype)
-
-        T.clear(C_local)
-        for ko in T.Pipelined(T.ceildiv(K, BLOCK_K), num_stages=NUM_STAGES):
-            T.copy(A[pid_m * BLOCK_M, ko * BLOCK_K], A_shared)
-            T.copy(B[ko * BLOCK_K, pid_n * BLOCK_N], B_shared)
-            T.gemm(A_shared, B_shared, C_local)
-
-        for i, j in T.Parallel(BLOCK_M, BLOCK_N):
-            C_local[i, j] = C_local[i, j] + R[pid_m * BLOCK_M + i, pid_n * BLOCK_N + j].astype(accum_dtype)
-
-        T.copy(C_local, C[pid_m * BLOCK_M, pid_n * BLOCK_N])
-
-
-tl_matmul_res = variant(_matmul_res, "tl_matmul_res", warp_spec=False)
-tl_matmul_res_ws = variant(_matmul_res, "tl_matmul_res_ws", warp_spec=True)
+# The plain residual GEMM (`C = A @ B + R`) that served the encoder's o_proj and
+# ffn:down sites was retired: cuBLAS `addmm_` is the exact same epilogue and,
+# in place, measured 13.9 us vs 21.4 (o_proj) and 86.4 vs 97.3 (ffn:down) per
+# layer at M=968 against the best TileLang bodies including an smem-staged
+# epilogue (artifacts/ktasks/prefix-gemm-epilogue, job 588745, cold weights).
+# The residual+bias forms below stay hand-written: cuBLAS has no such epilogue.
 
 
 def _matmul_bias(A, B, Bias, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_STAGES: int,
@@ -512,6 +477,11 @@ def tl_matmul_gate(A, W1, W2, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_S
     binding limit on this kernel -- it is the single largest kernel in the model.
     SWIZZLE restores L2 reuse at N=16384, where the default rasterization order
     keeps far more weight columns co-resident than L2 holds.
+
+    The result is staged through a bf16 shared tile before the global store:
+    the 32 MB output per call written straight from the fragment cost ~5% of
+    the kernel (219 -> 208 us/layer at the production config, job 588745, cold
+    weights); the extra 32 KB tile fits beside the two 2-stage weight rings.
     """
     M, N, K = T.const("M, N, K")
     dtype = T.bfloat16
@@ -527,6 +497,7 @@ def tl_matmul_gate(A, W1, W2, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_S
         A_shared = T.alloc_shared((BLOCK_M, BLOCK_K), dtype)
         W1_shared = T.alloc_shared((BLOCK_K, BLOCK_N), dtype)
         W2_shared = T.alloc_shared((BLOCK_K, BLOCK_N), dtype)
+        C_shared = T.alloc_shared((BLOCK_M, BLOCK_N), dtype)
         C1_local = T.alloc_fragment((BLOCK_M, BLOCK_N), accum_dtype)
         C2_local = T.alloc_fragment((BLOCK_M, BLOCK_N), accum_dtype)
 
@@ -540,10 +511,9 @@ def tl_matmul_gate(A, W1, W2, C, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NUM_S
             T.gemm(A_shared, W2_shared, C2_local)
 
         for i, j in T.Parallel(BLOCK_M, BLOCK_N):
-            C1_local[i, j] = _gelu(C1_local[i, j])
-            C1_local[i, j] = C1_local[i, j] * C2_local[i, j]
-
-        T.copy(C1_local, C[pid_m * BLOCK_M, pid_n * BLOCK_N])
+            C1_local[i, j] = _gelu(C1_local[i, j]) * C2_local[i, j]
+        T.copy(C1_local, C_shared)
+        T.copy(C_shared, C[pid_m * BLOCK_M, pid_n * BLOCK_N])
 
 
 @kernel(infer_output=True)
