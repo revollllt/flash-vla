@@ -81,7 +81,11 @@ site possible, and the chain remains the parity reference.
   layers (job 589129) passes.
 - End to end, same-job A/B/A on ACD1-33 (job 589207, 30 reps per leg), prefix
   stage min: torch 6.302, cuda 6.146, torch 6.302. Forward wall min 16.274 /
-  16.062 / 16.233. The two reference legs reproduce exactly, so the -0.156 ms
-  prefix and -0.19 ms wall are above the noise floor rather than inside it.
+  16.062 / 16.233. The two prefix reference legs
+  reproduce exactly (6.302 / 6.302) and the wall legs to 0.041 ms, so the
+  -0.156 ms prefix is 3.8x its own control spread and the -0.19 ms wall is
+  4.6x its own. Neither clears the partition's 6% noise floor, which is why
+  the same-job A/B/A design is the evidence and a cross-job comparison of
+  these numbers would not be.
 - In-graph trace (job 589127): `attn:fused` 22.14 us/layer over 125 launches,
   no measurable inter-kernel gap in the prefix graph.

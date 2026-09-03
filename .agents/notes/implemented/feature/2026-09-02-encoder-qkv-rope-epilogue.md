@@ -59,9 +59,24 @@ is load-bearing.
   0 parity failures. Same-timer cold-weight latency: production pair
   53.6 us/layer (GEMM 30.1 + scatter 23.6) -> fused 29.2 us/layer.
 - Route gate: `eval/correctness/pi05/prefix_parity.py` (openpi env), job
-  585323 (HEAD 7505c35, before) vs job 585470 (after): PENDING.
+  585323 (HEAD 7505c35, before) vs job 585470 (after): PASSED, and the
+  per-layer K/V metrics are identical to the baseline at every layer
+  (maximum cosine delta 0.0), which is what a bit-exact kernel predicts.
+  Both result files are retained in the task workspace.
 - Decoder gate: `plan_parity --plan attn-ffn-cuda-fused-producer-pdl
-  --steps 1 --layers 18`, job 585472: PENDING.
+  --steps 1 --layers 18`, job 585511: PASSED.
 - E2E: `sbatch/profile_pi05.sh` (plan attn-ffn-cuda-fused-producer-pdl),
-  prefix stage min 7.400 ms (585139, ACD1-33) -> job 585471: PENDING.
-  Clocks are unpinned on this partition; deltas under 6% are noise.
+  job 585510: prefix stage min 7.400 -> 6.952 ms, forward wall min
+  17.866 -> 17.351 ms; the untouched stages moved 2.460 -> 2.480 (vision)
+  and 7.429 -> 7.434 (decoder), which bounds node and run drift for this
+  comparison. Clocks are unpinned on this partition; deltas under 6% are
+  noise, and this one is 6.1%, so the kernel gate above -- same-timer,
+  same-job, 53.6 -> 29.2 us/layer over 18 layers = 0.44 ms predicted
+  against 0.448 measured -- is the load-bearing evidence rather than the
+  stage delta alone.
+
+The first attempt at these three gates (585471, 585472, 585507) failed on a
+worktree environment fault, not on the change; 585510 and 585511 are the
+runs that count. Their job logs have since been lost with the worktree that
+produced them (see the note's Consequences), so the numbers above are
+carried by this note and the commit message rather than by an artifact.
