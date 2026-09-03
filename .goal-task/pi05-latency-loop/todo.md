@@ -1,0 +1,20 @@
+# pi05-latency-loop — ranked headroom queue
+
+Re-ranked after every profile round. Estimates are realistic (measured
+constants), not roofline. State: open | active | waiting | deferred | done | rejected.
+
+| # | item | stage | est. gain | mechanism / evidence | state |
+|---|---|---|---|---|---|
+| 1 | sm90 short-K GEMM template (tile library): vision qkv, fc1, fc2, o_proj; then prefix o_proj, qkv_rope | vision, prefix | 0.5 + 0.3 ms | cuBLAS at 53% of 850 TFLOP/s; fixed-shape persistent schedule, fused epilogues, LN prologue | REJECTED (jobs 588755-589059): only vision qkv beats the library route (12.53 vs 13.65 us, +8% = 0.03 ms, under bar); fc1/fc2/o_proj/prefix-o_proj all lose. Mechanism: TMA issue cost is per SM and does not parallelize across producer warps -> copy column floor = box count (2K/BK); the one-wave (<=132 CTA) constraint rules out the swizzled epilogue staging that would pay for it. Sources kept in artifacts/ktasks/sm90-short-k-gemm/ |
+| 2 | decoder GU weights L2-warm during DR (HUT decisive pair first) | decoder | ~1.1 ms | `tma.bw.dev.burst`; GU at 90% of cold-burst ceiling; proposed note 2026-09-02-ffn-gu-dram-ceiling | rejected: HUT pair says only a TMA load warms L2 and the set survives ~21 MB of traffic (tma.bw.dev.burst.warm), but the kernel candidate is null e2e (+0.03/+0.06 ms on ACD1-33/ACD1-1, jobs 588775-588789); note moved to rejected/ |
+| 3 | prefix gate_up (`tl_matmul_gate`) and ffn_down smem-staged epilogue | prefix | 0.2-0.35 ms | 32 MB fragment-layout store per gate call; vision precedent | done: prefix 6.919->6.306 ms (588760, ACD1-33); gate_up staged store 219->204 us, o_proj/ffn_down cuBLAS addmm_ 21.7->15.1 / 98.6->84.2; note 2026-09-03-prefix-gemm-epilogue |
+| 4 | prefix MQA flash attention (8 q-heads, 1 kv-head, hd 256, additive key mask) | prefix | ~0.3 ms | current 30.7 us/layer 3-kernel chain; SDPA backends rejected (585376) | rejected at budget: best TileLang fused MQA 25.6 vs chain 30.7 us/layer = -0.089 ms, under the bar (job 588808/588814/588832); mechanism = one math WG serializes wgmma and softmax; follow-up #4b = CUDA 2-math-WG kernel on cuda/tile/sm90, est -0.25 ms |
+| 5 | decoder rms_factor -> qkv fold; combine -> producer fold | decoder | ~0.5 ms | 1.3 + 1.9 us/layer launch-bound kernels; megakernel-direction fusions | rejected: rms fold +0.083 ms (the rms kernel IS the PDL primary qkv ramps under); +FFN entry trigger +0.56 ms (early grids collide with the DR latency chain); combine-skip upper bound only 0.15-0.2 ms, below every fold form s price (jobs 588815-588827) |
+| 6 | vision fc2 in-graph slowdown diagnosis (24.6 us in graph vs 19.7 isolated) | vision | 0.1-0.25 ms | suspected clock droop after cuBLAS kernels; cuBLASLt beta=1+bias C++ call if not | done (diagnosed): H2 L2 write-back of the dirty 6.6 MB `hidden` under the cuBLAS qkv + cudnn SDPA footprints (NCU DRAM write 6.3 vs 2.6 MB, same clock); +2.8-4.6 us/layer = 0.08-0.12 ms; fix belongs to G1 (2 consumer WGs / deeper ring / fc1->fc2 fusion); evidence in artifacts/ktasks/vision-gemm-retune |
+| 7 | vision LayerNorm into GEMM prologue; replace cudnn SDPA (memset + 4 us gap) | vision | 0.14 + 0.13 ms | needs full-row stats; custom attention kernel | active (round 3 lane) |
+| 8 | decoder attention split latency (7.65 us for ~1 MB) | decoder | ~0.5 ms | latency-bound; part of task-graph continuity | deferred (megakernel scope) |
+
+Dependencies: 1 before 3 (same epilogue template); 2 gated by its HUT pair; 5
+and 8 share the decoder CUDA backend files (one owner at a time).
+| 4b | CUDA MQA flash attention, 1 TMA producer warp + 2 math warpgroups per 64-row tile (FA3 ping-pong), on cuda/tile/sm90 | prefix | 0.23-0.28 ms | G4 mechanism: single math WG idles the tensor core ~1/3 of each key block; TileLang c1 kernel (25.6 us) is the fallback floor | open |
+| 9 | decoder GU->DR stream continuity (one weight stream per layer instead of two cold bursts) | decoder | ~0.36 ms | cold-burst ramp constant; the only decoder lever left after G3/G5 rejections | active (round 3 lane) |
