@@ -46,8 +46,8 @@ Skills that bind each step: `kernel-design` (contract -> reference -> parity
 | G4 | prefix MQA flash attention promoted/rejected | attention parity vs torch chain; e2e | closed: TileLang form rejected; CUDA form PROMOTED (todo#4b, -0.19 ms wall) |
 | G5 | decoder small-kernel fusions (rms_factor->qkv, combine->producer) promoted/rejected | plan parity; e2e | closed: BOTH REJECTED (rms fold +0.08, +FFN entry trigger +0.56, combine bound 0.15-0.2 ms) |
 | G6 | full re-profile at final HEAD on ACD1-33; wall min <= 14.5 ms; `profiles/pi05/latency-breakdown.md` rewritten | e2e/profile/traces JSON; layer_breakdown sequence assert | in progress: main verified at 16.098 ms (job 589249, vision 2.014 / prefix 6.412 / decoder 7.460) |
-| G7 | every promoted change has: parity gate passed, Agent Note, ledger line, local commit | git log + notes | open |
-| G8 | final independent review: 3 read-only reviewers (correctness/tests, design/boundaries, security/maintainability), no unresolved high-severity finding | review reports | open |
+| G7 | every promoted change has: parity gate passed, Agent Note, ledger line, local commit | git log + notes | met, after review repairs: the QKV+RoPE note carried PENDING gates that had in fact passed (6388f39) |
+| G8 | final independent review: 3 read-only reviewers, no unresolved high-severity finding | review reports | reviews done; repairs landed 6388f39 / 85773e1 / 95cac30 / 8e80e61; remaining: re-review the repairs |
 
 Each round: (1) profile (`CAPTURE_TRACES=1 CAPTURE_PLAN=attn-ffn-cuda-fused-producer-pdl sbatch -w ACD1-33 sbatch/profile_pi05.sh`, plus a non-PDL profile when decoder per-kernel numbers are needed); (2) analyze with `benchmarks/layer_breakdown.py` and re-rank `todo.md`; (3) run the top items as kernel-design tasks, parallel subagents in worktrees where file ownership is disjoint; (4) validate + promote; (5) update this file.
 
@@ -141,6 +141,42 @@ yet on the queue; the decoder is the only stage with structural headroom
 traffic) and the megakernel's cross-layer stream continuity is the named
 mechanism, currently out of scope by the goal's own exclusion. Surface this
 to the user rather than silently missing the number.
+
+## Independent review (G8) and its repairs
+
+Three read-only reviewers ran on `7505c35..HEAD` (correctness, design and
+boundaries, evidence and claims). Correctness found **no high-severity
+issue**: all four numerical claims verified, no aliasing or boundary defect,
+and it established that the fused QKV kernel closed a latent out-of-bounds
+write -- the retired `tl_rope_scatter_bf16` stored through `T.Parallel` with
+explicit indexing, which TileLang does not predicate, writing 56 rows past
+`encoder_Q` at M=968.
+
+Repaired:
+
+- `6388f39` the encoder QKV+RoPE note carried PENDING for all three route
+  gates and cited a failed first attempt's job ids; the gates had passed
+  (585470 / 585510 / 585511). It now also states that its stage delta is
+  6.1%, at the noise floor, so the same-job kernel gate is the load-bearing
+  evidence. The MQA note's "control legs reproduce exactly" was true of the
+  prefix pair only.
+- `85773e1` the three CUDA build cache keys did not cover CUTLASS, so a
+  `CUTLASS_DIR` switch silently reused a `.so` in both directions.
+- `95cac30` the fused encoder attention had no in-repo parity gate (its
+  harness was in a gitignored workspace); `enc_attn_parity.py` added and
+  named in the tile library README. Verified in job 591048: passed, cosine
+  0.9999973 vs fp32, all rows finite.
+- `8e80e61` the encoder attention route was selected by an environment
+  variable rather than the call-site plan, so a recorded plan name did not
+  identify what ran and `layer_breakdown` aborted on the torch route. It is
+  now a plan entry; `benchmarks/plans.py` owns the registry and manifests
+  record it (jobs 591063 cuda / 591064 torch).
+
+Standing evidence defect, not repairable: the job logs and profile artifacts
+behind three of the four promoted claims were destroyed when their agent
+worktrees were removed (`artifacts/ktasks/` was copied out, `sbatch/logs/`
+and `profiles/` were not). The numbers survive in notes and commit messages
+only. Future lanes must copy both before a worktree is removed.
 
 ## Round 2 closed
 
