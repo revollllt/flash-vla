@@ -43,7 +43,7 @@ Skills that bind each step: `kernel-design` (contract -> reference -> parity
 | G1 | sm90 short-K GEMM (tile library) beats cuBLAS at vision qkv/fc1 and is promoted, or is rejected with evidence | sweep JSON same-timer vs cuBLAS; parity; e2e A/B | closed: REJECTED (note 2026-09-03-sm90-short-k-gemm; qkv +8% only, fc1 loses) |
 | G2 | prefix short-K sites (o_proj, qkv_rope) and gate_up/down epilogues re-measured and promoted/rejected | same | closed: gate_up/o_proj/down promoted (588760, prefix 6.306 ms); the custom-GEMM retake is moot after G1 |
 | G3 | decoder GU L2-warm: HUT decisive pair run; kernel candidate promoted/rejected | HUT probe JSON + constant; ffn parity; plan_e2e A/B/A both node gens | closed: REJECTED (constant tma.bw.dev.burst.warm recorded; candidate null e2e; note in rejected/) |
-| G4 | prefix MQA flash attention promoted/rejected | attention parity vs torch chain; e2e | closed: TileLang form REJECTED (-0.089 ms, under bar); CUDA 2-WG form reopened as todo#4b |
+| G4 | prefix MQA flash attention promoted/rejected | attention parity vs torch chain; e2e | closed: TileLang form rejected; CUDA form PROMOTED (todo#4b, -0.19 ms wall) |
 | G5 | decoder small-kernel fusions (rms_factor->qkv, combine->producer) promoted/rejected | plan parity; e2e | closed: BOTH REJECTED (rms fold +0.08, +FFN entry trigger +0.56, combine bound 0.15-0.2 ms) |
 | G6 | full re-profile at final HEAD on ACD1-33; wall min <= 14.5 ms; `profiles/pi05/latency-breakdown.md` rewritten | e2e/profile/traces JSON; layer_breakdown sequence assert | open |
 | G7 | every promoted change has: parity gate passed, Agent Note, ledger line, local commit | git log + notes | open |
