@@ -34,3 +34,16 @@ deleted, which is 16.8 MB at 1.75 TB/s, i.e. exactly the cold-burst ceiling
 Those two facts are not yet reconciled and no candidate should be built here
 until they are. Six consecutive rejections in this kernel; the contract's
 defer rule applies.
+
+## The decoder FFN family is closed, with a machine number (job 591174)
+
+GatedUp's copy column sits within **1.6%** of this machine's cold-DRAM
+delivery rate for its exact geometry, with a ring-protocol floor ~20% below
+it. That is why six consecutive lanes measured nothing: removing either floor
+alone leaves the other binding. The entry condition for reopening is written
+into `.agents/notes/proposed/architecture/2026-09-03-ffn-gu-copy-column.md`
+and it is a single sentence -- something must make GatedUp's weight bytes
+cheaper. Within the goal's bf16 invariant nothing can, so the phase is done.
+
+By-product to protect: the evict-first L2 hint on the GatedUp stream is
+load-bearing, worth 1.12 us/layer (~0.20 ms). Do not remove it as a tidy-up.
