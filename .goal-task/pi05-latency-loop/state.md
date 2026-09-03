@@ -45,7 +45,7 @@ Skills that bind each step: `kernel-design` (contract -> reference -> parity
 | G3 | decoder GU L2-warm: HUT decisive pair run; kernel candidate promoted/rejected | HUT probe JSON + constant; ffn parity; plan_e2e A/B/A both node gens | closed: REJECTED (constant tma.bw.dev.burst.warm recorded; candidate null e2e; note in rejected/) |
 | G4 | prefix MQA flash attention promoted/rejected | attention parity vs torch chain; e2e | closed: TileLang form rejected; CUDA form PROMOTED (todo#4b, -0.19 ms wall) |
 | G5 | decoder small-kernel fusions (rms_factor->qkv, combine->producer) promoted/rejected | plan parity; e2e | closed: BOTH REJECTED (rms fold +0.08, +FFN entry trigger +0.56, combine bound 0.15-0.2 ms) |
-| G6 | full re-profile at final HEAD on ACD1-33; wall min <= 14.5 ms; `profiles/pi05/latency-breakdown.md` rewritten | e2e/profile/traces JSON; layer_breakdown sequence assert | open |
+| G6 | full re-profile at final HEAD on ACD1-33; wall min <= 14.5 ms; `profiles/pi05/latency-breakdown.md` rewritten | e2e/profile/traces JSON; layer_breakdown sequence assert | in progress: main verified at 16.098 ms (job 589249, vision 2.014 / prefix 6.412 / decoder 7.460) |
 | G7 | every promoted change has: parity gate passed, Agent Note, ledger line, local commit | git log + notes | open |
 | G8 | final independent review: 3 read-only reviewers (correctness/tests, design/boundaries, security/maintainability), no unresolved high-severity finding | review reports | open |
 
@@ -109,6 +109,17 @@ Each round: (1) profile (`CAPTURE_TRACES=1 CAPTURE_PLAN=attn-ffn-cuda-fused-prod
 - Process lesson: removing an agent worktree deletes its gitignored
   `artifacts/ktasks/<task>/` workspace -- COPY the workspace to MAIN first
   (the G3 ledger/patch source was lost this way; the note carries the verdict).
+
+## Cross-lane finding: per-SM TMA issue cost is a recurring floor
+
+Two independent lanes converged on it. The sm90 short-K GEMM ablation (job
+589035) measured 236-305 ns per box in the copy column and showed four
+producer warps do NOT parallelize it -- `[tma.issue.warp]` 248 ns is per SM,
+not per warp. The FFN stream bound (589178) then showed the weight DRAM cost
+is nearly free, which leaves issue as the candidate explanation for the same
+phases' cost. Consequence for every future candidate here: count
+TRANSACTIONS, not bytes; a bound that makes reads L2-resident does not
+remove the issue column. Passed to the DR lane as a hypothesis.
 
 ## Reachability, revised after job 589178
 
