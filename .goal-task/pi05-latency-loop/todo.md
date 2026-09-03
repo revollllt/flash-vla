@@ -21,4 +21,16 @@ and 8 share the decoder CUDA backend files (one owner at a time).
 | 10 | FFN DownResidual dependency chain (counter RTT -> load -> wgmma -> split-K join -> fold -> residual RMW): 10.5 us/layer on 0.54 GFLOP (floor 0.64) with only 0.25 us of weight stream | decoder | ~0.5-0.95 ms | job 589178 bound; split-K S=4->2/1 named by the 2026-09-02 probes note | REJECTED (589228/589273/589331): links priced by deletion (readiness poll 1.05, fold 1.37, residual read 0.69, join wait 0.96 us fused); reordering buys nothing -- best candidate combo 0.041 ms. Also refuted the coordinator TMA-issue hypothesis: ~56 ns/txn exposed, not 248 |
 | 11 | 64-wide DownResidual output tile: 32 tiles -> 16 (halves joins + fold traffic) AND moves the wgmma off the N=32 atom (62% -> 93% of peak); price split-K S=4->2 with it | decoder | ~0.3-0.5 ms | named by the #10 decomposition: removing work pays, reordering does not; wiki wgmma-tile-n-floor | REJECTED (job 589409, 4 builds/1 job): 64-wide is +3.14 us/layer at S=4, +4.30 at S=8, +5.74 at S=2; gu-only flat so the delta is DR-local. The fold + residual RMW belong to split 0 alone and scale with output area, so a wider tile doubles ONE owner s serial chain while halving concurrency; the wgmma atom gain is ~0.2 us on a 0.64 us compute floor |
 | 12 | Account for the GatedUp phase: 11.89 us/layer with only ~2.4 explained (1 us math + 1.37 weight-free bound + <1 issue) = 1.3-1.6 ms unexplained, the largest pool left | decoder | unknown, up to ~1 ms | job 589178; same deletion method as #10 | DONE (accounting is the result, jobs 589369-589934): the copy pipeline and its waits are 9.6 of 11.6 us = 83% of GatedUp. Not bandwidth (1.37 us), not transactions (deleting 4 of 9 made it 0.56 us SLOWER). It is IN-FLIGHT WEIGHT FRAMES: ring 3 deep against 4 trips; depth 3->2 costs 1.52 us. Epilogue arithmetic 2.04 us; bias-hoist candidate only 0.067 ms |
-| 13 | GatedUp weight ring depth 3 -> 4, paid for by making the activation ring 3-deep and rotating (smem exactly neutral at the 232448 B cap) | decoder | ~0.27 ms | the depth gradient named by #12: one frame of depth is worth 1.52 us/layer | active (round 5 lane) |
+| 13 | GatedUp weight ring depth 3 -> 4, paid for by making the activation ring 3-deep and rotating (smem exactly neutral at the 232448 B cap) | decoder | ~0.27 ms | the depth gradient named by #12: one frame of depth is worth 1.52 us/layer | REJECTED (job 591080, six builds/one job): depth 4 is +0.19 us and depth 5 +0.28, monotone; the decisive row took depth 4 for FREE (stale activation frame, invalid numerics) and still lost, so the payment is not the problem. The 3->2 gradient of 1.52 us was one-sided -- depth 3 is at the wgmma-stage knee. By-product: the phase runs unchanged on six frames, freeing 32 KiB of the data plane |
+
+## Queue exhausted 2026-09-03
+
+Every identified item is closed: two promoted (#3, #4b), nine rejected with
+recorded mechanisms, one diagnostic (#12), one deferred as megakernel scope
+(#8). Wall stands at 16.098 ms against a 14.5 target. The unexplained pool
+that remains is GatedUp's copy column -- 9.6 us/layer with math and epilogue
+deleted, which is 16.8 MB at 1.75 TB/s, i.e. exactly the cold-burst ceiling
+`tma.bw.dev.burst`, yet making those reads L2-resident bought only 1.37 us.
+Those two facts are not yet reconciled and no candidate should be built here
+until they are. Six consecutive rejections in this kernel; the contract's
+defer rule applies.
