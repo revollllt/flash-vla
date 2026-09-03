@@ -35,6 +35,15 @@ streams.
 
 ## Caveats
 
+**Bound the stream's exposed share before dividing bytes by this curve.** The
+curve prices a copy that is on the critical path. In a kernel whose math and
+dependency structure already hide most of the stream, making the weights free
+by construction (pin every stage to one K tile so all but the first read hits
+L2, numerics invalid, timing valid) measures the real ceiling -- and it has
+come out at a fifth of what the curve suggested. That bound costs one job and
+retires every bandwidth-side idea at once: warming, prefetch, retiling,
+continuity.
+
 Prefetching into a phase that is itself at its burst ceiling makes both
 worse -- measure the target phase's DRAM slack first, and gate the L2
 residency across the intervening traffic with a decisive pair before
