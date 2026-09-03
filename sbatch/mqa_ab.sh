@@ -5,6 +5,18 @@
 #   sbatch -w ACD1-33 sbatch/mqa_ab.sh
 # The two legs are call-site plans that differ in exactly one entry, so each
 # report records which route produced it (`benchmarks/plans.py`).
+#
+# Read this design for provenance, not for the magnitude of a claim. One job,
+# one process, and a recorded plan per leg naming the route -- which the
+# import-time switch it replaced could not do. But its control legs drifted
+# 0.214 ms in job 591067 while the plan-invariant vision stage moved only
+# 0.015 ms, so the spread is prefix-specific and wider than the effect it would
+# measure; the promoted -0.156 ms prefix number comes from a THREE-PROCESS
+# A/B/A (job 589207) whose control legs reproduced exactly. Untested
+# hypothesis for the difference: the prefix is the only stage that allocates
+# inside graph capture on the torch leg, and three engines built back to back
+# leave the caching allocator in a different state for the third. Until that is
+# measured, take a magnitude claim for this call site from separate processes.
 #SBATCH --job-name=mqa-ab
 #SBATCH --partition=acd_u
 #SBATCH --gres=gpu:1
