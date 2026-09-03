@@ -39,3 +39,11 @@ Prefetching into a phase that is itself at its burst ceiling makes both
 worse -- measure the target phase's DRAM slack first, and gate the L2
 residency across the intervening traffic with a decisive pair before
 touching the kernel.
+
+Warmth is harder to buy than the probe suggests. Only a real TMA load leaves
+a weight set resident (`[tma.bw.dev.burst.warm]`); the L2 prefetch
+instruction warms it half as well, and a plain SM read not at all. And a set
+that survives synthetic filler traffic in a probe can still be evicted by
+the real inter-launch traffic: an isolated 2.5x warmth win has measured
+null-to-negative end to end, because the prefetch also collides with
+whatever phase issues it. Gate warmth on an e2e A/B, not on the probe.
