@@ -12,7 +12,10 @@ backbone) and decoder (action expert), bf16 numerics preserved.
   vision 2.019 / prefix 6.919 / decoder 7.445 / wall 16.838 ms (min).
   Per-kernel decoder numbers: non-PDL trace 585140 (PDL traces inflate).
 - Node for comparisons: ACD1-33 (`sbatch -w ACD1-33`); cross-node deltas are
-  normalized on a tilelang control leg; clocks unpinned, noise floor 6%.
+  normalized on a tilelang control leg -- decoder-stage deltas only, since the
+  encoder attention became plan-selected and a tilelang leg now moves the
+  prefix too; hold the prefix fixed with `...-enc-tilelang`. Clocks unpinned,
+  noise floor 6%.
 - Env: `.venv` (torch 2.13.0+cu130, tilelang 0.1.11), CUDA 13.1 + gcc 13.3
   modules via `sbatch/_common.sh`; openpi parity env
   `/data/user/jzou521/codes/cuda/openpi-official/.venv`.
