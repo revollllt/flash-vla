@@ -54,11 +54,14 @@ class Pi05Inference:
                  plan: dict[str, str] | None = None):
         """`plan` maps a call-site name to the backend that implements it.
 
-        `None` keeps every call site on TileLang, which is the only backend in
-        the tree today. A second backend registers in `backends/__init__.py` and
-        is selected per call site here. Resolved before capture, so the replay
-        path never dispatches -- the rule that makes a mixed backend free at
-        runtime.
+        `None` keeps every call site on TileLang -- the reference route,
+        including the torch encoder-attention chain, and what the parity gates
+        compare against. Nothing is overlaid on top of a plan: a call site runs a
+        hand-written CUDA kernel only where the plan names it, so `self.plan` is
+        the whole description of what this engine runs and a report that records
+        it is reproducible. The shipped plans are named in `benchmarks/plans.py`.
+        Resolved before capture, so the replay path never dispatches -- the rule
+        that makes a mixed backend free at runtime.
         """
         self.num_views = num_views
         self.chunk_size = chunk_size

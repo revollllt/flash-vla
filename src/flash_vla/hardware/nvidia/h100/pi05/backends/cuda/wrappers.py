@@ -1,16 +1,23 @@
-"""Hand-written CUDA call sites for the Pi0.5 decoder attention and FFN halves.
+"""Hand-written CUDA call sites for Pi0.5: encoder attention, decoder halves.
 
-Five call sites carrying the TileLang wrappers' signatures, so a plan can move
-the layer one half at a time:
+Six call sites carrying the TileLang wrappers' signatures, so a plan can move
+the pipeline one piece at a time:
 
+    {"encoder_attention": "cuda"}
     {"decoder_norm_qkv_rope": "cuda", "decoder_attention": "cuda"}
     {"decoder_norm_gated_ffn": "cuda", "decoder_ffn_down_residual": "cuda"}
 
-with "decoder_out_proj_residual" joining the second pair on the fused
-three-call route.
+with "decoder_out_proj_residual" joining the last pair on the fused three-call
+route.
 
-Attention runs the standalone kernels of `kernels/attn_taskloop.cu` -- the
-per-op form of the task-loop bodies, under the tensor contract of
+`encoder_attention` is the prefix's full bidirectional multi-query attention
+(`kernels/enc_attn.cu`, host side in `enc_attn.py`). Unlike the decoder pair it
+is independent of every other call site: it reads the pipeline's own Q/K/V
+buffers in the layout the TileLang encoder QKV wrapper writes and owns no
+cross-call scratch, so a plan may select it alone.
+
+Decoder attention runs the standalone kernels of `kernels/attn_taskloop.cu` --
+the per-op form of the task-loop bodies, under the tensor contract of
 `specs/tile/attention_block_contract.md`. The fused persistent attention block
 was built, is correct, and lost;
 `.agents/notes/rejected/architecture/2026-08-27-attention-block-taskloop.md`
@@ -52,6 +59,7 @@ import torch
 
 from ..tilelang import wrappers as _tilelang
 from . import attn_taskloop as _at
+from . import enc_attn as _enc
 from . import taskloop as _ffn
 
 #: Both halves are compiled for the same chunk; the attention header owns it.
@@ -160,6 +168,7 @@ def _packed(state: _FFNState, sources: tuple[torch.Tensor, ...], pack):
 ATTENTION_NAMES = ("decoder_norm_qkv_rope", "decoder_attention")
 
 WRAPPER_NAMES = frozenset({
+    "encoder_attention",
     "decoder_norm_qkv_rope",
     "decoder_attention",
     "decoder_out_proj_residual",
@@ -207,6 +216,28 @@ def make_wrappers(
 
     def current_stream(device: torch.device) -> int:
         return torch.cuda.current_stream(device).cuda_stream
+
+    def encoder_attention(Q, K, V, scale, mask, out):
+        """One fused kernel for the prefix's QK^T / softmax / PV chain.
+
+        Same contract as the TileLang call site: `Q` is (M*heads, head_dim) with
+        row = token * head, `K`/`V` are (M, head_dim), `mask` is (M,) additive,
+        and the (M, heads*head_dim) result is returned. Here it is a view of
+        `out`, which the kernel writes in full.
+
+        Stateless by construction -- no packed weights, no scratch that has to
+        outlive the call -- so this wrapper carries none of the engine-lifetime
+        state the decoder ones do. The tensor maps are cached in `enc_attn` on
+        the buffer triple, because encoding them is a driver call and must stay
+        out of graph capture. `pdl_chain` does not reach this call site: the
+        kernel is one launch between two TileLang neighbours and arms no
+        programmatic dependency.
+        """
+        if out.shape != Q.shape:
+            raise ValueError(
+                f"encoder attention writes into `out`; got out {tuple(out.shape)} "
+                f"for Q {tuple(Q.shape)}")
+        return _enc.attention(Q, K, V, scale, mask, out).view(K.shape[0], -1)
 
     def decoder_norm_qkv_rope(x, scale, weight_qkv, bias, rope, Q, K, V,
                               norm_factor):
@@ -368,6 +399,7 @@ def make_wrappers(
         return out
 
     return {
+        "encoder_attention": encoder_attention,
         "decoder_norm_qkv_rope": decoder_norm_qkv_rope,
         "decoder_attention": decoder_attention,
         "decoder_out_proj_residual": decoder_out_proj_residual,

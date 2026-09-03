@@ -29,6 +29,7 @@ import torch
 from flash_vla.runtime.cuda import ScratchPool
 
 from .kernels import adarms as ada_kernels
+from .kernels import attention as attention_kernels
 from .kernels import base as kernels
 from .kernels import fused_norm as fused_norm_kernels
 from .kernels import xfs as xfs_kernels
@@ -238,6 +239,24 @@ def encoder_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, x_norm):
         x_norm[:M], weight_qkv, rope, Q.view(M, num_heads * head_dim), K, V)
 
 
+def encoder_attention(Q, K, V, scale, mask, out):
+    """Full bidirectional multi-query attention over the prefix, reference route.
+
+    `Q` is (M*heads, head_dim) with row = token * head, `K`/`V` are
+    (M, head_dim), `mask` is (M,) additive bf16; the result is (M, heads*head_dim).
+
+    Three kernels -- a cuBLAS QK^T that materializes the (M*heads, M) scores, a
+    torch softmax, a cuBLAS PV -- and the allocation they need, which is why
+    `out` is accepted and ignored rather than copied into. This call site is the
+    numerical reference and the A/B leg for the fused CUDA kernel: a copy would
+    add 4 MB of traffic to the reference that the candidate would then appear to
+    save. Allocating inside graph capture is safe here because the shapes are
+    static, so the caching allocator hands back the same block on every call.
+    """
+    del out                          # see above: deliberately not written
+    return attention_kernels.encoder_attention(Q, K, V, scale, mask)
+
+
 def encoder_out_proj_residual(x, weight, out):
     """out += attn @ weight, in place (upstream matmul_n_2048_2048_res).
 
@@ -271,6 +290,7 @@ def encoder_ffn_down_residual(x, weight, out):
 ENCODER_WRAPPERS = {
     "encoder_projector": encoder_projector,
     "encoder_norm_qkv_rope": encoder_norm_qkv_rope,
+    "encoder_attention": encoder_attention,
     "encoder_out_proj_residual": encoder_out_proj_residual,
     "encoder_norm_gated_ffn": encoder_norm_gated_ffn,
     "encoder_ffn_down_residual": encoder_ffn_down_residual,

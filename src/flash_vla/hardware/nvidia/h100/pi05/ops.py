@@ -56,6 +56,14 @@ def op_table(fused: bool = True, backend: str = "tilelang",
             "norm-qkv-rope and attention must select the same backend, got "
             f"{dict(zip(attn_names, attn_route))}")
 
+    # `encoder_attention` deliberately carries no such constraint. Both routes
+    # read the pipeline's own encoder_Q/K/V in the layout
+    # `encoder_norm_qkv_rope` writes, and neither owns scratch that crosses a
+    # call site, so the route is free to differ from its neighbours'. What keeps
+    # that layout single-sourced is that the encoder QKV projection is
+    # TileLang-only: the cuda backend does not implement it, so a plan naming it
+    # is already rejected above. A CUDA encoder QKV writing head-major scratch
+    # would break the invariant and would need the pairing guard above.
     ffn_names = (
         "decoder_out_proj_residual",
         "decoder_norm_gated_ffn",

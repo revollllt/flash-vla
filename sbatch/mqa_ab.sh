@@ -1,7 +1,10 @@
 #!/bin/bash
-# Same-node A/B/A of the encoder attention route: torch chain vs the fused
-# CUDA kernel, three e2e passes in one job so node and clock drift cancel.
+# Same-node A/B/A of the encoder attention route: the fused CUDA kernel against
+# the reference torch chain, three e2e passes in ONE process so node and clock
+# drift cancel and the control leg has to reproduce.
 #   sbatch -w ACD1-33 sbatch/mqa_ab.sh
+# The two legs are call-site plans that differ in exactly one entry, so each
+# report records which route produced it (`benchmarks/plans.py`).
 #SBATCH --job-name=mqa-ab
 #SBATCH --partition=acd_u
 #SBATCH --gres=gpu:1
@@ -16,11 +19,8 @@ export PALIGEMMA_TOKENIZER="${PALIGEMMA_TOKENIZER:-/data/user/jzou521/models/ope
 require_cuda
 report_env
 REPS="${E2E_REPS:-30}"
-PLAN="${AB_PLAN:-attn-ffn-cuda-fused-producer-pdl}"
-# The route is read at import, so each leg is its own process.
-for route in torch cuda torch; do
-  echo "== leg route=${route}"
-  ENC_ATTN_ROUTE="${route}" "${PYTHON}" -u -m benchmarks.e2e_pi05 --reps "${REPS}" --plan "${PLAN}" \
-    | grep -E "stage|prefix|vision|decoder|forward|min_ms|median_ms" || true
-done
+CUDA_PLAN="${AB_PLAN:-attn-ffn-cuda-fused-producer}"
+CHAIN_PLAN="${AB_PLAN_REFERENCE:-attn-ffn-cuda-fused-producer-enc-tilelang}"
+"${PYTHON}" -u -m benchmarks.e2e_pi05 --reps "${REPS}" \
+    --plan "${CUDA_PLAN}" --plan "${CHAIN_PLAN}" --plan "${CUDA_PLAN}"
 echo "[job] finished $(date)"

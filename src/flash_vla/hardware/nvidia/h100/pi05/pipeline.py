@@ -18,8 +18,6 @@ per-stage timing breakdown, which is how the roofline in PLAN.md §1.2 is read.
 """
 from __future__ import annotations
 
-import os
-
 from flash_vla.models.pi05.spec import (
     DECODER_HEADS,
     ENCODER_LAYERS,
@@ -28,12 +26,7 @@ from flash_vla.models.pi05.spec import (
     VISION_TOKENS,
 )
 
-from .backends.cuda import enc_attn as cuda_enc_attn
-from .backends.tilelang.kernels.attention import encoder_attention, vision_attention
-
-#: Encoder attention route: the fused CUDA kernel by default, `torch` for the
-#: reference chain. Read once at import so the captured graph never branches.
-_ENC_ATTN_ROUTE = os.environ.get("ENC_ATTN_ROUTE", "cuda")
+from .backends.tilelang.kernels.attention import vision_attention
 
 
 def vision(ops, weights, buffers, num_views):
@@ -111,18 +104,12 @@ def prefix(ops, weights, buffers, num_views, encoder_seq_len, layers=ENCODER_LAY
         if i == layers - 1:
             break
 
-        # One fused kernel in place of the QK^T / softmax / PV chain.  The torch
-        # chain stays selectable (ENC_ATTN_ROUTE=torch) because it is the parity
-        # reference and the A/B leg for any latency claim about this call site.
-        if _ENC_ATTN_ROUTE == "torch":
-            attn = encoder_attention(
-                buffers["encoder_Q"], buffers["encoder_K"][i, :encoder_seq_len],
-                buffers["encoder_V"][i, :encoder_seq_len], scale, mask)
-        else:
-            attn = cuda_enc_attn.attention(
-                buffers["encoder_Q"], buffers["encoder_K"][i, :encoder_seq_len],
-                buffers["encoder_V"][i, :encoder_seq_len], scale, mask,
-                buffers["encoder_attn_out"]).view(encoder_seq_len, -1)
+        # The result is the return value, not `encoder_attn_out`: the fused CUDA
+        # kernel writes that buffer, the reference torch chain allocates its own.
+        attn = ops.encoder_attention(
+            buffers["encoder_Q"], buffers["encoder_K"][i, :encoder_seq_len],
+            buffers["encoder_V"][i, :encoder_seq_len], scale, mask,
+            buffers["encoder_attn_out"])
 
         ops.encoder_out_proj_residual(attn, weights["encoder_attn_o_w"][i], buffers["encoder_x"])
         ops.encoder_norm_gated_ffn(

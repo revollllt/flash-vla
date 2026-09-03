@@ -45,6 +45,7 @@ import os
 import torch
 import torch.nn.functional as F  # noqa: N812
 
+from benchmarks.plans import PLANS, parse_plan
 from eval.baselines import openpi05
 from flash_vla.models.pi05.spec import HEAD_DIM, VISION_TOKENS
 from flash_vla.models.pi05.tokenize import Pi05Tokenizer
@@ -93,8 +94,15 @@ def _cache_layers(past_key_values) -> list[tuple[torch.Tensor, torch.Tensor]]:
 
 def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
         prompt: str = DEFAULT_PROMPT, layers: int = 18, seed: int = 0,
-        device: str = "cuda", exact_rope: bool = True) -> dict[str, object]:
-    """Run both implementations on identical inputs and report per-layer error."""
+        device: str = "cuda", exact_rope: bool = True,
+        plan: str | None = None) -> dict[str, object]:
+    """Run both implementations on identical inputs and report per-layer error.
+
+    `plan` names the call-site plan the target engine is built with; the default
+    is the all-TileLang reference route. Pass the shipped plan to gate what
+    production actually runs -- the encoder attention is plan-selected, so the
+    reference route does not exercise its CUDA kernel.
+    """
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
 
@@ -125,7 +133,8 @@ def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
     torch.cuda.empty_cache()
 
     engine = Pi05Inference(target_weights, tokenizer, num_views=3, chunk_size=50,
-                           layers=layers, device=device)
+                           layers=layers, device=device,
+                           plan=parse_plan(plan) if plan else None)
     del target_weights
     torch.cuda.empty_cache()
 
@@ -141,6 +150,7 @@ def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
         "encoder_seq_len": engine.encoder_seq_len,
         "layers_compared": min(layers, len(reference)),
         "checkpoint": checkpoint or "random",
+        "plan": engine.plan,
         "exact_rope": exact_rope,
         "reference_inv_freq": [round(float(v), 7) for v in rope_freqs[:4]],
     }
@@ -199,12 +209,16 @@ def main(argv=None) -> int:
     parser.add_argument("--layers", type=int, default=18, help="encoder depth, for bisection")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda")
+    parser.add_argument("--plan", default=None,
+                        help=f"call-site plan for the target engine: one of "
+                             f"{sorted(PLANS)} or JSON (default: all-TileLang)")
     parser.add_argument("--openpi-rope-bf16", action="store_true",
                         help="keep OpenPI's bfloat16 rotary frequencies (see "
                              "openpi05.restore_rope_precision)")
     args = parser.parse_args(argv)
     passed = run(args.tokenizer, args.checkpoint, args.prompt, args.layers,
-                 args.seed, args.device, exact_rope=not args.openpi_rope_bf16)["passed"]
+                 args.seed, args.device, exact_rope=not args.openpi_rope_bf16,
+                 plan=args.plan)["passed"]
     return 0 if passed else 1
 
 

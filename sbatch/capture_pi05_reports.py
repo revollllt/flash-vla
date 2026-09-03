@@ -81,11 +81,12 @@ def run(*, out_dir: Path, tag: str, num_views: int, chunk_size: int, steps: int,
         plan: str | None = None) -> int:
     """Run the selected benchmarks, persist each report, then write the manifest."""
     from benchmarks import e2e_pi05, profile_pi05
+    from benchmarks.plans import parse_plan
 
     out_dir.mkdir(parents=True, exist_ok=True)
     shared = dict(num_views=num_views, chunk_size=chunk_size, steps=steps, layers=layers,
                   seed=seed, tokenizer_path=tokenizer,
-                  plan=e2e_pi05.parse_plan(plan) if plan else None)
+                  plan=parse_plan(plan) if plan else None)
     if prompt is not None:
         shared["prompt"] = prompt
 
@@ -150,7 +151,8 @@ def main(argv=None) -> int:
     parser.add_argument("--trace-dir", default=None,
                         help="also export per-stage Chrome traces here")
     parser.add_argument("--plan", default=None,
-                        help="call-site plan, a name from e2e_pi05.PLANS or a JSON object")
+                        help="call-site plan: a name from benchmarks.plans.PLANS "
+                             "or a JSON object")
     args = parser.parse_args(argv)
     return run(out_dir=args.out_dir, tag=args.tag, num_views=args.num_views,
                chunk_size=args.chunk_size, steps=args.steps, layers=args.layers,

@@ -3,7 +3,8 @@
 `profile_pi05` aggregates by KERNEL NAME, and both stages reuse one kernel at
 two call sites, so their largest rows arrive undifferentiated:
 
-    prefix   cuBLAS `nvjet*` GEMMs      o_proj, ffn_down, attn:qk and attn:pv
+    prefix   cuBLAS `nvjet*` GEMMs      o_proj and ffn_down, plus attn:qk and
+                                        attn:pv on the reference attention route
     decoder  `_matmul_gated_res_kernel`  360 calls = 180 o_proj + 180 ffn_down
 
 Between them that is 27.6% of the prefix stage and 29.4% of the decoder, with
@@ -33,6 +34,8 @@ import statistics
 from collections import defaultdict
 from pathlib import Path
 
+from .plans import PLANS, encoder_attention_route, parse_plan
+
 #: The kernel a call site emits, in the order `pipeline.prefix` calls them.
 #: The final layer runs only its QKV projection: nothing downstream reads that
 #: layer's output, only its K and V.
@@ -40,14 +43,23 @@ PREFIX_PROLOGUE = [("encoder_projector", "tl_layer_norm_kernel"),
                    ("encoder_projector", "_matmul_bias_kernel"),
                    ("encoder_embed_prompt", "vectorized_gather_kernel"),
                    ("encoder_embed_prompt", "elementwise_kernel")]
-PREFIX_LAYER = [("qkv:rms_norm", "tl_rms_norm_kernel"),
-                ("qkv:gemm_rope", "tl_matmul_rope_scatter_kernel"),
-                ("attn:fused", "enc_attn_kernel"),
-                ("o_proj", "nvjet"),
+_PREFIX_QKV = [("qkv:rms_norm", "tl_rms_norm_kernel"),
+               ("qkv:gemm_rope", "tl_matmul_rope_scatter_kernel")]
+_PREFIX_REST = [("o_proj", "nvjet"),
                 ("ffn:rms_norm", "tl_rms_norm_kernel"),
                 ("ffn:gate_up", "tl_matmul_gate_kernel"),
                 ("ffn:down", "nvjet")]
-PREFIX_TAIL = PREFIX_LAYER[:2]          # the final layer's QKV-only pass
+#: The encoder attention is plan-selected like the decoder body below: the fused
+#: CUDA kernel is one launch, the reference torch chain is three (a cuBLAS QK^T,
+#: a Triton softmax, a cuBLAS PV). Keyed by backend, not by plan name, because
+#: that is the only thing the prefix sequence depends on.
+PREFIX_LAYER_BY_ROUTE = {
+    "cuda": _PREFIX_QKV + [("attn:fused", "enc_attn_kernel")] + _PREFIX_REST,
+    "tilelang": _PREFIX_QKV + [("attn:qk", "nvjet"),
+                               ("attn:softmax", "triton_per_fused"),
+                               ("attn:pv", "nvjet")] + _PREFIX_REST,
+}
+PREFIX_TAIL = _PREFIX_QKV               # the final layer's QKV-only pass
 
 #: `pipeline.decoder`, one flow step: an in-projection, 18 layers, an out-projection.
 #: The per-layer body depends on the call-site plan the engine was built with
@@ -84,13 +96,17 @@ DECODER_LAYER_BY_PLAN = {
     "attn-ffn-cuda": _QKV_CUDA + _ATTN_CUDA + _OPROJ + _FFN_CUDA,
     "attn-ffn-cuda-fused-producer":
         _QKV_CUDA + _ATTN_CUDA + _OPROJ_FFN_CUDA_FUSED,
+    # Same decoder body; only the encoder attention differs (`plans.PLANS`).
+    "attn-ffn-cuda-fused-producer-enc-tilelang":
+        _QKV_CUDA + _ATTN_CUDA + _OPROJ_FFN_CUDA_FUSED,
 }
 DECODER_EPILOGUE = [("action_out_proj", "tl_fused_rms_matmul_bias_res_kernel")]
 
-#: (prologue, per-layer body, tail, layers, repeats). The prefix runs all
-#: TileLang under every plan; only the decoder body is plan-selected.
-PLANS = {
-    "prefix": (PREFIX_PROLOGUE, PREFIX_LAYER, PREFIX_TAIL, 17, 1),
+#: (prologue, per-layer body, tail, layers, repeats). Both bodies are selected
+#: by the call-site plan the traced engine was built with, so `--plan` is not a
+#: label here: it is what makes the assertion at every position meaningful.
+STAGES = {
+    "prefix": (PREFIX_PROLOGUE, PREFIX_LAYER_BY_ROUTE, PREFIX_TAIL, 17, 1),
     "decoder": (DECODER_PROLOGUE, DECODER_LAYER_BY_PLAN, DECODER_EPILOGUE, 18, 10),
 }
 
@@ -107,16 +123,40 @@ def _load(path: Path) -> list[dict]:
     return sorted(kernels, key=lambda e: e["ts"])
 
 
-def _expand(stage_spec, plan_name: str) -> list[tuple[str, str]]:
-    prologue, layer, tail, layers, repeats = stage_spec
+def _body_key(stage: str, plan_name: str) -> str:
+    """Which body variant `stage` runs under `plan_name`.
+
+    The decoder body is keyed by the plan itself, because five call sites and
+    their fusions vary together. The prefix body varies only with the encoder
+    attention route, and the PDL variant of the CUDA backend emits the same
+    kernel there, so it collapses to the backend family.
+    """
+    if stage != "prefix":
+        if plan_name not in DECODER_LAYER_BY_PLAN:
+            raise SystemExit(
+                f"no decoder sequence tabulated for plan {plan_name!r}; known: "
+                f"{sorted(DECODER_LAYER_BY_PLAN)}. Add the launch sequence that "
+                "plan's wrappers emit rather than reading it under another's.")
+        return plan_name
+    try:
+        plan = parse_plan(plan_name)
+    except json.JSONDecodeError:
+        raise SystemExit(f"--plan {plan_name!r} is neither a name in "
+                         f"{sorted(PLANS)} nor a JSON object") from None
+    route = encoder_attention_route(plan)
+    return "cuda" if route.startswith("cuda") else "tilelang"
+
+
+def _expand(stage: str, plan_name: str) -> list[tuple[str, str]]:
+    prologue, layer, tail, layers, repeats = STAGES[stage]
     if isinstance(layer, dict):
-        layer = layer[plan_name]
+        layer = layer[_body_key(stage, plan_name)]
     return (list(prologue) + list(layer) * layers + list(tail)) * repeats
 
 
 def walk(events: list[dict], stage: str, plan_name: str) -> dict[str, list[float]]:
     """Assign every kernel to a call site, asserting the expected name at each step."""
-    expected = _expand(PLANS[stage], plan_name)
+    expected = _expand(stage, plan_name)
     if len(events) != len(expected):
         raise SystemExit(
             f"{stage}: trace has {len(events)} kernels, the pipeline emits "
@@ -259,8 +299,12 @@ def main(argv=None) -> int:
                         help="directory holding the per-stage traces written by "
                              "profile-pi05 --trace-dir")
     parser.add_argument("--stages", default="prefix,decoder")
-    parser.add_argument("--plan", default="tilelang", choices=sorted(DECODER_LAYER_BY_PLAN),
-                        help="the call-site plan the traced engine was built with")
+    parser.add_argument(
+        "--plan", default="tilelang",
+        help=f"the call-site plan the traced engine was built with: one of "
+             f"{sorted(PLANS)} or JSON. The prefix stage needs only the encoder "
+             f"attention route it names; the decoder stage needs a plan whose "
+             f"body is tabulated here: {sorted(DECODER_LAYER_BY_PLAN)}")
     parser.add_argument("--out", type=Path, default=None, help="write the report as JSON")
     args = parser.parse_args(argv)
 

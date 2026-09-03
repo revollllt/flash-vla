@@ -182,9 +182,10 @@ def main(argv=None) -> int:
     parser.add_argument("--trace-dir", default=None,
                         help="export stage Chrome traces here; defaults to GPU_PROFILE_OUTPUT_DIR")
     parser.add_argument("--plan", default=None,
-                        help="call-site plan, a name from e2e_pi05.PLANS or a JSON object")
+                        help="call-site plan: a name from benchmarks.plans.PLANS "
+                             "or a JSON object")
     args = parser.parse_args(argv)
-    from .e2e_pi05 import parse_plan
+    from .plans import parse_plan
     run(args.num_views, args.chunk_size, args.steps, args.layers, args.top, args.seed,
         args.prompt, args.tokenizer, trace_dir=args.trace_dir,
         plan=parse_plan(args.plan) if args.plan else None)

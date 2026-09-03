@@ -25,9 +25,20 @@ the P.V wgmma. The three tensor maps are encoded once per buffer triple on
 the host, since `cuTensorMapEncodeTiled` is not graph-capture safe.
 
 The kernel writes into a new `encoder_attn_out` buffer instead of returning a
-fresh tensor, and `pipeline.encoder` selects it. `ENC_ATTN_ROUTE=torch`
-restores the reference chain; that switch is what makes an A/B for this call
-site possible, and the chain remains the parity reference.
+fresh tensor, and `encoder_attention` is a call site in the op table like any
+other, so a plan selects the route: `{"encoder_attention": "cuda"}`. Both routes
+carry one signature -- `(Q, K, V, scale, mask, out)`, returning the tensor that
+holds the result, a view of `out` for the kernel and its own allocation for the
+chain. The chain is deliberately not copied into `out`: it is the parity
+reference and the A/B leg, and pricing a copy into it would distort every
+comparison it settles.
+
+Two rules follow. Every shipped plan names the call site, and `plan=None` stays
+the all-TileLang reference including the chain -- nothing is overlaid on a plan,
+so the plan a report records is the whole description of what ran. And the call
+site takes no atomic-route constraint: it owns no scratch crossing a call
+boundary (unlike the decoder attention pair), and the encoder QKV projection
+that writes its Q/K/V is TileLang-only, so one layout is single-sourced.
 
 ## Alternatives considered
 
@@ -51,8 +62,15 @@ site possible, and the chain remains the parity reference.
 ## Consequences
 
 - The prefix stage runs 125 kernels per inference instead of 159; two launches
-  per layer disappear. `benchmarks/layer_breakdown.py` carries the new
-  sequence (`attn:fused`).
+  per layer disappear. `benchmarks/layer_breakdown.py` carries both sequences
+  and picks one from the plan's encoder route, the way it already picked the
+  decoder body from the plan.
+- The named plans live in `benchmarks/plans.py`, which has no device dependency
+  so the offline trace analysis can read a plan without importing torch. A
+  latency comparison against the `tilelang` plan now moves the prefix as well as
+  the decoder; `attn-ffn-cuda-fused-producer-enc-tilelang` is the leg that holds
+  the decoder fixed, and both legs run in one process (`--plan a --plan b
+  --plan a`), which the import-time switch could not do.
 - `buffers.py` gains `encoder_attn_out` (4 MB) so the fused kernel has a
   stable, capture-safe destination.
 - The kernel holds 226 KB of shared memory and one CTA per SM. Its shape
@@ -86,7 +104,8 @@ site possible, and the chain remains the parity reference.
 - Route gates: `prefix_parity` against OpenPI (job 589128, openpi env) passes,
   layer-0 K/V cosine unchanged to 6e-8 and the largest per-layer change 3.0e-5
   in the favourable direction; `plan_parity` on the pdl plan, 1 step x 18
-  layers (job 589129) passes.
+  layers (job 589129) passes. Both take `--plan`, and must be given a shipped
+  plan to cover this kernel: their default reference route runs the chain.
 - End to end, same-job A/B/A on ACD1-33 (job 589207, 30 reps per leg), prefix
   stage min: torch 6.302, cuda 6.146, torch 6.302. Forward wall min 16.274 /
   16.062 / 16.233. The two prefix reference legs
@@ -97,3 +116,18 @@ site possible, and the chain remains the parity reference.
   these numbers would not be.
 - In-graph trace (job 589127): `attn:fused` 22.14 us/layer over 125 launches,
   no measurable inter-kernel gap in the prefix graph.
+- Plan surface, three ways. An import-level check on the login node builds both
+  tables, resolves every named plan to the route it names, and confirms an
+  unknown backend name raises rather than silently choosing one. Traces on both
+  routes (jobs 591063 cuda, 591064 tilelang) walk the whole prefix under
+  `layer_breakdown --plan` with every position asserted: 125 kernels,
+  `attn:fused` 22.30 us/layer, against 159 kernels and 12.03 + 9.31 + 8.58 for
+  the chain. `plan_parity` on the pdl plan (job 591066, 1 step x 18 layers) now
+  compares this kernel against the chain inside the full pipeline rather than
+  running it on both legs: actions cosine 0.99975, K/V suffix 0.99987, smooth
+  per-layer degradation. The kernel gate re-runs green on this tree
+  (job 591061).
+- A same-process A/B/A (job 591067, ACD1-6, 30 reps per leg) moves the prefix
+  stage 6.261 -> 6.696 -> 6.475 ms with the decoder flat to 0.06 ms, so the
+  direction reproduces; its control legs drifted 0.214 ms, half the effect, so
+  the magnitude above still rests on job 589207 and not on this run.

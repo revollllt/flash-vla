@@ -38,58 +38,9 @@ from flash_vla.models.pi05.tokenize import Pi05Tokenizer
 from flash_vla.models.pi05.weights import fold, random_checkpoint
 
 from .metrics import require_cuda
+from .plans import PLANS, parse_plan
 
 DEFAULT_PROMPT = "pick up the plate and put it in the sink"
-
-#: Named plans for `--plan`. A JSON object is accepted too.
-PLANS = {
-    "tilelang": None,
-    "attn-cuda": {
-        "decoder_norm_qkv_rope": "cuda",
-        "decoder_attention": "cuda",
-    },
-    "ffn-cuda": {
-        "decoder_norm_gated_ffn": "cuda",
-        "decoder_ffn_down_residual": "cuda",
-    },
-    "ffn-cuda-fused-producer": {
-        "decoder_out_proj_residual": "cuda",
-        "decoder_norm_gated_ffn": "cuda",
-        "decoder_ffn_down_residual": "cuda",
-    },
-    "attn-ffn-cuda": {
-        "decoder_norm_qkv_rope": "cuda",
-        "decoder_attention": "cuda",
-        "decoder_norm_gated_ffn": "cuda",
-        "decoder_ffn_down_residual": "cuda",
-    },
-    "attn-ffn-cuda-fused-producer": {
-        "decoder_norm_qkv_rope": "cuda",
-        "decoder_attention": "cuda",
-        "decoder_out_proj_residual": "cuda",
-        "decoder_norm_gated_ffn": "cuda",
-        "decoder_ffn_down_residual": "cuda",
-    },
-    # PDL-chain variants: same routes through the cuda-pdl backend. -pdlffn
-    # arms only the FFN half (role-split wait releases the weight loaders
-    # under the XFS producer); -pdl additionally chains rms -> qkv ->
-    # attention -> combine with early triggers and waits at the first
-    # dependent read.
-    "attn-ffn-cuda-fused-producer-pdlffn": {
-        "decoder_norm_qkv_rope": "cuda",
-        "decoder_attention": "cuda",
-        "decoder_out_proj_residual": "cuda-pdl",
-        "decoder_norm_gated_ffn": "cuda-pdl",
-        "decoder_ffn_down_residual": "cuda-pdl",
-    },
-    "attn-ffn-cuda-fused-producer-pdl": {
-        "decoder_norm_qkv_rope": "cuda-pdl",
-        "decoder_attention": "cuda-pdl",
-        "decoder_out_proj_residual": "cuda-pdl",
-        "decoder_norm_gated_ffn": "cuda-pdl",
-        "decoder_ffn_down_residual": "cuda-pdl",
-    },
-}
 
 #: Analytic per-stage floors from PLAN.md §1.2, at 3 views / prompt 200 /
 #: chunk 50 / 10 steps on an H100 SXM5 at 989 TFLOP/s bf16 and 3.35 TB/s.
@@ -271,12 +222,6 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
     return report
 
 
-def parse_plan(text: str) -> dict[str, str] | None:
-    if text in PLANS:
-        return PLANS[text]
-    return json.loads(text)
-
-
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--num-views", type=int, default=3)
@@ -305,17 +250,20 @@ def main(argv=None) -> int:
             plan=parse_plan(name),
             profile_decoder_graph=args.profile_decoder_graph)))
     if len(reports) > 1:
-        reference = reports[0][1]["stages"]["decoder"]
-        print(f"== decoder stage vs first run ({plans[0]}), same process")
+        # Both halves of the pipeline are plan-selected, so an A/B that printed
+        # only the decoder would hide an encoder-attention move entirely.
+        reference = reports[0][1]
+        print(f"== stage minima vs first run ({plans[0]}), same process")
         for name, report in reports:
-            decoder = report["stages"]["decoder"]
-            wall = report["forward_wall"]
-            print(
-                f"  {name:28s} median {decoder['median_ms']:8.3f} "
-                f"({decoder['median_ms'] - reference['median_ms']:+.3f}) "
-                f"min {decoder['min_ms']:8.3f} "
-                f"({decoder['min_ms'] - reference['min_ms']:+.3f}) "
-                f"forward_wall min {wall['min_ms']:8.3f}")
+            row = f"  {name:44s}"
+            for stage in ("prefix", "decoder"):
+                got, ref = report["stages"][stage], reference["stages"][stage]
+                row += (f" {stage} {got['min_ms']:7.3f} "
+                        f"({got['min_ms'] - ref['min_ms']:+.3f})")
+            wall, ref_wall = report["forward_wall"], reference["forward_wall"]
+            row += (f" wall {wall['min_ms']:7.3f} "
+                    f"({wall['min_ms'] - ref_wall['min_ms']:+.3f})")
+            print(row)
     return 0
 
 

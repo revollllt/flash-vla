@@ -9,8 +9,8 @@ names for that header set -- editing `tile/sm90/*.cuh` must re-run it.
 Three checks, each independently meaningful:
 
 - **chain**: against the torch route it replaced (`encoder_attention`), which
-  is what the pipeline ran before and still runs under `ENC_ATTN_ROUTE=torch`.
-  This is the comparison a promotion claim rests on.
+  is what the pipeline still runs wherever a plan does not route this call site
+  to the cuda backend. This is the comparison a promotion claim rests on.
 - **fp32**: against an fp32 recomputation of the same maths, over valid query
   rows only. Padded prefix rows are excluded by construction: this target lets
   them attend normally where OpenPI zeroes them, and they are masked out of

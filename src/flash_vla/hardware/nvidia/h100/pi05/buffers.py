@@ -130,9 +130,9 @@ def allocate_static_buffers(num_views: int, chunk_size: int, device: str,
         "encoder_K": encoder_K[:, :cache_len],
         "encoder_V": encoder_V[:, :cache_len],
         "encoder_Q": buf(encoder_seq_len * DECODER_HEADS, HEAD_DIM),
-        # The fused attention kernel writes its result here rather than
-        # returning a fresh tensor; the output projection reads it as
-        # (encoder_seq_len, ENCODER_DIM), the same bytes.
+        # Destination for the fused CUDA encoder attention; the reference torch
+        # route allocates its own result and leaves this idle. Either way the
+        # output projection reads (encoder_seq_len, ENCODER_DIM), the same bytes.
         "encoder_attn_out": buf(encoder_seq_len * DECODER_HEADS, HEAD_DIM),
         "encoder_hidden": buf(encoder_seq_len, ENCODER_FFN),
 

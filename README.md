@@ -94,8 +94,8 @@ builds the table the pipeline runs against, selecting a backend per call site:
 # tilelang for everything, fused decoder on
 ops = op_table(fused=True, backend="tilelang")
 
-# tilelang everywhere except decoder attention, which a future CUDA backend owns
-ops = op_table(fused=True, plan={"decoder_attention": "cuda"})
+# tilelang everywhere except the encoder attention, which the CUDA backend owns
+ops = op_table(fused=True, plan={"encoder_attention": "cuda"})
 ```
 
 Selecting the fused decoder is a different operation table, not different
@@ -188,10 +188,12 @@ Things that fail quietly, or fail far from their cause:
 
 ## Requirements
 
-H100 (Hopper WGMMA and TMA), TileLang 0.1.11, PyTorch with CUDA. The vision and
-encoder attention stay in torch: both are full bidirectional attention over a
-long sequence, where cuDNN is already at the roofline. Only the decoder's
-multi-query attention over a KV cache has a TileLang implementation.
+H100 (Hopper WGMMA and TMA), TileLang 0.1.11, PyTorch with CUDA. Vision
+attention stays in torch: full bidirectional attention over a long sequence,
+where cuDNN is already at the roofline. Encoder attention has a hand-written
+CUDA kernel that every shipped plan selects, with the torch chain kept as its
+reference route; the decoder's multi-query attention over a KV cache has both a
+TileLang and a CUDA implementation.
 
 `num_views == 2` is not supported (upstream's two-part vision branch).
 
