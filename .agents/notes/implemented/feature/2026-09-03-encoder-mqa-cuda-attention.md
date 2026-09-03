@@ -68,6 +68,14 @@ site possible, and the chain remains the parity reference.
 
 ## Verification
 
+
+- Kernel gate: `eval/correctness/pi05/enc_attn_parity.py` -- the fused kernel
+  against the torch chain it replaced, against an fp32 recomputation over
+  valid query rows, and a separate finiteness check on the padded rows (the
+  mask scaled by log2(e) overflows to -inf, so a fully-masked block would
+  yield NaN without the kernel's running-max floor). It is also the
+  regression gate the tile library's README names for `tile/sm90/*.cuh`
+  edits, alongside the two task-loop parity scripts.
 - Kernel parity vs fp32 torch over valid query rows, every candidate:
   cosine 0.9999973, max relative error 3.8e-3 (bf16 rounding). Harness and
   ledger in the task workspace `artifacts/ktasks/mqa-cuda/`.

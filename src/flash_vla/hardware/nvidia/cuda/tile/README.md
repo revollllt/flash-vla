@@ -72,7 +72,10 @@ constraint; there is no runtime fallback.
   mixed pair, two stacked warpgroups, mma.sync bf16 and fp8 through cp.async
   and ldmatrix). Run on a GPU node with
   `sbatch sbatch/pi05_cuda.sh -m eval.correctness.tile_sm90.primitives_parity`.
-- Production kernels: the FFN and attention task loops build on these
-  headers; their parity scripts (`eval/correctness/pi05/`) are the
-  regression gate for any change here, and the build wrappers hash these
-  headers so an edit never reuses a stale binary.
+- Production kernels: the FFN task loop, the decoder attention task loop and
+  the encoder attention kernel build on these headers. Their parity scripts
+  are the regression gate for any change here, and all three must pass:
+  `eval/correctness/pi05/ffn_taskloop_parity.py --modes gu,dr,full`,
+  `attention_block_parity.py --impl standalone`, and
+  `enc_attn_parity.py`. The build wrappers hash these headers, the nvcc
+  flags and the CUTLASS identity, so an edit never reuses a stale binary.
