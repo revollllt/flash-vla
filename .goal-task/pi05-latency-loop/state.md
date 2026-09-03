@@ -110,7 +110,16 @@ Each round: (1) profile (`CAPTURE_TRACES=1 CAPTURE_PLAN=attn-ffn-cuda-fused-prod
   `artifacts/ktasks/<task>/` workspace -- COPY the workspace to MAIN first
   (the G3 ledger/patch source was lost this way; the note carries the verdict).
 
-## Reachability of the 14.5 ms target (recorded 2026-09-03)
+## Reachability, revised after job 589178
+
+The FFN bandwidth family is closed by a measured bound (both weight streams
+free = 2.39 us/layer = 0.43 ms ceiling), which also retires the megakernel's
+continuity argument for this kernel. What replaced it is larger: the
+DownResidual dependency chain, 10.5 us/layer on 0.54 GFLOP with 0.25 us of
+stream, i.e. ~1.89 ms of decoder time whose cost is round trips and joins.
+todo#10 owns it.
+
+## Reachability of the 14.5 ms target (recorded 2026-09-03, superseded above)
 
 At 16.254 ms with G1/G3/G4/G5 rejected, the remaining identified queue is
 todo#4b CUDA MQA attention (~0.25), #7 vision LN + SDPA (~0.27), #9 decoder
