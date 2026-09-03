@@ -237,12 +237,27 @@ def _extra_flags() -> list[str]:
     return os.environ.get("ATTN_NVCC_DEFINES", "").split()
 
 
+def _cutlass_identity() -> bytes:
+    """What CUTLASS this build compiles against, for the cache key.
+
+    `CUTLASS_DIR` is a supported knob (`third_party/README.md`), so the path
+    alone is not enough: pointing it at another tree, or unsetting it after a
+    custom build, must not reuse the previous `.so`. The version header is
+    read rather than the whole tree because it is what changes when the pin
+    moves and it costs one small read.
+    """
+    version = _CUTLASS / "include" / "cutlass" / "version.h"
+    payload = version.read_bytes() if version.is_file() else b"missing"
+    return str(_CUTLASS.resolve()).encode() + payload
+
+
 def _build_dir() -> Path:
     # The tile primitive headers are part of the kernel; hash them so an
     # edit there never reuses a stale .so.
     tile_headers = b"".join(h.read_bytes() for h in
                             sorted((_TILE_ROOT / "tile" / "sm90").glob("*.cuh")))
     tag = hashlib.sha256(_SRC.read_bytes() + _HEADER.read_bytes() + tile_headers
+                        + _cutlass_identity()
                         + " ".join(_extra_flags()).encode()).hexdigest()[:16]
     d = _REPO / ".cache" / "cuda_ext" / f"attn_taskloop_{tag}"
     d.mkdir(parents=True, exist_ok=True)

@@ -198,6 +198,20 @@ def _extra_flags() -> list[str]:
     return [f for f in os.environ.get("FFN_NVCC_DEFINES", "").split() if f]
 
 
+def _cutlass_identity() -> bytes:
+    """What CUTLASS this build compiles against, for the cache key.
+
+    `CUTLASS_DIR` is a supported knob (`third_party/README.md`), so the path
+    alone is not enough: pointing it at another tree, or unsetting it after a
+    custom build, must not reuse the previous `.so`. The version header is
+    read rather than the whole tree because it is what changes when the pin
+    moves and it costs one small read.
+    """
+    version = _CUTLASS / "include" / "cutlass" / "version.h"
+    payload = version.read_bytes() if version.is_file() else b"missing"
+    return str(_CUTLASS.resolve()).encode() + payload
+
+
 def _build_dir() -> Path:
     hasher = hashlib.sha256(_SRC.read_bytes())
     # The headers carry the geometry and barrier structure; without them in
@@ -206,6 +220,7 @@ def _build_dir() -> Path:
         hasher.update(header.read_bytes())
     for header in sorted((_TILE_ROOT / "tile" / "sm90").glob("*.cuh")):
         hasher.update(header.read_bytes())
+    hasher.update(_cutlass_identity())
     hasher.update(" ".join(_extra_flags()).encode())
     tag = hasher.hexdigest()[:16]
     d = _REPO / ".cache" / "cuda_ext" / f"ffn_taskloop_{tag}"
