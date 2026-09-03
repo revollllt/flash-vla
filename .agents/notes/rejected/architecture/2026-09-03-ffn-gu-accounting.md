@@ -5,6 +5,15 @@ accounting and the named successor are the durable result.
 
 Date: 2026-09-03
 
+
+> **Superseded in part** (job 591174, `2026-09-03-ffn-gu-copy-column.md`):
+> this note's headline -- that in-flight weight frames are the pole -- reads a
+> one-sided gradient as a pole. The phase has two floors stacked ~20% apart, a
+> 9.41 us cold-DRAM delivery floor and a ~7.7 us ring-protocol floor, and the
+> production column sits within 1.6% of the former. Ring depth 3->2 hurts
+> because it lifts the protocol floor above the DRAM floor; deeper buys nothing
+> because it is already below. The decomposition table below stands.
+
 ## Problem
 
 The decoder FFN task loop's GatedUp phase measured 11.89 us/layer while its
