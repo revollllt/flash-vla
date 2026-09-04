@@ -221,7 +221,9 @@ __global__ __launch_bounds__(kThreads, 1) void mla_decode_split_kernel(
 
   // The partial stores above are the only thing the combine kernel reads, so
   // release it now and let its prologue overlap this kernel's teardown.
-  tmpl::pdl_launch_dependents();
+  // The dependent reads these stores, and the trigger is not a fence.
+  tmpl::pdl_release_fence();
+  tmpl::pdl_trigger();
 }
 
 // Merges the splits of one request.  Trivially parallel and bandwidth-bound;

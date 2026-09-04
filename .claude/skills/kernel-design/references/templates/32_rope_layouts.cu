@@ -106,7 +106,9 @@ __global__ __launch_bounds__(kThreads) void rope_kernel(
     v.cast_store(out + base + i);
   }
 
-  tmpl::pdl_launch_dependents();
+  // The dependent reads these stores, and the trigger is not a fence.
+  tmpl::pdl_release_fence();
+  tmpl::pdl_trigger();
 }
 
 template __global__ void rope_kernel<RopeLayout::kInterleaved>(

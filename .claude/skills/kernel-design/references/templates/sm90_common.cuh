@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cuda.h>
+#include <cuda_runtime.h>
 #include <cstdint>
 
 namespace tmpl {
@@ -113,20 +114,54 @@ __device__ __forceinline__ void setmaxnreg_inc() {
 }
 
 // --------------------------------------------------------------------- pdl
+//
+// Use the CUDA intrinsics, not hand-rolled asm.  They ARE these instructions --
+// cuda_device_runtime_api.h defines them as exactly this PTX -- but they carry
+// the compiler barriers NVIDIA intends, and the two differ ASYMMETRICALLY:
+//
+//   cudaGridDependencySynchronize()           -> griddepcontrol.wait  ::: "memory"
+//   cudaTriggerProgrammaticLaunchCompletion() -> griddepcontrol.launch_dependents ::: (none)
+//
+// The wait is an acquire and must stop the compiler hoisting a producer-data
+// load above it.  The trigger deliberately is NOT a barrier: it must not stop
+// the compiler moving independent work across it, because overlapping that work
+// is the entire point.  Hand-rolled asm tends to get exactly one of these
+// wrong -- adding "memory" to the trigger over-constrains it, omitting it from
+// the wait is a real hazard.
+//
+// TWO FACTS FROM THE HEADER DOCS THAT DECIDE PLACEMENT:
+//
+//  1. The trigger gives NO MEMORY VISIBILITY.  It "only enables scheduling of
+//     the secondary kernel".  If the dependent reads what this kernel wrote, a
+//     release fence of the right scope must precede the trigger -- the trigger
+//     is not one.
+//  2. The kickoff happens AUTOMATICALLY once every CTA has exited.  So a
+//     trigger on the last line of a kernel is close to a no-op: it fires when
+//     the automatic path would have fired anyway.  PDL pays only when the
+//     trigger is genuinely earlier than the kernel's end, which means the
+//     producer must have tail work left to overlap.
+//
+// The consequence is a rule per side, and they are not symmetric:
+//   PRODUCER: trigger at the earliest point after which everything the
+//     dependent reads is written and fenced.  If that point is the last store,
+//     this kernel is a poor PDL producer and the win has to come from the
+//     other side.
+//   DEPENDENT: wait at the LATEST point before the first producer-data read.
+//     Index arithmetic, model parameters, scheduling metadata and descriptor
+//     prefetch all belong above it.
+//
+// Where those points are is a measurement, not a derivation --
+// wiki/pdl-placement.md carries the ablation.
 
-// Programmatic dependent launch.  The dependent grid may start its prologue as
-// soon as this runs, so it goes AFTER the last write the dependent must not
-// see early and before this kernel's own tail work.
-__device__ __forceinline__ void pdl_launch_dependents() {
-  asm volatile("griddepcontrol.launch_dependents;" ::: "memory");
+__device__ __forceinline__ void pdl_wait() { cudaGridDependencySynchronize(); }
+
+__device__ __forceinline__ void pdl_trigger() {
+  cudaTriggerProgrammaticLaunchCompletion();
 }
 
-// Blocks until the primary grid has released its dependents.  A dependent
-// kernel calls this once, after any prologue that does not touch the primary's
-// output.
-__device__ __forceinline__ void pdl_wait() {
-  asm volatile("griddepcontrol.wait;" ::: "memory");
-}
+// Device-scope release.  Required before an explicit trigger whenever the
+// dependent consumes this kernel's writes; the trigger does not order memory.
+__device__ __forceinline__ void pdl_release_fence() { __threadfence(); }
 
 // ----------------------------------------------------------------- cluster
 

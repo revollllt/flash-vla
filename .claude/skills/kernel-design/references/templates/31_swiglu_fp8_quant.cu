@@ -104,7 +104,9 @@ __global__ __launch_bounds__(kThreads) void swiglu_fp8_quant_kernel(
     }
   }
 
-  tmpl::pdl_launch_dependents();
+  // The dependent reads these stores, and the trigger is not a fence.
+  tmpl::pdl_release_fence();
+  tmpl::pdl_trigger();
 }
 
 static_assert(kRowElems > 0, "row must be a whole number of per-thread vectors");

@@ -98,5 +98,7 @@ __global__ __launch_bounds__(kThreads) void softmax_rowwise_kernel(
     v.cast_store(output + row + i * kVec);
   }
 
-  tmpl::pdl_launch_dependents();
+  // The dependent reads these stores, and the trigger is not a fence.
+  tmpl::pdl_release_fence();
+  tmpl::pdl_trigger();
 }
