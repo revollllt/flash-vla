@@ -74,11 +74,52 @@
 // instructions nobody has issued. DeepGEMM's MegaMoE answers it with a warmup
 // wave sized from the per-block ratio of the two stages.
 //
-// STATUS: builds and assembles; NOT YET RUN ON HARDWARE. The harness at the
-// bottom checks both paths against a double-precision CPU reference and times
-// them graph-captured, but no numbers have been recorded yet, so treat the
-// structure as reviewed and the behaviour as unverified. Until this block
-// carries measurements, this file documents an architecture, not a result.
+// MEASURED. H100 SXM5, CUDA 13.0, driver 610.43.02, clocks NOT pinned (no
+// permission on this node, so read these as ratios). d=2048 ffn=8192 bf16,
+// batch 1. CUDA-graph captured, min of 3 x 200 iterations after 50 warmup.
+// Both paths agree with a double-precision CPU reference at 3.813e-03 max
+// relative error -- identical to three digits, which is the check that the VM
+// computes the same function and not merely a plausible one.
+//
+//   baseline, 3 kernels                              90.75 us
+//   megakernel, 132 CTAs                            115.25 us   0.79x
+//
+//   grid sweep (81 instructions in the program)
+//     CTAs   ins/CTA   latency    vs baseline
+//      132      0.61   115.25 us     0.79x
+//       81      1.00   115.42 us     0.79x
+//       64      1.27   125.94 us     0.72x
+//       40      2.03   132.55 us     0.68x
+//       16      5.06   209.96 us     0.43x
+//        8     10.12   369.58 us     0.25x
+//
+// THE MEGAKERNEL LOSES, BY 1.27x, AND THAT IS THE RESULT. It is reported here
+// rather than tuned away because a reference that only shows the idiom winning
+// teaches the wrong thing: this is the ledger of [fusion-economics] coming out
+// negative, which is the common case at one-layer scope. Three launches are
+// worth ~2.5 us of ramp [launch.lat.dev.ramp]; the machinery costs ten times
+// that here.
+//
+// FOUR EXPLANATIONS TESTED AND FALSIFIED, so the next person does not repeat
+// them:
+//
+//   1. "The VM is not amortised -- 81 instructions over 132 CTAs is less than
+//      one each." Falsified by the grid sweep: fewer CTAs is monotonically
+//      WORSE. The problem is bandwidth-bound and wants every SM.
+//   2. "The fan-in of 64 on every `down` strands CTAs spinning where a kernel
+//      boundary would release the machine." Falsified with the truncation hook:
+//      the program cut to rmsnorm + gate/up has no fan-in at all, and the gap
+//      WIDENS to 0.49x (34.17 us baseline vs 70.05 us).
+//   3. "The page pool is sized for the largest op, so 64 KB of shared memory
+//      forces 1 CTA/SM." Falsified by halving it: -DMK40_STAGES=1 gives a 32 KB
+//      pool and 115.40 us, unchanged.
+//   4. "The counter reset is a pageable H2D copy inside the timed graph."
+//      Real defect, fixed (it is device-to-device now), but worth 0.3 us.
+//
+// The cause is NOT identified. The clean measurement to explain is the
+// fan-in-free prefix: the identical inner loop reaches 1.94 TB/s in the
+// baseline and 0.96 TB/s in the VM. The next step is an NCU capture of both,
+// not another guess -- see the `ncu-report` skill.
 //
 //   nvcc -gencode arch=compute_90a,code=sm_90a -O3 -std=c++17 \
 //        -o mk40 40_megakernel_interpreter.cu && ./mk40
@@ -123,7 +164,10 @@ constexpr int kNumInstructions = 1 + kNumGateUp + kNumDown;  // 81
 
 struct VmConfig {
   static constexpr int kInstructionWidth = 32;  // 128 B
-  static constexpr int kPipelineStages = 2;
+#ifndef MK40_STAGES
+#define MK40_STAGES 2
+#endif
+  static constexpr int kPipelineStages = MK40_STAGES;
   static constexpr int kDynamicSemaphores = 4;
   static constexpr int kTimingWidth = 8;
   static constexpr bool kTimingEnabled = false;
@@ -187,6 +231,21 @@ __device__ __forceinline__ uint32_t stage_phase(int32_t index) {
 
 __device__ __forceinline__ float silu(float x) { return x / (1.f + __expf(-x)); }
 
+// One lane reads 8 bf16 = 16 bytes. The scalar form -- one 2-byte load per lane
+// per step -- is what made the first version of this file 6x off roofline, on
+// BOTH paths. A GEMV is a bandwidth problem and the load width is the program.
+template <class Acc>
+__device__ __forceinline__ void dot_bf16_vec(const __nv_bfloat16* __restrict__ w,
+                                             const float* __restrict__ v,
+                                             int32_t n, int32_t lane, Acc& acc) {
+  for (int32_t i = lane * 8; i < n; i += 32 * 8) {
+    int4 raw = *reinterpret_cast<const int4*>(w + i);
+    const __nv_bfloat16* wv = reinterpret_cast<const __nv_bfloat16*>(&raw);
+    #pragma unroll
+    for (int32_t j = 0; j < 8; ++j) { acc += __bfloat162float(wv[j]) * v[i + j]; }
+  }
+}
+
 __device__ __forceinline__ float warp_sum(float v) {
   #pragma unroll
   for (int off = 16; off > 0; off >>= 1) { v += __shfl_xor_sync(0xffffffffu, v, off); }
@@ -235,31 +294,34 @@ struct VmState {
 namespace op_rmsnorm {
 
 __device__ __forceinline__ void arm(const VmState& vm, int32_t ring) {
-  tmpl::mbarrier_init(vm.sem(ring, 0), 1);  // loader -> consumers
+  // Transaction barrier: the copy engine completes it, not a thread.
+  tmpl::mbarrier_init(vm.sem(ring, 0), 1);
 }
 
 // Stage x into a page: every consumer warp reads the whole vector for the
-// reduction, so one gmem pass beats sixteen.
+// reduction, so one gmem pass beats sixteen. Issued as one async bulk copy --
+// the loader warp's job is to ISSUE, not to move bytes with its own lanes.
 __device__ __forceinline__ void loader(const VmState& vm, int32_t ring,
                                        InstructionView, const Globals& g) {
-  float* p = vm.page_f32(ring, 0);
-  for (int32_t i = static_cast<int32_t>(threadIdx.x) % 32; i < kDim; i += 32) {
-    p[i] = __bfloat162float(g.x[i]);
+  if (tmpl::elect_one()) {
+    tmpl::arrive_and_expect_tx(vm.sem(ring, 0), kDim * sizeof(__nv_bfloat16));
+    tmpl::bulk_load_1d(vm.page_f32(ring, 0), g.x,
+                       kDim * sizeof(__nv_bfloat16), vm.sem(ring, 0));
   }
-  __threadfence_block();
-  if (tmpl::elect_one()) { tmpl::mbarrier_arrive(vm.sem(ring, 0)); }
 }
 
 __device__ __forceinline__ void consumer(const VmState& vm, int32_t ring,
                                          InstructionView, const Globals& g,
                                          int32_t warp, float* smem_red) {
   tmpl::wait_parity(vm.sem(ring, 0), 0);  // re-armed each instruction
-  const float* p = vm.page_f32(ring, 0);
+  const __nv_bfloat16* p =
+      reinterpret_cast<const __nv_bfloat16*>(vm.page_f32(ring, 0));
   const int32_t lane = static_cast<int32_t>(threadIdx.x) % 32;
 
   float acc = 0.f;
   for (int32_t i = warp * 32 + lane; i < kDim; i += VmConfig::kConsumerWarps * 32) {
-    acc += p[i] * p[i];
+    const float v = __bfloat162float(p[i]);
+    acc += v * v;
   }
   acc = warp_sum(acc);
   if (lane == 0) { smem_red[warp] = acc; }
@@ -271,7 +333,7 @@ __device__ __forceinline__ void consumer(const VmState& vm, int32_t ring,
   const float scale = rsqrtf(total / static_cast<float>(kDim) + kEps);
 
   for (int32_t i = warp * 32 + lane; i < kDim; i += VmConfig::kConsumerWarps * 32) {
-    g.y[i] = p[i] * scale * __bfloat162float(g.rms_w[i]);
+    g.y[i] = __bfloat162float(p[i]) * scale * __bfloat162float(g.rms_w[i]);
   }
 }
 
@@ -289,12 +351,11 @@ __device__ __forceinline__ void arm(const VmState& vm, int32_t ring) {
 // y is reused by all 128 output columns of this block, so it is staged once.
 __device__ __forceinline__ void loader(const VmState& vm, int32_t ring,
                                        InstructionView, const Globals& g) {
-  float* p = vm.page_f32(ring, 0);
-  for (int32_t i = static_cast<int32_t>(threadIdx.x) % 32; i < kDim; i += 32) {
-    p[i] = g.y[i];
+  if (tmpl::elect_one()) {
+    tmpl::arrive_and_expect_tx(vm.sem(ring, 0), kDim * sizeof(float));
+    tmpl::bulk_load_1d(vm.page_f32(ring, 0), g.y, kDim * sizeof(float),
+                       vm.sem(ring, 0));
   }
-  __threadfence_block();
-  if (tmpl::elect_one()) { tmpl::mbarrier_arrive(vm.sem(ring, 0)); }
 }
 
 // 16 warps, 128 columns: 8 columns per warp, each a full warp reduction over
@@ -314,11 +375,8 @@ __device__ __forceinline__ void consumer(const VmState& vm, int32_t ring,
     const __nv_bfloat16* wg = g.w_gate + static_cast<int64_t>(n) * kDim;
     const __nv_bfloat16* wu = g.w_up + static_cast<int64_t>(n) * kDim;
     float ag = 0.f, au = 0.f;
-    for (int32_t i = lane; i < kDim; i += 32) {
-      const float yi = y[i];
-      ag += __bfloat162float(wg[i]) * yi;
-      au += __bfloat162float(wu[i]) * yi;
-    }
+    dot_bf16_vec(wg, y, kDim, lane, ag);
+    dot_bf16_vec(wu, y, kDim, lane, au);
     ag = warp_sum(ag);
     au = warp_sum(au);
     if (lane == 0) { g.h[n] = silu(ag) * au; }
@@ -337,23 +395,22 @@ __device__ __forceinline__ void arm(const VmState& vm, int32_t ring) {
 }
 
 // h is kFfn floats = 32 KB: two pages. This is the op that sizes the page pool.
+// A stage's pages are adjacent by construction, so the pair is one span and one
+// bulk copy -- no per-element page arithmetic in the consumer.
 __device__ __forceinline__ void loader(const VmState& vm, int32_t ring,
                                        InstructionView, const Globals& g) {
-  constexpr int32_t kPerPage = VmConfig::kPageSize / 4;
-  for (int32_t i = static_cast<int32_t>(threadIdx.x) % 32; i < kFfn; i += 32) {
-    vm.page_f32(ring, i / kPerPage)[i % kPerPage] = g.h[i];
+  if (tmpl::elect_one()) {
+    tmpl::arrive_and_expect_tx(vm.sem(ring, 0), kFfn * sizeof(float));
+    tmpl::bulk_load_1d(vm.page_f32(ring, 0), g.h, kFfn * sizeof(float),
+                       vm.sem(ring, 0));
   }
-  __threadfence_block();
-  if (tmpl::elect_one()) { tmpl::mbarrier_arrive(vm.sem(ring, 0)); }
 }
 
 __device__ __forceinline__ void consumer(const VmState& vm, int32_t ring,
                                          InstructionView ins, const Globals& g,
                                          int32_t warp, float*) {
   tmpl::wait_parity(vm.sem(ring, 0), 0);
-  constexpr int32_t kPerPage = VmConfig::kPageSize / 4;
-  const float* h0 = vm.page_f32(ring, 0);
-  const float* h1 = vm.page_f32(ring, 1);
+  const float* h0 = vm.page_f32(ring, 0);  // spans both of the stage's pages
   const int32_t lane = static_cast<int32_t>(threadIdx.x) % 32;
   const int32_t k0 = ins.block() * kBlockN;
   constexpr int32_t kColsPerWarp = kBlockN / VmConfig::kConsumerWarps;  // 8
@@ -363,10 +420,7 @@ __device__ __forceinline__ void consumer(const VmState& vm, int32_t ring,
     const int32_t k = k0 + warp * kColsPerWarp + c;
     const __nv_bfloat16* wd = g.w_down + static_cast<int64_t>(k) * kFfn;
     float acc = 0.f;
-    for (int32_t i = lane; i < kFfn; i += 32) {
-      const float hi = (i < kPerPage) ? h0[i] : h1[i - kPerPage];
-      acc += __bfloat162float(wd[i]) * hi;
-    }
+    dot_bf16_vec(wd, h0, kFfn, lane, acc);
     acc = warp_sum(acc);
     if (lane == 0) {
       g.out[k] = __float2bfloat16(acc + __bfloat162float(g.residual[k]));
@@ -572,11 +626,8 @@ __global__ __launch_bounds__(512) void baseline_gateup(Globals g) {
     const __nv_bfloat16* wg = g.w_gate + static_cast<int64_t>(n) * kDim;
     const __nv_bfloat16* wu = g.w_up + static_cast<int64_t>(n) * kDim;
     float ag = 0.f, au = 0.f;
-    for (int32_t i = lane; i < kDim; i += 32) {
-      const float yi = sy[i];
-      ag += __bfloat162float(wg[i]) * yi;
-      au += __bfloat162float(wu[i]) * yi;
-    }
+    dot_bf16_vec(wg, sy, kDim, lane, ag);
+    dot_bf16_vec(wu, sy, kDim, lane, au);
     ag = warp_sum(ag);
     au = warp_sum(au);
     if (lane == 0) { g.h[n] = silu(ag) * au; }
@@ -596,9 +647,7 @@ __global__ __launch_bounds__(512) void baseline_down(Globals g) {
     const int32_t k = k0 + warp * kColsPerWarp + c;
     const __nv_bfloat16* wd = g.w_down + static_cast<int64_t>(k) * kFfn;
     float acc = 0.f;
-    for (int32_t i = lane; i < kFfn; i += 32) {
-      acc += __bfloat162float(wd[i]) * sh[i];
-    }
+    dot_bf16_vec(wd, sh, kFfn, lane, acc);
     acc = warp_sum(acc);
     if (lane == 0) {
       g.out[k] = __float2bfloat16(acc + __bfloat162float(g.residual[k]));
@@ -737,10 +786,17 @@ int main() {
   }
 
   int32_t *d_prog = nullptr, *d_succ = nullptr;
-  uint32_t *d_counters = nullptr, *d_next = nullptr;
+  uint32_t *d_counters = nullptr, *d_counters_init = nullptr, *d_next = nullptr;
   CK(cudaMalloc(&d_prog, prog.size() * 4));
   CK(cudaMalloc(&d_succ, succ.size() * 4));
   CK(cudaMalloc(&d_counters, counters.size() * 4));
+  // A pristine DEVICE copy of the initial in-degrees. Resetting from host
+  // memory each iteration -- which the first version of this harness did --
+  // puts a pageable H2D copy inside the timed graph that the baseline does not
+  // pay, and it dominated the comparison.
+  CK(cudaMalloc(&d_counters_init, counters.size() * 4));
+  CK(cudaMemcpy(d_counters_init, counters.data(), counters.size() * 4,
+                cudaMemcpyHostToDevice));
   CK(cudaMalloc(&d_next, 4));
   CK(cudaMemcpy(d_prog, prog.data(), prog.size() * 4, cudaMemcpyHostToDevice));
   CK(cudaMemcpy(d_succ, succ.data(), succ.size() * 4, cudaMemcpyHostToDevice));
@@ -763,12 +819,14 @@ int main() {
     baseline_gateup<<<kNumGateUp, 512, kDim * 4, s>>>(g);
     baseline_down<<<kNumDown, 512, kFfn * 4, s>>>(g);
   };
+  int mk_grid = sm_count;
+  int mk_limit = 0;  // 0 = whole program; the truncation hook, used below
   auto run_mk = [&](cudaStream_t s) {
     CK(cudaMemsetAsync(d_next, 0, 4, s));
-    CK(cudaMemcpyAsync(d_counters, counters.data(), counters.size() * 4,
-                       cudaMemcpyHostToDevice, s));
-    megakernel_vm<<<sm_count, VmConfig::kNumThreads, kSmem, s>>>(
-        g, d_prog, d_succ, d_counters, d_next, kNumInstructions, 0);
+    CK(cudaMemcpyAsync(d_counters, d_counters_init, counters.size() * 4,
+                       cudaMemcpyDeviceToDevice, s));
+    megakernel_vm<<<mk_grid, VmConfig::kNumThreads, kSmem, s>>>(
+        g, d_prog, d_succ, d_counters, d_next, kNumInstructions, mk_limit);
   };
 
   auto check = [&](const char* what) {
@@ -825,10 +883,92 @@ int main() {
 
   printf("\nlatency (CUDA graph, min of 3 x 200 iters)\n");
   const float t_base = time_graph(nullptr, "baseline", false);
-  const float t_mk = time_graph(nullptr, "megakernel", true);
-  printf("\n  speedup %.2fx  (%.2f us saved)\n", t_base / t_mk, t_base - t_mk);
-  printf("  3 launches removed; ramp alone is ~%.2f us at 1.24 us/launch\n",
-         2 * 1.24f);
+
+  // A megakernel amortises its machinery over the instructions ONE CTA runs
+  // back to back: with fewer instructions than CTAs the ring never pipelines
+  // and every CTA pays full setup for a fraction of an instruction. Sweeping
+  // the grid is what turns that from a hypothesis into a number.
+  printf("\nmegakernel vs grid size (%d instructions in the program)\n",
+         kNumInstructions);
+  printf("  %6s %8s %10s %9s\n", "CTAs", "ins/CTA", "latency", "vs base");
+  float best_mk = 1e30f; int best_grid = 0;
+  for (int grid : {sm_count, 81, 64, 40, 27, 16, 8}) {
+    if (grid <= 0) continue;
+    mk_grid = grid;
+    char name[32]; snprintf(name, sizeof(name), "grid=%d", grid);
+    cudaGraph_t gr; cudaGraphExec_t ex;
+    CK(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
+    run_mk(stream);
+    CK(cudaStreamEndCapture(stream, &gr));
+    CK(cudaGraphInstantiate(&ex, gr, nullptr, nullptr, 0));
+    for (int i = 0; i < 50; ++i) CK(cudaGraphLaunch(ex, stream));
+    CK(cudaStreamSynchronize(stream));
+    cudaEvent_t a, b; CK(cudaEventCreate(&a)); CK(cudaEventCreate(&b));
+    float best = 1e30f;
+    for (int r = 0; r < 3; ++r) {
+      CK(cudaEventRecord(a, stream));
+      for (int i = 0; i < 200; ++i) CK(cudaGraphLaunch(ex, stream));
+      CK(cudaEventRecord(b, stream));
+      CK(cudaEventSynchronize(b));
+      float ms = 0.f; CK(cudaEventElapsedTime(&ms, a, b));
+      best = std::min(best, ms / 200.f * 1000.f);
+    }
+    printf("  %6d %8.2f %9.2f us %8.2fx\n", grid,
+           float(kNumInstructions) / grid, best, t_base / best);
+    if (best < best_mk) { best_mk = best; best_grid = grid; }
+    CK(cudaGraphExecDestroy(ex)); CK(cudaGraphDestroy(gr));
+  }
+  // Correctness again at the winning grid: a scheduling change must not move
+  // the answer, and this is where a claim-cursor bug would show.
+  mk_grid = best_grid;
+  CK(cudaMemset(g.out, 0, kDim * sizeof(__nv_bfloat16)));
+  run_mk(stream); CK(cudaStreamSynchronize(stream));
+  printf("\nre-check at grid=%d\n", best_grid);
+  check("megakernel");
+  printf("\n  best megakernel %.2f us at grid=%d -> %.2fx vs baseline\n",
+         best_mk, best_grid, t_base / best_mk);
+
+  // Discriminating probe. The full program has a fan-in of 64 on every `down`
+  // instruction, so 16 CTAs spin holding an SM while 64 others work -- a cost a
+  // kernel boundary does not have, because it RELEASES the machine. Truncating
+  // the program to rmsnorm + gate/up removes that fan-in entirely. If the gap
+  // closes here, the cost is spin-stranding; if it does not, it is the VM's
+  // fixed role warps (640 threads of which 512 compute).
+  auto time_one = [&](const char* name, bool mk, int limit) {
+    mk_limit = limit;
+    cudaGraph_t gr; cudaGraphExec_t ex;
+    CK(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
+    if (mk) { run_mk(stream); }
+    else {
+      baseline_rmsnorm<<<1, 512, 0, stream>>>(g);
+      baseline_gateup<<<kNumGateUp, 512, kDim * 4, stream>>>(g);
+    }
+    CK(cudaStreamEndCapture(stream, &gr));
+    CK(cudaGraphInstantiate(&ex, gr, nullptr, nullptr, 0));
+    for (int i = 0; i < 50; ++i) CK(cudaGraphLaunch(ex, stream));
+    CK(cudaStreamSynchronize(stream));
+    cudaEvent_t a, b; CK(cudaEventCreate(&a)); CK(cudaEventCreate(&b));
+    float best = 1e30f;
+    for (int r = 0; r < 3; ++r) {
+      CK(cudaEventRecord(a, stream));
+      for (int i = 0; i < 200; ++i) CK(cudaGraphLaunch(ex, stream));
+      CK(cudaEventRecord(b, stream));
+      CK(cudaEventSynchronize(b));
+      float ms = 0.f; CK(cudaEventElapsedTime(&ms, a, b));
+      best = std::min(best, ms / 200.f * 1000.f);
+    }
+    printf("  %-22s %8.2f us\n", name, best);
+    CK(cudaGraphExecDestroy(ex)); CK(cudaGraphDestroy(gr));
+    mk_limit = 0;
+    return best;
+  };
+
+  printf("\nprobe: program truncated to rmsnorm + gate/up (no fan-in)\n");
+  mk_grid = sm_count;
+  const float p_base = time_one("baseline (2 kernels)", false, 0);
+  const float p_mk = time_one("megakernel (65 ins)", true, 1 + kNumGateUp);
+  printf("  ratio %.2fx  (full program was %.2fx)\n", p_base / p_mk,
+         t_base / best_mk);
   return 0;
 }
 

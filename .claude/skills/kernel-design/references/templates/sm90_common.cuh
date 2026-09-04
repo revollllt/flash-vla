@@ -205,6 +205,20 @@ __device__ __forceinline__ void tma_load_2d(const CUtensorMap* map, void* dst,
       : "memory");
 }
 
+// Contiguous global -> shared, no tensor map: one thread moves the whole span
+// and the copy engine does the work.  This is what makes a single loader warp
+// viable -- a loader warp that copies with its own 32 lanes is a 1/16th-width
+// bottleneck next to 16 consumer warps, while a loader warp that ISSUES is not.
+// Address and size must both be 16-byte aligned.
+__device__ __forceinline__ void bulk_load_1d(void* smem_dst, const void* gmem_src,
+                                             uint32_t bytes, uint64_t* full) {
+  asm volatile(
+      "cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes"
+      " [%0], [%1], %2, [%3];"
+      ::"r"(smem_u32(smem_dst)), "l"(gmem_src), "r"(bytes), "r"(smem_u32(full))
+      : "memory");
+}
+
 // A 3-D map turns a per-expert / per-batch weight stack into one descriptor:
 // the outermost coordinate selects the slice, so a grouped kernel needs one
 // tensor map rather than one per group.
