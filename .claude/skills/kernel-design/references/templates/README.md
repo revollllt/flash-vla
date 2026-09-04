@@ -87,14 +87,22 @@ scheduler, and SGLang's MoE align/finalize kernels.
 
 | Template | Subject | The decisions it carries |
 |---|---|---|
-| `40_megakernel_interpreter.cu` | task-graph megakernel | schedule as data / dispatch as code, acquire-release counters as the correctness argument, register budget is the max over task kinds, truncated tables from day one, and exactly why this one cannot deadlock while a fused-layer one can |
+| `40_megakernel_interpreter.cu` | megakernel VM | fixed-width instructions streamed like a tensor, an instruction ring, shared memory as pages recycled in an op-declared order, per-instruction semaphores armed by the op, a built-in profiler, the five warp roles, and why this one cannot deadlock while a fused-layer one can |
 | `41_moe_align_finalize.cu` | MoE around the grouped GEMM | why the align pass pads to the GEMM's block size, contention bounded by expert count not token count, the inverse permutation built once, the shared expert riding the gather |
 
-Template 40's deadlock section is the part to read before fusing anything: a
-topologically ordered table plus a monotonic claim cursor guarantees progress,
-and adding any bounded resource -- a ring, a shared pool, accumulator slots --
-destroys that guarantee. Sizing the warmup that restores it is the design, not
-a detail.
+Template 40 is deliberately the longest file here. A megakernel is not a kernel
+with a switch in it -- it is a small VM, and everything hard about it is
+machinery a sketch leaves out: the instruction ABI, the page allocator that lets
+consecutive instructions of different kinds share shared memory without a
+barrier, the semaphores each op arms for itself, and the fact that the
+interpreter is itself warp-specialized. Its architecture follows
+[HazyResearch/Megakernels](https://github.com/HazyResearch/Megakernels) (MIT),
+reduced to the toolkit.
+
+Its deadlock section is the part to read before fusing anything: a
+topologically ordered program plus a monotonic claim cursor guarantees progress,
+and adding any bounded resource -- pages, a ring, accumulator slots -- destroys
+that guarantee. Sizing the warmup that restores it is the design, not a detail.
 
 `sm90_common.cuh` holds the raw primitives every template shares.
 

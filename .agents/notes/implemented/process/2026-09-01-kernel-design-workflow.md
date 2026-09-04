@@ -43,7 +43,9 @@ several skills and rules.
   traversals of the row and the launch ramp, so they fuse and they all carry
   PDL. A fifth tier covers the fusion endgame -- a task-graph megakernel and the
   MoE align/finalize pass around the grouped GEMM -- where launch cost stops
-  being tunable and becomes structural. An `ncu-report` skill owns report
+  being tunable and becomes structural. The megakernel template is deliberately
+  the largest file in the set: the idiom's difficulty is entirely in machinery a
+  sketch omits, so a short version of it has no reference value. An `ncu-report` skill owns report
   interpretation (capture stays with `gpu-profiler-analysis`).
 - Templates are toolkit-only and de-projectized, so they stay portable
   experience rather than a second copy of the kernels; each declares the PTX
