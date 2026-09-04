@@ -162,12 +162,26 @@
 // cannot be given, because the grid sweep shows that shrinking the grid to
 // raise instructions-per-CTA loses more to lost parallelism than it recovers.
 //
-// THE TWO REQUIREMENTS ARE IN DIRECT CONFLICT AT THIS SHAPE, and that is why
-// the megakernel loses here. A megakernel pays off where one CTA runs a long
-// sequence of dependent instructions -- a whole decoder layer per CTA, not one
-// GEMV block per CTA. That is the shape HazyResearch's demos use, and this
-// file's program is the wrong shape for the idiom rather than a wrong
-// implementation of it.
+// THAT PREDICTION WAS TESTED BY DEEPENING THE PROGRAM, AND IT FAILED. Running
+// the whole decode step -- every layer chained, so one CTA's instruction stream
+// is long -- does not amortise anything:
+//
+//   layers  instructions  ins/CTA   baseline   megakernel   ratio
+//        1            81     0.61    97.92 us    165.97 us   0.59x
+//        8           648     4.91   760.76 us   1380.39 us   0.55x
+//       32          2592    19.64  3033.74 us   5538.98 us   0.55x
+//
+// Flat. So "many instructions per CTA" is NOT the condition. The refined
+// reading is that the instructions must be INDEPENDENT of each other: the ring
+// can only overlap instruction i+1's prologue with instruction i's compute if
+// i+1 is runnable, and in a strictly serialized layer chain a CTA's next
+// instruction almost always waits on work other CTAs are still doing. Depth
+// gives length, not independence. A planner that interleaves independent work
+// across the stage boundary is what supplies it, and that scheduling -- not
+// the interpreter -- is where a megakernel is won.
+//
+// (Correctness is exact at every depth: 0.000e+00 against the double reference,
+// once the reference rounds to bf16 between layers as the device does.)
 //
 // Seven earlier explanations were tested and falsified; recorded so nobody
 // repeats them: instruction amortisation as such, fan-in spin-stranding, the
@@ -218,9 +232,20 @@ constexpr int kFfn = 8192;    // intermediate
 constexpr int kBlockN = 128;  // output columns per GEMV instruction
 constexpr float kEps = 1e-6f;
 
+// A megakernel amortises its per-instruction prologue over the instructions ONE
+// CTA runs back to back. One layer over 132 CTAs gives less than one each, so
+// the prologue is fully exposed. A decode step runs every layer, which is the
+// shape the idiom is for -- and the shape where the baseline pays 3 launches
+// PER LAYER.
+#ifndef MK40_LAYERS
+#define MK40_LAYERS 32
+#endif
+constexpr int kNumLayers = MK40_LAYERS;
+
 constexpr int kNumGateUp = kFfn / kBlockN;  // 64
 constexpr int kNumDown = kDim / kBlockN;    // 16
-constexpr int kNumInstructions = 1 + kNumGateUp + kNumDown;  // 81
+constexpr int kPerLayer = 1 + kNumGateUp + kNumDown;  // 81
+constexpr int kNumInstructions = kNumLayers * kPerLayer;
 
 // ---------------------------------------------------------------- VM config
 
@@ -271,6 +296,9 @@ struct InstructionView {
   __device__ __forceinline__ int32_t counter_idx() const { return w[2]; }
   __device__ __forceinline__ int32_t succ_begin() const { return w[3]; }
   __device__ __forceinline__ int32_t succ_count() const { return w[4]; }
+  // Which layer this instruction belongs to. Only its parity is used on the
+  // device -- it selects which of the two activation buffers is input.
+  __device__ __forceinline__ int32_t layer() const { return w[5]; }
 };
 
 struct alignas(128) StageState {
@@ -362,12 +390,13 @@ __device__ __forceinline__ float warp_sum(float v) {
 // Everything the model needs, passed by value as a grid constant so no op has
 // to chase a pointer table.
 struct Globals {
-  const __nv_bfloat16* __restrict__ x;
+  // Two activation buffers, ping-ponged per layer: layer L reads buf[L & 1] and
+  // writes buf[(L + 1) & 1], with the read buffer also serving as its residual.
+  __nv_bfloat16* buf[2];
   const __nv_bfloat16* __restrict__ rms_w;
   const __nv_bfloat16* __restrict__ w_gate;  // (ffn, dim)
   const __nv_bfloat16* __restrict__ w_up;    // (ffn, dim)
   const __nv_bfloat16* __restrict__ w_down;  // (dim, ffn)
-  const __nv_bfloat16* __restrict__ residual;
   float* __restrict__ y;   // gmem scratch: normalized activations (dim)
   float* __restrict__ h;   // gmem scratch: SwiGLU output (ffn)
   __nv_bfloat16* __restrict__ out;
@@ -407,16 +436,16 @@ __device__ __forceinline__ void arm(const VmState& vm, int32_t ring) {
 // reduction, so one gmem pass beats sixteen. Issued as one async bulk copy --
 // the loader warp's job is to ISSUE, not to move bytes with its own lanes.
 __device__ __forceinline__ void loader(const VmState& vm, int32_t ring,
-                                       InstructionView, const Globals& g) {
+                                       InstructionView ins, const Globals& g) {
   if (tmpl::elect_one()) {
     tmpl::arrive_and_expect_tx(vm.sem(ring, 0), kDim * sizeof(__nv_bfloat16));
-    tmpl::bulk_load_1d(vm.page_f32(ring, 0), g.x,
+    tmpl::bulk_load_1d(vm.page_f32(ring, 0), g.buf[ins.layer() & 1],
                        kDim * sizeof(__nv_bfloat16), vm.sem(ring, 0));
   }
 }
 
 __device__ __forceinline__ void consumer(const VmState& vm, int32_t ring,
-                                         InstructionView, const Globals& g,
+                                         InstructionView ins, const Globals& g,
                                          int32_t warp, float* smem_red) {
   tmpl::wait_parity(vm.sem(ring, 0), 0);  // re-armed each instruction
   const __nv_bfloat16* p =
@@ -528,7 +557,10 @@ __device__ __forceinline__ void consumer(const VmState& vm, int32_t ring,
     dot_bf16_vec(wd, h0, kFfn, lane, acc);
     acc = warp_sum(acc);
     if (lane == 0) {
-      g.out[k] = __float2bfloat16(acc + __bfloat162float(g.residual[k]));
+      // Residual is the layer's own input, and the sum lands in the other
+      // buffer so the next layer reads a complete row.
+      const float res = __bfloat162float(g.buf[ins.layer() & 1][k]);
+      g.buf[(ins.layer() + 1) & 1][k] = __float2bfloat16(acc + res);
     }
   }
 }
@@ -725,13 +757,13 @@ __global__ __launch_bounds__(VmConfig::kNumThreads, 1) void megakernel_vm(
 // The same math as three ordinary kernels. This is what the megakernel has to
 // beat, and it is deliberately not a strawman: same tiling, same reductions.
 
-__global__ __launch_bounds__(512) void baseline_rmsnorm(Globals g) {
+__global__ __launch_bounds__(512) void baseline_rmsnorm(Globals g, int32_t layer) {
   __shared__ float red[16];
   const int32_t tid = static_cast<int32_t>(threadIdx.x);
   const int32_t warp = tid / 32, lane = tid % 32;
   float acc = 0.f;
   for (int32_t i = tid; i < kDim; i += 512) {
-    const float v = __bfloat162float(g.x[i]);
+    const float v = __bfloat162float(g.buf[layer & 1][i]);
     acc += v * v;
   }
   acc = warp_sum(acc);
@@ -742,7 +774,8 @@ __global__ __launch_bounds__(512) void baseline_rmsnorm(Globals g) {
   for (int32_t w = 0; w < 16; ++w) { total += red[w]; }
   const float scale = rsqrtf(total / static_cast<float>(kDim) + kEps);
   for (int32_t i = tid; i < kDim; i += 512) {
-    g.y[i] = __bfloat162float(g.x[i]) * scale * __bfloat162float(g.rms_w[i]);
+    g.y[i] = __bfloat162float(g.buf[layer & 1][i]) * scale *
+             __bfloat162float(g.rms_w[i]);
   }
 }
 
@@ -768,7 +801,7 @@ __global__ __launch_bounds__(512) void baseline_gateup(Globals g) {
   }
 }
 
-__global__ __launch_bounds__(512) void baseline_down(Globals g) {
+__global__ __launch_bounds__(512) void baseline_down(Globals g, int32_t layer) {
   extern __shared__ float sh[];
   const int32_t tid = static_cast<int32_t>(threadIdx.x);
   for (int32_t i = tid; i < kFfn; i += 512) { sh[i] = g.h[i]; }
@@ -784,7 +817,8 @@ __global__ __launch_bounds__(512) void baseline_down(Globals g) {
     dot_bf16_vec(wd, sh, kFfn, lane, acc);
     acc = warp_sum(acc);
     if (lane == 0) {
-      g.out[k] = __float2bfloat16(acc + __bfloat162float(g.residual[k]));
+      const float res = __bfloat162float(g.buf[layer & 1][k]);
+      g.buf[(layer + 1) & 1][k] = __float2bfloat16(acc + res);
     }
   }
 }
@@ -810,30 +844,35 @@ float host_rand(uint32_t& s) {
 }
 
 // Reference in double, so the check measures the kernels rather than itself.
-void reference(const std::vector<float>& x, const std::vector<float>& rms_w,
+// The whole chain, in double. Each layer's residual is its own input, and the
+// device rounds to bf16 between layers -- so the reference does too, or the
+// comparison drifts by the rounding rather than by any kernel error.
+void reference(std::vector<float> x, const std::vector<float>& rms_w,
                const std::vector<float>& wg, const std::vector<float>& wu,
-               const std::vector<float>& wd, const std::vector<float>& res,
-               std::vector<float>& out) {
-  double ss = 0.0;
-  for (int i = 0; i < kDim; ++i) ss += double(x[i]) * x[i];
-  const double scale = 1.0 / std::sqrt(ss / kDim + kEps);
-  std::vector<double> y(kDim);
-  for (int i = 0; i < kDim; ++i) y[i] = x[i] * scale * rms_w[i];
-
-  std::vector<double> h(kFfn);
-  for (int n = 0; n < kFfn; ++n) {
-    double ag = 0.0, au = 0.0;
-    for (int i = 0; i < kDim; ++i) {
-      ag += double(wg[size_t(n) * kDim + i]) * y[i];
-      au += double(wu[size_t(n) * kDim + i]) * y[i];
+               const std::vector<float>& wd, std::vector<float>& out) {
+  std::vector<double> y(kDim), h(kFfn);
+  for (int L = 0; L < kNumLayers; ++L) {
+    double ss = 0.0;
+    for (int i = 0; i < kDim; ++i) ss += double(x[i]) * x[i];
+    const double scale = 1.0 / std::sqrt(ss / kDim + kEps);
+    for (int i = 0; i < kDim; ++i) y[i] = x[i] * scale * rms_w[i];
+    for (int n = 0; n < kFfn; ++n) {
+      double ag = 0.0, au = 0.0;
+      for (int i = 0; i < kDim; ++i) {
+        ag += double(wg[size_t(n) * kDim + i]) * y[i];
+        au += double(wu[size_t(n) * kDim + i]) * y[i];
+      }
+      h[n] = (ag / (1.0 + std::exp(-ag))) * au;
     }
-    h[n] = (ag / (1.0 + std::exp(-ag))) * au;
+    std::vector<float> nx(kDim);
+    for (int k = 0; k < kDim; ++k) {
+      double acc = 0.0;
+      for (int i = 0; i < kFfn; ++i) acc += double(wd[size_t(k) * kFfn + i]) * h[i];
+      nx[k] = __bfloat162float(__float2bfloat16(float(acc + x[k])));
+    }
+    x.swap(nx);
   }
-  for (int k = 0; k < kDim; ++k) {
-    double acc = 0.0;
-    for (int i = 0; i < kFfn; ++i) acc += double(wd[size_t(k) * kFfn + i]) * h[i];
-    out[k] = float(acc + res[k]);
-  }
+  out = x;
 }
 
 float max_rel_err(const std::vector<float>& a, const std::vector<float>& b) {
@@ -870,9 +909,9 @@ int main(int argc, char** argv) {
   auto round_bf16 = [](std::vector<float>& v) {
     for (auto& e : v) e = __bfloat162float(__float2bfloat16(e));
   };
-  round_bf16(hx); round_bf16(hrms); round_bf16(hres);
+  round_bf16(hx); round_bf16(hrms);
   round_bf16(hwg); round_bf16(hwu); round_bf16(hwd);
-  reference(hx, hrms, hwg, hwu, hwd, hres, href);
+  reference(hx, hrms, hwg, hwu, hwd, href);
 
   // ---- device data
   auto up_bf16 = [](const std::vector<float>& h) {
@@ -885,15 +924,20 @@ int main(int argc, char** argv) {
     return d;
   };
   Globals g{};
-  g.x = up_bf16(hx);
+  g.buf[0] = up_bf16(hx);
+  {  // the second activation buffer starts empty
+    std::vector<float> zero(kDim, 0.f);
+    g.buf[1] = up_bf16(zero);
+  }
   g.rms_w = up_bf16(hrms);
   g.w_gate = up_bf16(hwg);
   g.w_up = up_bf16(hwu);
   g.w_down = up_bf16(hwd);
-  g.residual = up_bf16(hres);
   CK(cudaMalloc((void**)&g.y, kDim * sizeof(float)));
   CK(cudaMalloc((void**)&g.h, kFfn * sizeof(float)));
-  CK(cudaMalloc((void**)&g.out, kDim * sizeof(__nv_bfloat16)));
+  // The initial activations, kept so every timed run starts from the same
+  // state -- a chain of layers is not idempotent.
+  __nv_bfloat16* d_x0 = up_bf16(hx);
 
   // ---- the program: 1 rmsnorm -> 64 gate/up -> 16 down
   std::vector<int32_t> prog(size_t(kNumInstructions) * VmConfig::kInstructionWidth, 0);
@@ -901,26 +945,41 @@ int main(int argc, char** argv) {
   std::vector<uint32_t> counters(kNumInstructions, 0);
   auto ins = [&](int i) { return &prog[size_t(i) * VmConfig::kInstructionWidth]; };
 
-  // rmsnorm: successors are all gate/up instructions
-  ins(0)[0] = kOpRmsNorm; ins(0)[1] = 0; ins(0)[2] = 0;
-  ins(0)[3] = int32_t(succ.size()); ins(0)[4] = kNumGateUp;
-  for (int i = 0; i < kNumGateUp; ++i) succ.push_back(1 + i);
-  counters[0] = 0;
+  // The program is the whole decode step: every layer, chained. Layer L's
+  // rmsnorm waits on all of layer L-1's down instructions, which is what makes
+  // one CTA's instruction stream long enough for the ring to pipeline.
+  for (int L = 0; L < kNumLayers; ++L) {
+    const int base = L * kPerLayer;
+    const int nrm = base;
+    const int gu0 = base + 1;
+    const int dn0 = base + 1 + kNumGateUp;
 
-  // gate/up: each depends on rmsnorm, and each is a predecessor of every down
-  for (int i = 0; i < kNumGateUp; ++i) {
-    const int id = 1 + i;
-    ins(id)[0] = kOpGateUp; ins(id)[1] = i; ins(id)[2] = id;
-    ins(id)[3] = int32_t(succ.size()); ins(id)[4] = kNumDown;
-    for (int j = 0; j < kNumDown; ++j) succ.push_back(1 + kNumGateUp + j);
-    counters[id] = 1;
-  }
-  // down: fan-in of every gate/up
-  for (int j = 0; j < kNumDown; ++j) {
-    const int id = 1 + kNumGateUp + j;
-    ins(id)[0] = kOpDown; ins(id)[1] = j; ins(id)[2] = id;
-    ins(id)[3] = 0; ins(id)[4] = 0;
-    counters[id] = kNumGateUp;
+    ins(nrm)[0] = kOpRmsNorm; ins(nrm)[1] = 0; ins(nrm)[2] = nrm;
+    ins(nrm)[3] = int32_t(succ.size()); ins(nrm)[4] = kNumGateUp;
+    ins(nrm)[5] = L;
+    for (int i = 0; i < kNumGateUp; ++i) succ.push_back(gu0 + i);
+    counters[nrm] = (L == 0) ? 0 : kNumDown;  // waits on the previous layer
+
+    for (int i = 0; i < kNumGateUp; ++i) {
+      const int id = gu0 + i;
+      ins(id)[0] = kOpGateUp; ins(id)[1] = i; ins(id)[2] = id;
+      ins(id)[3] = int32_t(succ.size()); ins(id)[4] = kNumDown;
+      ins(id)[5] = L;
+      for (int j = 0; j < kNumDown; ++j) succ.push_back(dn0 + j);
+      counters[id] = 1;
+    }
+    for (int j = 0; j < kNumDown; ++j) {
+      const int id = dn0 + j;
+      ins(id)[0] = kOpDown; ins(id)[1] = j; ins(id)[2] = id;
+      ins(id)[5] = L;
+      if (L + 1 < kNumLayers) {
+        ins(id)[3] = int32_t(succ.size()); ins(id)[4] = 1;
+        succ.push_back((L + 1) * kPerLayer);  // the next layer's rmsnorm
+      } else {
+        ins(id)[3] = 0; ins(id)[4] = 0;
+      }
+      counters[id] = kNumGateUp;
+    }
   }
 
   int32_t *d_prog = nullptr, *d_succ = nullptr;
@@ -957,14 +1016,22 @@ int main(int argc, char** argv) {
   int sm_count = 0;
   CK(cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, 0));
 
+  auto reset_state = [&](cudaStream_t s) {
+    CK(cudaMemcpyAsync(g.buf[0], d_x0, kDim * sizeof(__nv_bfloat16),
+                       cudaMemcpyDeviceToDevice, s));
+  };
   auto run_baseline = [&](cudaStream_t s) {
-    baseline_rmsnorm<<<1, 512, 0, s>>>(g);
-    baseline_gateup<<<kNumGateUp, 512, kDim * 4, s>>>(g);
-    baseline_down<<<kNumDown, 512, kFfn * 4, s>>>(g);
+    reset_state(s);
+    for (int L = 0; L < kNumLayers; ++L) {
+      baseline_rmsnorm<<<1, 512, 0, s>>>(g, L);
+      baseline_gateup<<<kNumGateUp, 512, kDim * 4, s>>>(g);
+      baseline_down<<<kNumDown, 512, kFfn * 4, s>>>(g, L);
+    }
   };
   int mk_grid = sm_count;
   int mk_limit = 0;  // 0 = whole program; the truncation hook, used below
   auto run_mk = [&](cudaStream_t s) {
+    reset_state(s);
     CK(cudaMemsetAsync(d_next, 0, 4, s));
     CK(cudaMemcpyAsync(d_counters, d_counters_init, counters.size() * 4,
                        cudaMemcpyDeviceToDevice, s));
@@ -975,7 +1042,7 @@ int main(int argc, char** argv) {
 
   auto check = [&](const char* what) {
     std::vector<__nv_bfloat16> hb(kDim);
-    CK(cudaMemcpy(hb.data(), g.out, kDim * sizeof(__nv_bfloat16),
+    CK(cudaMemcpy(hb.data(), g.buf[kNumLayers & 1], kDim * sizeof(__nv_bfloat16),
                   cudaMemcpyDeviceToHost));
     std::vector<float> hf(kDim);
     for (int i = 0; i < kDim; ++i) hf[i] = __bfloat162float(hb[i]);
@@ -990,13 +1057,15 @@ int main(int argc, char** argv) {
 
   printf("megakernel VM vs 3-kernel baseline  (dim=%d ffn=%d bf16, batch 1)\n",
          kDim, kFfn);
+  printf("  %d layers -> %d instructions; baseline pays %d launches\n",
+         kNumLayers, kNumInstructions, 3 * kNumLayers);
   printf("  SMs=%d  VM: %d warps, %d pages x %d KB\n\n", sm_count,
          VmConfig::kNumWarps, VmConfig::kNumPages, VmConfig::kPageSize / 1024);
 
   if (probe_only) {
     mk_grid = sm_count; mk_limit = 1 + kNumGateUp;
     for (int i = 0; i < 30; ++i) {
-      baseline_rmsnorm<<<1, 512, 0, stream>>>(g);
+      baseline_rmsnorm<<<1, 512, 0, stream>>>(g, 0);
       baseline_gateup<<<kNumGateUp, 512, kDim * 4, stream>>>(g);
       run_mk(stream);
     }
@@ -1006,10 +1075,8 @@ int main(int argc, char** argv) {
   }
 
   printf("correctness\n");
-  CK(cudaMemset(g.out, 0, kDim * sizeof(__nv_bfloat16)));
   run_baseline(stream); CK(cudaStreamSynchronize(stream));
   bool ok = check("baseline");
-  CK(cudaMemset(g.out, 0, kDim * sizeof(__nv_bfloat16)));
   run_mk(stream); CK(cudaStreamSynchronize(stream));
   ok = check("megakernel") && ok;
   if (!ok) { printf("\nnumerics failed; timings withheld\n"); return 1; }
@@ -1078,7 +1145,6 @@ int main(int argc, char** argv) {
   // Correctness again at the winning grid: a scheduling change must not move
   // the answer, and this is where a claim-cursor bug would show.
   mk_grid = best_grid;
-  CK(cudaMemset(g.out, 0, kDim * sizeof(__nv_bfloat16)));
   run_mk(stream); CK(cudaStreamSynchronize(stream));
   printf("\nre-check at grid=%d\n", best_grid);
   check("megakernel");
@@ -1097,7 +1163,7 @@ int main(int argc, char** argv) {
     CK(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
     if (mk) { run_mk(stream); }
     else {
-      baseline_rmsnorm<<<1, 512, 0, stream>>>(g);
+      baseline_rmsnorm<<<1, 512, 0, stream>>>(g, 0);
       baseline_gateup<<<kNumGateUp, 512, kDim * 4, stream>>>(g);
     }
     CK(cudaStreamEndCapture(stream, &gr));
