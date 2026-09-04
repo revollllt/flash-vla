@@ -34,7 +34,10 @@ several skills and rules.
   mixed-precision family (INT4A16, INT4A8, NVFP4A16, MXFP4A16, MXFP4A8) whose
   organizing fact is that sm90 has no sub-8-bit tensor core, so every low-bit
   kernel unpacks in registers before the MMA and the port to sm120 deletes that
-  unpack rather than translating it. An `ncu-report` skill owns report
+  unpack rather than translating it. That family ships its offline repack
+  alongside the kernels, because a quantized kernel and its packer are one
+  artifact: the permutation exists to make the dequant emit MMA-ordered pairs,
+  so a kernel without its matching packer is wrong rather than slow. An `ncu-report` skill owns report
   interpretation (capture stays with `gpu-profiler-analysis`).
 - Templates are toolkit-only and de-projectized, so they stay portable
   experience rather than a second copy of the kernels; each declares the PTX
@@ -76,9 +79,9 @@ cluster (sbatch on an ncu-capable node; per-line hotspots resolved), and
 its query tool parses existing reports on the login node. Skill and wiki
 texts grep clean of experiment-record residue.
 
-`python3 .claude/skills/kernel-design/scripts/check_templates.py` passes 12/12
+`python3 .claude/skills/kernel-design/scripts/check_templates.py` passes 13/13
 on the login node with `cuda/13.0` and `gcc/13.3` (`-arch=sm_90a -ptx`, no GPU),
-covering 62 declared PTX assertions. The checker was negative-tested both ways:
+covering 66 declared PTX assertions. The checker was negative-tested both ways:
 an unsatisfiable assertion and a deliberate compile error each fail it. Two
 claims are carried by compile-time assertions inside the templates rather than
 by prose: that GEMM 1's accumulator and GEMM 2's A operand share a thread

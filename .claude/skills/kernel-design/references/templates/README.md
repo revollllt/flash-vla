@@ -45,6 +45,12 @@ e2m1 -> e4m3, and from the CUTLASS type traits that define each format's scale.
 | `20_marlin_w4a16.cu` | INT4A16 | mma.sync over wgmma at small batch, cp.async over TMA for a pre-permuted weight blob, lop3 dequant, per-group scales |
 | `21_fp4_block_scaled_gemm.cu` | NVFP4A16, MXFP4A16 | ue8m0 vs ue4m3 block scales, 32- vs 16-element blocks, NVFP4's second per-tensor level, bias correction folded into the scale |
 | `22_w4a8_gemm.cu` | INT4A8, MXFP4A8 | scales leave the inner loop and meet on the accumulator, int8 exact accumulation, e2m1 -> e4m3 by a prmt LUT with the block scale built into the table, fp8 promotion per scale block |
+| `23_offline_weight_repack.cu` | all of the above | the packer half: why Marlin's pack order is what it is, AWQ's order as its inverse, permute-into-a-layout vs normalize-then-JIT, dense sub-byte packing across word boundaries |
+
+A quantized kernel and its packer are **one artifact with two halves**. Template
+23 is not optional reading for 20-22: the dequant in each is cheap only because
+the weights were permuted offline, and a kernel shipped without its matching
+packer produces wrong numbers rather than a slowdown.
 
 The fact that shapes all three: **sm90 has no sub-8-bit tensor core.**
 `mma_sm90_gmma.hpp` contains zero e2m1 atoms, so every INT4 and FP4 kernel here
