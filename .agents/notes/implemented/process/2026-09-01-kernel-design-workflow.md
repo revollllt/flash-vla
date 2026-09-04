@@ -41,7 +41,9 @@ several skills and rules.
   tier covers the memory-bound glue between GEMMs -- norm, swiglu with fused
   per-token quantization, rope and softmax -- whose shared constraints are
   traversals of the row and the launch ramp, so they fuse and they all carry
-  PDL. An `ncu-report` skill owns report
+  PDL. A fifth tier covers the fusion endgame -- a task-graph megakernel and the
+  MoE align/finalize pass around the grouped GEMM -- where launch cost stops
+  being tunable and becomes structural. An `ncu-report` skill owns report
   interpretation (capture stays with `gpu-profiler-analysis`).
 - Templates are toolkit-only and de-projectized, so they stay portable
   experience rather than a second copy of the kernels; each declares the PTX
@@ -83,9 +85,9 @@ cluster (sbatch on an ncu-capable node; per-line hotspots resolved), and
 its query tool parses existing reports on the login node. Skill and wiki
 texts grep clean of experiment-record residue.
 
-`python3 .claude/skills/kernel-design/scripts/check_templates.py` passes 17/17
+`python3 .claude/skills/kernel-design/scripts/check_templates.py` passes 19/19
 on the login node with `cuda/13.0` and `gcc/13.3` (`-arch=sm_90a -ptx`, no GPU),
-covering 85 declared PTX assertions. The checker was negative-tested both ways:
+covering 94 declared PTX assertions. The checker was negative-tested both ways:
 an unsatisfiable assertion and a deliberate compile error each fail it. Two
 claims are carried by compile-time assertions inside the templates rather than
 by prose: that GEMM 1's accumulator and GEMM 2's A operand share a thread

@@ -1,11 +1,12 @@
 # sm90 Templates — compilable skeletons for the choreography
 
-Four tiers. **01-04** are the mechanism ladder: each adds one primitive to the
+Five tiers. **01-04** are the mechanism ladder: each adds one primitive to the
 previous one, and together they are a whole sm90 pipeline. **10-14** are kernel
 archetypes: the shape a real high-performance kernel of that family has, with
 the decisions that make it fast stated as rules. **20-23** are the
 mixed-precision family, where the quantization format drives the kernel, and
-**30-33** are the memory-bound glue ops between the GEMMs. Start
+**30-33** are the memory-bound glue ops between the GEMMs, and **40-41** are
+the fusion endgame. Start
 at the template nearest the task, drop to the ladder when a mechanism in it is
 unfamiliar.
 
@@ -77,6 +78,23 @@ the only real optimization is fusing to remove one. And they are short enough
 that the launch ramp is a comparable term [launch.lat.dev.ramp], which is why
 FlashInfer brackets every one of these kernels with PDL rather than only the
 interesting ones.
+
+## Tier 5 — the fusion endgame
+
+Where launch cost stops being tunable and becomes structural. Distilled from
+the megakernel idiom (`../wiki/ext-mpk-megakernel.md`), DeepGEMM's MegaMoE
+scheduler, and SGLang's MoE align/finalize kernels.
+
+| Template | Subject | The decisions it carries |
+|---|---|---|
+| `40_megakernel_interpreter.cu` | task-graph megakernel | schedule as data / dispatch as code, acquire-release counters as the correctness argument, register budget is the max over task kinds, truncated tables from day one, and exactly why this one cannot deadlock while a fused-layer one can |
+| `41_moe_align_finalize.cu` | MoE around the grouped GEMM | why the align pass pads to the GEMM's block size, contention bounded by expert count not token count, the inverse permutation built once, the shared expert riding the gather |
+
+Template 40's deadlock section is the part to read before fusing anything: a
+topologically ordered table plus a monotonic claim cursor guarantees progress,
+and adding any bounded resource -- a ring, a shared pool, accumulator slots --
+destroys that guarantee. Sizing the warmup that restores it is the design, not
+a detail.
 
 `sm90_common.cuh` holds the raw primitives every template shares.
 
