@@ -40,6 +40,24 @@ __device__ __forceinline__ int lop3(int a, int b, int c) {
   return res;
 }
 
+// Byte permute: builds a 4-byte result by selecting, per output byte, one of
+// the eight bytes of {a, b} named by a nibble of `s`.  That is a table lookup
+// with an 8-entry table held in two registers -- the reason every 4-bit ->
+// 8-bit conversion below is a LUT rather than arithmetic.
+//
+// A selector nibble with bit 3 set switches to sign-replicate mode instead of
+// byte select, which is why callers mask selectors with 0x7 and not 0xF.
+__device__ __forceinline__ uint32_t prmt(uint32_t a, uint32_t b, uint32_t s) {
+  uint32_t res;
+  asm volatile("prmt.b32 %0, %1, %2, %3;" : "=r"(res) : "r"(a), "r"(b), "r"(s));
+  return res;
+}
+
+__device__ __forceinline__ uint32_t lop3_and_or(uint32_t a, uint32_t b, uint32_t c) {
+  return static_cast<uint32_t>(lop3<(0xF0 & 0xCC) | 0xAA>(
+      static_cast<int>(a), static_cast<int>(b), static_cast<int>(c)));
+}
+
 // ------------------------------------------------------- INT4 -> bf16 / fp16
 
 // Four packed uint4 -> two bf16x2.  0x4300 is bf16 128.0, so masking a nibble
@@ -128,6 +146,55 @@ __device__ __forceinline__ void dequant_e2m1_to_f16x2(int q, __half2* out) {
   const __half2 bias = __float2half2_rn(float(1 << kBias));
   out[0] = __hmul2(out[0], bias);
   out[1] = __hmul2(out[1], bias);
+}
+
+// ------------------------------------------------- e2m1 -> e4m3, scale folded
+
+// Eight packed e2m1 -> eight e4m3, WITH the block scale already applied, in
+// about six instructions for all eight values.  Method from humming
+// (inclusionAI/humming, Apache-2.0), `datatype/dequant_fused.cuh`.
+//
+// e2m1 has 8 magnitudes, so the magnitude table is 8 bytes -- exactly one prmt
+// source pair.  The trick is that the table is not a constant: it is BUILT per
+// call by an integer multiply-add, and `exp_offset` shifts every entry's e4m3
+// exponent field at once.  Applying the MXFP4 block scale therefore costs two
+// integer ops for the whole group instead of a multiply per value.
+//
+// Verified semantics (emulating prmt/lop3 over the full input domain):
+//   exp_offset = 6 is the identity table {0, .5, 1, 1.5, 2, 3, 4, 6};
+//   each +/-1 doubles/halves every entry; index 0 stays exactly zero at every
+//   offset, which is what the `- 0x00000400` term buys.
+//
+// TWO CONTRACTS THE CALLER OWNS, or this silently produces wrong numbers:
+//
+//  1. `exp_offset` is a small DELTA, not the absolute ue8m0 exponent.  Folding
+//     a full block exponent into an e4m3 weight overflows it (e4m3 maxes at
+//     448).  The group's base exponent must be factored out offline and
+//     re-applied once on the accumulator; humming's `process_mxfp4_w4a8` pass
+//     is what computes that residual (and maps -0 to +0 while it is there).
+//  2. The nibble order is a PRE-PERMUTED layout, matched to this routine.
+//     Output word w byte j takes its magnitude from input nibble 4w+j but its
+//     sign from input bit 8j+3 (w=0) or 8j+7 (w=1).  Those coincide only for a
+//     packing that puts each value's sign and magnitude at that pair -- the
+//     same offline-packer contract Marlin has.  Copying this routine without
+//     its packer produces garbage, not a slowdown.
+__device__ __forceinline__ void unpack_e2m1_to_e4m3x8(uint32_t qb,
+                                                      uint32_t exp_offset,
+                                                      uint32_t (&out)[2]) {
+  // Two registers = the 8-entry magnitude table, exponent-shifted in place.
+  const uint32_t tbl_lo =
+      (exp_offset * 0x08080800u) + ((0x03020100u << 2) - 0x00000400u);
+  const uint32_t tbl_hi = (exp_offset * 0x08080808u) + (0x07060504u << 2);
+
+  // Mask to 3 bits: drops the sign AND keeps prmt in byte-select mode.
+  const uint32_t sel = qb & 0x77777777u;
+  const uint32_t mag[2] = {prmt(tbl_lo, tbl_hi, sel),
+                           prmt(tbl_lo, tbl_hi, sel >> 16)};
+
+  // Signs re-attached in one op each; the two shifts pick the alternating
+  // sign bits the permuted layout placed for this purpose.
+  out[0] = lop3_and_or(qb << 4, 0x80808080u, mag[0]);
+  out[1] = lop3_and_or(qb, 0x80808080u, mag[1]);
 }
 
 // --------------------------------------------------------------- block scales

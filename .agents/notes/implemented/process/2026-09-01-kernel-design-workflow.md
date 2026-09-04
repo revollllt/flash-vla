@@ -78,7 +78,7 @@ texts grep clean of experiment-record residue.
 
 `python3 .claude/skills/kernel-design/scripts/check_templates.py` passes 12/12
 on the login node with `cuda/13.0` and `gcc/13.3` (`-arch=sm_90a -ptx`, no GPU),
-covering 61 declared PTX assertions. The checker was negative-tested both ways:
+covering 62 declared PTX assertions. The checker was negative-tested both ways:
 an unsatisfiable assertion and a deliberate compile error each fail it. Two
 claims are carried by compile-time assertions inside the templates rather than
 by prose: that GEMM 1's accumulator and GEMM 2's A operand share a thread

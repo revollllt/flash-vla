@@ -21,13 +21,15 @@
 //     s8 x s8 -> s32 accumulates exactly, so there is no precision argument
 //     for breaking the K loop; one epilogue multiply finishes it.
 //   * MXFP4A8.  Weights are e2m1, so they must become e4m3 to ride the fp8
-//     tensor core.  e2m1 has only SIXTEEN possible values, so that conversion
-//     is a 16-entry table -- exact by construction, no bias arithmetic to get
-//     wrong.  (The register-resident form of the same table is a `prmt` over
-//     two uint32s; the constant array here is the readable version.)
-//     fp8 accumulation on Hopper is reduced-precision, so the K loop still
-//     breaks per scale block and promotes on CUDA cores -- template 11's
-//     two-level accumulation, with an unpack in front.
+//     tensor core.  e2m1 has eight magnitudes, which is exactly one prmt
+//     source pair, so the conversion is a register-resident LUT -- and the
+//     table is BUILT per group by an integer multiply-add, which folds the
+//     MXFP4 block scale into it for two integer ops instead of a multiply per
+//     weight (quant_sm90.cuh, method from humming).  The promotion that
+//     follows is then a plain add: the scale is already in the operand.
+//     fp8 accumulation on Hopper is still reduced-precision, so the K loop
+//     breaks per scale block anyway -- template 11's two-level accumulation,
+//     with the unpack in front.
 //
 // On sm120 the MXFP4A8 path collapses into a native block-scaled MMA and this
 // unpack disappears; the INT4A8 path does not, because int4 is not an MX
@@ -38,6 +40,7 @@
 // CHECK-PTX: mma\.sync\.aligned\.m16n8k32\.row\.col\.s32\.s8\.s8\.s32
 // CHECK-PTX: mma\.sync\.aligned\.m16n8k32\.row\.col\.f32\.e4m3\.e4m3\.f32
 // CHECK-PTX: prmt\.b32
+// CHECK-PTX: lop3\.b32
 // CHECK-PTX: cp\.async\.cg\.shared\.global
 // CHECK-PTX: cp\.async\.wait_group
 
@@ -103,23 +106,9 @@ __device__ __forceinline__ void unpack_u4_to_s8(int32_t q, uint32_t (&out)[2]) {
   out[1] = __vsub4((static_cast<uint32_t>(q) >> 4) & kNibble, kBias);
 }
 
-// e2m1 -> e4m3, exactly, by table.  Four bits means sixteen values; a table is
-// not an approximation here, it is the complete function.  Entries are e4m3
-// bit patterns for +/- {0, 0.5, 1, 1.5, 2, 3, 4, 6}.
-__constant__ uint8_t kE2m1ToE4m3[16] = {
-    0x00, 0x30, 0x38, 0x3c, 0x40, 0x44, 0x48, 0x4c,
-    0x80, 0xb0, 0xb8, 0xbc, 0xc0, 0xc4, 0xc8, 0xcc};
-
-__device__ __forceinline__ void unpack_e2m1_to_e4m3(int32_t q, uint32_t (&out)[2]) {
-  uint32_t lo = 0, hi = 0;
-  #pragma unroll
-  for (int i = 0; i < 4; ++i) {
-    lo |= static_cast<uint32_t>(kE2m1ToE4m3[(q >> (i * 8)) & 0xf]) << (i * 8);
-    hi |= static_cast<uint32_t>(kE2m1ToE4m3[(q >> (i * 8 + 4)) & 0xf]) << (i * 8);
-  }
-  out[0] = lo;
-  out[1] = hi;
-}
+// exp_offset 6 is the unscaled e2m1 table; the block's residual exponent is
+// added to it, so the LUT itself carries the scale.
+constexpr uint32_t kE2m1IdentityOffset = 6;
 
 }  // namespace
 
@@ -197,9 +186,10 @@ __global__ __launch_bounds__(kThreads, 1) void w4a8_int8_kernel(
 
 __global__ __launch_bounds__(kThreads, 1) void mxfp4_a8_kernel(
     const __nv_fp8_storage_t* __restrict__ act,  // e4m3 activations
-    const int32_t* __restrict__ qweight,         // e2m1, eight per word
-    const uint8_t* __restrict__ w_block_sf,      // ue8m0, one per 32 weights
+    const int32_t* __restrict__ qweight,         // e2m1, pre-permuted
+    const uint8_t* __restrict__ w_exp_delta,     // RESIDUAL exponent per block
     const float* __restrict__ act_scale,         // one per token
+    float group_base_scale,                      // the factored-out group base
     int32_t k_tiles, float* __restrict__ out) {
   extern __shared__ __align__(1024) uint8_t smem[];
   auto* const sa = reinterpret_cast<__nv_fp8_storage_t(*)[kAElems]>(smem + kOffA);
@@ -244,15 +234,21 @@ __global__ __launch_bounds__(kThreads, 1) void mxfp4_a8_kernel(
       const int32_t base = (warp * 16 + lane % 16) * kTileK + kb * kMxBlock;
       *reinterpret_cast<int4*>(frag_a) =
           *reinterpret_cast<const int4*>(&sa[stage][base]);
-      unpack_e2m1_to_e4m3(sb[stage][kb * tmpl::kWarpThreads + lane], frag_b);
+
+      // The block scale rides INTO the table, so the dequantized operand is
+      // already scaled.  It must be a residual: a full ue8m0 exponent folded
+      // into an e4m3 weight overflows the format.
+      const uint32_t delta =
+          w_exp_delta[static_cast<int64_t>(t) * (kTileK / kMxBlock) + kb];
+      tmpl::unpack_e2m1_to_e4m3x8(
+          static_cast<uint32_t>(sb[stage][kb * tmpl::kWarpThreads + lane]),
+          kE2m1IdentityOffset + delta, frag_b);
       mma_e4m3_m16n8k32(frag_a, frag_b, acc);
 
-      // ue8m0 is a power of two, so this multiply is exact and the promotion
-      // loses nothing beyond the fp8 accumulator's own rounding.
-      const uint8_t e8 = w_block_sf[static_cast<int64_t>(t) * (kTileK / kMxBlock) + kb];
-      const float block_scale = __uint_as_float(static_cast<uint32_t>(e8) << 23);
+      // A plain add: unlike template 11, there is no scale left to apply here.
+      // The promotion exists only to escape the fp8 accumulator's precision.
       #pragma unroll
-      for (int32_t i = 0; i < 4; ++i) { final_acc[i] += acc[i] * block_scale; }
+      for (int32_t i = 0; i < 4; ++i) { final_acc[i] += acc[i]; }
     }
 
     __syncthreads();
@@ -262,7 +258,9 @@ __global__ __launch_bounds__(kThreads, 1) void mxfp4_a8_kernel(
 
   const int32_t row = warp * 16 + lane / 4;
   const int32_t col = (lane % 4) * 2;
-  const float s_row = act_scale[row];
+  // The group base exponent, factored out so the per-block deltas could stay
+  // inside e4m3's range, is re-applied once here alongside the token scale.
+  const float s_row = act_scale[row] * group_base_scale;
   #pragma unroll
   for (int32_t i = 0; i < 4; ++i) {
     out[row * kTileN + col + i] = final_acc[i] * s_row;
