@@ -1,10 +1,11 @@
 # sm90 Templates — compilable skeletons for the choreography
 
-Three tiers. **01-04** are the mechanism ladder: each adds one primitive to the
+Four tiers. **01-04** are the mechanism ladder: each adds one primitive to the
 previous one, and together they are a whole sm90 pipeline. **10-14** are kernel
 archetypes: the shape a real high-performance kernel of that family has, with
-the decisions that make it fast stated as rules. **20-22** are the
-mixed-precision family, where the quantization format drives the kernel. Start
+the decisions that make it fast stated as rules. **20-23** are the
+mixed-precision family, where the quantization format drives the kernel, and
+**30-33** are the memory-bound glue ops between the GEMMs. Start
 at the template nearest the task, drop to the ladder when a mechanism in it is
 unfamiliar.
 
@@ -57,6 +58,25 @@ The fact that shapes all three: **sm90 has no sub-8-bit tensor core.**
 unpacks in registers before the MMA. Native block-scaled MMA is sm100 and
 sm120 only — porting these to sm120 deletes the unpack rather than translating
 it, and template 21's header says where.
+
+## Tier 4 — memory-bound glue ops
+
+Distilled from FlashInfer (Apache-2.0) `include/flashinfer/{norm,activation,
+pos_enc}.cuh` and SGLang's per-token quantization kernels.
+`elementwise_sm90.cuh` holds the vectorization and reduction vocabulary.
+
+| Template | Op | The decisions it carries |
+|---|---|---|
+| `30_rmsnorm_residual.cu` | norm | fp32 accumulation, two traversals as the roofline, residual add fused in, `weight_bias` serving two model families |
+| `31_swiglu_fp8_quant.cu` | swiglu + quantization | four traversals collapsed to one, the result held in registers across the amax reduction, amax/448 with the zero-row guard, satfinite conversion |
+| `32_rope_layouts.cu` | rope | interleaved pairs are register neighbours (`v[j^1]`), half pairs cost a second load, and the layout is buyable offline |
+| `33_softmax_rowwise.cu` | softmax | online vs naive is 2 traversals against 3, not correctness -- unlike attention's, where online is forced |
+
+Two facts run through all four. They are bound by **traversals of the row**, so
+the only real optimization is fusing to remove one. And they are short enough
+that the launch ramp is a comparable term [launch.lat.dev.ramp], which is why
+FlashInfer brackets every one of these kernels with PDL rather than only the
+interesting ones.
 
 `sm90_common.cuh` holds the raw primitives every template shares.
 
