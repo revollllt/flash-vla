@@ -32,6 +32,7 @@ consults this table before proposing a move; a human reads it the same way.
 | an ablation says removing a stage/warp/tile costs a lot; you plan to add one | [price-the-direction](price-the-direction.md) |
 | every lever in one phase measures null; the last gradient looks like a pole | [stacked-floors](stacked-floors.md) |
 | unfamiliar archetype: small-M GEMM / decode attention / megakernel | `ext-deepgemm-sm90`, `ext-flashmla-sm90`, `ext-fa3-pingpong`, `ext-mpk-megakernel` |
+| you know the move but not how the choreography is spelled | [`../templates/`](../templates/README.md) — compilable sm90 skeletons |
 
 ## Entry format
 
@@ -73,9 +74,20 @@ rule), then optionally `Why it works` and `Caveats`. External entries add a
 ## Origin
 
 The organizational method — symptom-indexed routing, typed one-idea entries,
-experience decoupled from any one project's history — is adapted from the
-KernelWiki of
-[mit-han-lab/kernel-design-agents](https://github.com/mit-han-lab/kernel-design-agents).
-No content is copied from it: that repository carries no license, and its
-numbers are B200/sm100. Every entry here is written for sm90 from
-first-hand established results.
+experience decoupled from any one project's history — is adapted from
+[mit-han-lab/KernelWiki](https://github.com/mit-han-lab/KernelWiki) (MIT), the
+knowledge base behind
+[kernel-design-agents](https://github.com/mit-han-lab/kernel-design-agents).
+No content is copied from it: it is Blackwell-first, so its instruction
+vocabulary (tcgen05, TMEM, CLC, 2-SM MMA) has no sm90 counterpart. Every entry
+here is written for sm90 from first-hand established results.
+
+Two deliberate departures:
+
+- **Its snippets are short verbatim excerpts from upstream files**, checked for
+  provenance (byte-identity against a pinned upstream SHA) rather than for
+  compilability. `../templates/` instead carries whole skeletons that a
+  checker compiles and inspects, because a fragment referencing undeclared
+  state teaches structure but cannot be run or trusted.
+- **Its full-file corpus is vendored upstream code.** Here that layer already
+  exists as `third_party/` submodules, so it is not duplicated.

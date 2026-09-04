@@ -57,6 +57,7 @@ The user picks the mode per task; the contract records it.
 | capturing a trace or an NCU report | `gpu-profiler-analysis` |
 | reading an NCU report -> naming the bottleneck | `ncu-report` |
 | choosing the next optimization move | `references/wiki/README.md` — symptom-indexed |
+| how a sm90 mechanism is actually spelled | `references/templates/README.md` — compilable skeletons |
 
 ## Files
 
@@ -67,3 +68,4 @@ The user picks the mode per task; the contract records it.
 | `references/parity.md` | writing or judging a parity harness |
 | `references/loop.md` | running the candidate loop; the promotion checklist |
 | `references/wiki/README.md` | picking the next optimization move |
+| `references/templates/README.md` | writing the kernel: TMA rings, warp roles, wgmma batches, epilogues |

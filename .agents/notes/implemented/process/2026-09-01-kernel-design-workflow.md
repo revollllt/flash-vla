@@ -19,11 +19,30 @@ several skills and rules.
   -> parity -> candidate loop -> promotion, with two modes. Auto is
   KDA-style: one contract ack from the human, then autonomous to a stop
   condition. Human mode signs the plan before code and steers between
-  candidates. Method adapted from mit-han-lab/kernel-design-agents; no
-  content copied (that repository carries no license).
-- Companion knowledge: a symptom-indexed sm90 wiki under
-  `kernel-design/references/wiki/`, and an `ncu-report` skill for report
-  interpretation (capture stays with `gpu-profiler-analysis`).
+  candidates. Method adapted from mit-han-lab/kernel-design-agents and its
+  MIT-licensed KernelWiki; no content is copied, because that base is
+  Blackwell-first and its sm100 instruction vocabulary has no sm90
+  counterpart.
+- Companion knowledge in two layers: a symptom-indexed sm90 wiki under
+  `kernel-design/references/wiki/` says which move to make, and
+  `kernel-design/references/templates/` says how it is spelled. The templates
+  are two tiers: a mechanism ladder (TMA/mbarrier ring, warp-role split, wgmma
+  batch, bulk-store epilogue) and kernel archetypes distilled from the pinned
+  `third_party/` sources -- persistent warp-specialized GEMM with cluster
+  multicast, sm90 fp8 two-level accumulation, FlashAttention-3 online softmax,
+  split-KV decode with an LSE combine, and grouped/masked MoE GEMM. An
+  `ncu-report` skill owns report interpretation (capture stays with
+  `gpu-profiler-analysis`).
+- Templates are toolkit-only and de-projectized, so they stay portable
+  experience rather than a second copy of the kernels; each declares the PTX
+  instructions it exists to demonstrate and `scripts/check_templates.py`
+  compiles it and asserts them. This is a deliberate departure from the
+  upstream wiki, whose snippets are verbatim upstream excerpts checked for
+  provenance rather than for compilability. The guarantee is structural: it
+  catches a missing or eliminated instruction, never a wrong value, and parity
+  harnesses remain the numerical authority. Archetypes fix a shape and omit
+  tail handling, predication and autotuning; each names the upstream file that
+  carries the production version.
 - Skills carry distilled, portable experience only. Evidence — job ids,
   measurements, experiment history — lives project-side: in Agent Notes and
   in per-task workspaces under `artifacts/ktasks/` (gitignored).
@@ -53,3 +72,12 @@ The `ncu-report` capture+interpret walkthrough ran end-to-end on this
 cluster (sbatch on an ncu-capable node; per-line hotspots resolved), and
 its query tool parses existing reports on the login node. Skill and wiki
 texts grep clean of experiment-record residue.
+
+`python3 .claude/skills/kernel-design/scripts/check_templates.py` passes 9/9 on
+the login node with `cuda/13.0` and `gcc/13.3` (`-arch=sm_90a -ptx`, no GPU),
+covering 47 declared PTX assertions. The checker was negative-tested both ways:
+an unsatisfiable assertion and a deliberate compile error each fail it. Two
+claims are carried by compile-time assertions inside the templates rather than
+by prose: that GEMM 1's accumulator and GEMM 2's A operand share a thread
+mapping (template 12), and that the archetype shared-memory pools fit the
+per-CTA limit.
