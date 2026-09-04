@@ -116,10 +116,37 @@
 //   4. "The counter reset is a pageable H2D copy inside the timed graph."
 //      Real defect, fixed (it is device-to-device now), but worth 0.3 us.
 //
-// The cause is NOT identified. The clean measurement to explain is the
-// fan-in-free prefix: the identical inner loop reaches 1.94 TB/s in the
-// baseline and 0.96 TB/s in the VM. The next step is an NCU capture of both,
-// not another guess -- see the `ncu-report` skill.
+// NCU, like for like (both paths cut to rmsnorm + gate/up; run the binary with
+// `probe` to reproduce this capture):
+//
+//                        baseline_gateup      megakernel_vm
+//   duration                   35.33 us            78.37 us
+//   DRAM throughput      59.6% / 2.00 TB/s   26.7% / 894 GB/s
+//   achieved occupancy           24.46%             24.29%
+//   theoretical occupancy        50.0%              31.25%
+//   registers/thread               64                 96
+//   avg stall              10.9 cycles         21.3 cycles
+//     dominated by         56% smem-data       68% smem-data
+//
+// So it is NOT occupancy: the two achieve the same 24.4%. The whole difference
+// is that the VM's warps stall twice as long, on the same reason -- waiting for
+// data from shared memory -- with the same inner loop and the same access
+// pattern. Both compile to ld.shared with no generic loads (checked in the
+// PTX), so it is not an addressing-space failure either.
+//
+// THE CAUSE IS STILL NOT IDENTIFIED. Seven explanations have been tested and
+// falsified; they are listed above and here so nobody spends the afternoon
+// again: instruction amortisation, fan-in spin-stranding, the page pool's
+// occupancy cost, a pageable H2D in the timed graph, the global claim cursor
+// (replaced with the reference's static per-worker lists -- no change), spin
+// backoff on the mbarrier waits (no change), and generic-vs-shared addressing.
+//
+// The next step is the VM's own profiler, not an eighth guess: `kTimingEnabled`
+// exists precisely because NCU cannot attribute time inside a megakernel, and
+// a per-phase timestamp -- claim, fetch, dependency, bulk copy, compute --
+// would localise the 2x that NCU can only characterise. That is the honest
+// state of this file: a correct, measured, LOSING megakernel whose loss is
+// quantified and whose cause is open.
 //
 //   nvcc -gencode arch=compute_90a,code=sm_90a -O3 -std=c++17 \
 //        -o mk40 40_megakernel_interpreter.cu && ./mk40
@@ -144,6 +171,7 @@
 #include <cmath>
 #include <vector>
 #include <algorithm>
+#include <string>
 
 #include "sm90_common.cuh"
 
@@ -166,6 +194,11 @@ struct VmConfig {
   static constexpr int kInstructionWidth = 32;  // 128 B
 #ifndef MK40_STAGES
 #define MK40_STAGES 2
+#endif
+// 1 = static per-worker instruction lists (the reference design), 0 = a global
+// atomic claim cursor. The A/B that isolates the cursor's cost.
+#ifndef MK40_STATIC_CLAIM
+#define MK40_STATIC_CLAIM 0
 #endif
   static constexpr int kPipelineStages = MK40_STAGES;
   static constexpr int kDynamicSemaphores = 4;
@@ -477,12 +510,22 @@ __global__ __launch_bounds__(VmConfig::kNumThreads, 1) void megakernel_vm(
       // Reclaim the stage two instructions back before overwriting it. This is
       // also what makes the stage's pages safe to refill.
       if (idx >= VmConfig::kPipelineStages) {
-        tmpl::wait_parity(&instr_finished[ring], stage_phase(idx) ^ 1u);
+        tmpl::wait_parity_backoff<>(&instr_finished[ring], stage_phase(idx) ^ 1u);
       }
 
+#if MK40_STATIC_CLAIM
+      // Static strided assignment, as HazyResearch does: each worker walks its
+      // OWN instruction list, emitted by the planner. No global cursor, so no
+      // atomic on the critical path of every dispatch. Progress still holds:
+      // a CTA walks its list in increasing order, so the smallest unexecuted
+      // instruction has all predecessors done and its owner is at it.
+      const uint32_t claim =
+          static_cast<uint32_t>(blockIdx.x) + gridDim.x * static_cast<uint32_t>(idx);
+#else
       uint32_t claim = 0;
       if (lane == 0) { claim = atomicAdd(next_instruction, 1u); }
       claim = __shfl_sync(0xffffffffu, claim, 0);
+#endif
 
       if (claim >= static_cast<uint32_t>(limit)) {
         // Publish a NoOp so the other roles retire in lockstep instead of
@@ -532,7 +575,7 @@ __global__ __launch_bounds__(VmConfig::kNumThreads, 1) void megakernel_vm(
     const int32_t role = warp - VmConfig::kConsumerWarps;
     for (int32_t idx = 0;; ++idx) {
       const int32_t ring = idx % VmConfig::kPipelineStages;
-      tmpl::wait_parity(&instr_arrived[ring], stage_phase(idx));
+      tmpl::wait_parity_backoff<>(&instr_arrived[ring], stage_phase(idx));
       const InstructionView ins{stage[ring].instruction};
       if (ins.opcode() == kOpNoOp) { break; }
 
@@ -563,7 +606,7 @@ __global__ __launch_bounds__(VmConfig::kNumThreads, 1) void megakernel_vm(
   tmpl::setmaxnreg_inc<VmConfig::kConsumerRegisters>();
   for (int32_t idx = 0;; ++idx) {
     const int32_t ring = idx % VmConfig::kPipelineStages;
-    tmpl::wait_parity(&instr_arrived[ring], stage_phase(idx));
+    tmpl::wait_parity_backoff<>(&instr_arrived[ring], stage_phase(idx));
     const InstructionView ins{stage[ring].instruction};
     if (ins.opcode() == kOpNoOp) { break; }
 
@@ -714,7 +757,11 @@ float max_rel_err(const std::vector<float>& a, const std::vector<float>& b) {
 
 }  // namespace
 
-int main() {
+// argv[1]=="probe" runs ONLY the fan-in-free prefix on both paths, so an NCU
+// capture compares like with like: profiling a whole megakernel against one
+// kernel of a three-kernel baseline measures different amounts of work.
+int main(int argc, char** argv) {
+  const bool probe_only = (argc > 1 && std::string(argv[1]) == "probe");
   // ---- host data
   uint32_t seed = 12345;
   std::vector<float> hx(kDim), hrms(kDim), hres(kDim), href(kDim);
@@ -843,10 +890,23 @@ int main() {
   cudaStream_t stream;
   CK(cudaStreamCreate(&stream));
 
+
   printf("megakernel VM vs 3-kernel baseline  (dim=%d ffn=%d bf16, batch 1)\n",
          kDim, kFfn);
   printf("  SMs=%d  VM: %d warps, %d pages x %d KB\n\n", sm_count,
          VmConfig::kNumWarps, VmConfig::kNumPages, VmConfig::kPageSize / 1024);
+
+  if (probe_only) {
+    mk_grid = sm_count; mk_limit = 1 + kNumGateUp;
+    for (int i = 0; i < 30; ++i) {
+      baseline_rmsnorm<<<1, 512, 0, stream>>>(g);
+      baseline_gateup<<<kNumGateUp, 512, kDim * 4, stream>>>(g);
+      run_mk(stream);
+    }
+    CK(cudaStreamSynchronize(stream));
+    printf("probe-only run complete (for profiling)\n");
+    return 0;
+  }
 
   printf("correctness\n");
   CK(cudaMemset(g.out, 0, kDim * sizeof(__nv_bfloat16)));

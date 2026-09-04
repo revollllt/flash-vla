@@ -64,6 +64,20 @@ __device__ __forceinline__ void wait_parity(const uint64_t* bar, uint32_t phase)
   while (try_wait_parity(bar, phase) == 0) {}
 }
 
+// Same wait with a backoff.  A tight try_wait spin issues a shared-memory
+// instruction every cycle from every waiting warp, which competes with the
+// consumers whose inner loop READS the staged operand from shared memory.  In a
+// tight producer/consumer ring the latency matters more and the plain form is
+// right; in a role-specialized machine where several warps idle through a long
+// compute, the backoff is.
+template <uint32_t Nanos = 20>
+__device__ __forceinline__ void wait_parity_backoff(const uint64_t* bar,
+                                                    uint32_t phase) {
+  while (try_wait_parity(bar, phase) == 0) {
+    asm volatile("nanosleep.u32 %0;" ::"n"(Nanos));
+  }
+}
+
 // Named barrier over a subset of the CTA.  Id 0 is __syncthreads; a kernel
 // whose producer warps exit early must rendezvous its remaining roles on
 // 1..15 with an explicit thread count, never on __syncthreads.
