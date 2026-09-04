@@ -134,19 +134,53 @@
 // pattern. Both compile to ld.shared with no generic loads (checked in the
 // PTX), so it is not an addressing-space failure either.
 //
-// THE CAUSE IS STILL NOT IDENTIFIED. Seven explanations have been tested and
-// falsified; they are listed above and here so nobody spends the afternoon
-// again: instruction amortisation, fan-in spin-stranding, the page pool's
-// occupancy cost, a pageable H2D in the timed graph, the global claim cursor
-// (replaced with the reference's static per-worker lists -- no change), spin
-// backoff on the mbarrier waits (no change), and generic-vs-shared addressing.
+// THE VM'S OWN PROFILER LOCALISES IT. Build with -DMK40_TIMING=1; NCU cannot
+// attribute time inside a megakernel because every op is the same kernel, which
+// is why the timing slots are in the design. Mean cycles per instruction phase:
 //
-// The next step is the VM's own profiler, not an eighth guess: `kTimingEnabled`
-// exists precisely because NCU cannot attribute time inside a megakernel, and
-// a per-phase timestamp -- claim, fetch, dependency, bulk copy, compute --
-// would localise the 2x that NCU can only characterise. That is the honest
-// state of this file: a correct, measured, LOSING megakernel whose loss is
-// quantified and whose cause is open.
+//   op         n     claim    fetch  dep-wait  arm+pub  load-iss data-ready  compute    TOTAL
+//   rmsnorm    1       965      373       274      597       630      6099    59067    68005
+//   gate/up   64       894    38716       459      604      4043     78513    14369   137598
+//   down      16       926   169453       472      623      2068    132410      823   306776
+//
+// COMPUTE IS 10% OF A GATE/UP INSTRUCTION AND 0.3% OF A DOWN. Everything else
+// is waiting -- on the instruction's own 128 bytes, and on the staged operand.
+// (These are residency times, not critical path: phases of different CTAs
+// overlap. The shape is what matters, not the sum.)
+//
+// The structural reading, which the earlier guesses all missed:
+//
+//   AN INSTRUCTION'S OPERAND STAGING CANNOT BEGIN UNTIL THE INSTRUCTION HAS
+//   BEEN FETCHED AND ITS DEPENDENCIES CHECKED. A kernel launch has no such
+//   chain -- its parameters arrive with the launch, so its CTAs start loading
+//   on cycle one. The VM pays fetch -> dependency -> arm -> publish -> issue
+//   before a single operand byte moves.
+//
+// That prologue is amortisable only by instruction-level pipelining: fetch and
+// stage instruction i+1 while i computes. Which needs many instructions per
+// CTA. Which this program does not have -- 81 instructions over 132 CTAs -- and
+// cannot be given, because the grid sweep shows that shrinking the grid to
+// raise instructions-per-CTA loses more to lost parallelism than it recovers.
+//
+// THE TWO REQUIREMENTS ARE IN DIRECT CONFLICT AT THIS SHAPE, and that is why
+// the megakernel loses here. A megakernel pays off where one CTA runs a long
+// sequence of dependent instructions -- a whole decoder layer per CTA, not one
+// GEMV block per CTA. That is the shape HazyResearch's demos use, and this
+// file's program is the wrong shape for the idiom rather than a wrong
+// implementation of it.
+//
+// Seven earlier explanations were tested and falsified; recorded so nobody
+// repeats them: instruction amortisation as such, fan-in spin-stranding, the
+// page pool's occupancy cost, a pageable H2D in the timed graph, the global
+// claim cursor (replaced with the reference's static per-worker lists -- no
+// change), spin backoff on the mbarrier waits (no change), and
+// generic-vs-shared addressing (the PTX is ld.shared on both paths).
+//
+// One instrumentation note, because it nearly produced a wrong answer:
+// clock64() is not a fence, and a profiler whose timestamps the compiler may
+// reorder is worse than no profiler. The reads carry a "memory" clobber. With
+// and without it the numbers matched here, so the measurement was sound -- but
+// that was luck, not design.
 //
 //   nvcc -gencode arch=compute_90a,code=sm_90a -O3 -std=c++17 \
 //        -o mk40 40_megakernel_interpreter.cu && ./mk40
@@ -202,8 +236,14 @@ struct VmConfig {
 #endif
   static constexpr int kPipelineStages = MK40_STAGES;
   static constexpr int kDynamicSemaphores = 4;
+  // Per-instruction timestamps. NCU cannot attribute time inside a megakernel
+  // -- every op is the same kernel -- so the VM has to record its own. Off by
+  // default because each phase costs a clock64 and a store.
+#ifndef MK40_TIMING
+#define MK40_TIMING 0
+#endif
   static constexpr int kTimingWidth = 8;
-  static constexpr bool kTimingEnabled = false;
+  static constexpr bool kTimingEnabled = MK40_TIMING != 0;
 
   static constexpr int kConsumerWarps = 16;
   static constexpr int kNonConsumerWarps = 4;  // loader, storer, launcher, controller
@@ -237,6 +277,38 @@ struct alignas(128) StageState {
   int32_t instruction[VmConfig::kInstructionWidth];
   int32_t timings[VmConfig::kTimingWidth];
 };
+
+// The phases one instruction passes through. Timestamps are clock64() and are
+// only differenced WITHIN one instruction, which is what makes them valid: the
+// cycle counter is per-SM, so cross-CTA differences are meaningless.
+enum TimingPhase : int32_t {
+  kTClaim = 0,      // controller has an instruction index
+  kTFetched = 1,    // its 128 bytes are in shared memory
+  kTDepReady = 2,   // its dependency counter reached zero
+  kTPublished = 3,  // controller armed the op and rang instr_arrived
+  kTLoadIssued = 4, // loader issued the bulk copy
+  kTDataReady = 5,  // consumers' wait on the op semaphore returned
+  kTComputed = 6,   // consumers finished the math
+  kTFinished = 7,   // successors released
+};
+
+// clock64() is NOT a fence. Without a "memory" clobber the compiler is free to
+// hoist or sink the read across the very work being timed, and the first
+// version of this profiler reported 169k cycles for a 128-byte load because of
+// it. A profiler that lies is worse than none.
+__device__ __forceinline__ uint64_t now() {
+  uint64_t t;
+  asm volatile("mov.u64 %0, %%clock64;" : "=l"(t) :: "memory");
+  return t;
+}
+
+__device__ __forceinline__ void record(uint64_t* __restrict__ timings,
+                                       uint32_t instr, int32_t phase) {
+  if (VmConfig::kTimingEnabled && timings != nullptr) {
+    const uint64_t t = now();
+    timings[static_cast<int64_t>(instr) * VmConfig::kTimingWidth + phase] = t;
+  }
+}
 
 __device__ __forceinline__ void spin_backoff() {
   asm volatile("nanosleep.u32 %0;" ::"n"(VmConfig::kSpinSleepNanos));
@@ -474,6 +546,7 @@ __global__ __launch_bounds__(VmConfig::kNumThreads, 1) void megakernel_vm(
     const int32_t* __restrict__ successors,
     uint32_t* __restrict__ counters,
     uint32_t* __restrict__ next_instruction,
+    uint64_t* __restrict__ timings,
     int32_t num_instructions, int32_t max_instructions) {
   __shared__ alignas(128) StageState stage[VmConfig::kPipelineStages];
   __shared__ alignas(8) uint64_t instr_arrived[VmConfig::kPipelineStages];
@@ -481,6 +554,9 @@ __global__ __launch_bounds__(VmConfig::kNumThreads, 1) void megakernel_vm(
   __shared__ alignas(8) uint64_t
       op_sem[VmConfig::kPipelineStages * VmConfig::kDynamicSemaphores];
   __shared__ float smem_red[VmConfig::kConsumerWarps];
+  // The roles need the instruction INDEX, not just its contents, to file a
+  // timestamp against it.
+  __shared__ uint32_t claimed[VmConfig::kPipelineStages];
   extern __shared__ __align__(1024) uint8_t pages_raw[];
 
   VmState vm{stage, instr_arrived, instr_finished, op_sem, pages_raw};
@@ -526,6 +602,7 @@ __global__ __launch_bounds__(VmConfig::kNumThreads, 1) void megakernel_vm(
       if (lane == 0) { claim = atomicAdd(next_instruction, 1u); }
       claim = __shfl_sync(0xffffffffu, claim, 0);
 #endif
+      if (lane == 0) { record(timings, claim, kTClaim); }
 
       if (claim >= static_cast<uint32_t>(limit)) {
         // Publish a NoOp so the other roles retire in lockstep instead of
@@ -544,6 +621,7 @@ __global__ __launch_bounds__(VmConfig::kNumThreads, 1) void megakernel_vm(
       int4* dst = reinterpret_cast<int4*>(stage[ring].instruction);
       if (lane < VmConfig::kInstructionWidth / 4) { dst[lane] = src[lane]; }
       __syncwarp();
+      if (lane == 0) { record(timings, claim, kTFetched); }
 
       const InstructionView ins{stage[ring].instruction};
 
@@ -552,19 +630,21 @@ __global__ __launch_bounds__(VmConfig::kNumThreads, 1) void megakernel_vm(
         while (counter_load_acquire(&counters[ins.counter_idx()]) != 0u) {
           spin_backoff();
         }
+        record(timings, claim, kTDepReady);
         switch (ins.opcode()) {
           case kOpRmsNorm: op_rmsnorm::arm(vm, ring); break;
           case kOpGateUp:  op_gateup::arm(vm, ring); break;
           case kOpDown:    op_down::arm(vm, ring); break;
           default: break;
         }
-        if (VmConfig::kTimingEnabled) {
-          stage[ring].timings[0] = static_cast<int32_t>(clock64());
-        }
+        claimed[ring] = claim;
       }
       __syncwarp();
       tmpl::fence_proxy_async_shared();
-      if (lane == 0) { tmpl::mbarrier_arrive(&instr_arrived[ring]); }
+      if (lane == 0) {
+        record(timings, claim, kTPublished);
+        tmpl::mbarrier_arrive(&instr_arrived[ring]);
+      }
     }
     return;
   }
@@ -594,6 +674,9 @@ __global__ __launch_bounds__(VmConfig::kNumThreads, 1) void megakernel_vm(
           default: break;
         }
       }
+      if (role == 0 && tmpl::elect_one()) {
+        record(timings, claimed[ring], kTLoadIssued);
+      }
       // role 2 (launcher) has no async work in these ops. The role stays so the
       // warp count and register split do not move when an op acquires some.
 
@@ -610,6 +693,12 @@ __global__ __launch_bounds__(VmConfig::kNumThreads, 1) void megakernel_vm(
     const InstructionView ins{stage[ring].instruction};
     if (ins.opcode() == kOpNoOp) { break; }
 
+    if (warp == 0 && tmpl::elect_one()) {
+      // Data-ready is measured by warp 0 re-observing the op semaphore that the
+      // op itself waited on, so the timestamp brackets the loader's copy.
+      tmpl::wait_parity(vm.sem(ring, 0), 0);
+      record(timings, claimed[ring], kTDataReady);
+    }
     switch (ins.opcode()) {
       case kOpRmsNorm: op_rmsnorm::consumer(vm, ring, ins, g, warp, smem_red); break;
       case kOpGateUp:  op_gateup::consumer(vm, ring, ins, g, warp, smem_red); break;
@@ -621,10 +710,12 @@ __global__ __launch_bounds__(VmConfig::kNumThreads, 1) void megakernel_vm(
     // released; the named barrier covers the consumer group only.
     tmpl::named_barrier_sync(2, VmConfig::kConsumerWarps * 32);
     if (warp == 0 && tmpl::elect_one()) {
+      record(timings, claimed[ring], kTComputed);
       __threadfence();
       for (int32_t s = 0; s < ins.succ_count(); ++s) {
         counter_dec_release(&counters[successors[ins.succ_begin() + s]]);
       }
+      record(timings, claimed[ring], kTFinished);
     }
     if (tmpl::elect_one()) { tmpl::mbarrier_arrive(&instr_finished[ring]); }
   }
@@ -845,6 +936,11 @@ int main(int argc, char** argv) {
   CK(cudaMemcpy(d_counters_init, counters.data(), counters.size() * 4,
                 cudaMemcpyHostToDevice));
   CK(cudaMalloc(&d_next, 4));
+  uint64_t* d_timings = nullptr;
+  CK(cudaMalloc(&d_timings,
+                size_t(kNumInstructions) * VmConfig::kTimingWidth * 8));
+  CK(cudaMemset(d_timings, 0,
+                size_t(kNumInstructions) * VmConfig::kTimingWidth * 8));
   CK(cudaMemcpy(d_prog, prog.data(), prog.size() * 4, cudaMemcpyHostToDevice));
   CK(cudaMemcpy(d_succ, succ.data(), succ.size() * 4, cudaMemcpyHostToDevice));
 
@@ -873,7 +969,8 @@ int main(int argc, char** argv) {
     CK(cudaMemcpyAsync(d_counters, d_counters_init, counters.size() * 4,
                        cudaMemcpyDeviceToDevice, s));
     megakernel_vm<<<mk_grid, VmConfig::kNumThreads, kSmem, s>>>(
-        g, d_prog, d_succ, d_counters, d_next, kNumInstructions, mk_limit);
+        g, d_prog, d_succ, d_counters, d_next, d_timings, kNumInstructions,
+        mk_limit);
   };
 
   auto check = [&](const char* what) {
@@ -1022,6 +1119,51 @@ int main(int argc, char** argv) {
     mk_limit = 0;
     return best;
   };
+
+  if (VmConfig::kTimingEnabled) {
+    // One clean pass, outside any timed loop: the timestamps are the subject
+    // here, not the latency.
+    mk_grid = sm_count; mk_limit = 0;
+    CK(cudaMemset(d_timings, 0,
+                  size_t(kNumInstructions) * VmConfig::kTimingWidth * 8));
+    run_mk(stream); CK(cudaStreamSynchronize(stream));
+    std::vector<uint64_t> t(size_t(kNumInstructions) * VmConfig::kTimingWidth);
+    CK(cudaMemcpy(t.data(), d_timings, t.size() * 8, cudaMemcpyDeviceToHost));
+
+    static const char* kPhase[8] = {
+        "claim", "fetch", "dep-wait", "arm+publish",
+        "load-issue", "data-ready", "compute", "release"};
+    // Interval i is phase i -> phase i+1; the last column is the whole
+    // instruction, claim to release.
+    struct Agg { double sum[7]; double total; int n; };
+    Agg agg[4] = {};
+    for (int i = 0; i < kNumInstructions; ++i) {
+      const uint64_t* r = &t[size_t(i) * VmConfig::kTimingWidth];
+      if (r[kTClaim] == 0 || r[kTFinished] == 0) continue;  // never ran
+      const int op = prog[size_t(i) * VmConfig::kInstructionWidth];
+      Agg& a = agg[op];
+      for (int ph = 0; ph < 7; ++ph) {
+        a.sum[ph] += double(r[ph + 1] - r[ph]);
+      }
+      a.total += double(r[kTFinished] - r[kTClaim]);
+      a.n++;
+    }
+    const char* opname[4] = {"noop", "rmsnorm", "gate/up", "down"};
+    printf("\nper-instruction phases, mean cycles (VM's own profiler)\n");
+    printf("  %-8s %4s", "op", "n");
+    for (int ph = 0; ph < 7; ++ph) printf(" %11s", kPhase[ph]);
+    printf(" %11s\n", "TOTAL");
+    for (int op = 1; op < 4; ++op) {
+      if (agg[op].n == 0) continue;
+      printf("  %-8s %4d", opname[op], agg[op].n);
+      for (int ph = 0; ph < 7; ++ph) {
+        printf(" %11.0f", agg[op].sum[ph] / agg[op].n);
+      }
+      printf(" %11.0f\n", agg[op].total / agg[op].n);
+    }
+    printf("  (phase i is the interval from %s.. to the next column)\n",
+           kPhase[0]);
+  }
 
   printf("\nprobe: program truncated to rmsnorm + gate/up (no fan-in)\n");
   mk_grid = sm_count;
