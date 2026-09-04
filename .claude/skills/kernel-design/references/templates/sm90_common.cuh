@@ -199,6 +199,36 @@ __device__ __forceinline__ void tma_load_2d_multicast(const CUtensorMap* map, vo
       : "memory");
 }
 
+// cp.async: the pre-Hopper async copy, still the right tool when the source
+// layout is a pre-permuted blob rather than a tensor tile.  A TMA needs a
+// tensor map and a rectangular box; a weight matrix permuted offline so each
+// thread's 16 bytes ARE its MMA operand has neither.  16 bytes per thread is
+// the widest form and the only one that bypasses L1 with .cg.
+__device__ __forceinline__ void cp_async_16(void* smem_dst, const void* gmem_src) {
+  asm volatile("cp.async.cg.shared.global [%0], [%1], 16;"
+               ::"r"(smem_u32(smem_dst)), "l"(gmem_src) : "memory");
+}
+
+__device__ __forceinline__ void cp_async_commit() {
+  asm volatile("cp.async.commit_group;" ::: "memory");
+}
+
+// Waits until at most N groups remain in flight.  Unlike a TMA's mbarrier this
+// is per-thread state, so every thread that issued must also wait.
+template <int N>
+__device__ __forceinline__ void cp_async_wait() {
+  asm volatile("cp.async.wait_group %0;" ::"n"(N) : "memory");
+}
+
+// One ldmatrix moves four 8x8 tiles into the register layout mma.sync expects,
+// transposing lanes for free.  The address is per-lane: lane l supplies the
+// row it wants, which is why callers compute a swizzled per-lane offset.
+__device__ __forceinline__ void ldmatrix_x4(uint32_t (&out)[4], const void* smem) {
+  asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
+               : "=r"(out[0]), "=r"(out[1]), "=r"(out[2]), "=r"(out[3])
+               : "r"(smem_u32(smem)));
+}
+
 // Shared -> global through the async proxy.  Completion is a bulk group, not
 // an mbarrier: the issuing thread commits and waits.
 __device__ __forceinline__ void tma_store_2d(const CUtensorMap* map, const void* src,

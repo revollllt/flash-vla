@@ -1,10 +1,12 @@
 # sm90 Templates — compilable skeletons for the choreography
 
-Two tiers. **01-04** are the mechanism ladder: each adds one primitive to the
+Three tiers. **01-04** are the mechanism ladder: each adds one primitive to the
 previous one, and together they are a whole sm90 pipeline. **10-14** are kernel
 archetypes: the shape a real high-performance kernel of that family has, with
-the decisions that make it fast stated as rules. Start at the archetype nearest
-the task, drop to the ladder when a mechanism in it is unfamiliar.
+the decisions that make it fast stated as rules. **20-22** are the
+mixed-precision family, where the quantization format drives the kernel. Start
+at the template nearest the task, drop to the ladder when a mechanism in it is
+unfamiliar.
 
 ## Tier 1 — the mechanism ladder
 
@@ -30,6 +32,24 @@ for the full production version.
 | `12_attention_online_softmax.cu` | FlashAttention-3 | P stays in registers (A and C fragments coincide), 2-shuffle row reduction, exp2 with folded log2(e), MN-major V |
 | `13_mla_decode_split_kv.cu` | FlashMLA decode | split along keys, fp32 partials + LSE, no-split fast path, PDL chain into the combine kernel |
 | `14_grouped_moe_gemm.cu` | fused MoE | one launch for all experts, 3-D weight map indexed by expert, contiguous vs masked layouts, skip-before-arm |
+
+## Tier 3 — mixed-precision GEMM
+
+Distilled from Marlin (IST-DASLab, Apache-2.0) as carried by vLLM/SGLang, from
+`inclusionAI/humming`'s format coverage, and from the CUTLASS type traits that
+define each format's scale. `quant_sm90.cuh` holds the unpack vocabulary.
+
+| Template | Formats | The decisions it carries |
+|---|---|---|
+| `20_marlin_w4a16.cu` | INT4A16 | mma.sync over wgmma at small batch, cp.async over TMA for a pre-permuted weight blob, lop3 dequant, per-group scales |
+| `21_fp4_block_scaled_gemm.cu` | NVFP4A16, MXFP4A16 | ue8m0 vs ue4m3 block scales, 32- vs 16-element blocks, NVFP4's second per-tensor level, bias correction folded into the scale |
+| `22_w4a8_gemm.cu` | INT4A8, MXFP4A8 | scales leave the inner loop and meet on the accumulator, int8 exact accumulation, e2m1 -> e4m3 by 16-entry table, fp8 promotion per scale block |
+
+The fact that shapes all three: **sm90 has no sub-8-bit tensor core.**
+`mma_sm90_gmma.hpp` contains zero e2m1 atoms, so every INT4 and FP4 kernel here
+unpacks in registers before the MMA. Native block-scaled MMA is sm100 and
+sm120 only — porting these to sm120 deletes the unpack rather than translating
+it, and template 21's header says where.
 
 `sm90_common.cuh` holds the raw primitives every template shares.
 
