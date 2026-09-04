@@ -1,14 +1,12 @@
-// Template 40 -- a working megakernel VM, with its baseline and its numbers.
+// Template 40 -- a megakernel VM, with its baseline and its harness.
 //
-// Build and run it; that is the point of this file:
-//
-//   nvcc -arch=sm_90a -O3 -o mk40 40_megakernel_interpreter.cu && ./mk40
-//
-// It runs a decode-shaped transformer MLP -- RMSNorm, gate/up GEMV with SwiGLU,
-// down GEMV with a residual add -- twice: once as three ordinary kernel
-// launches, once as one persistent megakernel interpreting a program. It checks
-// both against a CPU reference and prints the two latencies. Numbers measured
-// on an H100 are at the bottom of this header.
+// Build and run it; that is the point of this file. It executes a decode-shaped
+// transformer MLP -- RMSNorm, gate/up GEMV with SwiGLU, down GEMV with a
+// residual add -- twice: once as three ordinary kernel launches, once as one
+// persistent megakernel interpreting a program. It checks both against a
+// double-precision CPU reference and times both graph-captured. The build line
+// and the current status are in the STATUS block below; read it before
+// trusting anything here.
 //
 // Architecture follows HazyResearch/Megakernels (MIT), reduced to the toolkit
 // so the mechanism is visible without a tile library in the way.
@@ -42,7 +40,7 @@
 //     goes further: pages are released individually in an op-declared order,
 //     so they cross instruction boundaries independently. That is more
 //     aggressive and more deadlock-prone; tying pages to the stage is the
-//     version that is obviously correct, and it is what is measured below.)
+//     version that is obviously correct, and it is what this file implements.)
 //  4. PER-INSTRUCTION SEMAPHORES, ARMED BY THE OP. The VM owns a fixed pool;
 //     each op says how many it needs. Ops get internal pipelining without the
 //     VM knowing anything about their dataflow.
