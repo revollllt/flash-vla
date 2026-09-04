@@ -13,7 +13,11 @@ Directives, anywhere in the template, one per line:
     // CHECK-PTX: wgmma\\.mma_async      regex that must match the PTX
     // CHECK-PTX-COUNT: 4 ld\\.shared    regex that must match >= N times
 
-Exit codes: 0 all templates pass, 1 a template failed, 2 no usable nvcc.
+Each template is compiled to PTX, ASSEMBLED with ptxas (which -ptx alone skips,
+and which is what catches an instruction the target does not support), and then
+checked against its declared assertions.
+
+    Exit codes: 0 all templates pass, 1 a template failed, 2 no usable nvcc.
 
 Structural only.  PTX assertions catch a missing or eliminated instruction;
 they do not prove the kernel computes anything.  Numerical authority is the
@@ -118,6 +122,18 @@ def check_one(path, nvcc, ccbin, keep_dir):
     if proc.returncode != 0:
         tail = (proc.stderr or proc.stdout).strip().splitlines()
         return False, ["compile failed:"] + [f"    {line}" for line in tail[:12]], cmd
+
+    # -ptx stops before ptxas, so it accepts instructions the assembler will
+    # reject -- setmaxnreg on a plain sm_90 target, for one.  Assemble for real
+    # before trusting the file.
+    asm = subprocess.run(
+        [str(Path(nvcc).parent / "ptxas"), f"-arch={arch}", str(ptx_path),
+         "-o", os.devnull],
+        capture_output=True, text=True,
+    )
+    if asm.returncode != 0:
+        tail = (asm.stderr or asm.stdout).strip().splitlines()
+        return False, ["ptxas failed:"] + [f"    {line}" for line in tail[:8]], cmd
 
     ptx = ptx_path.read_text()
     for pattern in checks:
