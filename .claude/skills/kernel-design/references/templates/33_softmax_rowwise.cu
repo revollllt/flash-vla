@@ -78,6 +78,10 @@ __global__ __launch_bounds__(kThreads) void softmax_rowwise_kernel(
     }
   }
 
+  // Pass 1 has read the whole row; pass 2 re-reads it from L2, not from the
+  // producer's stores, so the dependent may be scheduled from here.
+  tmpl::pdl_trigger();
+
   // Combining two threads' (m, l) is the same rescale-and-add, so the block
   // reduction has to be done in two steps rather than one: the sums are only
   // comparable once every thread is on the block max.
@@ -98,7 +102,4 @@ __global__ __launch_bounds__(kThreads) void softmax_rowwise_kernel(
     v.cast_store(output + row + i * kVec);
   }
 
-  // The dependent reads these stores, and the trigger is not a fence.
-  tmpl::pdl_release_fence();
-  tmpl::pdl_trigger();
 }

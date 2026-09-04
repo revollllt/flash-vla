@@ -21,8 +21,9 @@
 //      arithmetic, its own tile coordinates -- has no dependency on the split
 //      grid's output, so it can run during the split kernel's tail instead of
 //      after a full launch gap [launch.lat.dev.ramp, producer-fusion-pdl].
-//      griddepcontrol.launch_dependents goes after the partial writes are
-//      issued; the dependent waits before its first read of them.
+//      The trigger goes as soon as the key sweep is done, before the partial
+//      writes -- it publishes nothing, so there is no reason to hold it until
+//      the stores.  The combine kernel's wait is what orders those.
 //
 // The number of splits is a scheduling decision made on the host from the SM
 // count and the batch: enough that grid >= 3x SMs [sched.ctas.sm.knee], few
@@ -203,6 +204,10 @@ __global__ __launch_bounds__(kThreads, 1) void mla_decode_split_kernel(
     if (tmpl::elect_one()) { tmpl::mbarrier_arrive(&empty[stage]); }
   }
 
+  // The key sweep is done; the writes below are tail the combine kernel's
+  // prologue can overlap.  Its wait, not this trigger, is what orders them.
+  tmpl::pdl_trigger();
+
   const uint32_t r_0 = warp * 16 + lane / 4;
   const uint32_t r_1 = r_0 + 8;
 
@@ -218,12 +223,6 @@ __global__ __launch_bounds__(kThreads, 1) void mla_decode_split_kernel(
     lse_accum[base + r_0] = m_0 + log2f(l_0) * 0.6931471805599453f;
     lse_accum[base + r_1] = m_1 + log2f(l_1) * 0.6931471805599453f;
   }
-
-  // The partial stores above are the only thing the combine kernel reads, so
-  // release it now and let its prologue overlap this kernel's teardown.
-  // The dependent reads these stores, and the trigger is not a fence.
-  tmpl::pdl_release_fence();
-  tmpl::pdl_trigger();
 }
 
 // Merges the splits of one request.  Trivially parallel and bandwidth-bound;

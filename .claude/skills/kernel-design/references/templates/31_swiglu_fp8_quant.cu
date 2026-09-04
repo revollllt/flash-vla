@@ -84,6 +84,10 @@ __global__ __launch_bounds__(kThreads) void swiglu_fp8_quant_kernel(
     }
   }
 
+  // The input row is fully consumed; the reduction and the fp8 stores below are
+  // tail the dependent can overlap.
+  tmpl::pdl_trigger();
+
   amax = tmpl::block_reduce<true>(amax, smem, kWarps);
 
   // A zero row would otherwise divide by zero and poison the consuming GEMM.
@@ -104,9 +108,6 @@ __global__ __launch_bounds__(kThreads) void swiglu_fp8_quant_kernel(
     }
   }
 
-  // The dependent reads these stores, and the trigger is not a fence.
-  tmpl::pdl_release_fence();
-  tmpl::pdl_trigger();
 }
 
 static_assert(kRowElems > 0, "row must be a whole number of per-thread vectors");

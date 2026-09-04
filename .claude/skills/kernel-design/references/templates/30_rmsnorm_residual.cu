@@ -27,22 +27,18 @@
 // register-against-latency trade is exactly what the ablation in
 // wiki/pdl-placement.md measures -- it is not free and it is not always a win.
 //
-// The trigger is at the end, and here that is close to a NO-OP rather than an
-// optimization: the kickoff fires automatically once every CTA exits, so a
-// trigger on the last line buys almost nothing.  It cannot move earlier,
-// because the dependent reads `output` and nothing is written until pass 2
-// finishes.  The honest conclusion is that RMSNorm is a poor PDL *producer* and
-// a good PDL *consumer*; a chain that wants overlap here should get it from the
-// next kernel waiting late, not from this one triggering early.
-//
-// The release fence before the trigger is required, not defensive: NVIDIA's own
-// header says the trigger "provides no memory visibility guarantee itself".
+// The trigger is NOT at the end.  It publishes nothing -- the dependent's own
+// wait is what orders memory -- so there is no data-readiness point to respect
+// and no fence to place before it.  It goes as soon as this kernel stops
+// reading `input`, which is the same place CUTLASS puts it: on the last
+// mainloop tile, long before the epilogue writes anything.  Left on the last
+// line it would be close to a no-op, since the kickoff fires automatically once
+// every CTA exits.
 //
 // Structural only; see 01 for what the PTX assertions do and do not prove.
 //
 // CHECK-PTX: griddepcontrol\.wait
 // CHECK-PTX: griddepcontrol\.launch_dependents
-// CHECK-PTX: membar\.gl
 // CHECK-PTX: shfl\.sync\.bfly
 // CHECK-PTX: rsqrt\.approx
 // CHECK-PTX: ld\.global(\.nc)?\.v4
@@ -104,6 +100,11 @@ __global__ __launch_bounds__(kThreads) void rmsnorm_residual_kernel(
     x.cast_store(residual + row + i);
   }
 
+  // Nothing below reads `input` again, so the dependent may start competing for
+  // SMs now.  Everything after this point -- the reduction, pass 2, the stores
+  // -- is tail the dependent's prologue can overlap.
+  tmpl::pdl_trigger();
+
   const float rms_rcp = rsqrtf(
       tmpl::block_reduce<false>(sum_sq, smem, kWarps) / static_cast<float>(kRowElems) + eps);
 
@@ -121,7 +122,4 @@ __global__ __launch_bounds__(kThreads) void rmsnorm_residual_kernel(
     x.cast_store(output + row + i);
   }
 
-  // The dependent reads `output`; the trigger orders nothing on its own.
-  tmpl::pdl_release_fence();
-  tmpl::pdl_trigger();
 }

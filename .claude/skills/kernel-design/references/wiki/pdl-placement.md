@@ -17,23 +17,31 @@ two facts from NVIDIA's own device-runtime header decide it.
 
 ## Move
 
-**The trigger carries no memory ordering.** It "only enables scheduling of the
-secondary kernel. It provides no memory visibility guarantee itself." If the
-dependent reads what this kernel wrote, a release fence of the right scope must
-precede the trigger; the trigger is not one.
+**The trigger publishes nothing.** It only lets the dependent be *scheduled*
+earlier, so the dependent's pre-wait prologue can run while this kernel is still
+going. The ordering comes from the other side: the wait "blocks the thread until
+all direct grid dependencies have completed", which is the same guarantee
+ordinary stream serialization gives. CUTLASS states the consequence at its own
+call site — "the timing of calling this function only influences performance,
+not functional correctness" — and places the trigger on the last mainloop tile,
+long before its epilogue writes anything.
 
-**The kickoff is automatic once every CTA exits.** A trigger on the last line of
-a kernel therefore fires at the moment the automatic path would have fired
-anyway — it is a no-op wearing an optimization's clothes. PDL pays only when
-the trigger is genuinely earlier than the kernel's end, which means the producer
-must have tail work left to overlap.
+Two things follow, and they surprise people in opposite directions:
 
-So the two sides get different rules, and they are not symmetric:
+- **No release fence belongs before the trigger.** The dependent's wait does
+  that job. (The header's "provides no memory visibility guarantee itself"
+  describes a dependent that reads producer data *before* its own wait — which
+  is the thing not to do, not a reason to fence.)
+- **A trigger on the last line is close to a no-op**, because the kickoff
+  happens automatically once every CTA has exited. It fires when the automatic
+  path would have fired anyway.
 
-- **Producer** — trigger at the earliest point after which everything the
-  dependent reads is written *and fenced*. When that point is the last store,
-  the kernel is a poor PDL producer; record that and take the win from the other
-  side rather than leaving a trigger that does nothing.
+So the two sides get opposite rules:
+
+- **Producer** — trigger EARLY. There is no data-readiness point to respect, so
+  the only question is how soon the dependent may start competing for SMs. The
+  natural place is as soon as this kernel stops reading its inputs; a
+  single-pass kernel with no tail can trigger immediately after its wait.
 - **Dependent** — wait at the *latest* point before the first read of producer
   data. Index arithmetic, model parameters, scheduling metadata and tensor-map
   or descriptor prefetch all belong above it. Hoisting a parameter row above the
@@ -60,17 +68,18 @@ helps is usually mis-measured.
 | axis | cells |
 |---|---|
 | dependent's wait | kernel entry / after parameter prefetch / immediately before the first producer read |
-| producer's trigger | earliest legal point / last line / omitted (automatic kickoff) |
+| producer's trigger | immediately after the wait / when inputs stop being read / last line / omitted (automatic kickoff) |
 | baseline | PDL off entirely, and the launch attribute removed |
 
 Record per cell: chain latency, and the **dependent's register count and
 occupancy**. Prefetching above the wait trades registers for latency hiding, so
 a cell can win on latency and lose in the graph.
 
-Two null results are common and both are findings, not failures: a dependent
-with no producer-independent prologue cannot benefit from moving its wait, and a
-producer whose last store is what the dependent reads cannot benefit from moving
-its trigger. Either one means the pair is the wrong place for PDL.
+One null result is common and it is a finding, not a failure: a dependent with
+no producer-independent prologue has nothing to overlap, so moving its wait
+cannot help and triggering earlier only lets it contend for SMs sooner. That
+contention is the real cost of an early trigger, and it is why "as early as
+possible" is a starting point for the sweep rather than the answer.
 
 ## Caveats
 

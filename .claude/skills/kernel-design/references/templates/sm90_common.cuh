@@ -125,32 +125,36 @@ __device__ __forceinline__ void setmaxnreg_inc() {
 // The wait is an acquire and must stop the compiler hoisting a producer-data
 // load above it.  The trigger deliberately is NOT a barrier: it must not stop
 // the compiler moving independent work across it, because overlapping that work
-// is the entire point.  Hand-rolled asm tends to get exactly one of these
-// wrong -- adding "memory" to the trigger over-constrains it, omitting it from
-// the wait is a real hazard.
+// is the entire point.  CUTLASS's own helpers spell them the same way.
 //
-// TWO FACTS FROM THE HEADER DOCS THAT DECIDE PLACEMENT:
+// WHAT EACH ONE ACTUALLY PROMISES
 //
-//  1. The trigger gives NO MEMORY VISIBILITY.  It "only enables scheduling of
-//     the secondary kernel".  If the dependent reads what this kernel wrote, a
-//     release fence of the right scope must precede the trigger -- the trigger
-//     is not one.
-//  2. The kickoff happens AUTOMATICALLY once every CTA has exited.  So a
-//     trigger on the last line of a kernel is close to a no-op: it fires when
-//     the automatic path would have fired anyway.  PDL pays only when the
-//     trigger is genuinely earlier than the kernel's end, which means the
-//     producer must have tail work left to overlap.
+// The wait "blocks the thread until all direct grid dependencies have
+// completed" -- that is where the memory ordering comes from, and it is the
+// same ordering ordinary stream serialization would give.
 //
-// The consequence is a rule per side, and they are not symmetric:
-//   PRODUCER: trigger at the earliest point after which everything the
-//     dependent reads is written and fenced.  If that point is the last store,
-//     this kernel is a poor PDL producer and the win has to come from the
-//     other side.
-//   DEPENDENT: wait at the LATEST point before the first producer-data read.
-//     Index arithmetic, model parameters, scheduling metadata and descriptor
-//     prefetch all belong above it.
+// The trigger publishes nothing.  It only lets the dependent be SCHEDULED
+// earlier, so its pre-wait prologue can run while this kernel is still going.
+// CUTLASS states the consequence outright at its own call site: "the timing of
+// calling this function only influences performance, not functional
+// correctness".  So:
 //
-// Where those points are is a measurement, not a derivation --
+//   * No release fence belongs before it.  The dependent's wait does that job.
+//     (The header's "provides no memory visibility guarantee itself" is about
+//     a dependent that reads producer data BEFORE its own wait -- do not.)
+//   * Trigger EARLY.  There is no data-readiness point to respect, so the only
+//     question is how early the dependent may start competing for SMs.
+//     CUTLASS triggers on the last mainloop tile, well before its epilogue
+//     writes anything.
+//   * A trigger on the LAST LINE is close to a no-op: the kickoff already
+//     happens automatically once every CTA has exited, so it fires when the
+//     automatic path would have anyway.
+//
+// The wait is the opposite: put it as LATE as possible, immediately before the
+// first read of producer data.  Index arithmetic, model parameters, scheduling
+// metadata and descriptor prefetch all belong above it.
+//
+// How early to trigger and how late to wait are tuning, not derivation --
 // wiki/pdl-placement.md carries the ablation.
 
 __device__ __forceinline__ void pdl_wait() { cudaGridDependencySynchronize(); }
@@ -158,10 +162,6 @@ __device__ __forceinline__ void pdl_wait() { cudaGridDependencySynchronize(); }
 __device__ __forceinline__ void pdl_trigger() {
   cudaTriggerProgrammaticLaunchCompletion();
 }
-
-// Device-scope release.  Required before an explicit trigger whenever the
-// dependent consumes this kernel's writes; the trigger does not order memory.
-__device__ __forceinline__ void pdl_release_fence() { __threadfence(); }
 
 // ----------------------------------------------------------------- cluster
 

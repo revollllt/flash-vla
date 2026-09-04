@@ -67,6 +67,10 @@ __global__ __launch_bounds__(kThreads) void rope_kernel(
   const int64_t angle_base = static_cast<int64_t>(positions[token]) * rotary_dim;
 
   tmpl::pdl_wait();
+  // A single-pass kernel has no tail to hold the trigger for, so it goes
+  // immediately: the trigger publishes nothing, and the dependent's own wait is
+  // what orders memory.  This is the extreme of the rule, not an exception to it.
+  tmpl::pdl_trigger();
 
   for (int32_t i = tid * kVec; i < head_dim; i += kThreads * kVec) {
     tmpl::FloatVec<Element, kVec> v;
@@ -105,10 +109,6 @@ __global__ __launch_bounds__(kThreads) void rope_kernel(
     }
     v.cast_store(out + base + i);
   }
-
-  // The dependent reads these stores, and the trigger is not a fence.
-  tmpl::pdl_release_fence();
-  tmpl::pdl_trigger();
 }
 
 template __global__ void rope_kernel<RopeLayout::kInterleaved>(
