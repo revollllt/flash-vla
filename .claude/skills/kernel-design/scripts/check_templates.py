@@ -89,10 +89,20 @@ def parse_directives(text):
     return arch, includes, checks, counts
 
 
+def check_pdl_annotations(text):
+    """A PDL site without a declared placement is a placement nobody can audit."""
+    notes = []
+    if "pdl_wait(" in text and "PDL-WAIT:" not in text:
+        notes.append("calls pdl_wait but declares no `// PDL-WAIT:` placement")
+    if "pdl_trigger" in text and "PDL-TRIGGER:" not in text:
+        notes.append("calls pdl_trigger but declares no `// PDL-TRIGGER:` placement")
+    return notes
+
+
 def check_one(path, nvcc, ccbin, keep_dir):
     text = path.read_text()
     arch, includes, checks, counts = parse_directives(text)
-    failures = []
+    failures = check_pdl_annotations(text)
     if not checks and not counts:
         failures.append("declares no CHECK-PTX assertion")
 

@@ -60,6 +60,8 @@ __global__ __launch_bounds__(kThreads) void softmax_rowwise_kernel(
   const int32_t tid = static_cast<int32_t>(threadIdx.x);
   const int32_t vecs = d / kVec;
 
+  // PDL-WAIT: before the first read of `input`.
+  // DERIVED from the data dependency, never swept.
   tmpl::pdl_wait();
 
   // Per-thread running state over the slice this thread strides across.
@@ -78,8 +80,9 @@ __global__ __launch_bounds__(kThreads) void softmax_rowwise_kernel(
     }
   }
 
-  // Pass 1 has read the whole row; pass 2 re-reads it from L2, not from the
-  // producer's stores, so the dependent may be scheduled from here.
+  // PDL-TRIGGER: after pass 1 has read the whole row.
+  // SWEPT: not yet measured. Pass 2 re-reads from L2 rather than from the
+  // producer, so points inside pass 2 are legal candidates too.
   tmpl::pdl_trigger();
 
   // Combining two threads' (m, l) is the same rescale-and-add, so the block

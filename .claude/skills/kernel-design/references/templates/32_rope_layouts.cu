@@ -66,10 +66,12 @@ __global__ __launch_bounds__(kThreads) void rope_kernel(
   const int32_t tid = static_cast<int32_t>(threadIdx.x);
   const int64_t angle_base = static_cast<int64_t>(positions[token]) * rotary_dim;
 
+  // PDL-WAIT: before the first read of `x`. `positions` and the cos/sin tables
+  // are producer-independent and are read above. DERIVED, never swept.
   tmpl::pdl_wait();
-  // A single-pass kernel has no tail to hold the trigger for, so it goes
-  // immediately: the trigger publishes nothing, and the dependent's own wait is
-  // what orders memory.  This is the extreme of the rule, not an exception to it.
+  // PDL-TRIGGER: immediately after the wait.
+  // SWEPT: trivially -- a single-pass kernel has no tail to hold it for, so the
+  // sweep has only two cells (here, or entry) and they differ by one wait.
   tmpl::pdl_trigger();
 
   for (int32_t i = tid * kVec; i < head_dim; i += kThreads * kVec) {

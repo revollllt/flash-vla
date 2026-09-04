@@ -129,6 +129,12 @@ a dead-code-eliminated mainloop still exits zero.
   that distinguish its family and reuses the ladder for everything else.
 - **Assert the instructions that are the point.** If the template exists to show
   a wgmma batch, assert the wgmma, the fence, the commit and the wait.
+- **Declare every PDL site.** A template using PDL carries
+  `// PDL-WAIT: <the read it precedes> -- DERIVED ...` and
+  `// PDL-TRIGGER: <position> -- SWEPT: <result, or "not yet measured">`; the
+  checker fails one that does not. The wait follows from data dependencies, the
+  trigger only from measurement, and the annotation is what tells a later reader
+  which of the two a given position is. See `../wiki/pdl-placement.md`.
 - **A number appears only as a rule**, cited by hardware-unit-test tag
   (`[wgmma.stages.wg.knee]`), never as a measurement from a run.
 - **Comments explain the decision, not the line.** ASCII only, `->` and `--`.

@@ -204,8 +204,9 @@ __global__ __launch_bounds__(kThreads, 1) void mla_decode_split_kernel(
     if (tmpl::elect_one()) { tmpl::mbarrier_arrive(&empty[stage]); }
   }
 
-  // The key sweep is done; the writes below are tail the combine kernel's
-  // prologue can overlap.  Its wait, not this trigger, is what orders them.
+  // PDL-TRIGGER: after the key sweep, before the partial writes.
+  // SWEPT: not yet measured. Earlier points exist -- entry, after the Q load,
+  // inside the tile loop -- and only a chain measurement separates them.
   tmpl::pdl_trigger();
 
   const uint32_t r_0 = warp * 16 + lane / 4;
@@ -239,7 +240,9 @@ __global__ __launch_bounds__(128) void mla_decode_combine_kernel(
   const int32_t begin = split_begin[request];
   const int32_t count = split_count[request];
 
-  tmpl::pdl_wait();  // from here on we read what the split kernel wrote
+  // PDL-WAIT: before the first read of o_accum / lse_accum.
+  // DERIVED from the data dependency, never swept.
+  tmpl::pdl_wait();
 
   // Two passes: the maximum LSE, then one rescaled accumulation.  Doing it in
   // one pass would need the partials twice anyway, and this way no term ever

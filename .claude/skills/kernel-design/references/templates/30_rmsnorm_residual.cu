@@ -27,13 +27,20 @@
 // register-against-latency trade is exactly what the ablation in
 // wiki/pdl-placement.md measures -- it is not free and it is not always a win.
 //
-// The trigger is NOT at the end.  It publishes nothing -- the dependent's own
-// wait is what orders memory -- so there is no data-readiness point to respect
-// and no fence to place before it.  It goes as soon as this kernel stops
-// reading `input`, which is the same place CUTLASS puts it: on the last
-// mainloop tile, long before the epilogue writes anything.  Left on the last
-// line it would be close to a no-op, since the kickoff fires automatically once
-// every CTA exits.
+// The trigger is a COMPILE-TIME KNOB, and that is the point of this template.
+//
+// Where it belongs cannot be derived.  It publishes nothing and cannot break
+// the kernel, so every position is legal and only measurement separates them --
+// and how early it can usefully go depends on this kernel's own structure, not
+// on a rule about PDL.  So the positions are enumerated and swept:
+//
+//   0  kernel entry, before the wait      4  after the stores (near no-op)
+//   1  immediately after the wait         (the default, 2, is the first point
+//   2  after pass 1 consumes `input`       at which nothing below re-reads
+//   3  after the block reduction           producer data)
+//
+// Build with -DPDL_TRIGGER_POINT=n and measure the CHAIN, not this kernel.
+// See wiki/pdl-placement.md: the wait is derived, the trigger is swept.
 //
 // Structural only; see 01 for what the PTX assertions do and do not prove.
 //
@@ -57,6 +64,15 @@ constexpr int kWarps = kThreads / tmpl::kWarpThreads;
 constexpr int kVecsPerThread = 2;
 constexpr int kRowElems = kVecsPerThread * kThreads * kVec;  // 4096
 
+// The swept knob.  2 is a starting point, not an answer.
+#ifndef PDL_TRIGGER_POINT
+#define PDL_TRIGGER_POINT 2
+#endif
+
+__device__ __forceinline__ void pdl_trigger_at(int point) {
+  if (point == PDL_TRIGGER_POINT) { tmpl::pdl_trigger(); }
+}
+
 }  // namespace
 
 // One CTA per token.  `residual` is read AND written: the block's running
@@ -71,6 +87,8 @@ __global__ __launch_bounds__(kThreads) void rmsnorm_residual_kernel(
   const int64_t row = static_cast<int64_t>(blockIdx.x) * kRowElems;
   const int32_t tid = static_cast<int32_t>(threadIdx.x);
 
+  pdl_trigger_at(0);
+
   // ABOVE THE WAIT: producer-independent.  These loads issue while the previous
   // kernel is still draining its tail.
   tmpl::FloatVec<Element, kVec> w[kVecsPerThread];
@@ -79,8 +97,11 @@ __global__ __launch_bounds__(kThreads) void rmsnorm_residual_kernel(
     w[v].cast_load(weight + (v * kThreads + tid) * kVec);
   }
 
-  // Everything below reads what the producer wrote.
+  // PDL-WAIT: before the first read of `input` and `residual`.
+  // DERIVED from the data dependency, never swept: moving it later past a
+  // producer-data read is a race, not a slower kernel.
   tmpl::pdl_wait();
+  pdl_trigger_at(1);
 
   // Pass 1: add the residual, take the sum of squares of the RESULT (the norm
   // is over x + residual), and publish the updated residual so pass 2 does not
@@ -100,13 +121,14 @@ __global__ __launch_bounds__(kThreads) void rmsnorm_residual_kernel(
     x.cast_store(residual + row + i);
   }
 
-  // Nothing below reads `input` again, so the dependent may start competing for
-  // SMs now.  Everything after this point -- the reduction, pass 2, the stores
-  // -- is tail the dependent's prologue can overlap.
-  tmpl::pdl_trigger();
+  // PDL-TRIGGER: point 2 -- inputs consumed. SWEPT: not yet measured here.
+  // Nothing below re-reads producer data, so the reduction, pass 2 and the
+  // stores are all tail the dependent's prologue can overlap.
+  pdl_trigger_at(2);
 
   const float rms_rcp = rsqrtf(
       tmpl::block_reduce<false>(sum_sq, smem, kWarps) / static_cast<float>(kRowElems) + eps);
+  pdl_trigger_at(3);
 
   // Pass 2: re-read the row we just wrote.  It is L2-resident by construction,
   // so this traversal is much cheaper than the first.
@@ -121,5 +143,5 @@ __global__ __launch_bounds__(kThreads) void rmsnorm_residual_kernel(
     }
     x.cast_store(output + row + i);
   }
-
+  pdl_trigger_at(4);
 }

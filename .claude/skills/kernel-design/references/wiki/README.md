@@ -30,6 +30,7 @@ consults this table before proposing a move; a human reads it the same way.
 | a fusion wins on a cold isolated timer and is neutral or worse in the graph | [measure-in-the-graph](measure-in-the-graph.md) |
 | PDL added to a kernel chain and the measurement is a null | [pdl-placement](pdl-placement.md) |
 | a trigger sits on the kernel's last line; a wait sits on its first | [pdl-placement](pdl-placement.md) |
+| tuning a chain to the end and the trigger position was never varied | [pdl-placement](pdl-placement.md) |
 | widening a split-K tile to cut joins made the phase slower | [serial-epilogue-owner](serial-epilogue-owner.md) |
 | an ablation says removing a stage/warp/tile costs a lot; you plan to add one | [price-the-direction](price-the-direction.md) |
 | every lever in one phase measures null; the last gradient looks like a pole | [stacked-floors](stacked-floors.md) |

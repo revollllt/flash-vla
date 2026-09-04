@@ -64,6 +64,8 @@ __global__ __launch_bounds__(kThreads) void swiglu_fp8_quant_kernel(
   const int64_t row = static_cast<int64_t>(blockIdx.x) * 2 * d;
   const int32_t tid = static_cast<int32_t>(threadIdx.x);
 
+  // PDL-WAIT: before the first read of `input`.
+  // DERIVED from the data dependency, never swept.
   tmpl::pdl_wait();
 
   // Held across the reduction; this is what buys the fusion.
@@ -84,8 +86,10 @@ __global__ __launch_bounds__(kThreads) void swiglu_fp8_quant_kernel(
     }
   }
 
-  // The input row is fully consumed; the reduction and the fp8 stores below are
-  // tail the dependent can overlap.
+  // PDL-TRIGGER: after the input row is consumed.
+  // SWEPT: not yet measured. The reduction and the fp8 stores below are the
+  // tail this position is trying to overlap; entry and post-wait are the other
+  // candidates.
   tmpl::pdl_trigger();
 
   amax = tmpl::block_reduce<true>(amax, smem, kWarps);
