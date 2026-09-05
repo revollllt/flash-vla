@@ -5,7 +5,7 @@ previous one, and together they are a whole sm90 pipeline. **10-14** are kernel
 archetypes: the shape a real high-performance kernel of that family has, with
 the decisions that make it fast stated as rules. **20-23** are the
 mixed-precision family, where the quantization format drives the kernel, and
-**30-33** are the memory-bound glue ops between the GEMMs, and **40-41** are
+**30-33** are the memory-bound glue ops between the GEMMs, and **40-45** are
 the fusion endgame. Start
 at the template nearest the task, drop to the ladder when a mechanism in it is
 unfamiliar.
@@ -81,28 +81,40 @@ interesting ones.
 
 ## Tier 5 — the fusion endgame
 
-Where launch cost stops being tunable and becomes structural. Distilled from
-the megakernel idiom (`../wiki/ext-mpk-megakernel.md`), DeepGEMM's MegaMoE
-scheduler, and SGLang's MoE align/finalize kernels.
+Where launch cost stops being tunable and becomes structural. Four upstream
+megakernels, one template each, plus the MoE align/finalize pass around the
+grouped GEMM. The megakernel entries are whole machines, not sketches: each
+builds, checks itself against a double-precision reference, times itself under
+a CUDA graph, and carries its measurements in a STATUS block next to the
+upstream's published numbers. The wiki entry
+[`ext-mpk-megakernel`](../wiki/ext-mpk-megakernel.md) holds the rules they
+have in common.
 
 | Template | Subject | The decisions it carries |
 |---|---|---|
-| `40_megakernel_interpreter.cu` | megakernel VM | fixed-width instructions streamed like a tensor, an instruction ring, shared memory as pages recycled in an op-declared order, per-instruction semaphores armed by the op, a built-in profiler, the five warp roles, and why this one cannot deadlock while a fused-layer one can |
+| `40_megakernel_interpreter.cu` | megakernel VM, reduced | the instruction ring, pages tied to the ring stage, a built-in profiler -- and the ledger of why it loses to three launches: it waits on the dependency before loading anything |
+| `42_hazy_llama_megakernel.cu` | HazyResearch low-latency Llama | static per-SM instruction streams from a host planner (round robin or cost-weighted list scheduling), pages released in an op-declared order across instruction boundaries, weights prefetched under the dependency wait, one global counter per (layer, op, slice), split attention with an LSE reduction op; a whole Llama-1B decode step |
+| `43_mpk_task_graph_runtime.cu` | Mirage MPK runtime | tasks and events with trigger counts, worker CTAs with per-worker queues, scheduler warps with event queues, cumulative counters that carry the kernel across decode steps, pre-launch (AOT) against launch-on-fire (JIT), event granularity as a compiler decision, cross-task pre-loading; the same decode step as 42 |
+| `44_megamoe_sm90.cu` | DeepGEMM Mega MoE, sm90 port | dispatch into an expert-major pool, a two-stage scheduler whose L1 warmup waves keep the dependent L2 stage deadlock-free, a ring of pool blocks with four use-scaled counters, swapped-AB wgmma with tokens as N, granularity-8 gate/up interleave so SwiGLU is a register pair, the top-k weight folded into the L1 epilogue |
+| `45_flag_barrier_megakernel.cu` | flag-barrier megakernel | the minimal form: one launch, phases split by a release/acquire flag the last CTA resets, redundant norms in place of a hop, `L1::no_allocate` and `L2::cache_hint` weight loads with the sm90 spellings that survive ptxas, and what a phase boundary costs against a launch |
 | `41_moe_align_finalize.cu` | MoE around the grouped GEMM | why the align pass pads to the GEMM's block size, contention bounded by expert count not token count, the inverse permutation built once, the shared expert riding the gather |
 
-Template 40 is deliberately the longest file here. A megakernel is not a kernel
-with a switch in it -- it is a small VM, and everything hard about it is
-machinery a sketch leaves out: the instruction ABI, the page allocator that lets
-consecutive instructions of different kinds share shared memory without a
-barrier, the semaphores each op arms for itself, and the fact that the
-interpreter is itself warp-specialized. Its architecture follows
-[HazyResearch/Megakernels](https://github.com/HazyResearch/Megakernels) (MIT),
-reduced to the toolkit.
+Templates 42 and 43 run one workload so the two schedulers can be compared;
+on this machine the static schedule reaches a higher fraction of the
+bandwidth floor than the dynamic one, and both sit in the range their
+upstream projects report. The single largest lever in every one of them is
+where the dependency wait sits relative to the weight stream -- read the
+wiki entry's first rule before fusing anything.
 
-Its deadlock section is the part to read before fusing anything: a
-topologically ordered program plus a monotonic claim cursor guarantees progress,
-and adding any bounded resource -- pages, a ring, accumulator slots -- destroys
-that guarantee. Sizing the warmup that restores it is the design, not a detail.
+Template 44 is a port: DeepGEMM ships Mega MoE for sm100 only, and the sm90
+build SGLang uses has no public source, so the sm90 file here reproduces the
+sm100 design's scheduler and counters over wgmma, single-rank and bf16.
+
+To run one on this cluster (the login node has no GPU):
+
+```bash
+sbatch --export=ALL,TEMPLATE=42_hazy_llama_megakernel.cu,RUN_ARGS="partials=8" sbatch/kernel_template.sh
+```
 
 `sm90_common.cuh` holds the raw primitives every template shares.
 

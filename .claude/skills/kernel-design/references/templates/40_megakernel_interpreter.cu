@@ -11,6 +11,14 @@
 // Architecture follows HazyResearch/Megakernels (MIT), reduced to the toolkit
 // so the mechanism is visible without a tile library in the way.
 //
+// READ THIS FIRST. This file is the reduced VM and the record of its loss.
+// Template 42 is the full HazyResearch machine (planner, page release order,
+// per-op counters) on a whole Llama-1B decode step, and it wins; templates
+// 43-45 are the other three published megakernel forms. The one thing this
+// file does that none of them do is wait on the dependency BEFORE issuing any
+// operand copy -- the structural reading at the end of this header -- and
+// that, not the interpreter, is the whole of the difference.
+//
 // THE SHAPE
 //
 //     an offline planner emits a PROGRAM        -- schedule as data

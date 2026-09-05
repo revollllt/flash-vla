@@ -41,11 +41,15 @@ several skills and rules.
   tier covers the memory-bound glue between GEMMs -- norm, swiglu with fused
   per-token quantization, rope and softmax -- whose shared constraints are
   traversals of the row and the launch ramp, so they fuse and they all carry
-  PDL. A fifth tier covers the fusion endgame -- a task-graph megakernel and the
-  MoE align/finalize pass around the grouped GEMM -- where launch cost stops
-  being tunable and becomes structural. The megakernel template is deliberately
-  the largest file in the set: the idiom's difficulty is entirely in machinery a
-  sketch omits, so a short version of it has no reference value. An `ncu-report` skill owns report
+  PDL. A fifth tier covers the fusion endgame -- the four published megakernel forms
+  (HazyResearch's planned interpreter, Mirage MPK's task-graph runtime,
+  DeepGEMM's Mega MoE ported to sm90, learn-cuda's flag-barrier kernel), one
+  runnable and self-timing template each, plus the MoE align/finalize pass
+  around the grouped GEMM -- where launch cost stops being tunable and becomes
+  structural. The megakernel templates are deliberately the largest files in
+  the set: the idiom's difficulty is entirely in machinery a sketch omits, so a
+  short version of it has no reference value; see the
+  [megakernel reference templates note](2026-09-05-megakernel-reference-templates.md). An `ncu-report` skill owns report
   interpretation (capture stays with `gpu-profiler-analysis`).
 - Templates are toolkit-only and de-projectized, so they stay portable
   experience rather than a second copy of the kernels; each declares the PTX

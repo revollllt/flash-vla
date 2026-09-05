@@ -35,6 +35,7 @@ consults this table before proposing a move; a human reads it the same way.
 | an ablation says removing a stage/warp/tile costs a lot; you plan to add one | [price-the-direction](price-the-direction.md) |
 | every lever in one phase measures null; the last gradient looks like a pole | [stacked-floors](stacked-floors.md) |
 | unfamiliar archetype: small-M GEMM / decode attention / megakernel | `ext-deepgemm-sm90`, `ext-flashmla-sm90`, `ext-fa3-pingpong`, `ext-mpk-megakernel` |
+| a megakernel loses to the launches it replaced; choosing a planner vs a scheduler; two dependent stages on one pool | [ext-mpk-megakernel](ext-mpk-megakernel.md) |
 | you know the move but not how the choreography is spelled | [`../templates/`](../templates/README.md) — compilable sm90 skeletons |
 
 ## Entry format
