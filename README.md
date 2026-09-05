@@ -60,10 +60,13 @@ without a trained model. For real weights, pass a dict matching
 ## Benchmarks
 
 ```
-python -m benchmarks e2e --prompt-len 0
-python -m benchmarks profile --compare
-python -m eval.correctness.pi0.fused_vs_unfused --steps 1
+python -m benchmarks latency --target h100/pi0 --option fused=true --option fused=false
+python -m benchmarks profile --target h100/pi0
+python -m eval.correctness.in_engine --target h100/pi0 --option fused=false --steps 1 --layers 1
 ```
+
+The model is an input to every benchmark and correctness runner: see
+[`docs/architecture/`](docs/architecture/README.md).
 
 All three need a GPU. On a Slurm cluster, submit them rather than running on a
 login node — TileLang compiles against the local device and re-reads the source
@@ -204,7 +207,7 @@ was developed as a port of the Triton kernels in the realtime-vla Pi0 inference
 implementation. Every kernel was validated op-by-op against that implementation
 before the dependency was dropped; what remains in-tree is the fused-vs-unfused
 regression gate
-(`python -m eval.correctness.pi0.fused_vs_unfused --steps 1`).
+(`python -m eval.correctness.in_engine --target h100/pi0 --option fused=false --steps 1 --layers 1`).
 
 Source commit of the parent repository: `a53bcf9`.
 

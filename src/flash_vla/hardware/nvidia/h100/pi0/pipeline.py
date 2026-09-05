@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from flash_vla.models.pi0.spec import ENCODER_LAYERS, HEAD_DIM, VISION_LAYERS
 
-from .backends.tilelang.kernels.attention import encoder_attention, vision_attention
 
 DECODER_HEAD_DIM = HEAD_DIM
 
@@ -36,7 +35,7 @@ def vision_encoder(ops, weights, buffers, num_views):
             weights["vision_attn_qkv_w"][i], weights["vision_attn_qkv_b"][i],
             buffers["vision_QKV"], buffers["vision_x_norm"])
 
-        attn = vision_attention(buffers["vision_QKV"])
+        attn = ops.vision_attention(buffers["vision_QKV"])
 
         ops.vision_out_proj_residual(
             attn, weights["vision_attn_o_w"][i], weights["vision_attn_o_b"][i],
@@ -77,7 +76,7 @@ def transformer_encoder(ops, weights, buffers, encoder_seq_len):
         if i == ENCODER_LAYERS - 1:
             break
 
-        attn = encoder_attention(
+        attn = ops.encoder_attention(
             buffers["encoder_Q"], buffers["encoder_K"][i, :encoder_seq_len],
             buffers["encoder_V"][i, :encoder_seq_len], scale)
 

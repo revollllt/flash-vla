@@ -7,15 +7,15 @@ description: Benchmark a GPU kernel with CUPTI / CUDA-graph / CUDA-event timing,
 
 Per-kernel GPU timing, ported from FlashInfer's `bench_gpu_time` methodology.
 This measures one kernel launch at a time (not the whole pipeline — use
-`python -m benchmarks e2e` for end-to-end wall clock).
+`python -m benchmarks latency` for end-to-end latency).
 
 Three ways in, by how permanent the kernel is:
 
 | | Use when |
 |---|---|
-| [Method 1: CLI](#method-1-cli-over-built-in-cases) | The kernel is already a built-in case |
+| [Method 1: CLI](#method-1-cli-over-a-targets-call-sites) | The kernel is a call site of a Target |
 | [Method 2: `bench_gpu_time()` in Python](#method-2-bench_gpu_time-in-python) | You just wrote a kernel and want a number now |
-| [Method 3: promote to a built-in case](#method-3-promote-to-a-built-in-case) | The kernel is production and needs a tracked baseline |
+| [Method 3: promote to a call site](#method-3-promote-to-a-call-site) | The kernel is production and needs a tracked baseline |
 
 ## Timing Methods
 
@@ -28,31 +28,35 @@ Three ways in, by how permanent the kernel is:
 The default is CUPTI, falling back to CUDA events automatically when CUPTI is
 not installed.
 
-## Method 1: CLI over built-in cases
+## Method 1: CLI over a Target's call sites
+
+The model is an input. Every call site of the Target's pipeline is a case:
+its arguments are recorded from one instrumented eager run of the segment, so
+the kernel is timed on exactly the buffers and weights the pipeline passes,
+and the recorded invocations are cycled so weight-heavy call sites read cold.
 
 ```bash
-# All built-in Pi0 decoder kernels, CUPTI timing (default):
-python -m benchmarks kernels --all --timer cupti
+# Every call site of every segment, amortised in-graph timing (default):
+python -m benchmarks kernels --target h100/pi05 --plan attn-ffn-cuda-fused-producer-pdl
 
-# A single kernel, CUDA events:
-python -m benchmarks kernels --case decoder_attention --timer events
+# One call site, CUPTI kernel time (auto-fallback to events):
+python -m benchmarks kernels --target h100/pi05 --plan tilelang --segment decoder --site decoder_attention --timer cupti
 
-# CUDA-graph timing (amortised launch overhead, cold-L2 rotating buffers):
-python -m benchmarks kernels --case decoder_action_mlp --timer cudagraph
-
-# Save results to CSV (append mode; header written on first run):
-python -m benchmarks kernels --all --timer cupti --csv kernel_bench.csv
+# Pi0's fused overlay off, CSV appended:
+python -m benchmarks kernels --target h100/pi0 --option fused=false --csv kernel_bench.csv
 ```
 
-Sibling commands: `python -m benchmarks e2e` is full-pipeline wall clock, and
-`python -m benchmarks profile` attributes time *inside* the captured graph.
-`kernels` is the only one that measures a kernel outside any graph, on its own.
+Sibling commands: `python -m benchmarks latency` is the end-to-end latency
+baseline, and `python -m benchmarks profile` attributes time *inside* the
+captured graph to call sites. `kernels` is the only one that measures a call
+site outside any graph, on its own. FLOPs and bytes come from the Target's cost
+declarations (`costs.py`), the same minimal-traffic model the floor uses.
 
 On the cluster, run through sbatch — the login node has no GPU:
 
 ```bash
 sbatch -J kernelbench \
-  --export=ALL,CMD="-m benchmarks kernels --all --timer cupti --csv sbatch/logs/kernel_cupti.csv" \
+  --export=ALL,CMD="-m benchmarks kernels --target h100/pi05 --plan tilelang --csv sbatch/logs/kernel_cold.csv" \
   sbatch/run.sbatch
 ```
 
@@ -69,22 +73,13 @@ decoder_attention             0.021    0.001    0.019      16.0      0.33
 The CSV contains one row per kernel: `label, median_ms, min_ms, mean_ms,
 std_ms, p99_ms, tflops, tb_per_sec, num_samples`.
 
-### Built-in Cases
+### Cases
 
-`benchmarks.kernels.build_cases(fused=True)` returns the built-in Pi0 decoder
-kernels, reusing `benchmarks.synthetic` buffers/weights so the numbers are
-comparable with the e2e benchmarks. The wrapper binding matches the production
-pipeline (`op_table(fused)`), so unfused is the default reference path;
-`--fused` selects the FlashDecoding variants.
-
-| Case | Kernel | Notes |
-|------|--------|-------|
-| `decoder_attention` | QK^T softmax V (unfused, materialised scores) or FlashDecoding | M=51, keys=819 |
-| `decoder_norm_gated_ffn` | RMS + gated GEMM | gate/up 1024→4096 |
-| `decoder_action_mlp` | 1024→1024 GEMM | |
-| `decoder_action_in_proj` | 32→1024 GEMM + SiLU | tiny K; bandwidth-bound |
-| `decoder_out_proj_residual` | 2048→1024 GEMM + residual | |
-| `decoder_state_proj` | single-token 32→1024 | M=1; launch-bound |
+A case is `<segment>/<call site>` of the Target on the given plan; the list is
+whatever the pipeline calls, so a new call site is benchmarked the moment the
+pipeline routes to it. The binding matches production (`op_table` on the same
+plan), so the reference route is the default and a candidate plan or table
+option selects the alternative.
 
 ## Method 2: `bench_gpu_time()` in Python
 
@@ -226,18 +221,20 @@ print(render_table(results))
 write_csv("compare.csv", results)     # appends; header written on first run
 ```
 
-## Method 3: Promote to a built-in case
+## Method 3: Promote to a call site
 
-Once a kernel is production and deserves a tracked baseline, add a closure +
-shape metadata to `build_cases()` in `benchmarks/kernels.py`, and it picks up
-`--all`, `--csv` and the comparison table for free.
+Once a kernel is production and deserves a tracked baseline, it is a call
+site: register its wrapper in the backend's registry, route the pipeline to
+it through the op table, and declare its minimal bytes and FLOPs in the
+Target's `costs.py`. `python -m benchmarks kernels --target ... --site <name>`
+then times it on the arguments the pipeline really passes, `profile`
+attributes its in-graph time, and `floor` derives its roofline, with nothing
+added to the benchmarks. Nothing in `benchmarks/` names a call site.
 
-The closure must issue exactly one kernel launch; the metadata dict supplies
-`flops` (total float ops, mul+add each counted, hence the `2 *` factor) and
-`bytes` (total bytes moved). Derive both from the actual shapes, matching
-FlashInfer's `attention_flops` / `attention_tb_per_sec` semantics. Keep the
-call shape identical to `pipeline.py` — passing different slices than the
-engine does measures a kernel that never runs.
+The wrapper issues its launches as it does in production (a call site may be
+more than one kernel; the profile reports how many); the cost declaration
+counts mul+add as two FLOPs and each activation, weight and output once,
+matching FlashInfer's `attention_flops` / `attention_tb_per_sec` semantics.
 
 ## Troubleshooting
 
@@ -253,10 +250,10 @@ engine does measures a kernel that never runs.
   CUDA 13+. Install with `pip install -U cupti-python` in the venv used by
   `sbatch/_common.sh` (`/data/user/jzou521/codes/cuda/cuteDSL/.venv`). Without
   it the benchmark still runs, falling back to CUDA events.
-- **CUDA graph capture errors**: the case must be capturable — no host-side
-  allocations on the replay path. All scratch goes through the wrapper's
-  `ScratchPool`. If a new case allocates mid-capture, pre-allocate in the
-  closure setup.
+- **CUDA graph capture errors**: a call site must be capturable — no host-side
+  allocations on the replay path beyond what graph capture's private pool
+  serves. Scratch goes through the engine's `ScratchPool`, which `kernels`
+  routes to with the engine's scratch scope.
 - **`No such file or directory` on a script you just submitted**: sbatch jobs
   run on a compute node, which does not share the login node's `/tmp`. Keep the
   script under the repo (or any shared path) and pass a repo-relative `CMD`.
@@ -271,15 +268,14 @@ engine does measures a kernel that never runs.
   cluster denies `nvidia-smi -lgc` without privileges — watch for the
   `[warn] could not lock GPU clocks` line in the job log). Treat cross-run
   deltas > ~5% as suspicious until clocks are pinned.
-- **`--prompt-len` / shapes differ**: the built-in cases are tuned at
-  num_views=3, chunk_size=50, prompt_len=0. Numbers from other shapes are not
-  comparable with the tuned baseline.
+- **Shapes differ**: a case is timed at the Target's shape profile; the report
+  identity names it, and numbers from other shapes are not comparable.
 
 ## Reference
 
 - `src/flash_vla/bench/timer.py` — `bench_gpu_time` and the three backends
 - `src/flash_vla/bench/metrics.py` — `KernelResult`, `render_table`, `write_csv`,
   `attention_flops`, `attention_tb_per_sec`
-- `benchmarks/kernels.py` — `build_cases` and the `python -m benchmarks kernels` CLI
+- `benchmarks/kernels.py` — `record_invocations` and the `python -m benchmarks kernels` CLI
 - Upstream methodology: `flashinfer/testing/utils.py` → `bench_gpu_time` in
   `flashinfer-ai/flashinfer`, and its own `.claude/skills/benchmark-kernel/SKILL.md`

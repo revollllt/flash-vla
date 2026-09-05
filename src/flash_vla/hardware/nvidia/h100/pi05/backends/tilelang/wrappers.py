@@ -175,6 +175,7 @@ def vision_ffn_down_residual(x, weight, bias, res, out):
 
 VISION_WRAPPERS = {
     "vision_patch_embed": vision_patch_embed,
+    "vision_attention": attention_kernels.vision_attention,
     "vision_norm_qkv": vision_norm_qkv,
     "vision_out_proj_residual": vision_out_proj_residual,
     "vision_norm_ffn_up": vision_norm_ffn_up,

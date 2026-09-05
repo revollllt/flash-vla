@@ -121,6 +121,18 @@ public face and the only thing the harnesses may depend on:
   included;
 - **costs**: per segment, the call sites it invokes with their declared
   minimal bytes and FLOPs at this engine's shapes, for the floor model;
+- **graph contract**: kernel-name patterns the captured program must and
+  must not contain, declared by the backends the plan routes to;
+- **atomic groups**: call sites the resolved plan must invoke together
+  because they share implementation-owned state, derived from the backends'
+  route constraints; a harness that times call sites one at a time times
+  such a group as one case;
+- **run_eager**, **instrument**, **scratch_scope**: issue a segment's kernels
+  outside its graph, wrap every op-table entry for the scope (profiler
+  annotation, argument recording), and route scratch for calling an op on
+  its own. Together they let a harness attribute in-graph time to call sites
+  and benchmark a call site on the pipeline's real arguments without knowing
+  either;
 - **plan**: the resolved route.
 
 Everything model-specific that a harness needs (which buffers form the KV

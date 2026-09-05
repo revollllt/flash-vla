@@ -1,227 +1,180 @@
-"""Per-kernel GPU time for the Pi0 decoder kernels: python -m benchmarks kernels.
+"""Per-call-site GPU time in isolation, for any Target: python -m benchmarks kernels.
 
-Where `e2e` times the whole graph replay and `profile` attributes time inside
-it, this command benchmarks one kernel launch at a time, the way FlashInfer
-benchmarks its kernels:
+    python -m benchmarks kernels --target h100/pi05 --plan attn-ffn-cuda-fused-producer-pdl
+    python -m benchmarks kernels --target h100/pi05 --segment decoder --site decoder_attention
+    python -m benchmarks kernels --target h100/pi0 --option fused=false --timer cupti --csv out.csv
 
-    python -m benchmarks kernels --all
-    python -m benchmarks kernels --case decoder_attention --timer cupti
-    python -m benchmarks kernels --all --csv results.csv
-
-Each case is a small closure that issues exactly one kernel launch against the
-benchmark buffers, plus the shape metadata (FLOPs / bytes) needed to derive the
-headline metrics. Buffers and weights come from `benchmarks.synthetic`, so the
-numbers are comparable with the e2e benchmarks.
-
-The wrapper selection follows the production binding: `op_table(fused)` resolves
-each call site to its backend, exactly as `pipeline.py` does, so a case measures
-the kernel the way the engine actually runs it (unfused by default; pass
-`--fused` for the FlashDecoding paths).
-
-The timing machinery itself is not here -- it is generic and lives in the
-library at `flash_vla.bench`, so a kernel that is not part of flash-vla can be
-measured with the same methodology. See the `benchmark-kernel` skill.
+Where `profile` attributes time inside the captured graph, this launches one
+call site at a time outside any graph, the way FlashInfer benchmarks its
+kernels, against the engine's real weights and buffers. The invocations of
+every call site are recorded from one instrumented eager run of the segment,
+so the arguments are exactly what the pipeline passes, and the recorded
+invocations are cycled while timing so a weight-heavy call site reads cold
+(each layer's weight is a first touch, as in the graph).
 
 Timing backends (--timer):
-  cupti      hardware-level GPU kernel time (needs cupti-python>=13; fallback: events)
-  cudagraph  CUDA-graph-amortised timing, rotating-buffer cold L2
-  events     CUDA events, L2-flush cold L2
+  cudagraph  the repository's amortised in-graph regime: `n_inner` recorded
+             invocations captured into one graph, replayed, divided (default)
+  cupti      hardware-level kernel time of the first recorded invocation,
+             cold L2 by flush (needs cupti-python; auto-fallback to events)
+  events     CUDA events around the first recorded invocation, cold L2 by flush
 
-Every case reports, per FlashInfer's format:
-  median time <ms>; std <ms>; achieved tflops <TFLOPs/sec>; achieved tb_per_sec <TB/sec>
+FLOPs and bytes come from the Target's cost declarations, so the achieved
+TFLOP/s and TB/s are against the same minimal-traffic model the floor uses.
+
+Call sites a plan must invoke together (`engine.atomic_groups`: a producer
+and the persistent consumer that waits on its counters) are one case, their
+recorded invocations replayed in pipeline order, because one of them alone is
+not a valid program.
 """
 from __future__ import annotations
 
 import argparse
+import statistics
 import sys
 from typing import Any, Callable
 
+import torch
+
 from flash_vla.bench import KernelResult, bench_gpu_time, render_table, write_csv
-from flash_vla.hardware.nvidia.h100.pi0 import op_table
+from flash_vla.runtime.engine import segments
 
+from .latency import parse_options
 from .metrics import require_cuda
-from .synthetic import decoder_buffers, decoder_weights, encoder_seq_len
+from .plans import PLANS
+from .targets import build, resolve
 
 
-# Decoder shapes the kernels are tuned at (num_views=3, chunk_size=50, prompt_len=0).
-NUM_HEADS = 8
-HEAD_DIM = 256
-CHUNK = 50
-ENC_LEN = encoder_seq_len(3, 0)          # 768
-TOTAL = ENC_LEN + CHUNK + 1              # 819
+def record_invocations(engine, segment: str) -> dict[str, list[tuple[tuple, dict]]]:
+    """Every op-table call of one eager run of `segment`: call site -> [(args, kwargs)]."""
+    calls: dict[str, list[tuple[tuple, dict]]] = {}
 
-Case = tuple[str, Callable[[], None], dict[str, Any]]
+    def recording(name: str, fn: Callable) -> Callable:
+        def wrapped(*args, **kwargs):
+            calls.setdefault(name, []).append((args, kwargs))
+            return fn(*args, **kwargs)
+        return wrapped
 
-
-def _attn_flops() -> int:
-    """Decoder attention FLOPs (scores + attn-V) at the tuned shape, causal=0."""
-    q = CHUNK + 1
-    return 2 * q * TOTAL * NUM_HEADS * HEAD_DIM * 2
-
-def _attn_bytes() -> int:
-    """Q+K+V+O bytes read/written by the decoder attention kernel."""
-    itemsize = 2  # bf16
-    q = CHUNK + 1
-    qb = q * NUM_HEADS * HEAD_DIM * itemsize
-    kv = TOTAL * NUM_HEADS * HEAD_DIM * itemsize
-    return qb + kv + kv + qb
+    with engine.instrument(recording):
+        engine.run_eager(segment)
+        torch.cuda.synchronize()
+    return calls
 
 
-def _gemm_bytes(m: int, n: int, k: int) -> int:
-    """Read x + weight, write out, for a GEMM with the given dims (bf16)."""
-    return (m * k + k * n + m * n) * 2
+def _graph_samples(invoke: Callable[[int], Any], n_inner: int, reps: int, warmup: int = 4) -> list[float]:
+    """Per-call ms over `reps` replays of a graph holding `n_inner` invocations."""
+    side = torch.cuda.Stream()
+    side.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(side):
+        for i in range(warmup):
+            invoke(i)
+    torch.cuda.current_stream().wait_stream(side)
+    torch.cuda.synchronize()
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        for i in range(n_inner):
+            invoke(i)
+    torch.cuda.synchronize()
+    samples = []
+    for _ in range(reps):
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        graph.replay()
+        end.record()
+        torch.cuda.synchronize()
+        samples.append(start.elapsed_time(end) / n_inner)
+    return samples
 
 
-def build_cases(fused: bool = True) -> list[Case]:
-    """Build the built-in case list. Buffers are shared across all cases."""
-    buffers = decoder_buffers()
-    weights = decoder_weights()
-    ops = op_table(fused)
+def run(target: str, plan: str | None = None, seed: int = 0, only_segments: list[str] | None = None,
+        only_sites: list[str] | None = None, timer: str = "cudagraph", reps: int = 40,
+        n_inner: int = 48, repeat_time_ms: int = 100, dry_run_time_ms: int = 25,
+        **overrides) -> list[KernelResult]:
+    """Time every selected call site of every selected segment in isolation."""
+    require_cuda()
+    torch.cuda.init()
+    engine = build(resolve(target), plan, seed=seed, **overrides)
+    inputs = engine.sample_inputs(seed)
+    engine.forward(**inputs)
+    torch.cuda.synchronize()
+    costs = engine.costs
+    results: list[KernelResult] = []
+    for segment in segments(engine):
+        if only_segments and segment not in only_segments:
+            continue
+        per_call = {inv.call_site: inv.cost for inv in costs.get(segment, ())}
+        calls = record_invocations(engine, segment)
+        order = list(calls)                       # pipeline order of first invocation
+        grouped: set[str] = set()
+        cases: list[tuple[str, ...]] = []
+        for group in engine.atomic_groups:
+            members = tuple(s for s in order if s in group)
+            if len(members) > 1:
+                cases.append(members)
+                grouped |= set(members)
+        cases += [(s,) for s in order if s not in grouped]
+        for members in cases:
+            if only_sites and not any(s in only_sites for s in members):
+                continue
+            if any(len(calls[s]) != len(calls[members[0]]) for s in members):
+                raise RuntimeError(f"atomic group {members} recorded unequal invocation "
+                                   f"counts: { {s: len(calls[s]) for s in members} }")
+            fns = [getattr(engine.ops, s) for s in members]
+            invocations = [calls[s] for s in members]
+            count = len(invocations[0])
 
-    # --- decoder GEMMs -----------------------------------------------------
-    def action_in_proj():
-        ops.decoder_action_in_proj(
-            buffers["diffusion_noise"], weights["decoder_action_fused_in_proj_w"],
-            weights["decoder_action_fused_time_biases"][0], buffers["decoder_x_buf"],
-        )
+            def invoke(i: int) -> None:
+                for fn, calls_of in zip(fns, invocations):
+                    args, kwargs = calls_of[i % count]
+                    fn(*args, **kwargs)
 
-    def action_mlp():
-        ops.decoder_action_mlp(
-            buffers["decoder_x_buf"], weights["decoder_action_mlp_w"],
-            weights["decoder_action_mlp_b"], buffers["decoder_x_buf"],
-        )
-
-    def out_proj_residual():
-        ops.decoder_out_proj_residual(
-            buffers["decoder_q_buf"].view(-1, 2048), weights["decoder_attn_o_w"][0],
-            buffers["decoder_x"],
-        )
-
-    # --- decoder attention ------------------------------------------------
-    def attention():
-        # Same call shape as pipeline.py: Q and out are both decoder_q_buf.
-        ops.decoder_attention(
-            buffers["decoder_q_buf"],
-            buffers["encoder_K"][0], buffers["encoder_V"][0],
-            buffers["decoder_attn_buf"], buffers["decoder_q_buf"],
-            ENC_LEN,
-        )
-
-    # --- decoder norm+gated FFN -------------------------------------------
-    def norm_gated_ffn():
-        ops.decoder_norm_gated_ffn(
-            buffers["decoder_x"], weights["decoder_ffn_gate_w"][0],
-            weights["decoder_ffn_up_w"][0], buffers["decoder_hidden"],
-            buffers["decoder_norm_factor_buf"],
-        )
-
-    # --- decoder state proj (the single state token) ----------------------
-    def state_proj():
-        ops.decoder_state_proj(
-            buffers["observation_state_normalized"],
-            weights["decoder_state_in_proj_w"], weights["decoder_state_in_proj_b"],
-            buffers["decoder_state_buf"],
-        )
-
-    cases: list[Case] = [
-        (
-            "decoder_attention",
-            attention,
-            {"flops": _attn_flops(), "bytes": _attn_bytes()},
-        ),
-        (
-            "decoder_norm_gated_ffn",
-            norm_gated_ffn,
-            {"flops": 2 * (CHUNK + 1) * 1024 * 4096,
-             "bytes": _gemm_bytes(CHUNK + 1, 4096, 1024)},
-        ),
-        (
-            "decoder_action_mlp",
-            action_mlp,
-            {"flops": 2 * CHUNK * 1024 * 1024,
-             "bytes": _gemm_bytes(CHUNK, 1024, 1024)},
-        ),
-        (
-            "decoder_action_in_proj",
-            action_in_proj,
-            {"flops": 2 * CHUNK * 32 * 1024,
-             "bytes": _gemm_bytes(CHUNK, 1024, 32)},
-        ),
-        (
-            "decoder_out_proj_residual",
-            out_proj_residual,
-            {"flops": 2 * (CHUNK + 1) * 1024 * 2048,
-             "bytes": _gemm_bytes(CHUNK + 1, 1024, 2048)},
-        ),
-        (
-            "decoder_state_proj",
-            state_proj,
-            {"flops": 2 * 1 * 1024 * 32,
-             "bytes": _gemm_bytes(1, 1024, 32)},
-        ),
-    ]
-    return cases
+            flops = sum(per_call[s].flops for s in members if s in per_call) or None
+            nbytes = sum(per_call[s].bytes for s in members if s in per_call) or None
+            label = f"{segment}/" + "+".join(members)
+            with engine.scratch_scope():
+                if timer == "cudagraph":
+                    samples = _graph_samples(invoke, n_inner=min(n_inner, count), reps=reps)
+                else:
+                    samples = bench_gpu_time(
+                        invoke, input_args=(0,), enable_cupti=(timer == "cupti"),
+                        repeat_time_ms=repeat_time_ms, dry_run_time_ms=dry_run_time_ms)
+            results.append(KernelResult(label=label, samples=samples, flops=flops, bytes=nbytes))
+            print(results[-1].perf_line(), flush=True)
+    del engine
+    torch.cuda.empty_cache()
+    return results
 
 
 def main(argv=None) -> int:
-    p = argparse.ArgumentParser(prog="python -m benchmarks kernels",
-                                description=__doc__.split("\n")[0])
-    p.add_argument("--case", action="append", default=[],
-                   help="benchmark a specific case (repeatable); default: all")
-    p.add_argument("--all", action="store_true", help="benchmark every built-in case")
-    p.add_argument("--timer", choices=["cupti", "cudagraph", "events"], default="cupti",
-                   help="timing backend (default: cupti, auto-fallback to events)")
-    p.add_argument("--fused", action="store_true", help="use fused wrappers (FlashDecoding)")
-    p.add_argument("--reps", type=int, default=None,
-                   help="measurement iterations (default: adaptive from target time)")
-    p.add_argument("--repeat-time-ms", type=int, default=100,
-                   help="target measurement duration in ms when --reps is unset")
-    p.add_argument("--dry-run-time-ms", type=int, default=25,
-                   help="target warmup duration in ms when --reps is unset")
-    p.add_argument("--csv", default=None, help="append results to a CSV file")
-    a = p.parse_args(argv)
-
-    require_cuda()
-
-    cases = build_cases(fused=a.fused)
-    if a.case:
-        wanted = set(a.case)
-        cases = [c for c in cases if c[0] in wanted]
-        missing = wanted - {c[0] for c in cases}
-        if missing:
-            print(f"error: unknown case(s): {sorted(missing)}", file=sys.stderr)
-            print(f"available: {[c[0] for c in build_cases(fused=a.fused)]}", file=sys.stderr)
-            return 1
-
-    if not cases:
-        print("no cases selected; use --all or --case <name>", file=sys.stderr)
+    parser = argparse.ArgumentParser(prog="python -m benchmarks kernels",
+                                     description=__doc__.split("\n")[0],
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--target", required=True)
+    parser.add_argument("--plan", default=None, help=f"one of {sorted(PLANS)} or JSON")
+    parser.add_argument("--option", action="append", default=[])
+    parser.add_argument("--segment", action="append", default=None, help="restrict to a segment")
+    parser.add_argument("--site", action="append", default=None, help="restrict to a call site")
+    parser.add_argument("--timer", choices=["cudagraph", "cupti", "events"], default="cudagraph")
+    parser.add_argument("--reps", type=int, default=40)
+    parser.add_argument("--n-inner", type=int, default=48)
+    parser.add_argument("--repeat-time-ms", type=int, default=100)
+    parser.add_argument("--dry-run-time-ms", type=int, default=25)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--csv", default=None, help="append results to a CSV file")
+    args = parser.parse_args(argv)
+    results = run(args.target, args.plan, seed=args.seed, only_segments=args.segment,
+                  only_sites=args.site, timer=args.timer, reps=args.reps, n_inner=args.n_inner,
+                  repeat_time_ms=args.repeat_time_ms, dry_run_time_ms=args.dry_run_time_ms,
+                  **parse_options(args.option))
+    if not results:
+        print("no call sites selected", file=sys.stderr)
         return 1
-
-    results = []
-    for label, fn, meta in cases:
-        samples = bench_gpu_time(
-            fn,
-            repeat_iters=a.reps,
-            dry_run_time_ms=a.dry_run_time_ms,
-            repeat_time_ms=a.repeat_time_ms,
-            enable_cupti=(a.timer == "cupti"),
-            use_cuda_graph=(a.timer == "cudagraph"),
-        )
-        r = KernelResult(label, samples, flops=meta.get("flops"), bytes=meta.get("bytes"))
-        results.append(r)
-        print(r.perf_line())
-
     print()
     print(render_table(results))
-
-    if a.csv:
-        write_csv(a.csv, results)
-        print(f"appended to {a.csv}")
-
+    if args.csv:
+        write_csv(args.csv, results)
     return 0
-
-
-__all__ = ["build_cases", "main"]
 
 
 if __name__ == "__main__":

@@ -40,6 +40,7 @@ _cuda_pdl = SimpleNamespace(
     WRAPPER_NAMES=_cuda.WRAPPER_NAMES,
     FUSED_WRAPPERS=_cuda.FUSED_WRAPPERS,
     ROUTE_CONSTRAINTS=_cuda.ROUTE_CONSTRAINTS,
+    graph_contract=_cuda.graph_contract,
     make_wrappers=partial(_cuda.make_wrappers, pdl_chain=True),
 )
 
@@ -56,7 +57,7 @@ DEFAULT_FUSED_OPS = tuple(sorted(_tilelang.FUSED_WRAPPERS))
 
 __all__ = [
     "BACKENDS", "DEFAULT_FUSED_OPS", "backend_names", "build_backend_table",
-    "build_table", "provided_names", "route_constraints",
+    "atomic_groups", "build_table", "graph_contract", "provided_names", "route_constraints",
 ]
 
 
@@ -71,6 +72,38 @@ def backend_names(backend: str) -> set[str]:
 def provided_names() -> dict[str, set[str]]:
     """Call sites each registered backend provides."""
     return {name: backend_names(name) for name in BACKENDS}
+
+
+def graph_contract(routes) -> dict[str, list[str]]:
+    """The union of every routed backend's graph contract for `routes`."""
+    merged: dict[str, list[str]] = {"forbid": [], "require_one": []}
+    for name, module in BACKENDS.items():
+        declare = getattr(module, "graph_contract", None)
+        if declare is None or name not in set(routes.values()):
+            continue
+        contract = declare(routes)
+        for key in merged:
+            merged[key] += [p for p in contract.get(key, ()) if p not in merged[key]]
+    return merged
+
+
+def atomic_groups(routes) -> tuple[frozenset[str], ...]:
+    """Call-site groups that must run together on `routes`: every constraint
+    whose members all resolve to the declaring backend."""
+    groups: list[frozenset[str]] = []
+    for backend, constraints in route_constraints().items():
+        for constraint in constraints:
+            if all(routes.get(name) == backend for name in constraint.members):
+                groups.append(frozenset(constraint.members))
+    # Merge overlapping groups (the FFN pair and the out-projection that requires it).
+    merged: list[set[str]] = []
+    for group in groups:
+        hit = [g for g in merged if g & group]
+        for g in hit:
+            merged.remove(g)
+            group = frozenset(group | g)
+        merged.append(set(group))
+    return tuple(frozenset(g) for g in merged)
 
 
 def route_constraints() -> dict[str, tuple[RouteConstraint, ...]]:

@@ -9,7 +9,9 @@ importing the Target.
 """
 from __future__ import annotations
 
-from typing import Any, Mapping, Protocol, runtime_checkable
+from contextlib import AbstractContextManager
+from types import SimpleNamespace
+from typing import Any, Callable, Mapping, Protocol, Sequence, runtime_checkable
 
 import torch
 
@@ -36,6 +38,15 @@ class Engine(Protocol):
     #: Per segment, the call sites it invokes with their minimal bytes and
     #: FLOPs at this engine's shapes: the numerator of the floor model.
     costs: SegmentCosts
+    #: What the captured program must and must not contain, as kernel-name
+    #: patterns declared by the backends the plan routes to: `forbid` names
+    #: that must not appear, `require_one` patterns exactly one distinct
+    #: kernel name must match.
+    graph_contract: Mapping[str, Sequence[str]]
+    #: Call sites the resolved plan must invoke together, in pipeline order
+    #: (they share implementation-owned state across the calls); a harness
+    #: that times call sites one at a time times such a group as one case.
+    atomic_groups: Sequence[tuple[str, ...]]
 
     def sample_inputs(self, seed: int = 0) -> dict[str, Any]:
         """Seeded inputs at this engine's shapes, for measurement and comparison."""
@@ -54,6 +65,20 @@ class Engine(Protocol):
 
     def allocation(self, name: str) -> torch.Tensor:
         """The base allocation behind buffer `name`, padding included."""
+
+    def run_eager(self, segment: str) -> None:
+        """Issue one segment's kernels outside its graph, on the current stream."""
+
+    def instrument(self, wrap: Callable[[str, Callable], Callable]) -> AbstractContextManager:
+        """While active, every op-table entry `name` is replaced by `wrap(name, fn)`."""
+
+    def scratch_scope(self) -> AbstractContextManager:
+        """Route scratch to this engine's pool, for calling an op outside a segment."""
+
+
+def wrap_ops(ops: SimpleNamespace, wrap: Callable[[str, Callable], Callable]) -> SimpleNamespace:
+    """A copy of an op table with every callable passed through `wrap`."""
+    return SimpleNamespace(**{name: wrap(name, fn) for name, fn in vars(ops).items()})
 
 
 def segments(engine: Engine) -> tuple[str, ...]:

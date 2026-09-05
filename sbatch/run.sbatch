@@ -16,7 +16,7 @@
 # CMD is appended to `$PYTHON -u`. Values containing commas break --export
 # parsing, so pass those through the environment instead:
 #
-#   CMD='-m benchmarks profile --stage full --compare' sbatch --export=ALL sbatch/run.sbatch
+#   CMD='-m benchmarks profile --target h100/pi05 --plan tilelang' sbatch --export=ALL sbatch/run.sbatch
 
 set -euo pipefail
 

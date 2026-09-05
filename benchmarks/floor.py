@@ -17,11 +17,12 @@ and the gap decomposition against the measured segment minimum:
   measured - structural   what kernel-level work can still recover
   structural - roofline   what a change of the plan's form can recover
 
-The model is validated in the same report: a structural floor above the
-measured time is a model error and marks the report invalid. Under-one-wave
-kernels (grid below the CTA knee) are counted and reported; their derating is
-not yet a term of the structural tier, so the structural floor is optimistic
-where they dominate.
+The model is validated in the same report, per segment and per call site: a
+structural floor above the measured segment time, or a call site's roofline
+above its attributed in-graph time (from `benchmarks.profile`), is a model
+error and marks the report invalid. Under-one-wave kernels (grid below the
+CTA knee) are counted and reported; their derating is not yet a term of the
+structural tier, so the structural floor is optimistic where they dominate.
 
 Datasheet peaks appear nowhere. The report carries the constants file's
 version so a re-measured constant changes every floor's version.
@@ -29,11 +30,9 @@ version so a re-measured constant changes every floor's version.
 from __future__ import annotations
 
 import argparse
-import gzip
 import hashlib
 import json
 import os
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +44,7 @@ from flash_vla.runtime.engine import segments
 from .latency import _env, _stats, _time_event
 from .metrics import require_cuda
 from .plans import PLANS
+from .profile import attribute
 from .targets import build, resolve
 
 #: The model form; bump when a term is added or changed.
@@ -99,34 +99,6 @@ def roofline_us(invocation: Invocation, stream_bps: float, tensor_fps: float) ->
             "roofline_us_each": each, "roofline_us": each * invocation.count}
 
 
-def profile_segment(engine, name: str, cta_knee: int) -> dict[str, Any]:
-    """Launch count and grid sizes of one captured segment, from one profiled replay."""
-    from torch.profiler import ProfilerActivity, profile
-    engine.replay(name)
-    torch.cuda.synchronize()
-    with profile(activities=[ProfilerActivity.CUDA]) as prof:
-        engine.replay(name)
-        torch.cuda.synchronize()
-    with tempfile.TemporaryDirectory() as tmp:
-        path = os.path.join(tmp, "trace.json")
-        prof.export_chrome_trace(path)
-        opener = gzip.open if path.endswith(".gz") else open
-        with opener(path, "rt") as f:
-            events = json.load(f).get("traceEvents", [])
-    kernels = [e for e in events if e.get("cat") == "kernel"]
-    copies = [e for e in events if e.get("cat") in ("gpu_memcpy", "gpu_memset")]
-    ctas = []
-    for e in kernels:
-        grid = (e.get("args") or {}).get("grid")
-        if grid:
-            ctas.append(int(grid[0]) * int(grid[1]) * int(grid[2]))
-    kernel_time_us = sum(float(e.get("dur", 0.0)) for e in kernels)
-    return {"launches": len(kernels), "copies": len(copies),
-            "kernel_time_us": kernel_time_us,
-            "under_knee_launches": sum(1 for c in ctas if c < cta_knee),
-            "grid_known": len(ctas)}
-
-
 def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, seed: int = 0,
         **overrides) -> dict[str, Any]:
     """Compute both floor tiers per segment, measure the segment, and decompose the gap."""
@@ -139,22 +111,35 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
     stream_bps = float(constants["stream_tbps"]["value"]) * 1e12
     tensor_fps = float(constants["tensor_tflops"]["value"]) * 1e12
     launch_us = float(constants["launch_us"]["value"])
-    cta_knee = int(constants["cta_knee"]["value"])
 
     inputs = engine.sample_inputs(seed)
     engine.forward(**inputs)
     torch.cuda.synchronize()
+    sm_count = torch.cuda.get_device_properties(0).multi_processor_count
     costs = engine.costs
     report_segments: dict[str, Any] = {}
     valid = True
     for name in segments(engine):
         rows = [roofline_us(inv, stream_bps, tensor_fps) for inv in costs.get(name, ())]
         roofline = sum(r["roofline_us"] for r in rows)
-        profiled = profile_segment(engine, name, cta_knee)
-        structural = roofline + profiled["launches"] * launch_us
+        profiled = attribute(engine, name, sm_count)
+        launches = profiled["launches"]
+        structural = roofline + launches * launch_us
         measured = _stats(_time_event(lambda name=name: engine.replay(name), reps, warmup), reps)
         measured_us = measured["min"] * 1e3
         seg_valid = structural <= measured_us
+        # Per call site: the attributed in-graph time must not sit below its
+        # own roofline; an unattributed segment reports no per-site check.
+        attributed = profiled["call_sites"] if profiled["valid"] else {}
+        for row in rows:
+            site = attributed.get(row["call_site"])
+            row["measured_us"] = site["dur_us"] if site else None
+            row["launches"] = site["launches"] if site else None
+            row["under_one_wave"] = site["under_one_wave"] if site else None
+            row["valid"] = (site is None) or (row["roofline_us"] <= site["dur_us"])
+            row["above_roofline"] = (site["dur_us"] / row["roofline_us"]
+                                     if site and row["roofline_us"] else None)
+            seg_valid &= row["valid"]
         valid &= seg_valid
         report_segments[name] = {
             "roofline_us": roofline,
@@ -166,7 +151,13 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
             "above_structural": measured_us / structural if structural else None,
             "above_roofline": measured_us / roofline if roofline else None,
             "valid": seg_valid,
-            **profiled,
+            "launches": launches,
+            "attribution_valid": profiled["valid"],
+            "kernel_time_us": profiled["total_us"],
+            "copy_us": profiled["copy_us"],
+            "under_one_wave_launches": sum(
+                s["under_one_wave"] for s in profiled["call_sites"].values()),
+            "unattributed_us": profiled["unattributed"]["dur_us"],
             "call_sites": rows,
         }
     sums = total(costs)
@@ -185,7 +176,8 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
         "totals": totals,
         "valid": valid,
         "note": ("under-one-wave derating is reported, not modelled; a structural floor "
-                 "above a measured time invalidates the report"),
+                 "above a measured segment time, or a call-site roofline above its "
+                 "attributed in-graph time, invalidates the report"),
     }
     del engine
     torch.cuda.empty_cache()

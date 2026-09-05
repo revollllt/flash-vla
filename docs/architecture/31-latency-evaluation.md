@@ -4,9 +4,8 @@ Status: implemented. The generic runner (`python -m benchmarks latency`)
 measures any Target through the engine protocol, emits the report schema
 below, reads A/B/A deltas against the control spread and runs the noise
 calibration. Floors are a separate report of the floor model
-(`python -m benchmarks floor`); the promotion gate joins the two. The older
-per-model harnesses remain for their production-graph structure checks and
-report no floors.
+(`python -m benchmarks floor`); the promotion gate joins the two. There is no
+per-model harness: the model is an input to every command.
 
 ## Scope
 
@@ -62,9 +61,16 @@ drift, and only same-process comparisons cancel it.
   as such; it never promotes a candidate.
 - **Identity gate.** A comparison between reports whose identity blocks differ
   in target, shape profile, precision policy or plan is refused.
-- **Profiles do not decide.** Profiler runs carry their own overhead and are
-  reported separately with that overhead stated; they localize, the harness
-  decides.
+- **Profiles do not decide.** `python -m benchmarks profile` attributes one
+  replay's in-graph time to call sites (an instrumented eager run supplies the
+  launch order, each call site bracketed by marker kernels so a launch the
+  profiler has no CPU record of still lands under its call site; the replay
+  supplies the durations) and checks the graph contract the routed backends
+  declare; it carries profiler overhead, localizes, and never decides. Under a dependent-launch chain the attributed durations overlap
+  and their sum exceeds the segment's wall, which the report carries beside
+  them; the wall is the number. `python -m benchmarks kernels` times one call site at a time on
+  its recorded arguments, outside any graph; call sites the plan must invoke
+  together are one case.
 - **The floor is context for the gap, not a gate.** A candidate is judged by
   the A/B/A delta; the floor says how much is left and where.
 - **Kernel-level numbers** belong to the `benchmark-kernel` skill and are read

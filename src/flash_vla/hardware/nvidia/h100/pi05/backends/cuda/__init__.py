@@ -40,6 +40,27 @@ ROUTE_CONSTRAINTS = (
         "the fused out-projection producer feeds the persistent FFN's K-major input"),
 )
 
+def graph_contract(routes) -> dict[str, list[str]]:
+    """Kernel names the captured program must and must not contain on these routes.
+
+    The XFS producer resets the FFN readiness counters itself, so a standalone
+    reset kernel in the graph means the pair is wired wrong. On the fused
+    three-call route the cooperative producer replaces both the TileLang
+    residual GEMM and the split producer pair, and exactly one cooperative
+    producer kernel must be present.
+    """
+    mine = {name for name, backend in routes.items() if backend in ("cuda", "cuda-pdl")}
+    forbid: list[str] = []
+    require_one: list[str] = []
+    if {"decoder_norm_gated_ffn", "decoder_ffn_down_residual"} <= mine:
+        forbid.append("reset_ffn_counters_kernel")
+    if "decoder_out_proj_residual" in mine:
+        forbid += ["_matmul_gated_res", "tl_rms_xfs_kmajor",
+                   "tl_out_proj_residual_partials", "tl_rms_xfs_from_partials"]
+        require_one.append("tl_out_proj_residual_rms_xfs")
+    return {"forbid": forbid, "require_one": require_one}
+
+
 # `encoder_attention` deliberately carries no constraint. Both routes read the
 # pipeline's own encoder_Q/K/V in the layout `encoder_norm_qkv_rope` writes and
 # neither owns scratch that crosses a call site, so it may route alone. What
@@ -49,5 +70,5 @@ ROUTE_CONSTRAINTS = (
 
 __all__ = [
     "ATTENTION_NAMES", "WRAPPER_NAMES", "FUSED_WRAPPERS", "ROUTE_CONSTRAINTS",
-    "make_wrappers", "FFNTaskloop", "build_table", "wrappers",
+    "graph_contract", "make_wrappers", "FFNTaskloop", "build_table", "wrappers",
 ]

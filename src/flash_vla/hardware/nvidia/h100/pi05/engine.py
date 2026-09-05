@@ -27,13 +27,16 @@ so a missed pre-allocation raises instead of silently allocating mid-capture.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import torch
 
 from flash_vla.models.pi05.spec import ENCODER_LAYERS, MAX_TOKEN_LEN, runtime_shapes
 from flash_vla.runtime import Identity
 from flash_vla.runtime.cuda import Program, ScratchPool, Segment, StaticArena, Step
+from flash_vla.runtime.engine import wrap_ops
 
-from . import pipeline
+from . import backends, pipeline
 from .backends.tilelang import wrappers
 from .buffers import buffer_plan
 from .costs import segment_costs
@@ -143,6 +146,34 @@ class Pi05Inference:
         with wrappers.use_pool(self.pool):
             pipeline.decoder(self.ops, self.weights, self.buffers, self.encoder_seq_len,
                              steps=self.steps, layers=self.layers)
+
+    def run_eager(self, segment: str) -> None:
+        """Issue one segment's kernels outside its graph, on the current stream."""
+        self.graphs.run_eager(segment)
+
+    @contextmanager
+    def instrument(self, wrap):
+        """Swap in an op table whose entries are `wrap(name, fn)` for the scope."""
+        original = self.ops
+        self.ops = wrap_ops(original, wrap)
+        try:
+            yield
+        finally:
+            self.ops = original
+
+    def scratch_scope(self):
+        """Route scratch to this engine's pool, for calling an op outside a segment."""
+        return wrappers.use_pool(self.pool)
+
+    @property
+    def graph_contract(self) -> dict[str, list[str]]:
+        """Kernel-name patterns the captured program must and must not contain."""
+        return backends.graph_contract(dict(self.identity.plan))
+
+    @property
+    def atomic_groups(self) -> tuple[frozenset[str], ...]:
+        """Call sites this plan must invoke together (shared implementation state)."""
+        return backends.atomic_groups(dict(self.identity.plan))
 
     def replay(self, segment: str) -> None:
         """Replay one captured segment on the current stream."""

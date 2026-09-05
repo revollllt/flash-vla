@@ -23,8 +23,8 @@ permutation to the reference. V carries no rotation and is compared directly.
 weight layout, wrong RoPE, wrong mask -- shows up there at full size, because
 nothing has accumulated yet. Deeper layers drift as bfloat16 rounding compounds
 through 27 vision and 18 encoder layers, and on random weights that drift is
-large and means nothing: `fused_vs_unfused.py` makes the same point about depth
-being the amplifier. So the pass criterion is tight at layer 0, loose at depth,
+large and means nothing: the generic in-engine runner makes the same point
+about depth being the amplifier. So the pass criterion is tight at layer 0, loose at depth,
 and additionally requires the degradation to be smooth -- a step change between
 consecutive layers would be a real bug at that layer, which a single aggregate
 number would hide.

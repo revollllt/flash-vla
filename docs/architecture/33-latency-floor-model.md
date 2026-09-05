@@ -1,14 +1,12 @@
 # Latency Floor Model
 
 Status: partial. The model form exists (`python -m benchmarks floor`) with
-both tiers, per-segment validation against measurement, versioning by the
-constants file, and cost declarations for both Targets. The structural tier
-carries the launch term only; the under-one-wave derating is counted and
-reported, not yet modelled, so the structural floor is optimistic where such
-kernels dominate. Validation is per segment; per-call-site validation needs
-the launch-order attribution of the profiler analysis and is planned. The
-older decoder roofline in the benchmarks, hard-coded and datasheet-based,
-remains until its profile-side use is folded in.
+both tiers, validation against measurement per segment and per call site
+(through the profile's call-site attribution), versioning by the constants
+file, and cost declarations for both Targets. The structural tier carries
+the launch term only; the under-one-wave derating is counted and reported,
+not yet modelled, so the structural floor is optimistic where such kernels
+dominate.
 
 ## Purpose
 
@@ -51,9 +49,9 @@ precision policy: bytes read once, bytes written once, FLOPs, and how many
 times the segment invokes it (`runtime/cost.py` types; the Target's
 `costs.py` declares them and the engine exposes them as `costs`). The
 declaration is a property of the call site's contract, not of a backend,
-which is what keeps the roofline tier plan-independent. Launch count and
-grid size are backend properties and are read from a profiler trace of one
-replay of the captured segment rather than declared. The floor model
+which is what keeps the roofline tier plan-independent. Launch count, grid
+size and per-call-site in-graph time are backend properties and come from the
+profile's attribution of one replay rather than from declarations. The floor model
 contains no model or call-site names; segments and host slots come from the
 engine protocol.
 
@@ -62,9 +60,13 @@ engine protocol.
 The model is validated like any other artifact:
 
 - per segment, the predicted roofline and structural values are reported
-  beside the measured replay minimum; a predicted structural floor above a
-  measured time is a model error, marks the report invalid and blocks the
-  model's use as an objective (per-call-site validation is planned);
+  beside the measured replay minimum, and per call site the roofline beside
+  the in-graph time the profile attributes to it; a structural floor above a
+  measured segment time, or a call-site roofline above its attributed time,
+  is a model error, marks the report invalid and blocks the model's use as an
+  objective. Under a dependent-launch chain the attributed time includes
+  waiting time, so the per-call-site check is conservative there and the
+  per-segment check against the replay minimum is the strict one;
 - when a constant is re-measured, the model version changes and every floor
   in every report carries the version;
 - the promotion gate refuses a report whose floor model version does not

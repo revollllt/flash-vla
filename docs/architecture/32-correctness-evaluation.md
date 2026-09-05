@@ -7,9 +7,10 @@ reports carry the identity block. The in-engine tier has a generic runner
 (`python -m eval.correctness.in_engine`) that compares any candidate plan or
 table option against the Target's reference, segment by segment over the
 outputs the Target declares, with oracle injection, per-layer profiles,
-padded-allocation finiteness and replay determinism. The official-baseline
-tier stays per model (its adapters are model-specific) and is registered per
-Target in the acceptance registry.
+padded-allocation finiteness and replay determinism; it is the in-engine
+reference check of every Target. The official-baseline tier stays per model
+(its adapters are model-specific) and is registered per Target in the
+acceptance registry.
 
 ## Levels
 

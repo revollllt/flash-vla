@@ -121,8 +121,12 @@ that decide whether a new VLA model or device can be brought up quickly:
   not the owner's numbers.
 - On shared, unlocked nodes `median` and `p99` carry node noise; the
   calibration reports it and the candidate rule reads `min` for improvement.
-- The older per-model harnesses (`e2e`, `e2e_pi05`, `profile*`) remain for
-  their production-graph structure checks and report no floors.
+- No per-model harness remains under `benchmarks/`: latency, profile,
+  kernels and floor take the Target as an input. The production-graph
+  structure checks the Pi0.5 harness carried became a graph contract the
+  CUDA backend declares and the profile runner checks; per-call-site
+  attribution comes from an instrumented eager run matched positionally
+  against the replay, so no per-plan kernel-sequence table is maintained.
 
 ## Verification
 
@@ -133,7 +137,7 @@ random weights and inputs before and after each step.
   chunk, a second replay and the prefix K/V are bit-identical between the
   two revisions for Pi0.5 on the all-TileLang and the
   attn-ffn-cuda-fused-producer-pdl plans, and for Pi0 fused and unfused;
-  plan_parity 1/1 and 1/18 and Pi0 fused_vs_unfused pass; chunk-latency
+  plan_parity 1/1 and 1/18 and the Pi0 fused-vs-unfused check pass; chunk-latency
   `min` moves by at most 0.13 ms. Binding reproduces the previous
   hard-coded routing rules on all 243 route combinations (CPU).
 - Registry and metrics module (job 596804): plan_parity reports the same

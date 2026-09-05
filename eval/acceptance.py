@@ -107,7 +107,7 @@ TARGETS: dict[str, dict[str, Any]] = {
     "hardware/nvidia/h100/pi05": {
         "budget": {"candidates": 6, "non_improving": 3, "jobs": 12},
         "scripts": {
-            "in_engine_reference": "eval.correctness.pi05.plan_parity",
+            "in_engine_reference": "eval.correctness.in_engine",
             "official_baseline": ("eval.correctness.pi05.prefix_parity",
                                   "eval.correctness.pi05.suffix_parity"),
         },
@@ -117,7 +117,7 @@ TARGETS: dict[str, dict[str, Any]] = {
     "hardware/nvidia/h100/pi0": {
         "budget": {"candidates": 6, "non_improving": 3, "jobs": 12},
         "scripts": {
-            "in_engine_reference": "eval.correctness.pi0.fused_vs_unfused",
+            "in_engine_reference": "eval.correctness.in_engine",
             "official_baseline": ("eval.correctness.pi0.openpi_parity",),
         },
         "capabilities": ("baseline_adapter",),

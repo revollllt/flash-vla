@@ -29,6 +29,7 @@ import torch
 from flash_vla.runtime.cuda import ScratchPool
 
 from .kernels import base as kernels
+from .kernels import attention as _attention
 
 _CACHE: dict = {}
 _POOL = ScratchPool()
@@ -309,6 +310,7 @@ def vision_ffn_down_residual(x, weight, bias, res, out):
 
 VISION_WRAPPERS = {
     "vision_patch_embed": vision_patch_embed,
+    "vision_attention": _attention.vision_attention,
     "vision_norm_qkv": vision_norm_qkv,
     "vision_out_proj_residual": vision_out_proj_residual,
     "vision_norm_ffn_up": vision_norm_ffn_up,
@@ -395,6 +397,7 @@ def encoder_ffn_down_residual(x, weight, out):
 
 ENCODER_WRAPPERS = {
     "encoder_projector": encoder_projector,
+    "encoder_attention": _attention.encoder_attention,
     "encoder_norm_qkv_rope": encoder_norm_qkv_rope,
     "encoder_out_proj_residual": encoder_out_proj_residual,
     "encoder_norm_gated_ffn": encoder_norm_gated_ffn,

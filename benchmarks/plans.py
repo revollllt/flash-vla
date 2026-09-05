@@ -12,9 +12,8 @@ latency comparison against `tilelang` moves the prefix as well as the decoder;
 the `-enc-tilelang` variant exists to A/B that one call site with the decoder
 held fixed.
 
-This module holds no device dependency on purpose: the offline trace analysis in
-`layer_breakdown` reads a plan to decide which kernel sequence to expect, and
-must not have to import torch to do it.
+This module holds no device dependency on purpose: offline tools read a plan
+without importing torch.
 """
 from __future__ import annotations
 

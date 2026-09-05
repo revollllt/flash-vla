@@ -20,8 +20,8 @@ src/flash_vla/
     h100/spec.py           static device spec
     h100/<model>/          one Target
       engine.py            construction and the online path
-      pipeline.py          orchestration: call sites only, in place on buffers;
-                           call-site cost declarations (planned)
+      pipeline.py          orchestration: call sites only, in place on buffers
+      costs.py             call-site cost declarations
       buffers.py           the buffer plan, declared as data
       ops.py               op-table construction from a validated plan
       backends/<name>/     one module per implementation strategy: wrappers,
@@ -32,8 +32,9 @@ eval/
   baselines/               adapters to official implementations
   correctness/<model>/     parity scripts; the shared metrics module (planned)
   tasks/                   policy-quality suites (out of scope this phase)
-benchmarks/                latency and profiling harnesses, plan registry,
-                           the floor model (planned)
+benchmarks/                the model-agnostic runners: latency, profile,
+                           kernels, floor; the plan registry; the Target
+                           factory registry (the one place Targets are named)
 ```
 
 ## Dependency direction

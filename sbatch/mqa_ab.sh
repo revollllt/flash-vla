@@ -30,9 +30,9 @@ export CUTLASS_DIR="${CUTLASS_DIR:-${REPO_DIR}/third_party/cutlass}"
 export PALIGEMMA_TOKENIZER="${PALIGEMMA_TOKENIZER:-/data/user/jzou521/models/openpi/big_vision/paligemma_tokenizer.model}"
 require_cuda
 report_env
-REPS="${E2E_REPS:-30}"
+REPS="${E2E_REPS:-100}"
 CUDA_PLAN="${AB_PLAN:-attn-ffn-cuda-fused-producer}"
 CHAIN_PLAN="${AB_PLAN_REFERENCE:-attn-ffn-cuda-fused-producer-enc-tilelang}"
-"${PYTHON}" -u -m benchmarks.e2e_pi05 --reps "${REPS}" \
+"${PYTHON}" -u -m benchmarks latency --target h100/pi05 --reps "${REPS}" \
     --plan "${CUDA_PLAN}" --plan "${CHAIN_PLAN}" --plan "${CUDA_PLAN}"
 echo "[job] finished $(date)"

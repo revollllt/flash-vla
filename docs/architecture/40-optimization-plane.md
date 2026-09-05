@@ -20,7 +20,7 @@ stays the source of truth.
 ## The flywheel
 
 ```text
-Profile -> Analyze -> Design -> Implement -> Validate -> deploy -> Profile
+Profile -> Analyze -> Design -> Implement -> Validate -> Deploy -> Profile
 ```
 
 Analyze starts from the gap decomposition: measured minus structural names

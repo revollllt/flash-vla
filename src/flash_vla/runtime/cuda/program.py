@@ -77,5 +77,13 @@ class Program:
         for name in self.order:
             self.graphs[name].replay()
 
+    def run_eager(self, name: str) -> None:
+        """Issue one segment's kernels outside its graph, on the current stream.
+
+        The same callable capture recorded, so a profiler sees each launch with
+        its CPU-side correlation; nothing allocates because the pool is frozen.
+        """
+        self._segments[name].run()
+
     def __len__(self) -> int:
         return len(self.order)

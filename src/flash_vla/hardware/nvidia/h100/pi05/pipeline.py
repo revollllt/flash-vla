@@ -26,7 +26,6 @@ from flash_vla.models.pi05.spec import (
     VISION_TOKENS,
 )
 
-from .backends.tilelang.kernels.attention import vision_attention
 
 
 def vision(ops, weights, buffers, num_views):
@@ -51,7 +50,7 @@ def vision(ops, weights, buffers, num_views):
             weights["vision_attn_qkv_w"][i], weights["vision_attn_qkv_b"][i],
             buffers["vision_QKV"], buffers["vision_x_norm"])
 
-        attn = vision_attention(buffers["vision_QKV"])
+        attn = ops.vision_attention(buffers["vision_QKV"])
 
         ops.vision_out_proj_residual(
             attn, weights["vision_attn_o_w"][i], weights["vision_attn_o_b"][i],

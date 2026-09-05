@@ -13,11 +13,14 @@ instead of silently allocating mid-capture.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import torch
 
 from flash_vla.models.pi0.spec import weight_shapes
 from flash_vla.runtime import Identity
 from flash_vla.runtime.cuda import Program, ScratchPool, Segment, StaticArena, Step
+from flash_vla.runtime.engine import wrap_ops
 
 from . import pipeline
 from .backends.tilelang import wrappers
@@ -85,6 +88,34 @@ class Pi0Inference:
             pipeline.transformer_encoder(self.ops, self.weights, self.buffers, self.encoder_seq_len)
             pipeline.transformer_decoder(self.ops, self.weights, self.buffers,
                                          self.encoder_seq_len, steps=self.steps, layers=self.layers)
+
+    def run_eager(self, segment: str) -> None:
+        """Issue one segment's kernels outside its graph, on the current stream."""
+        self.graphs.run_eager(segment)
+
+    @contextmanager
+    def instrument(self, wrap):
+        """Swap in an op table whose entries are `wrap(name, fn)` for the scope."""
+        original = self.ops
+        self.ops = wrap_ops(original, wrap)
+        try:
+            yield
+        finally:
+            self.ops = original
+
+    def scratch_scope(self):
+        """Route scratch to this engine's pool, for calling an op outside a segment."""
+        return wrappers.use_pool(self.pool)
+
+    @property
+    def graph_contract(self) -> dict[str, list[str]]:
+        """Kernel-name patterns the captured program must and must not contain."""
+        return {"forbid": [], "require_one": []}
+
+    @property
+    def atomic_groups(self) -> tuple[frozenset[str], ...]:
+        """Pi0's one backend shares no state across call sites."""
+        return ()
 
     def replay(self, segment: str = "forward") -> None:
         """Replay the captured segment on the current stream."""

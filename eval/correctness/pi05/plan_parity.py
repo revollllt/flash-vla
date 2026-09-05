@@ -21,7 +21,7 @@ import json
 
 import torch
 
-from benchmarks.e2e_pi05 import DEFAULT_PROMPT
+from benchmarks.targets import DEFAULT_PROMPT
 from benchmarks.plans import PLANS, parse_plan
 from flash_vla.models.pi05.tokenize import Pi05Tokenizer
 from flash_vla.models.pi05.weights import fold, random_checkpoint
