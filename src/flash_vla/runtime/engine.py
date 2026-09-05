@@ -13,6 +13,7 @@ from typing import Any, Mapping, Protocol, runtime_checkable
 
 import torch
 
+from .cost import SegmentCosts
 from .cuda.program import Step
 from .identity import Identity
 
@@ -32,6 +33,9 @@ class Engine(Protocol):
     #: A correctness harness compares these and may inject an oracle's values
     #: into them; a padded region behind them must stay finite.
     stage_outputs: Mapping[str, tuple[tuple[str, int | None], ...]]
+    #: Per segment, the call sites it invokes with their minimal bytes and
+    #: FLOPs at this engine's shapes: the numerator of the floor model.
+    costs: SegmentCosts
 
     def sample_inputs(self, seed: int = 0) -> dict[str, Any]:
         """Seeded inputs at this engine's shapes, for measurement and comparison."""

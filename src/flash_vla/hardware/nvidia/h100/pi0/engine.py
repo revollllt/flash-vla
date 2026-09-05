@@ -22,6 +22,7 @@ from flash_vla.runtime.cuda import Program, ScratchPool, Segment, StaticArena, S
 from . import pipeline
 from .backends.tilelang import wrappers
 from .buffers import buffer_plan
+from .costs import segment_costs
 from .ops import op_table, resolve_plan
 
 TARGET = "hardware/nvidia/h100/pi0"
@@ -96,6 +97,12 @@ class Pi0Inference:
     def allocation(self, name: str) -> torch.Tensor:
         """The base allocation behind buffer `name`, padding included."""
         return self.arena.allocation(name)
+
+    @property
+    def costs(self):
+        """The segment's call sites with their minimal bytes and FLOPs at this shape profile."""
+        return segment_costs(self.num_views, self.chunk_size, self.steps, self.layers,
+                             self.prompt_len)
 
     def stage(self, images, state, noise, **_) -> None:
         """Copy the three inputs into their static buffers."""

@@ -119,6 +119,8 @@ public face and the only thing the harnesses may depend on:
   running a step, so a harness can run the program one step at a time;
 - **allocation**: the base allocation behind a named buffer, padding
   included;
+- **costs**: per segment, the call sites it invokes with their declared
+  minimal bytes and FLOPs at this engine's shapes, for the floor model;
 - **plan**: the resolved route.
 
 Everything model-specific that a harness needs (which buffers form the KV

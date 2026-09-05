@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 
-COMMANDS = {"latency": "latency", "e2e": "e2e", "e2e-pi05": "e2e_pi05", "profile": "profile",
+COMMANDS = {"latency": "latency", "floor": "floor", "e2e": "e2e", "e2e-pi05": "e2e_pi05", "profile": "profile",
             "profile-pi05": "profile_pi05", "roofline-pi05": "roofline_pi05", "kernels": "kernels"}
 
 

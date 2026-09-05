@@ -36,6 +36,7 @@ from flash_vla.runtime.cuda import Program, ScratchPool, Segment, StaticArena, S
 from . import pipeline
 from .backends.tilelang import wrappers
 from .buffers import buffer_plan
+from .costs import segment_costs
 from .ops import op_table, resolve_plan
 from .prefix import PrefixInputs
 
@@ -150,6 +151,12 @@ class Pi05Inference:
     def allocation(self, name: str) -> torch.Tensor:
         """The base allocation behind buffer `name`, padding included."""
         return self.arena.allocation(name)
+
+    @property
+    def costs(self):
+        """Per segment, the call sites' minimal bytes and FLOPs at this shape profile."""
+        return segment_costs(self.num_views, self.chunk_size, self.steps, self.layers,
+                             self.prompt_len)
 
     def stage(self, images: torch.Tensor, noise: torch.Tensor, **_) -> None:
         """Copy the device inputs in; the state goes through the host slot."""

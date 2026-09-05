@@ -1,8 +1,8 @@
 # The Target
 
-Status: partial. The four axes, target ownership, the engine identity
-property, its stamping into engine-level reports and the acceptance registry
-entry are the repository state; the call-site cost declarations are planned.
+Status: implemented. The four axes, target ownership, the engine identity
+property, its stamping into engine-level reports, the acceptance registry
+entry and the call-site cost declarations are the repository state.
 
 ## Definition
 
@@ -63,10 +63,11 @@ nearly has:
   tolerances are framework defaults keyed by precision policy, not per-Target
   text. The latency objective is not written anywhere; it is derived from the
   floor model.
-- **cost declarations** on each call site: bytes, FLOPs, launch count and
-  wave count as functions of the shape profile and precision policy. The
-  floor model ([`33-latency-floor-model.md`](33-latency-floor-model.md))
-  consumes them to derive the Target's latency objective.
+- **cost declarations** per call site: bytes read, bytes written and FLOPs
+  as functions of the shape profile and precision policy, with the segment's
+  invocation counts (`costs.py`, exposed by the engine). The floor model
+  ([`33-latency-floor-model.md`](33-latency-floor-model.md)) consumes them to
+  derive the Target's latency objective.
 
 ## Identity and comparability
 
