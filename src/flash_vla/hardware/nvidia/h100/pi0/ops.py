@@ -10,12 +10,31 @@ mixes TileLang and hand-written CUDA kernels -- some ops on one backend, others
 on another -- while the pipeline itself stays backend-agnostic. The table is
 built once and passed down explicitly; no global dispatch state, which matters
 because a benchmark routinely holds two configurations alive at the same time.
+
+A plan is validated through the runtime before any table is built
+(`flash_vla.runtime.binding`); Pi0's one backend declares no route constraint.
 """
 from __future__ import annotations
 
 from types import SimpleNamespace
 
+from flash_vla.runtime import binding
+
 from .backends import BACKENDS, build_table as _build_table
+
+
+def _provided() -> dict[str, set[str]]:
+    return {name: set(module.ALL_WRAPPERS) | set(module.FUSED_WRAPPERS)
+            for name, module in BACKENDS.items()}
+
+
+def resolve_plan(plan: dict[str, str] | None, backend: str = "tilelang") -> dict[str, str]:
+    """The backend of every call site under `plan`, validated; `backend` where unnamed."""
+    routes = binding.resolve(plan, backend, _op_names(backend))
+    binding.check_backends_provide(routes, _provided())
+    binding.validate(routes, {name: tuple(getattr(module, "ROUTE_CONSTRAINTS", ()))
+                              for name, module in BACKENDS.items()})
+    return routes
 
 
 def op_table(fused: bool = True, backend: str = "tilelang",
@@ -31,8 +50,7 @@ def op_table(fused: bool = True, backend: str = "tilelang",
         return _build_table(backend, fused=fused)
 
     table = {}
-    for op_name in _op_names(backend):
-        chosen = plan.get(op_name, backend)
+    for op_name, chosen in resolve_plan(plan, backend).items():
         module = BACKENDS[chosen]
         if op_name in module.FUSED_WRAPPERS and fused:
             table[op_name] = module.FUSED_WRAPPERS[op_name]

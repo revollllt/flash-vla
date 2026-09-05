@@ -88,7 +88,7 @@ def _full_graph(fused: bool, num_views, chunk_size, prompt_len, steps, layers):
                                    prompt_len=prompt_len)
     engine = Pi0Inference(checkpoint, num_views=num_views, chunk_size=chunk_size, steps=steps,
                           layers=layers, fused=fused)
-    return engine.graph, engine
+    return engine.graphs.graphs["forward"], engine
 
 
 def run(stage: str = "decoder", fused: bool = True, compare: bool = False, num_views: int = 3,

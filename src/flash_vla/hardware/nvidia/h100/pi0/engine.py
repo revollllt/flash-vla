@@ -1,9 +1,10 @@
-"""`Pi0Inference`: weights, buffers, and one CUDA graph for the whole forward pass.
+"""`Pi0Inference`: weights, buffers, and one graph segment for the whole forward pass.
 
-Construction allocates every weight and buffer up front, precomputes the RoPE
-tables, loads the checkpoint, warms the kernels, and captures a single graph
-covering vision, encoder and decoder. `forward` then copies the three inputs
-into their static buffers and replays.
+Construction binds the plan, materializes the buffer plan, precomputes the RoPE
+tables, loads the checkpoint, and runs the runtime lifecycle -- warm up, freeze
+the scratch pool, capture a single segment covering vision, encoder and
+decoder. `forward` then copies the three inputs into their static buffers and
+replays.
 
 Capture is what makes the numbers reproducible, and it constrains the design:
 nothing inside the pass may allocate. Scratch that the wrappers need comes from
@@ -15,12 +16,18 @@ from __future__ import annotations
 import torch
 
 from flash_vla.models.pi0.spec import weight_shapes
-from flash_vla.runtime.cuda import ScratchPool
+from flash_vla.runtime import Identity
+from flash_vla.runtime.cuda import Program, ScratchPool, Segment, StaticArena, Step
 
 from . import pipeline
 from .backends.tilelang import wrappers
-from .buffers import allocate_static_buffers
-from .ops import op_table
+from .buffers import buffer_plan
+from .ops import op_table, resolve_plan
+
+TARGET = "hardware/nvidia/h100/pi0"
+HARDWARE = "h100-sxm5-80gb"
+MODEL = "pi0"
+PRECISION = "bf16"
 
 
 class Pi0Inference:
@@ -32,6 +39,9 @@ class Pi0Inference:
     bit-identical.
     """
 
+    #: One segment and no host work: the engine protocol's `program`.
+    program: tuple[Step, ...] = (Step("segment", "forward"),)
+
     def __init__(self, checkpoint, num_views: int, chunk_size: int, steps: int = 10,
                  layers: int = 18, fused: bool = True, device: str = "cuda"):
         self.num_views = num_views
@@ -39,21 +49,28 @@ class Pi0Inference:
         self.steps = steps
         self.layers = layers
         self.fused = fused
+        self.device = torch.device(device)
         self.ops = op_table(fused)
         self.prompt_len = len(checkpoint["language_embeds"])
+        self.identity = Identity(
+            target=TARGET, hardware=HARDWARE, model=MODEL,
+            shape={"num_views": num_views, "chunk": chunk_size, "steps": steps,
+                   "layers": layers, "prompt_len": self.prompt_len},
+            plan=resolve_plan(None), precision=PRECISION,
+            options={"fused": fused})
 
         bf16 = torch.bfloat16
         self.weights = {name: torch.empty(shape, dtype=bf16, device=device)
                         for name, shape in weight_shapes(self.prompt_len).items()}
-        self.buffers, self.encoder_seq_len = allocate_static_buffers(
-            num_views, chunk_size, self.prompt_len, device)
+        plan_spec, self.encoder_seq_len = buffer_plan(num_views, chunk_size, self.prompt_len)
+        self.arena = StaticArena(plan_spec, device)
+        self.buffers = self.arena.buffers
 
         for name, value in checkpoint.items():
             self.weights[name].copy_(value)
 
         self.pool = ScratchPool()
-        self.graph = torch.cuda.CUDAGraph()
-        self._capture()
+        self.graphs = Program([Segment("forward", self._run)], self.pool)
 
     def _run(self):
         """One full forward pass, in place on the static buffers."""
@@ -64,23 +81,29 @@ class Pi0Inference:
             pipeline.transformer_decoder(self.ops, self.weights, self.buffers,
                                          self.encoder_seq_len, steps=self.steps, layers=self.layers)
 
-    def _capture(self):
-        """Warm up (compiling every kernel and filling the pool), freeze, then capture."""
-        for _ in range(3):
-            self._run()
-        torch.cuda.synchronize()
-        self.pool.freeze()
-        stream = torch.cuda.Stream()
-        with torch.cuda.stream(stream):
-            self.graph.capture_begin()
-            self._run()
-            self.graph.capture_end()
-        torch.cuda.synchronize()
+    def replay(self, segment: str = "forward") -> None:
+        """Replay the captured segment on the current stream."""
+        self.graphs.replay(segment)
+
+    def host(self, slot: str, **_) -> None:
+        """Pi0 has no host slot; every input is a device copy."""
+        raise KeyError(f"no host slot {slot!r}; this engine has none")
+
+    def sample_inputs(self, seed: int = 0) -> dict[str, torch.Tensor]:
+        """Seeded random inputs at this engine's shapes: images, state, noise."""
+        generator = torch.Generator(device=self.device).manual_seed(seed)
+
+        def randn(*shape):
+            return torch.randn(shape, generator=generator, device=self.device,
+                               dtype=torch.bfloat16)
+
+        return {"images": randn(self.num_views, 224, 224, 3), "state": randn(32),
+                "noise": randn(self.chunk_size, 32)}
 
     def forward(self, images, state, noise):
-        """Copy inputs into the static buffers, replay the graph, return the denoised chunk."""
+        """Copy inputs into the static buffers, replay the segment, return the denoised chunk."""
         self.buffers["observation_images_normalized"].copy_(images)
         self.buffers["observation_state_normalized"].copy_(state)
         self.buffers["diffusion_noise"].copy_(noise)
-        self.graph.replay()
+        self.replay("forward")
         return self.buffers["diffusion_noise"]

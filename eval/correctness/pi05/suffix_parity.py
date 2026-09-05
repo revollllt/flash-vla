@@ -111,7 +111,7 @@ def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
     engine_n_valid = engine.forward_prefix(images, state)     # sets rope, mask, n_valid
     if not full:
         _transplant(engine, cache, engine.encoder_seq_len)
-    engine.decoder_graph.replay()
+    engine.replay("decoder")
     torch.cuda.synchronize()
     output = engine.buffers["diffusion_noise"].float().clone()
 

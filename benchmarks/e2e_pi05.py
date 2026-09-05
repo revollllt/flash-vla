@@ -128,19 +128,19 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
     }
     if profile_decoder_graph:
         engine.buffers["diffusion_noise"].copy_(noise)
-        engine.decoder_graph.replay()
+        engine.replay("decoder")
         torch.cuda.synchronize()
         replay_reference = engine.buffers["diffusion_noise"].clone()
         for _ in range(20):
             engine.buffers["diffusion_noise"].copy_(noise)
-            engine.decoder_graph.replay()
+            engine.replay("decoder")
         torch.cuda.synchronize()
         replay_exact = torch.equal(
             replay_reference, engine.buffers["diffusion_noise"])
         with torch.profiler.profile(
                 activities=[torch.profiler.ProfilerActivity.CUDA]) as trace:
             engine.buffers["diffusion_noise"].copy_(noise)
-            engine.decoder_graph.replay()
+            engine.replay("decoder")
             torch.cuda.synchronize()
         kernel_names = sorted({
             event.key for event in trace.key_averages()
@@ -194,10 +194,8 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
             raise RuntimeError(
                 "fused production graph contains split producer nodes: "
                 f"{split_producer_nodes}")
-    for name, graph in (("vision", engine.vision_graph),
-                        ("prefix", engine.prefix_graph),
-                        ("decoder", engine.decoder_graph)):
-        stage = _time_event(graph.replay, reps)
+    for name in ("vision", "prefix", "decoder"):
+        stage = _time_event(lambda name=name: engine.replay(name), reps)
         stage["floor_ms"] = FLOOR_MS.get(name)
         if stage["floor_ms"]:
             stage["above_floor"] = round(stage["median_ms"] / stage["floor_ms"], 2)

@@ -1,8 +1,8 @@
 # The Target
 
-Status: partial. The four axes and target ownership are the repository state;
-the engine identity property, the acceptance registry entry, the call-site
-cost declarations and identity stamping in reports are planned.
+Status: partial. The four axes, target ownership and the engine identity
+property are the repository state; the acceptance registry entry, the
+call-site cost declarations and identity stamping in reports are planned.
 
 ## Definition
 
@@ -47,16 +47,16 @@ so acceptance criteria are per Target, never global. A policy other than
 `bf16` cannot be promoted without a policy-quality gate; until that suite
 exists the policy is fixed at `bf16`.
 
-## Identity, acceptance entry and cost declarations (planned)
+## Identity, acceptance entry and cost declarations
 
 No manifest file. A Target is described by three things it already has or
 nearly has:
 
-- **identity** is a property of the engine. The engine already holds the
-  shape profile's numbers and the resolved plan; the property adds the named
-  axes (hardware, model revision, shape profile, precision policy) and the git
-  revision, and every harness stamps it into its report. Nothing restates a
-  shape that the model spec or the engine already knows.
+- **identity** is a property of the engine (`runtime.Identity`): the named
+  axes, the shape profile's numbers, the resolved plan, any target-local
+  table option, and the git revision. Every harness stamps it into its report
+  (planned). Nothing restates a shape that the model spec or the engine
+  already knows.
 - **acceptance** is one entry in the framework's acceptance registry
   ([`30-acceptance-criteria.md`](30-acceptance-criteria.md)): the budget and
   any override of the framework defaults. Metrics, statistics, gates and

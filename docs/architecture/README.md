@@ -71,11 +71,11 @@ Earlier drafts used "Task" for the co-designed unit; that word is retired.
 | Component | Status |
 |---|---|
 | ScratchPool, graph capture, in-graph timing (`runtime/cuda`) | implemented |
-| Target-declared buffer plan materialized by the runtime | planned |
-| Segment list with host slots, shared lifecycle (warmup, freeze, capture, replay) | planned; today each engine implements its own |
-| Op-table binding before capture, per-call-site plans | implemented; route constraints still hard-coded per target |
-| Engine protocol consumed by generic harnesses | planned |
-| Engine identity property; acceptance registry with framework defaults and per-Target entries | planned |
+| Target-declared buffer plan materialized by the runtime (`StaticArena`) | implemented; both Targets declare their plans |
+| Segment list with host slots, shared lifecycle (warmup, freeze, capture, replay) (`Program`) | implemented; both engines construct through it |
+| Op-table binding before capture, per-call-site plans, backend-declared route constraints | implemented (`runtime/binding`) |
+| Engine protocol (`runtime/engine.Engine`) and identity property | implemented; both engines satisfy it, no generic harness consumes it yet |
+| Acceptance registry with framework defaults and per-Target entries | planned |
 | Call-site cost declarations and the floor model | planned; one decoder roofline exists, hard-coded and datasheet-based |
 | Shared correctness metrics module | planned; five metrics exist, duplicated across scripts |
 | Generic e2e latency runner with a fixed report schema | planned; two divergent per-model harnesses exist |

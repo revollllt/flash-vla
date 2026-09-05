@@ -1,4 +1,10 @@
-"""Static buffers for the H100/Pi0 execution plan."""
+"""The buffer plan for the H100/Pi0 execution plan, declared as data.
+
+`buffer_plan` returns one `Buffer` per name; the runtime's `StaticArena`
+materializes it. Pi0's prompt is fixed at load time, so every table here is
+static: both RoPE tables are baked at construction and the prompt embeddings
+are copied from the checkpoint inside the captured segment.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +16,7 @@ from flash_vla.models.pi0.spec import (
     HEAD_DIM,
     ROPE_THETA,
 )
+from flash_vla.runtime.cuda import Buffer
 
 
 def rope_table(seq_len: int, offset: int, head_dim: int, device) -> torch.Tensor:
@@ -23,42 +30,42 @@ def rope_table(seq_len: int, offset: int, head_dim: int, device) -> torch.Tensor
     return torch.cat([cos[:, :, None], sin[:, :, None]], 2).view(-1, head_dim)
 
 
-def allocate_static_buffers(num_views: int, chunk_size: int, prompt_len: int,
-                            device: str) -> tuple[dict[str, torch.Tensor], int]:
-    """Allocate and initialize every persistent buffer used by this target."""
-    bf16 = torch.bfloat16
+def buffer_plan(num_views: int, chunk_size: int,
+                prompt_len: int) -> tuple[dict[str, Buffer], int]:
+    """Every persistent buffer of this target, and the prefix length."""
     encoder_seq_len = num_views * 256 + prompt_len
+    # The decoder sequence is the state token followed by the action chunk.
     decoder_seq_len = chunk_size + 1
     cache_len = encoder_seq_len + decoder_seq_len
 
-    def buf(*shape, dtype=bf16):
-        return torch.empty(shape, dtype=dtype, device=device)
+    def encoder_rope(device) -> torch.Tensor:
+        return rope_table(encoder_seq_len, 0, HEAD_DIM, device)
 
-    buffers = {
-        "observation_images_normalized": buf(num_views, 224, 224, 3),
-        "observation_state_normalized": buf(32),
-        "diffusion_noise": buf(chunk_size, 32),
-        "vision_x": buf(num_views, 256, 1152),
-        "vision_x_norm": buf(num_views, 256, 1152),
-        "vision_QKV": buf(num_views, 256, 3 * 1152),
-        "vision_hidden": buf(num_views, 256, 4304),
-        "encoder_rope_weights": buf(encoder_seq_len, HEAD_DIM),
-        "encoder_x": buf(encoder_seq_len, 2048),
-        "encoder_x_norm": buf(encoder_seq_len, 2048),
-        "encoder_K": buf(ENCODER_LAYERS, cache_len, HEAD_DIM),
-        "encoder_V": buf(ENCODER_LAYERS, cache_len, HEAD_DIM),
-        "encoder_Q": buf(encoder_seq_len * DECODER_HEADS, HEAD_DIM),
-        "encoder_hidden": buf(encoder_seq_len, 16384),
-        "decoder_rope_weights": buf(decoder_seq_len, HEAD_DIM),
-        "decoder_x": buf(decoder_seq_len, 1024),
-        "decoder_x_buf": buf(chunk_size, 1024),
-        "decoder_state_buf": buf(1, 1024),
-        "decoder_norm_factor_buf": buf(decoder_seq_len),
-        "decoder_q_buf": buf(decoder_seq_len * DECODER_HEADS, HEAD_DIM),
-        "decoder_attn_buf": buf(decoder_seq_len * DECODER_HEADS, cache_len),
-        "decoder_hidden": buf(decoder_seq_len, 4096),
+    def decoder_rope(device) -> torch.Tensor:
+        return rope_table(decoder_seq_len, encoder_seq_len, HEAD_DIM, device)
+
+    plan = {
+        "observation_images_normalized": Buffer((num_views, 224, 224, 3)),
+        "observation_state_normalized": Buffer((32,)),
+        "diffusion_noise": Buffer((chunk_size, 32)),
+        "vision_x": Buffer((num_views, 256, 1152)),
+        "vision_x_norm": Buffer((num_views, 256, 1152)),
+        "vision_QKV": Buffer((num_views, 256, 3 * 1152)),
+        "vision_hidden": Buffer((num_views, 256, 4304)),
+        "encoder_rope_weights": Buffer((encoder_seq_len, HEAD_DIM), init=encoder_rope),
+        "encoder_x": Buffer((encoder_seq_len, 2048)),
+        "encoder_x_norm": Buffer((encoder_seq_len, 2048)),
+        "encoder_K": Buffer((ENCODER_LAYERS, cache_len, HEAD_DIM)),
+        "encoder_V": Buffer((ENCODER_LAYERS, cache_len, HEAD_DIM)),
+        "encoder_Q": Buffer((encoder_seq_len * DECODER_HEADS, HEAD_DIM)),
+        "encoder_hidden": Buffer((encoder_seq_len, 16384)),
+        "decoder_rope_weights": Buffer((decoder_seq_len, HEAD_DIM), init=decoder_rope),
+        "decoder_x": Buffer((decoder_seq_len, 1024)),
+        "decoder_x_buf": Buffer((chunk_size, 1024)),
+        "decoder_state_buf": Buffer((1, 1024)),
+        "decoder_norm_factor_buf": Buffer((decoder_seq_len,)),
+        "decoder_q_buf": Buffer((decoder_seq_len * DECODER_HEADS, HEAD_DIM)),
+        "decoder_attn_buf": Buffer((decoder_seq_len * DECODER_HEADS, cache_len)),
+        "decoder_hidden": Buffer((decoder_seq_len, 4096)),
     }
-    buffers["encoder_rope_weights"].copy_(rope_table(encoder_seq_len, 0, HEAD_DIM, device))
-    buffers["decoder_rope_weights"].copy_(
-        rope_table(decoder_seq_len, encoder_seq_len, HEAD_DIM, device))
-    return buffers, encoder_seq_len
+    return plan, encoder_seq_len

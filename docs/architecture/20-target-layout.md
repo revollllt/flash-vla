@@ -10,9 +10,9 @@ src/flash_vla/
   models/<model>/          hardware-independent model contract: constants,
                            checkpoint schema, weight folding, torch reference,
                            tokenizer
-  runtime/cuda/            graph-safe mechanisms: ScratchPool, capture, in-graph
-                           timing; arena, segments, lifecycle, engine protocol
-                           (planned)
+  runtime/                 identity, plan binding, the engine protocol
+  runtime/cuda/            graph-safe mechanisms: arena and scratch pool,
+                           segments and their lifecycle, in-graph timing
   tuning/                  backend-agnostic config sweeps: candidate sets and
                            the sweep loop; no model, backend or device knowledge
   hardware/nvidia/
@@ -22,8 +22,8 @@ src/flash_vla/
       engine.py            construction and the online path
       pipeline.py          orchestration: call sites only, in place on buffers;
                            call-site cost declarations (planned)
-      buffers.py           the buffer plan (declared as data: planned)
-      ops.py               op-table construction from a plan
+      buffers.py           the buffer plan, declared as data
+      ops.py               op-table construction from a validated plan
       backends/<name>/     one module per implementation strategy: wrappers,
                            fused overlays, kernels, tuning adapter
 eval/
@@ -69,9 +69,9 @@ out of the model contract and inside the Target.
   on the replay path.
 - Pass destinations and workspaces explicitly. A captured segment must not
   allocate device memory.
-- Declare the buffer plan as data (planned); today the plan is the target's
-  allocation module. Either way the Target owns padding, masking and aliasing,
-  and documents any pad region a kernel writes.
+- Declare the buffer plan as data; the runtime materializes it. The Target
+  owns padding, masking and aliasing, and documents any pad region a kernel
+  writes.
 - Keep fusion boundaries Target-local: a fusion changes the pipeline and the
   buffer lifetimes, not only one call site.
 - Keep tuning results with the Target and call site that produced them. The
@@ -86,8 +86,8 @@ out of the model contract and inside the Target.
   fusion.
 - Treat PDL as a Target pipeline decision: kernels expose the control points,
   the Target owns the chain.
-- Backends declare their route constraints; binding validates them (planned
-  move out of the per-target op-table module).
+- Backends declare their route constraints; the runtime validates a plan
+  against them at engine construction.
 
 ## Validation ownership
 

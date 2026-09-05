@@ -160,9 +160,8 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
                          "decoder_keys": keys, "plan": engine.plan},
               "stages": {}, "waves": wave_report(chunk_size, keys),
               "trace_dir": str(trace_dir) if trace_dir else None}
-    for name, graph in (("vision", engine.vision_graph), ("prefix", engine.prefix_graph),
-                        ("decoder", engine.decoder_graph)):
-        rows, total = _profile_graph(graph, name, top, trace_dir=trace_dir)
+    for name in ("vision", "prefix", "decoder"):
+        rows, total = _profile_graph(engine.graphs.graphs[name], name, top, trace_dir=trace_dir)
         report["stages"][name] = {"total_us": total, "kernels": rows}
 
     print(json.dumps(report, indent=2))

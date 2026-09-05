@@ -1,10 +1,10 @@
 # Static Inference Runtime
 
-Status: partial. ScratchPool, graph capture and in-graph timing are
-implemented under `src/flash_vla/runtime/cuda/`. The arena, the segment list
-with host slots, the shared lifecycle, backend-declared route validation and
-the engine protocol are planned; today each Target's engine implements its own
-lifecycle, and the two existing engines duplicate it.
+Status: implemented. The arena, scratch pool, segment list with host slots,
+shared lifecycle, in-graph timing, plan validation against backend-declared
+route constraints, the identity and the engine protocol live under
+`src/flash_vla/runtime/`; both Targets' engines construct through them. No
+generic harness consumes the protocol yet (see the evaluation documents).
 
 ## What the runtime is
 
@@ -21,7 +21,7 @@ are Target decisions, made by the agent, recorded in the Target.
 
 ## Mechanisms
 
-### Static arena (planned)
+### Static arena
 
 The Target declares its buffer plan as data: for each buffer a name, shape,
 dtype, initialization (uninitialized, zero, or a value), padding of the leading
@@ -33,14 +33,14 @@ The Target's declaration is authoritative. The pipeline writes into these
 buffers in place through explicit destination parameters; the runtime does not
 know which call site touches which buffer.
 
-### ScratchPool (implemented)
+### ScratchPool
 
 Temporaries that a call site cannot avoid come from a pool keyed by role, shape,
 dtype and device. Each key is allocated once and reused. After warmup the pool
 is frozen; a request for a key warmup did not cover raises instead of
 allocating during capture.
 
-### Segments and host slots (planned)
+### Segments and host slots
 
 A Target declares an ordered list of graph segments and the named host slots
 between them. A segment is split off only for one of two reasons: a data
@@ -51,7 +51,7 @@ capture. Every segment is replayable alone, which is what makes per-stage
 timing and stage-level oracle injection possible. A Target with no host work
 and no measurement split declares one segment (Pi0 today).
 
-### Lifecycle (planned as shared; implemented per engine)
+### Lifecycle
 
 ```text
 bind -> allocate -> load weights -> warmup -> freeze -> capture -> replay
@@ -69,7 +69,7 @@ Invariants that hold from freeze onward: no device allocation; no dispatch by
 model, device or backend; no host synchronization other than the declared host
 slots; every kernel writes through a destination parameter.
 
-### Binding (implemented; constraint declaration planned)
+### Binding
 
 A backend is a flat registry of call-site wrappers with identical signatures,
 stateless or built by a factory whose state follows the engine's lifetime.
@@ -80,7 +80,7 @@ backend's constraints and rejects violations at construction, not at the first
 replay. There is no global dispatch state, because a benchmark routinely holds
 two engines with different plans alive at once.
 
-### Timing (implemented)
+### Timing
 
 Two mechanisms live here because the backend autotuner needs them and a
 production package must not import a benchmark harness: capture of a callable
@@ -95,7 +95,7 @@ static buffers, valid until the next forward. A Target may use one buffer as
 both input and output (the diffusion noise becomes the action chunk); the
 buffer plan says so.
 
-## The engine protocol (planned)
+## The engine protocol
 
 Generic harnesses (latency, correctness, promotion) are written against one
 protocol that every Target's engine satisfies. The protocol is the runtime's
