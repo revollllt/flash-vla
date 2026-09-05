@@ -1,115 +1,38 @@
 # Architecture
 
 This repository builds fixed-workload VLA inference targets for a specific GPU,
-model revision, shape profile, and precision policy. Peak performance takes
-priority over a universal operator abstraction.
-
-## Target ownership
-
-The atomic production unit is a hardware/model target:
+model revision, shape profile, and precision policy. Peak end-to-end action
+latency on that fixed workload takes priority over a universal operator
+abstraction.
 
 ```text
-Target = device profile x model revision x shape profile x precision policy
+Target = hardware x model revision x shape profile x precision policy
 ```
 
-`hardware/nvidia/h100/pi0` therefore owns the Pi0 execution plan for H100,
-including its pipeline, static buffer plan, call-site wrappers, kernel source,
-fusion boundaries, and selected tuning. Workload-specific kernels are not
-placed in a global architecture-only kernel directory.
+A Target owns its pipeline, buffer plan, call-site bindings, fusion boundaries,
+kernels, tuning results, plans, parity scripts, benchmark cases and cost
+declarations. A small runtime owns only what is invariant across Targets:
+static addresses, scratch, graph segments and their lifecycle. An agent-driven
+optimization plane produces and improves Targets from measured evidence; the
+human defines accuracy requirements, the metric and framework conventions and
+a budget, and the latency objective is derived from a floor model over
+measured hardware constants.
 
-The target is implementation-strategy agnostic. Each call site resolves to a
-backend through `ops.op_table(plan=...)`; TileLang is the current main line — a
-performance/effort trade-off for agile development — and hand-written CUDA is
-planned for the remaining performance. A single pipeline may mix backends per
-call site without the pipeline knowing which is which.
+The architecture is documented as a tree under
+[`docs/architecture/`](docs/architecture/README.md):
 
-## Repository layout
+| Document | Owns |
+|---|---|
+| [`README.md`](docs/architecture/README.md) | overview, vocabulary, status of each component |
+| [`00-target.md`](docs/architecture/00-target.md) | the Target, identity, acceptance module and comparability |
+| [`10-runtime.md`](docs/architecture/10-runtime.md) | the Static Inference Runtime and the engine protocol |
+| [`20-target-layout.md`](docs/architecture/20-target-layout.md) | target composition, dependency direction, specialization rules |
+| [`30-acceptance-criteria.md`](docs/architecture/30-acceptance-criteria.md) | what the human defines, the acceptance registry, stop condition |
+| [`31-latency-evaluation.md`](docs/architecture/31-latency-evaluation.md) | end-to-end latency metrics and measurement discipline |
+| [`32-correctness-evaluation.md`](docs/architecture/32-correctness-evaluation.md) | numerical correctness: oracles and comparison structure |
+| [`33-latency-floor-model.md`](docs/architecture/33-latency-floor-model.md) | the derived latency objective and its validation |
+| [`40-optimization-plane.md`](docs/architecture/40-optimization-plane.md) | the agent flywheel, skills, notes and promotion gate |
 
-```text
-src/flash_vla/
-  models/                         hardware-independent model contracts
-    pi0/                          checkpoint schema and weight helpers
-  runtime/
-    cuda/                         graph-safe mechanisms (ScratchPool) and in-graph timing
-  tuning/                         backend-agnostic config sweeps
-    space.py                      candidate-set construction
-    loop.py                       the sweep loop, with build/invoke injected
-  hardware/
-    nvidia/
-      cuda/
-        tile/sm90/              shared SM90 tile primitives (copies, MMA tables, gemm)
-      h100/
-        pi0/                      one deployable target
-          engine.py               weights, capture, and public forward
-          pipeline.py             in-place execution plan
-          buffers.py              target-specific static buffer plan
-          ops.py                  per-call-site backend binding
-          backends/               backend registry (one module per strategy)
-            tilelang/             TileLang backend (current main line)
-              wrappers.py          call-site configs and launch wrappers
-              fused_wrappers.py    fused call-site alternatives
-              autotune.py          TileLang tuning adapter (device axes, rewrap)
-              kernels/             H100/Pi0 workload-specific TileLang kernels
-
-eval/                             numerical and policy-quality evaluation
-benchmarks/                       performance measurement and profiling
-```
-
-## Dependency direction
-
-```text
-eval / benchmarks -> public engine API and runtime
-hardware target   -> models + runtime + target-local backends
-models            -> no hardware target
-runtime           -> no model or hardware target
-tuning            -> runtime only; no model, backend or hardware target
-backend kernels   -> their backend and its own toolchain (TileLang / CUDA)
-CUDA kernels      -> hardware/nvidia/cuda/tile (primitives) -> third_party/cutlass
-backend adapters  -> tuning + their own device spec
-```
-
-A backend module registers `ALL_WRAPPERS` / `FUSED_WRAPPERS` in
-`hardware/.../pi0/backends/`; the target pipeline consumes whatever the op table
-hands it. Production targets must not import official baselines or evaluation
-suites. One target must not import another target's private kernels. If two
-targets eventually use the same implementation without model/device branches,
-extract the proven common part then; do not generalize a kernel in anticipation.
-
-## Specialization rules
-
-- Resolve operation bindings before CUDA Graph capture; never dispatch by model
-  or device in the replay path.
-- Pass destinations and workspaces explicitly. A captured execution must not
-  allocate device memory.
-- Keep fusion boundaries target-local because they change the pipeline and
-  buffer lifetimes, not just one operator implementation.
-- Keep tuning results with the target and call site that produced them. Split
-  the tuner itself: the sweep loop is workload-independent and lives in
-  `tuning/`, while the adapter that turns a candidate into a compiled kernel is
-  backend-private and stays with its backend. Neither belongs in `benchmarks/`,
-  which may only consume the public engine API.
-- A device capability is not a tuning axis. The spec states what the hardware
-  can do (`SUPPORTS_TMA`); the backend decides what that implies for its own
-  axes, because the implication differs per backend -- TileLang's warp
-  specialization exists only where TMA does, while a CUDA backend would use TMA
-  directly with no such flag. Keep that mapping in the backend adapter, so the
-  spec never names a backend concept and `tuning/` never names a hardware one.
-- Derive a tuning space from the spec rather than filtering a fixed list. A new
-  device changes which axes exist, which values fit (shared memory per block is
-  usually the binding limit, and eliminates more candidates than any missing
-  feature), and how many input sets a cold measurement needs.
-- Add a separate execution plan only when a shape profile changes topology or
-  fusion, rather than merely changing a compile-time constant.
-- Treat PDL as a target pipeline decision: kernels expose the required device
-  control points, while the target owns the dependent launch chain.
-
-## Validation
-
-Correctness has two independent gates:
-
-1. Numerical equivalence against an official baseline, from individual stages
-   through the final action tensor.
-2. Policy-quality evaluation such as LIBERO task success.
-
-Performance benchmarks are separate from both gates and must measure the real
-captured shape/profile. A faster result cannot override a correctness failure.
+Read `20-target-layout.md` before changing a pipeline, backend or buffer plan;
+it carries the dependency direction and the specialization rules. Decisions
+and their alternatives live in [Agent Notes](.agents/notes/README.md).
