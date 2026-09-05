@@ -107,6 +107,7 @@
 //        -I third_party/cutlass/include -o mk44 44_megamoe_sm90.cu -lcuda && ./mk44
 //   -DMK44_TOKENS=512 -DMK44_BLOCK_M=128 -DMK44_STAGES=5   larger blocks, fewer streams
 //
+// CHECK-GRADE: reference
 // CHECK-INCLUDE: third_party/cutlass/include
 // CHECK-PTX: wgmma\.mma_async\.sync\.aligned\.m64n64k16\.f32\.bf16\.bf16
 // CHECK-PTX: cp\.async\.bulk\.tensor\.3d\.shared::cluster\.global\.mbarrier::complete_tx::bytes

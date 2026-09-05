@@ -16,6 +16,7 @@
 //
 // Structural only; see 01 for what the PTX assertions do and do not prove.
 //
+// CHECK-GRADE: structural
 // CHECK-PTX: setmaxnreg\.dec\.sync\.aligned\.u32
 // CHECK-PTX: setmaxnreg\.inc\.sync\.aligned\.u32
 // CHECK-PTX: elect\.sync

@@ -56,11 +56,14 @@ several skills and rules.
   instructions it exists to demonstrate and `scripts/check_templates.py`
   compiles it and asserts them. This is a deliberate departure from the
   upstream wiki, whose snippets are verbatim upstream excerpts checked for
-  provenance rather than for compilability. The guarantee is structural: it
-  catches a missing or eliminated instruction, never a wrong value, and parity
-  harnesses remain the numerical authority. Archetypes fix a shape and omit
-  tail handling, predication and autotuning; each names the upstream file that
-  carries the production version.
+  provenance rather than for compilability. Each template declares a grade the
+  checker enforces — `structural` for a skeleton that may claim no measurement,
+  `reference` for a machine that runs and reports its own — per the
+  [template grades and wiki linter note](2026-09-06-template-grades-and-wiki-linter.md);
+  for a structural template the guarantee catches a missing or eliminated
+  instruction, never a wrong value, and parity harnesses remain the numerical
+  authority. Archetypes fix a shape and omit tail handling, predication and
+  autotuning; each names the upstream file that carries the production version.
 - Skills carry distilled, portable experience only. Evidence — job ids,
   measurements, experiment history — lives project-side: in Agent Notes and
   in per-task workspaces under `artifacts/ktasks/` (gitignored).
@@ -91,10 +94,11 @@ cluster (sbatch on an ncu-capable node; per-line hotspots resolved), and
 its query tool parses existing reports on the login node. Skill and wiki
 texts grep clean of experiment-record residue.
 
-`python3 .claude/skills/kernel-design/scripts/check_templates.py` passes 19/19
-on the login node with `cuda/13.0` and `gcc/13.3` (`-arch=sm_90a -ptx`, no GPU),
-covering 94 declared PTX assertions. The checker was negative-tested both ways:
-an unsatisfiable assertion and a deliberate compile error each fail it. Two
+`python3 .claude/skills/kernel-design/scripts/check_templates.py` passes 23/23
+on the login node with `cuda/13.1` and `gcc/13.3` (`-arch=sm_90a -ptx`, no GPU).
+The checker was negative-tested both ways: an unsatisfiable assertion and a
+deliberate compile error each fail it. `check_wiki.py` passes 25/25 entries with
+no corpus-wide failure. Two
 claims are carried by compile-time assertions inside the templates rather than
 by prose: that GEMM 1's accumulator and GEMM 2's A operand share a thread
 mapping (template 12), and that the archetype shared-memory pools fit the

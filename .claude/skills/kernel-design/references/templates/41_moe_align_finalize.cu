@@ -32,6 +32,7 @@
 // The permutation is the part to test first: an off-by-one in the inverse map
 // silently mixes tokens between experts and still produces plausible output.
 //
+// CHECK-GRADE: structural
 // CHECK-PTX: atom\.global\.add\.u32
 // CHECK-PTX: griddepcontrol\.wait
 // CHECK-PTX: griddepcontrol\.launch_dependents

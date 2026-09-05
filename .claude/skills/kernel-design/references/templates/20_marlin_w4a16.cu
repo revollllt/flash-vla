@@ -30,6 +30,7 @@
 // Numerical equivalence to a dequantize-then-GEMM reference needs a parity
 // harness -- these bit tricks are exactly where sign and bias errors hide.
 //
+// CHECK-GRADE: structural
 // CHECK-PTX: mma\.sync\.aligned\.m16n8k16\.row\.col\.f32\.bf16\.bf16\.f32
 // CHECK-PTX: lop3\.b32
 // CHECK-PTX: cp\.async\.cg\.shared\.global

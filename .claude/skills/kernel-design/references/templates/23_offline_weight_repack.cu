@@ -56,6 +56,7 @@
 // matching unpack and comparing against the source tensor -- the permutations
 // here are exactly the kind of thing that is silently wrong.
 //
+// CHECK-GRADE: structural
 // CHECK-PTX: cp\.async\.cg\.shared\.global
 // CHECK-PTX: cp\.async\.wait_group
 // CHECK-PTX: shl\.b32

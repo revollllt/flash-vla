@@ -31,6 +31,7 @@
 //
 // Structural only; see 01 for what the PTX assertions do and do not prove.
 //
+// CHECK-GRADE: structural
 // CHECK-PTX: mma\.sync\.aligned\.m16n8k16\.row\.col\.f32\.bf16\.bf16\.f32
 // CHECK-PTX: cp\.async\.cg\.shared\.global
 // CHECK-PTX: ldmatrix\.sync\.aligned\.m8n8\.x4\.shared\.b16

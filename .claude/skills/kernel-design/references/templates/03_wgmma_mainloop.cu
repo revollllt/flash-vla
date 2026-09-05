@@ -23,6 +23,7 @@
 // (MmaSelector + gemm), which is where the fence/arrive/commit/wait contract
 // is owned.
 //
+// CHECK-GRADE: structural
 // CHECK-INCLUDE: third_party/cutlass/include
 // CHECK-PTX: wgmma\.mma_async\.sync\.aligned\.m64n64k16\.f32\.bf16\.bf16
 // CHECK-PTX: wgmma\.fence\.sync\.aligned

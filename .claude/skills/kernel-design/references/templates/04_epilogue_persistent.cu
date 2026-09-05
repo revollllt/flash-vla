@@ -28,6 +28,7 @@
 //
 // Structural only; see 01 for what the PTX assertions do and do not prove.
 //
+// CHECK-GRADE: structural
 // CHECK-PTX: cp\.async\.bulk\.tensor\.2d\.global\.shared::cta\.bulk_group
 // CHECK-PTX: cp\.async\.bulk\.commit_group
 // CHECK-PTX: cp\.async\.bulk\.wait_group\.read

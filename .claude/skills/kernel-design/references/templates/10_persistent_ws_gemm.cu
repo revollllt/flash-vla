@@ -32,6 +32,7 @@
 //
 // Structural only; see 01 for what the PTX assertions do and do not prove.
 //
+// CHECK-GRADE: structural
 // CHECK-INCLUDE: third_party/cutlass/include
 // CHECK-PTX: cp\.async\.bulk\.tensor\.2d\.shared::cluster\.global\.mbarrier::complete_tx::bytes\.multicast::cluster
 // CHECK-PTX: wgmma\.mma_async\.sync\.aligned\.m64n128k16\.f32\.bf16\.bf16

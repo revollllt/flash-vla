@@ -34,6 +34,7 @@
 // that still generates fluent text and scores badly -- parity against the
 // reference implementation is not optional.
 //
+// CHECK-GRADE: structural
 // CHECK-PTX: griddepcontrol\.wait
 // CHECK-PTX: griddepcontrol\.launch_dependents
 // CHECK-PTX: ld\.global(\.nc)?\.v4

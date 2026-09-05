@@ -50,9 +50,13 @@ confidence: measured | source-reported | inferred
 ---
 ```
 
-Body sections, in order: `Context` (when the entry applies), `Move` (the
-rule), then optionally `Why it works` and `Caveats`. External entries add a
-`Source` section with original upstream links.
+Those five keys, in that order, and no others; `id` is the file stem.
+
+A `pattern`, `technique` or `case` opens with `Context` (when the entry
+applies) and `Move` (the rule), then optionally `Why it works` and `Caveats`.
+An `external` entry is a different genre — it distils somebody else's work —
+so it opens with `What to read it for` and closes with `Source`, carrying the
+upstream links and a sentence on what does not transfer.
 
 ## Rules
 
@@ -74,6 +78,25 @@ rule), then optionally `Why it works` and `Caveats`. External entries add a
 - **Entries come only from established results** — a promoted or rejected
   candidate loop, a measured probe, or an authoritative upstream source —
   never from proposals.
+
+## Checking it
+
+```bash
+python3 .claude/skills/kernel-design/scripts/check_wiki.py
+```
+
+Login node, no GPU, no CUDA. It holds the corpus to the rules above: the front
+matter and its vocabulary, the sections each type requires, a symptom row for
+every entry (an entry absent from the table is reachable by grep alone, which
+is what the table exists to prevent), every relative link resolving, and every
+bracketed citation resolving — a machine-constant tag through
+`hardware-unit-test`, an entry id to a live entry — in the templates as well
+as here. It also fails the project history this wiki must not accumulate: job
+ids, project paths, "our kernel".
+
+What it cannot check is whether an entry is still true, or whether its
+`confidence` is honest. Those come from the measurements behind it, which live
+in Agent Notes and per-task workspaces.
 
 ## Origin
 

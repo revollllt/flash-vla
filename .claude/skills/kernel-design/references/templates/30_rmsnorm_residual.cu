@@ -44,6 +44,7 @@
 //
 // Structural only; see 01 for what the PTX assertions do and do not prove.
 //
+// CHECK-GRADE: structural
 // CHECK-PTX: griddepcontrol\.wait
 // CHECK-PTX: griddepcontrol\.launch_dependents
 // CHECK-PTX: shfl\.sync\.bfly

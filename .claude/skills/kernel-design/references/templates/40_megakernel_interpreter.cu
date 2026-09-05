@@ -82,7 +82,7 @@
 // instructions nobody has issued. DeepGEMM's MegaMoE answers it with a warmup
 // wave sized from the per-block ratio of the two stages.
 //
-// MEASURED. H100 SXM5, CUDA 13.0, driver 610.43.02, clocks NOT pinned (no
+// STATUS. H100 SXM5, CUDA 13.0, driver 610.43.02, clocks NOT pinned (no
 // permission on this node, so read these as ratios). d=2048 ffn=8192 bf16,
 // batch 1. CUDA-graph captured, min of 3 x 200 iterations after 50 warmup.
 // Both paths agree with a double-precision CPU reference at 3.813e-03 max
@@ -210,6 +210,7 @@
 // The gencode form matters: plain -arch=sm_90a did not reach ptxas as sm_90a
 // here, and setmaxnreg is rejected on a plain sm_90 target.
 //
+// CHECK-GRADE: reference
 // CHECK-PTX: setmaxnreg\.dec\.sync\.aligned\.u32
 // CHECK-PTX: setmaxnreg\.inc\.sync\.aligned\.u32
 // CHECK-PTX: mbarrier\.init\.shared::cta\.b64

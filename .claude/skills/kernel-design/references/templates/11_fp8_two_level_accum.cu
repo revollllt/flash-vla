@@ -25,6 +25,7 @@
 // Accuracy claims in particular need a parity harness -- this template only
 // shows where the promotion goes.
 //
+// CHECK-GRADE: structural
 // CHECK-INCLUDE: third_party/cutlass/include
 // CHECK-PTX: wgmma\.mma_async\.sync\.aligned\.m64n128k32\.f32\.e4m3\.e4m3
 // CHECK-PTX: wgmma\.commit_group\.sync\.aligned

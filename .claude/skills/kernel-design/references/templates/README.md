@@ -83,10 +83,9 @@ interesting ones.
 
 Where launch cost stops being tunable and becomes structural. Four upstream
 megakernels, one template each, plus the MoE align/finalize pass around the
-grouped GEMM. The megakernel entries are whole machines, not sketches: each
-builds, checks itself against a double-precision reference, times itself under
-a CUDA graph, and carries its measurements in a STATUS block next to the
-upstream's published numbers. The wiki entry
+grouped GEMM. The megakernel entries are the reference-grade ones (below), so
+each carries its own measurements next to the upstream's published numbers.
+The wiki entry
 [`ext-mpk-megakernel`](../wiki/ext-mpk-megakernel.md) holds the rules they
 have in common.
 
@@ -136,9 +135,28 @@ invariants; the templates show what those primitives are doing and what the
 hardware requires, which is what a reviewer and an agent both need when the
 library does not cover a case.
 
-They are **structurally verified only**. The checker proves each declared
-instruction survives codegen — it does not prove any value is correct.
-Numerical authority is a parity harness, per `../parity.md`.
+## Two grades
+
+Every template declares which of two things it is, as `// CHECK-GRADE:`, and
+the checker holds it to that claim.
+
+| Grade | What it is | What it may claim |
+|---|---|---|
+| `structural` | a skeleton: it compiles, and each declared instruction is proven to survive codegen | the mechanism and the decisions behind it — nothing measured |
+| `reference` | a whole machine: it runs, checks itself against a double-precision reference with the device's rounding points, and times itself under a CUDA graph | its own numbers, in a `STATUS` block naming the machine, the toolchain and the build line that reproduces them |
+
+Eighteen are structural; five — `40`, `42`, `43`, `44`, `45` — are reference.
+The split is not a quality ranking. A ladder template exists to show one
+mechanism, and a harness wrapped around it would bury the thing it is there to
+show. The grade is a statement about evidence, and it is enforced in both
+directions: a structural template carrying a `STATUS` block fails, because it
+would be quoting numbers nothing in the file can re-take, and a reference
+template without one fails, because it claims to have been run and shows
+nothing for it.
+
+Numerical authority for a structural template is a parity harness, per
+`../parity.md`. For a reference template it is the in-file check, which needs a
+GPU node — the login node cannot run one.
 
 ## Checking them
 
@@ -148,9 +166,11 @@ export CXX="$(command -v g++)"          # nvcc's default host compiler is GCC 8,
 python3 .claude/skills/kernel-design/scripts/check_templates.py
 ```
 
-Login node, no GPU. Each template declares what must appear in its PTX:
+Login node, no GPU. Each template declares its grade and what must appear in
+its PTX:
 
 ```
+// CHECK-GRADE: structural          structural | reference, required
 // CHECK-ARCH: sm_90a               target, default sm_90a
 // CHECK-INCLUDE: third_party/x     repo-relative -I, repeatable
 // CHECK-PTX: wgmma\.mma_async      regex that must match
@@ -158,13 +178,30 @@ Login node, no GPU. Each template declares what must appear in its PTX:
 ```
 
 A template with no assertion fails: compiling proves nothing on its own, since
-a dead-code-eliminated mainloop still exits zero.
+a dead-code-eliminated mainloop still exits zero. A template with no grade
+fails too — a reader has no way to tell a skeleton from a machine by looking.
+
+The wiki checker covers the other half, the citations these headers make:
+
+```bash
+python3 .claude/skills/kernel-design/scripts/check_wiki.py
+```
+
+Every machine-constant tag a template header cites in brackets must resolve
+through `hardware-unit-test`, and every wiki entry id it cites must name a
+live entry.
 
 ## Rules for adding one
 
 - **One mechanism or one archetype per template**, named in the first line. A
   ladder template stacks on the previous one; an archetype states the decisions
   that distinguish its family and reuses the ladder for everything else.
+- **Declare the grade, and earn it.** `structural` says so in the header and
+  reports no measurement. `reference` carries a `main`, a reference check the
+  reader can run, a build line, and a `STATUS` block stating the machine, the
+  toolchain, whether clocks were pinned, and the floor the numbers are a
+  fraction of. Reporting a loss is a result; a reference template that only
+  ever wins teaches the wrong thing.
 - **Assert the instructions that are the point.** If the template exists to show
   a wgmma batch, assert the wgmma, the fence, the commit and the wait.
 - **Declare every PDL site.** A template using PDL carries

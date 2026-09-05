@@ -12,6 +12,7 @@
 // Structural only.  The PTX assertions prove the instructions survive codegen,
 // not that the values are right; numerical authority is a parity harness.
 //
+// CHECK-GRADE: structural
 // CHECK-PTX: cp\.async\.bulk\.tensor\.2d\.shared::cluster\.global\.mbarrier::complete_tx::bytes
 // CHECK-PTX: mbarrier\.init\.shared::cta\.b64
 // CHECK-PTX: mbarrier\.arrive\.expect_tx\.shared::cta\.b64

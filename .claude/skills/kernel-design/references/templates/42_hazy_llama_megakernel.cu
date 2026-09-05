@@ -121,6 +121,7 @@
 //   ./mk42 partials=4              split attention 4 ways + reduction op
 //   -DMK42_TIMING=1                the VM's own per-instruction profiler
 //
+// CHECK-GRADE: reference
 // CHECK-PTX: setmaxnreg\.inc\.sync\.aligned\.u32
 // CHECK-PTX: mbarrier\.inval\.shared::cta\.b64
 // CHECK-PTX: cp\.async\.bulk\.tensor\.3d\.shared::cluster\.global\.mbarrier::complete_tx::bytes

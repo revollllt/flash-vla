@@ -84,6 +84,7 @@
 //   nvcc -gencode arch=compute_90a,code=sm_90a -O3 -std=c++17 \
 //        -o mk45 45_flag_barrier_megakernel.cu -lcuda && ./mk45
 //
+// CHECK-GRADE: reference
 // CHECK-PTX: createpolicy\.fractional\.L2::evict_first\.b64
 // CHECK-PTX: ld\.global\.L1::no_allocate\.L2::cache_hint\.v4\.b32
 // CHECK-PTX: ld\.global\.L1::no_allocate\.v4\.b32

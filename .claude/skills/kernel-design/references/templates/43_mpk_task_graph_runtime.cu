@@ -106,6 +106,7 @@
 //   ./mk43 prefetch=0                 no cross-task pre-loading
 //   -DMK43_PROFILE=1                  per-task timeline from %globaltimer
 //
+// CHECK-GRADE: reference
 // CHECK-PTX: atom\.add\.release\.gpu\.u64
 // CHECK-PTX: atom\.cas\.release\.gpu\.b64
 // CHECK-PTX: ld\.acquire\.gpu\.u64

@@ -8,6 +8,7 @@ missing from the generated PTX.
 
 Directives, anywhere in the template, one per line:
 
+    // CHECK-GRADE: structural          what the file claims to be (required)
     // CHECK-ARCH: sm_90a               target (default sm_90a)
     // CHECK-INCLUDE: third_party/x     repo-relative -I, repeatable
     // CHECK-PTX: wgmma\\.mma_async      regex that must match the PTX
@@ -19,9 +20,18 @@ checked against its declared assertions.
 
     Exit codes: 0 all templates pass, 1 a template failed, 2 no usable nvcc.
 
-Structural only.  PTX assertions catch a missing or eliminated instruction;
-they do not prove the kernel computes anything.  Numerical authority is the
-parity harness named in each template's header.
+The GRADE is what a reader is entitled to believe.  A `structural` template
+compiles and its instructions survive codegen; nothing in it has been run, so
+it must not carry measurements.  A `reference` template is a whole machine: it
+runs, checks itself against a reference, and reports its own numbers, so it
+must carry the STATUS block those numbers live in and the build line that
+reproduces them.  This script enforces the grade a file declares; it cannot
+tell whether the numbers in a STATUS block are current, which is why the
+STATUS block names the machine and the toolchain it was taken on.
+
+What no grade proves: that the kernel computes the right values.  For a
+`structural` template numerical authority is the parity harness named in its
+header; for a `reference` template it is the in-file check, run on a GPU.
 """
 
 import argparse
@@ -39,8 +49,10 @@ TEMPLATE_DIR = SKILL_DIR / "references" / "templates"
 REPO_ROOT = SKILL_DIR.parent.parent.parent
 
 DIRECTIVE_RE = re.compile(
-    r"^\s*//\s*CHECK-(ARCH|INCLUDE|PTX-COUNT|PTX)\s*:\s*(.+?)\s*$", re.MULTILINE
+    r"^\s*//\s*CHECK-(GRADE|ARCH|INCLUDE|PTX-COUNT|PTX)\s*:\s*(.+?)\s*$", re.MULTILINE
 )
+
+GRADES = ("structural", "reference")
 
 
 MODULE_HINT = (
@@ -79,9 +91,11 @@ def find_ccbin(explicit=None):
 
 
 def parse_directives(text):
-    arch, includes, checks, counts = "sm_90a", [], [], []
+    grade, arch, includes, checks, counts = None, "sm_90a", [], [], []
     for kind, value in DIRECTIVE_RE.findall(text):
-        if kind == "ARCH":
+        if kind == "GRADE":
+            grade = value
+        elif kind == "ARCH":
             arch = value
         elif kind == "INCLUDE":
             includes.append(value)
@@ -90,7 +104,38 @@ def parse_directives(text):
         elif kind == "PTX-COUNT":
             n, _, pattern = value.partition(" ")
             counts.append((int(n), pattern.strip()))
-    return arch, includes, checks, counts
+    return grade, arch, includes, checks, counts
+
+
+def check_grade(grade, text):
+    """The grade is a promise to the reader; this is the promise's terms.
+
+    Both directions matter.  A `reference` file without a STATUS block claims
+    to have been run and shows nothing for it.  A `structural` file WITH one
+    carries numbers no harness in the file can reproduce, which is how a
+    template starts quoting a measurement nobody can re-take.
+    """
+    if grade is None:
+        return [f"declares no CHECK-GRADE ({' | '.join(GRADES)})"]
+    if grade not in GRADES:
+        return [f"CHECK-GRADE is {grade!r}, not one of {GRADES}"]
+
+    has_status = re.search(r"^//\s*STATUS\b", text, re.M) is not None
+    notes = []
+    if grade == "reference":
+        if "int main(" not in text:
+            notes.append("graded reference but has no `int main(` to run")
+        if not has_status:
+            notes.append("graded reference but carries no `// STATUS` block")
+        if not re.search(r"^//.*\bnvcc\b", text, re.M):
+            notes.append("graded reference but documents no nvcc build line")
+    else:
+        if has_status:
+            notes.append("graded structural but carries a `// STATUS` block; "
+                         "a file that reports numbers has to be able to produce them")
+        if not re.search(r"structural only", text, re.I):
+            notes.append("graded structural but does not say so in its header")
+    return notes
 
 
 def check_pdl_annotations(text):
@@ -105,8 +150,8 @@ def check_pdl_annotations(text):
 
 def check_one(path, nvcc, ccbin, keep_dir):
     text = path.read_text()
-    arch, includes, checks, counts = parse_directives(text)
-    failures = check_pdl_annotations(text)
+    grade, arch, includes, checks, counts = parse_directives(text)
+    failures = check_grade(grade, text) + check_pdl_annotations(text)
     if not checks and not counts:
         failures.append("declares no CHECK-PTX assertion")
 
@@ -121,7 +166,7 @@ def check_one(path, nvcc, ccbin, keep_dir):
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         tail = (proc.stderr or proc.stdout).strip().splitlines()
-        return False, ["compile failed:"] + [f"    {line}" for line in tail[:12]], cmd
+        return False, ["compile failed:"] + [f"    {line}" for line in tail[:12]], cmd, grade
 
     # -ptx stops before ptxas, so it accepts instructions the assembler will
     # reject -- setmaxnreg on a plain sm_90 target, for one.  Assemble for real
@@ -133,7 +178,7 @@ def check_one(path, nvcc, ccbin, keep_dir):
     )
     if asm.returncode != 0:
         tail = (asm.stderr or asm.stdout).strip().splitlines()
-        return False, ["ptxas failed:"] + [f"    {line}" for line in tail[:8]], cmd
+        return False, ["ptxas failed:"] + [f"    {line}" for line in tail[:8]], cmd, grade
 
     ptx = ptx_path.read_text()
     for pattern in checks:
@@ -143,7 +188,7 @@ def check_one(path, nvcc, ccbin, keep_dir):
         hits = len(re.findall(pattern, ptx))
         if hits < n:
             failures.append(f"PTX has {hits} of >= {n} /{pattern}/")
-    return not failures, failures, cmd
+    return not failures, failures, cmd, grade
 
 
 def main():
@@ -173,17 +218,19 @@ def main():
         return 1
 
     print(f"nvcc {nvcc}" + (f"  ccbin {ccbin}" if ccbin else ""))
-    failed = 0
+    failed, graded = 0, {}
     for path in templates:
-        ok, notes, cmd = check_one(path, nvcc, ccbin, args.keep)
-        print(f"{'PASS' if ok else 'FAIL'}  {path.name}")
+        ok, notes, cmd, grade = check_one(path, nvcc, ccbin, args.keep)
+        graded[grade] = graded.get(grade, 0) + 1
+        print(f"{'PASS' if ok else 'FAIL'}  {(grade or 'ungraded')[:10]:10s}  {path.name}")
         if args.verbose:
             print("      " + " ".join(cmd))
         if not ok:
             failed += 1
             for note in notes:
                 print(f"      {note}")
-    print(f"\n{len(templates) - failed}/{len(templates)} templates pass")
+    tally = ", ".join(f"{n} {g or 'ungraded'}" for g, n in sorted(graded.items()))
+    print(f"\n{len(templates) - failed}/{len(templates)} templates pass ({tally})")
     return 1 if failed else 0
 
 
