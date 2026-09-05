@@ -1,0 +1,273 @@
+"""End-to-end latency of any Target through the engine protocol.
+
+    python -m benchmarks latency --target h100/pi05 --plan tilelang
+    python -m benchmarks latency --target h100/pi05 --plan a --plan b --plan a   # A/B/A
+    python -m benchmarks latency --target h100/pi05 --plan a --calibrate         # a, a, a
+
+One request, batch 1, the Target's fixed shapes, clocks unlocked. Every
+metric of `docs/architecture/31-latency-evaluation.md` is reported with
+`min`, `median` and `p99`:
+
+  chunk_latency     wall clock from inputs available to the chunk available:
+                    staging, host slots, every segment launch and replay
+  device_latency    CUDA-event time around the same forward
+  host_time         wall clock of each declared host slot
+  segment_latency   each segment replayed alone, back to back, no host gap
+  overhead          chunk latency minus the sum of segment latencies
+
+Deltas are read only within one process. Legs run in the order given; a leg
+whose plan repeats the first leg's is a control leg, and the spread between
+control legs is the run's minimum detectable effect per statistic. A delta
+below it is reported as indistinguishable. `--calibrate` runs the first plan
+three times to measure that spread on its own.
+
+The runner contains no model or stage names: it builds the engine through
+`benchmarks.targets`, takes the program from the engine, and samples inputs
+from it. Verdicts are not produced here; the promotion gate reads this report
+against the acceptance registry.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import platform
+import statistics
+import time
+from typing import Any, Callable
+
+import torch
+
+from eval.acceptance import DEFAULTS
+from flash_vla.runtime.engine import host_slots, segments
+
+from .metrics import env_block, require_cuda
+from .plans import PLANS
+from .targets import build, resolve
+
+_LAT = DEFAULTS["latency"]
+
+
+def _stats(samples: list[float], p99_min_reps: int) -> dict[str, Any]:
+    ordered = sorted(samples)
+    n = len(ordered)
+    out = {"min": ordered[0], "median": statistics.median(ordered), "n": n}
+    if n >= p99_min_reps:
+        out["p99"] = ordered[min(n - 1, int(round(0.99 * (n - 1))))]
+    else:
+        out["p99"] = None
+        out["p99_note"] = f"insufficient: {n} < {p99_min_reps} repetitions"
+    return out
+
+
+def _time_wall(call: Callable[[], Any], reps: int, warmup: int) -> list[float]:
+    for _ in range(warmup):
+        call()
+    torch.cuda.synchronize()
+    samples = []
+    for _ in range(reps):
+        start = time.perf_counter()
+        call()
+        torch.cuda.synchronize()
+        samples.append((time.perf_counter() - start) * 1e3)
+    return samples
+
+
+def _time_event(call: Callable[[], Any], reps: int, warmup: int) -> list[float]:
+    for _ in range(warmup):
+        call()
+    torch.cuda.synchronize()
+    samples = []
+    for _ in range(reps):
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        call()
+        end.record()
+        torch.cuda.synchronize()
+        samples.append(start.elapsed_time(end))
+    return samples
+
+
+def measure(engine, inputs: dict[str, Any], reps: int, warmup: int,
+            p99_min_reps: int) -> dict[str, Any]:
+    """Every latency metric of one engine on `inputs`, min/median/p99 each."""
+    engine.forward(**inputs)                     # settles any host-side state
+    torch.cuda.synchronize()
+    forward = lambda: engine.forward(**inputs)   # noqa: E731
+    metrics: dict[str, Any] = {
+        "chunk_latency": _stats(_time_wall(forward, reps, warmup), p99_min_reps),
+        "device_latency": _stats(_time_event(forward, reps, warmup), p99_min_reps),
+        "host_time": {},
+        "segment_latency": {},
+    }
+    for slot in host_slots(engine):
+        metrics["host_time"][slot] = _stats(
+            _time_wall(lambda slot=slot: engine.host(slot, **inputs), reps, warmup),
+            p99_min_reps)
+    for name in segments(engine):
+        metrics["segment_latency"][name] = _stats(
+            _time_event(lambda name=name: engine.replay(name), reps, warmup), p99_min_reps)
+    overhead = {}
+    for stat in ("min", "median"):
+        overhead[stat] = metrics["chunk_latency"][stat] - sum(
+            s[stat] for s in metrics["segment_latency"].values())
+    metrics["overhead"] = overhead
+    return metrics
+
+
+def _flatten(metrics: dict[str, Any]) -> dict[str, float]:
+    """`metric.stat` -> value, segments and host slots by name."""
+    flat: dict[str, float] = {}
+    for metric, value in metrics.items():
+        if metric in ("host_time", "segment_latency"):
+            for name, stats in value.items():
+                for stat in ("min", "median", "p99"):
+                    if stats.get(stat) is not None:
+                        flat[f"{metric}.{name}.{stat}"] = stats[stat]
+        elif metric == "overhead":
+            for stat, v in value.items():
+                flat[f"overhead.{stat}"] = v
+        else:
+            for stat in ("min", "median", "p99"):
+                if value.get(stat) is not None:
+                    flat[f"{metric}.{stat}"] = value[stat]
+    return flat
+
+
+def _deltas(legs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Per-leg deltas against the first leg, and the control spread."""
+    first = _flatten(legs[0]["metrics"])
+    control = [leg for leg in legs[1:] if leg["plan"] == legs[0]["plan"]]
+    spread: dict[str, float] = {}
+    for leg in control:
+        for key, value in _flatten(leg["metrics"]).items():
+            if key in first:
+                spread[key] = max(spread.get(key, 0.0), abs(value - first[key]))
+    out = {"reference_leg": 0, "control_legs": len(control),
+           "minimum_detectable_effect": spread or None, "legs": []}
+    for index, leg in enumerate(legs[1:], start=1):
+        flat = _flatten(leg["metrics"])
+        deltas = {}
+        for key, value in flat.items():
+            if key not in first:
+                continue
+            delta = value - first[key]
+            entry: dict[str, Any] = {"delta": delta}
+            if key in spread:
+                entry["distinguishable"] = abs(delta) > spread[key]
+            deltas[key] = entry
+        out["legs"].append({"leg": index, "plan": leg["plan"],
+                            "same_plan_as_reference": leg["plan"] == legs[0]["plan"],
+                            "deltas": deltas})
+    return out
+
+
+def _env() -> dict[str, Any]:
+    env = env_block()
+    env.update({
+        "node": platform.node(),
+        "job": os.environ.get("SLURM_JOB_ID"),
+        "driver": _driver_version(),
+        "clocks": _LAT["clocks"],
+    })
+    return env
+
+
+def parse_options(items: list[str]) -> dict[str, Any]:
+    """`key=value` strings to a dict; true/false and integers are converted."""
+    out: dict[str, Any] = {}
+    for item in items:
+        key, _, value = item.partition("=")
+        low = value.lower()
+        out[key] = (True if low == "true" else False if low == "false"
+                    else int(value) if value.lstrip("-").isdigit() else value)
+    return out
+
+
+def _driver_version() -> str | None:
+    try:
+        import subprocess
+        out = subprocess.run(["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
+                             capture_output=True, text=True, timeout=10)
+        return out.stdout.strip().splitlines()[0] if out.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, IndexError):
+        return None
+
+
+def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
+        warmup: int = _LAT["warmup"], seed: int = 0, calibrate: bool = False,
+        **overrides) -> dict[str, Any]:
+    """Build one engine per leg, measure it, and report legs, deltas and calibration."""
+    require_cuda()
+    torch.cuda.init()
+    target = resolve(target)
+    if calibrate:
+        plans = [plans[0]] * 3
+    legs = []
+    for index, plan in enumerate(plans):
+        print(f"== leg {index}: {target} plan={plan}", flush=True)
+        engine = build(target, plan, seed=seed, **overrides)
+        inputs = engine.sample_inputs(seed)
+        legs.append({"leg": index, "plan": plan, "identity": engine.identity.as_dict(),
+                     "metrics": measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"])})
+        print(json.dumps(legs[-1]["metrics"]), flush=True)
+        del engine
+        torch.cuda.empty_cache()
+
+    for leg in legs[1:]:
+        a, b = legs[0]["identity"], leg["identity"]
+        same_workload = all(a[k] == b[k] for k in ("target", "hardware", "model", "shape",
+                                                   "precision"))
+        if not same_workload:
+            raise ValueError(f"leg {leg['leg']} is not the same workload as leg 0; "
+                             "legs of one run may differ in plan and options only")
+
+    report = {
+        "identity": legs[0]["identity"],
+        "env": _env(),
+        "config": {"reps": reps, "warmup": warmup, "seed": seed, "plans": plans,
+                   "calibration": calibrate, "statistics": list(_LAT["statistics"]),
+                   "p99_min_reps": _LAT["p99_min_reps"]},
+        "legs": legs,
+        "deltas": _deltas(legs) if len(legs) > 1 else None,
+        "floors": None,        # from the floor model, once it exists
+    }
+    if calibrate:
+        report["calibration"] = report["deltas"]["minimum_detectable_effect"]
+    return report
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0],
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--target", required=True, help="h100/pi05, h100/pi0, or a full name")
+    parser.add_argument("--plan", action="append", default=None,
+                        help=f"a plan name ({', '.join(sorted(PLANS))}) or JSON; repeat for A/B/A")
+    parser.add_argument("--reps", type=int, default=_LAT["reps"])
+    parser.add_argument("--warmup", type=int, default=_LAT["warmup"])
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--calibrate", action="store_true",
+                        help="run the first plan three times and report the spread")
+    parser.add_argument("--steps", type=int, default=None)
+    parser.add_argument("--layers", type=int, default=None)
+    parser.add_argument("--option", action="append", default=[],
+                        help="target-local option as key=value (e.g. fused=false), every leg")
+    parser.add_argument("--out", default=None, help="write the JSON report here")
+    args = parser.parse_args(argv)
+    overrides = {k: v for k, v in (("steps", args.steps), ("layers", args.layers))
+                 if v is not None}
+    overrides.update(parse_options(args.option))
+    report = run(args.target, args.plan or [None], reps=args.reps, warmup=args.warmup,
+                 seed=args.seed, calibrate=args.calibrate, **overrides)
+    text = json.dumps(report, indent=2)
+    print(text)
+    if args.out:
+        os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+        with open(args.out, "w") as f:
+            f.write(text)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

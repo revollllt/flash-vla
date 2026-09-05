@@ -3,9 +3,13 @@
 Status: partial. The five metrics live in one module
 (`eval/correctness/metrics.py`) that every parity script imports; thresholds
 come from the acceptance registry keyed by precision policy; engine-level
-reports carry the identity block. The Pi0.5 Target has the in-engine and
-official-baseline oracle tiers with stage injection for the decoder. The
-generic runner and the fixed report schema are planned.
+reports carry the identity block. The in-engine tier has a generic runner
+(`python -m eval.correctness.in_engine`) that compares any candidate plan or
+table option against the Target's reference, segment by segment over the
+outputs the Target declares, with oracle injection, per-layer profiles,
+padded-allocation finiteness and replay determinism. The official-baseline
+tier stays per model (its adapters are model-specific) and is registered per
+Target in the acceptance registry.
 
 ## Levels
 
@@ -59,10 +63,13 @@ one.
 2. **Truncate both sides.** When depth is cut for bisection, the oracle is cut
    to the same depth.
 3. **Stage isolation by oracle injection.** To measure one stage, its upstream
-   inputs are taken from the oracle and written into the Target's stage
-   buffers through the engine protocol, so upstream drift does not mix into
-   the number. The full end-to-end comparison is read after the isolated one
-   passes, never instead of it.
+   inputs are taken from the oracle and written into the Target's declared
+   stage outputs through the engine protocol, so upstream drift does not mix
+   into the number. The full end-to-end comparison is read after the isolated
+   one passes, never instead of it. A Target declares each segment's outputs
+   by buffer name with the axis that indexes layers where one exists; a
+   contract region of a larger buffer (the prefix rows of a KV cache) is
+   declared as a named alias view so the harness never learns the layout.
 4. **Per-layer smoothness.** Where a stage repeats a layer, the metric profile
    is reported per layer: tight at layer 0, a floor at depth, and a maximum
    step between consecutive layers. A step change is a bug at that layer,
@@ -102,7 +109,7 @@ One JSON document per comparison:
 - Baseline adapters live under `eval/baselines/` and expose the canonical
   inputs, the final output and named stage tensors without becoming a
   dependency of production code.
-- The generic runner (planned) reads the acceptance registry's correctness list,
-  executes each check through the engine protocol and the adapters, and emits
-  the schema; the Target contributes the oracle adapters, the stage exposure
-  and the thresholds.
+- The generic in-engine runner executes the in-engine checks of the
+  acceptance registry through the engine protocol; the Target contributes
+  its factory, its declared stage outputs and, for the baseline tier, its
+  adapters and scripts. The promotion gate (planned) sequences both tiers.

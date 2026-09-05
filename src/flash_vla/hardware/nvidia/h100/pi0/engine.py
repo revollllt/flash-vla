@@ -41,6 +41,10 @@ class Pi0Inference:
 
     #: One segment and no host work: the engine protocol's `program`.
     program: tuple[Step, ...] = (Step("segment", "forward"),)
+    #: What the segment produces: the chunk and the layer-major KV cache.
+    stage_outputs = {
+        "forward": (("diffusion_noise", None), ("encoder_K", 0), ("encoder_V", 0)),
+    }
 
     def __init__(self, checkpoint, num_views: int, chunk_size: int, steps: int = 10,
                  layers: int = 18, fused: bool = True, device: str = "cuda"):
@@ -89,6 +93,16 @@ class Pi0Inference:
         """Pi0 has no host slot; every input is a device copy."""
         raise KeyError(f"no host slot {slot!r}; this engine has none")
 
+    def allocation(self, name: str) -> torch.Tensor:
+        """The base allocation behind buffer `name`, padding included."""
+        return self.arena.allocation(name)
+
+    def stage(self, images, state, noise, **_) -> None:
+        """Copy the three inputs into their static buffers."""
+        self.buffers["observation_images_normalized"].copy_(images)
+        self.buffers["observation_state_normalized"].copy_(state)
+        self.buffers["diffusion_noise"].copy_(noise)
+
     def sample_inputs(self, seed: int = 0) -> dict[str, torch.Tensor]:
         """Seeded random inputs at this engine's shapes: images, state, noise."""
         generator = torch.Generator(device=self.device).manual_seed(seed)
@@ -102,8 +116,6 @@ class Pi0Inference:
 
     def forward(self, images, state, noise):
         """Copy inputs into the static buffers, replay the segment, return the denoised chunk."""
-        self.buffers["observation_images_normalized"].copy_(images)
-        self.buffers["observation_state_normalized"].copy_(state)
-        self.buffers["diffusion_noise"].copy_(noise)
+        self.stage(images=images, state=state, noise=noise)
         self.replay("forward")
         return self.buffers["diffusion_noise"]

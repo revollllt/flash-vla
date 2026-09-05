@@ -61,6 +61,13 @@ class Pi05Inference:
         Step("segment", "prefix"),
         Step("segment", "decoder"),
     )
+    #: What each segment produces, for comparison and oracle injection. The
+    #: KV cache is layer-major, so its layer axis is 0.
+    stage_outputs = {
+        "vision": (("vision_x", None),),
+        "prefix": (("prefix_K", 0), ("prefix_V", 0)),
+        "decoder": (("diffusion_noise", None), ("suffix_K", 0), ("suffix_V", 0)),
+    }
 
     def __init__(self, checkpoint, tokenizer, num_views: int, chunk_size: int,
                  steps: int = 10, layers: int = ENCODER_LAYERS, fused: bool = True,
@@ -140,6 +147,15 @@ class Pi05Inference:
         """Replay one captured segment on the current stream."""
         self.graphs.replay(segment)
 
+    def allocation(self, name: str) -> torch.Tensor:
+        """The base allocation behind buffer `name`, padding included."""
+        return self.arena.allocation(name)
+
+    def stage(self, images: torch.Tensor, noise: torch.Tensor, **_) -> None:
+        """Copy the device inputs in; the state goes through the host slot."""
+        self.buffers["observation_images_normalized"].copy_(images)
+        self.buffers["diffusion_noise"].copy_(noise)
+
     def host(self, slot: str, state=None, **_) -> None:
         """Run the one host slot: tokenize `state` and stage the prompt inputs.
 
@@ -183,13 +199,14 @@ class Pi05Inference:
         `noise` is copied up front rather than between the prefix and decoder
         replays, so nothing on the host separates them.
         """
-        self.buffers["diffusion_noise"].copy_(noise)
-        self.forward_prefix(images, state)
+        self.stage(images=images, noise=noise)
+        self.replay("vision")
+        self.host("tokenize", state=state)
+        self.replay("prefix")
         self.replay("decoder")
         return self.buffers["diffusion_noise"]
 
     @property
     def kv_cache(self) -> tuple[torch.Tensor, torch.Tensor]:
         """The prefix K and V the decoder attends over, trimmed to the prefix."""
-        return (self.buffers["encoder_K"][:, :self.encoder_seq_len],
-                self.buffers["encoder_V"][:, :self.encoder_seq_len])
+        return self.buffers["prefix_K"], self.buffers["prefix_V"]

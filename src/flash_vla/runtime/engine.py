@@ -27,9 +27,17 @@ class Engine(Protocol):
     buffers: Mapping[str, torch.Tensor]
     #: The forward pass as an ordered list of graph segments and host slots.
     program: tuple[Step, ...]
+    #: The buffers each segment produces as its contract, with the axis that
+    #: indexes layers where one exists: segment -> ((buffer, layer_axis), ...).
+    #: A correctness harness compares these and may inject an oracle's values
+    #: into them; a padded region behind them must stay finite.
+    stage_outputs: Mapping[str, tuple[tuple[str, int | None], ...]]
 
     def sample_inputs(self, seed: int = 0) -> dict[str, Any]:
         """Seeded inputs at this engine's shapes, for measurement and comparison."""
+
+    def stage(self, **inputs: Any) -> None:
+        """Copy the device inputs into their static addresses; run nothing."""
 
     def forward(self, **inputs: Any) -> torch.Tensor:
         """Stage the inputs, run every step in order, return the output view."""
@@ -39,6 +47,9 @@ class Engine(Protocol):
 
     def host(self, slot: str, **inputs: Any) -> None:
         """Run one host slot: the host work that sits between two segments."""
+
+    def allocation(self, name: str) -> torch.Tensor:
+        """The base allocation behind buffer `name`, padding included."""
 
 
 def segments(engine: Engine) -> tuple[str, ...]:

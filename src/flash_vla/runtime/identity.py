@@ -62,9 +62,18 @@ class Identity:
                 "precision": self.precision, "plan": dict(self.plan),
                 "options": dict(self.options), "revision": self.revision}
 
-    def comparable(self, other: "Identity") -> bool:
-        """Whether a measurement under `self` may be compared with one under `other`."""
+    def same_workload(self, other: "Identity") -> bool:
+        """Same Target, shape and precision; plan and options may differ.
+
+        This is the relation between the legs of an A/B/A: a candidate
+        implementation (a plan, or a table option such as a fused overlay)
+        against the reference on one workload.
+        """
         return (self.target == other.target and self.hardware == other.hardware
                 and self.model == other.model and dict(self.shape) == dict(other.shape)
-                and self.precision == other.precision and dict(self.plan) == dict(other.plan)
+                and self.precision == other.precision)
+
+    def comparable(self, other: "Identity") -> bool:
+        """Whether a measurement under `self` may be compared with one under `other`."""
+        return (self.same_workload(other) and dict(self.plan) == dict(other.plan)
                 and dict(self.options) == dict(other.options))

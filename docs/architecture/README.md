@@ -74,11 +74,12 @@ Earlier drafts used "Task" for the co-designed unit; that word is retired.
 | Target-declared buffer plan materialized by the runtime (`StaticArena`) | implemented; both Targets declare their plans |
 | Segment list with host slots, shared lifecycle (warmup, freeze, capture, replay) (`Program`) | implemented; both engines construct through it |
 | Op-table binding before capture, per-call-site plans, backend-declared route constraints | implemented (`runtime/binding`) |
-| Engine protocol (`runtime/engine.Engine`) and identity property | implemented; both engines satisfy it, engine-level reports carry the identity, no generic harness consumes the protocol yet |
+| Engine protocol (`runtime/engine.Engine`) and identity property | implemented; both engines satisfy it, engine-level reports carry the identity, the generic runners consume it |
 | Acceptance registry with framework defaults and per-Target entries | implemented (`eval/acceptance.py`); no consumer turns it into a verdict yet |
 | Call-site cost declarations and the floor model | planned; one decoder roofline exists, hard-coded and datasheet-based |
 | Shared correctness metrics module | implemented (`eval/correctness/metrics.py`); every parity script imports it |
-| Generic e2e latency runner with a fixed report schema | planned; two divergent per-model harnesses exist |
+| Generic e2e latency runner with a fixed report schema, A/B/A deltas and noise calibration | implemented (`benchmarks/latency.py`); floors empty until the floor model exists |
+| Generic in-engine correctness runner (stage outputs, oracle injection, per-layer profiles) | implemented (`eval/correctness/in_engine.py`); the baseline tier stays per model |
 | Skills: kernel-design, benchmark-kernel, hardware-unit-test, gpu-profiler-analysis, ncu-report | implemented |
 | Target-onboarding skill | planned |
 | Agent Notes lifecycle | implemented |

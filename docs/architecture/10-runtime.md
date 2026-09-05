@@ -31,7 +31,10 @@ never move for the engine's lifetime, and hands the Target the named buffers.
 
 The Target's declaration is authoritative. The pipeline writes into these
 buffers in place through explicit destination parameters; the runtime does not
-know which call site touches which buffer.
+know which call site touches which buffer. An entry may alias another entry's
+allocation and expose a region of it under its own name, which is how a
+Target names a segment's contract region (the prefix rows of a KV cache)
+without a copy.
 
 ### ScratchPool
 
@@ -108,9 +111,14 @@ public face and the only thing the harnesses may depend on:
   measurement and comparison;
 - **forward**: inputs in, output views out;
 - **segments**: the ordered names, replay of one segment, and the host slots;
-- **stage buffers**: named access to the buffers at segment boundaries, so a
-  correctness harness can inject an oracle's stage output and read the
-  Target's;
+- **stage outputs**: per segment, the buffers it produces as its contract,
+  each with the axis that indexes layers where one exists, so a correctness
+  harness can compare them, inject an oracle's values into them, and check
+  the padded allocation behind them for finiteness;
+- **stage**: copy the device inputs into their static addresses without
+  running a step, so a harness can run the program one step at a time;
+- **allocation**: the base allocation behind a named buffer, padding
+  included;
 - **plan**: the resolved route.
 
 Everything model-specific that a harness needs (which buffers form the KV

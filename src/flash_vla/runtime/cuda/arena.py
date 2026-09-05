@@ -39,11 +39,17 @@ class Buffer:
     a callable of the device returning a tensor; a tensor or callable must
     match the allocation shape, so a value that lives in the padding (a mask
     bias on padded keys) is declared together with the buffer it pads.
+
+    `alias` names another entry whose allocation this one views instead of
+    owning its own: `shape`, `dtype` and `init` are then taken from that entry
+    and `view` cuts the region. This is how a Target names a stage's contract
+    region of a larger buffer (the prefix rows of a KV cache) without a copy.
     """
-    shape: tuple[int, ...]
+    shape: tuple[int, ...] = ()
     dtype: torch.dtype = torch.bfloat16
     init: Init = "empty"
     view: tuple[slice, ...] | None = None
+    alias: str | None = None
 
     def exposed_shape(self) -> tuple[int, ...]:
         """The shape the pipeline sees."""
@@ -62,8 +68,18 @@ class StaticArena:
         self.base: dict[str, torch.Tensor] = {}
         self.buffers: dict[str, torch.Tensor] = {}
         for name, spec in self.plan.items():
+            if spec.alias is not None:
+                continue
             base = self._materialize(name, spec)
             self.base[name] = base
+            self.buffers[name] = base if spec.view is None else base[spec.view]
+        for name, spec in self.plan.items():
+            if spec.alias is None:
+                continue
+            if spec.alias not in self.base:
+                raise KeyError(f"buffer {name!r} aliases {spec.alias!r}, which is not an "
+                               "allocation in this plan")
+            base = self.base[spec.alias]
             self.buffers[name] = base if spec.view is None else base[spec.view]
 
     def _materialize(self, name: str, spec: Buffer) -> torch.Tensor:
@@ -88,6 +104,11 @@ class StaticArena:
     def nbytes(self) -> int:
         """Bytes held by the base allocations."""
         return sum(t.numel() * t.element_size() for t in self.base.values())
+
+    def allocation(self, name: str) -> torch.Tensor:
+        """The base allocation behind buffer `name`, padding included."""
+        spec = self.plan[name]
+        return self.base[spec.alias if spec.alias is not None else name]
 
     def __getitem__(self, name: str) -> torch.Tensor:
         return self.buffers[name]

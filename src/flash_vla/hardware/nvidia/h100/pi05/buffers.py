@@ -138,6 +138,15 @@ def buffer_plan(num_views: int, chunk_size: int,
                             view=(slice(None), slice(0, cache_len))),
         "encoder_V": Buffer((ENCODER_LAYERS, cache_pad, HEAD_DIM), init="zero",
                             view=(slice(None), slice(0, cache_len))),
+        # The prefix rows are the prefix segment's contract and the suffix rows
+        # the decoder's; both are views on the same cache, named so a harness
+        # can compare or inject one without knowing the layout.
+        "prefix_K": Buffer(alias="encoder_K", view=(slice(None), slice(0, encoder_seq_len))),
+        "prefix_V": Buffer(alias="encoder_V", view=(slice(None), slice(0, encoder_seq_len))),
+        "suffix_K": Buffer(alias="encoder_K",
+                           view=(slice(None), slice(encoder_seq_len, cache_len))),
+        "suffix_V": Buffer(alias="encoder_V",
+                           view=(slice(None), slice(encoder_seq_len, cache_len))),
         "encoder_Q": Buffer((encoder_seq_len * DECODER_HEADS, HEAD_DIM)),
         # Destination for the fused CUDA encoder attention; the reference torch
         # route allocates its own result and leaves this idle. Either way the

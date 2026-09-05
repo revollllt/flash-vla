@@ -1,10 +1,11 @@
 # End-to-End Latency Evaluation
 
-Status: partial. The Pi0.5 harness reports wall, device, host and per-stage
-times; the Pi0 harness reports only whole-forward event times; the two report
-shapes differ. The generic runner, the fixed report schema and the noise
-calibration are planned. The Pi0.5 harness's stage floors predate the
-measured-tag rule and are replaced by the generic runner's.
+Status: partial. The generic runner (`python -m benchmarks latency`) measures
+any Target through the engine protocol, emits the report schema below, reads
+A/B/A deltas against the control spread and runs the noise calibration. The
+older per-model harnesses remain for their profile checks; the Pi0.5 one
+still carries datasheet-based stage floors, which the floor model replaces.
+Floors in the generic report are empty until the floor model exists.
 
 ## Scope
 
@@ -86,10 +87,15 @@ One JSON document per run:
 - `verdict`: absent from a harness report. Verdicts are produced only by the
   promotion gate against the acceptance registry.
 
-## Generic runner (planned)
+## Generic runner
 
 The runner constructs the engine through the engine protocol
-([`10-runtime.md`](10-runtime.md)), takes the segment list and host slots from
-it, generates inputs from the Target's seeded sampler, and emits the schema
-above. Per-Target code is the input sampler and the acceptance module; the runner
-contains no model or stage names.
+([`10-runtime.md`](10-runtime.md)) via the Target factory registry
+(`benchmarks/targets.py`, the one place Targets are named), takes the segment
+list and host slots from the engine, generates inputs from the Target's
+seeded sampler, and emits the schema above. Legs run in the order given; a
+leg whose plan repeats the first leg's is a control leg, the spread between
+control legs is the minimum detectable effect, and every delta is marked
+distinguishable or not against it. Per-Target code is the factory, the input
+sampler and the acceptance entry; the runner contains no model or stage
+names.
