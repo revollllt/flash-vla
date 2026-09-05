@@ -55,8 +55,10 @@ def buffer_plan(num_views: int, chunk_size: int,
         "encoder_rope_weights": Buffer((encoder_seq_len, HEAD_DIM), init=encoder_rope),
         "encoder_x": Buffer((encoder_seq_len, 2048)),
         "encoder_x_norm": Buffer((encoder_seq_len, 2048)),
-        "encoder_K": Buffer((ENCODER_LAYERS, cache_len, HEAD_DIM)),
-        "encoder_V": Buffer((ENCODER_LAYERS, cache_len, HEAD_DIM)),
+        # Zeroed so the slots of layers a bisected run never writes stay
+        # finite, as in Pi0.5; a full-depth run overwrites every slot.
+        "encoder_K": Buffer((ENCODER_LAYERS, cache_len, HEAD_DIM), init="zero"),
+        "encoder_V": Buffer((ENCODER_LAYERS, cache_len, HEAD_DIM), init="zero"),
         "encoder_Q": Buffer((encoder_seq_len * DECODER_HEADS, HEAD_DIM)),
         "encoder_hidden": Buffer((encoder_seq_len, 16384)),
         "decoder_rope_weights": Buffer((decoder_seq_len, HEAD_DIM), init=decoder_rope),

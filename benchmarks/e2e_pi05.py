@@ -24,6 +24,11 @@ make its own unreliability visible.
 Unlike Pi0's `e2e`, there is no fused/unfused axis: Pi0.5 v1 has exactly one
 implementation per call site. Numerical parity is read separately
 (`eval.correctness.pi05.kernel_parity`, then suffix parity against OpenPI).
+
+Floors are not reported here: `python -m benchmarks floor` derives them from
+measured hardware constants, and `python -m benchmarks latency` is the
+generic runner with the A/B/A discipline. This harness stays for its
+production-graph structure checks.
 """
 from __future__ import annotations
 
@@ -41,11 +46,6 @@ from .metrics import require_cuda
 from .plans import PLANS, parse_plan
 
 DEFAULT_PROMPT = "pick up the plate and put it in the sink"
-
-#: Analytic per-stage floors from PLAN.md §1.2, at 3 views / prompt 200 /
-#: chunk 50 / 10 steps on an H100 SXM5 at 989 TFLOP/s bf16 and 3.35 TB/s.
-FLOOR_MS = {"vision": 0.66, "prefix": 3.88, "decoder": 1.88}
-
 
 def _time_event(call, reps: int, warmup: int = 3) -> dict[str, float]:
     """Median/min ms of device time for `call`, CUDA-event timed."""
@@ -197,9 +197,6 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
                 f"{split_producer_nodes}")
     for name in ("vision", "prefix", "decoder"):
         stage = _time_event(lambda name=name: engine.replay(name), reps)
-        stage["floor_ms"] = FLOOR_MS.get(name)
-        if stage["floor_ms"]:
-            stage["above_floor"] = round(stage["median_ms"] / stage["floor_ms"], 2)
         report["stages"][name] = stage
 
     total = sum(report["stages"][s]["median_ms"] for s in report["stages"])
@@ -212,9 +209,6 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
     report["launch_overhead_ms"] = round(report["forward_device"]["min_ms"] - total, 3)
     report["forward_device_median_note"] = (
         "unreliable: spans the host tokenize gap; use min_ms or forward_wall")
-    floor = sum(FLOOR_MS.values())
-    report["roofline_ms"] = round(floor, 2)
-    report["above_roofline"] = round(report["forward_wall"]["median_ms"] / floor, 2)
     print(json.dumps(report, indent=2))
     del engine
     torch.cuda.empty_cache()

@@ -63,17 +63,23 @@ def _compare(name: str, reference: torch.Tensor, candidate: torch.Tensor,
     return entry
 
 
-def run(target: str, plan: str | None, steps: int = 1, layers: int = 1, seed: int = 0,
-        isolate: bool = False, candidate_options: dict[str, Any] | None = None,
-        **overrides) -> dict[str, Any]:
-    """Compare `plan` (and `candidate_options`) against the Target's reference, segment by segment."""
+def run(target: str, plan: str | None, steps: int | None = 1, layers: int | None = 1,
+        seed: int = 0, isolate: bool = False,
+        candidate_options: dict[str, Any] | None = None, **overrides) -> dict[str, Any]:
+    """Compare `plan` (and `candidate_options`) against the Target's reference, segment by segment.
+
+    `steps` / `layers` of `None` mean the Target's full default depth.
+    """
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this on a GPU node")
     target = resolve(target)
     tol = tolerances("bf16")
-    reference = build(target, None, seed=seed, steps=steps, layers=layers, **overrides)
-    candidate = build(target, plan, seed=seed, steps=steps, layers=layers,
+    depth = {k: v for k, v in (("steps", steps), ("layers", layers)) if v is not None}
+    reference = build(target, None, seed=seed, **depth, **overrides)
+    candidate = build(target, plan, seed=seed, **depth,
                       **{**overrides, **(candidate_options or {})})
+    steps = reference.identity.shape.get("steps", steps)
+    layers = reference.identity.shape.get("layers", layers)
     if not reference.identity.same_workload(candidate.identity):
         raise ValueError("reference and candidate are not the same workload")
     inputs = reference.sample_inputs(seed)
@@ -103,6 +109,9 @@ def run(target: str, plan: str | None, steps: int = 1, layers: int = 1, seed: in
             ref, got = reference.buffers[name], candidate.buffers[name]
             stages[step.name][name] = _compare(name, ref, got, layer_axis, active_layers)
             allocation = candidate.allocation(name)
+            if layer_axis is not None and active_layers is not None:
+                allocation = allocation.narrow(layer_axis, 0,
+                                               min(active_layers, allocation.shape[layer_axis]))
             is_finite = bool(torch.isfinite(allocation).all().item())
             stages[step.name][name]["finite_allocation"] = is_finite
             finite &= is_finite
@@ -151,14 +160,15 @@ def main(argv=None) -> int:
     parser.add_argument("--plan", default=None, help=f"one of {sorted(PLANS)} or JSON")
     parser.add_argument("--option", action="append", default=[],
                         help="candidate-only target option as key=value (e.g. fused=false)")
-    parser.add_argument("--steps", type=int, default=1)
-    parser.add_argument("--layers", type=int, default=1)
+    parser.add_argument("--steps", type=int, default=1, help="0 = the Target's full depth")
+    parser.add_argument("--layers", type=int, default=1, help="0 = the Target's full depth")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--isolate", action="store_true",
                         help="inject the reference's stage outputs into the candidate")
     args = parser.parse_args(argv)
-    report = run(args.target, args.plan, steps=args.steps, layers=args.layers, seed=args.seed,
-                 isolate=args.isolate, candidate_options=parse_options(args.option))
+    report = run(args.target, args.plan, steps=args.steps or None, layers=args.layers or None,
+                 seed=args.seed, isolate=args.isolate,
+                 candidate_options=parse_options(args.option))
     print(json.dumps(report, indent=2))
     return 0 if report["passed"] else 1
 

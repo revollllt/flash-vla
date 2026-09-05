@@ -75,15 +75,15 @@ Earlier drafts used "Task" for the co-designed unit; that word is retired.
 | Segment list with host slots, shared lifecycle (warmup, freeze, capture, replay) (`Program`) | implemented; both engines construct through it |
 | Op-table binding before capture, per-call-site plans, backend-declared route constraints | implemented (`runtime/binding`) |
 | Engine protocol (`runtime/engine.Engine`) and identity property | implemented; both engines satisfy it, engine-level reports carry the identity, the generic runners consume it |
-| Acceptance registry with framework defaults and per-Target entries | implemented (`eval/acceptance.py`); no consumer turns it into a verdict yet |
+| Acceptance registry with framework defaults and per-Target entries | implemented (`eval/acceptance.py`); the promotion gate turns it into a verdict |
 | Call-site cost declarations and the floor model | implemented in first form (`benchmarks/floor.py`, per-Target `costs.py`); under-one-wave derating and per-call-site validation planned |
 | Shared correctness metrics module | implemented (`eval/correctness/metrics.py`); every parity script imports it |
-| Generic e2e latency runner with a fixed report schema, A/B/A deltas and noise calibration | implemented (`benchmarks/latency.py`); floors empty until the floor model exists |
+| Generic e2e latency runner with a fixed report schema, A/B/A deltas and noise calibration | implemented (`benchmarks/latency.py`); floors come from the floor model's own report |
 | Generic in-engine correctness runner (stage outputs, oracle injection, per-layer profiles) | implemented (`eval/correctness/in_engine.py`); the baseline tier stays per model |
 | Skills: kernel-design, benchmark-kernel, hardware-unit-test, gpu-profiler-analysis, ncu-report | implemented |
 | Target-onboarding skill | planned |
 | Agent Notes lifecycle | implemented |
-| Promotion gate script | planned; CI deferred and under discussion |
+| Promotion gate script | implemented (`eval/promotion_gate.py`); CI deferred and under discussion |
 | Policy-quality suite (LIBERO) | out of scope for the current phase |
 
 ## Relation to other documents

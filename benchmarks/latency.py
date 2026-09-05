@@ -138,7 +138,11 @@ def _flatten(metrics: dict[str, Any]) -> dict[str, float]:
 def _deltas(legs: list[dict[str, Any]]) -> dict[str, Any]:
     """Per-leg deltas against the first leg, and the control spread."""
     first = _flatten(legs[0]["metrics"])
-    control = [leg for leg in legs[1:] if leg["plan"] == legs[0]["plan"]]
+
+    def same(leg):
+        return leg["plan"] == legs[0]["plan"] and leg["options"] == legs[0]["options"]
+
+    control = [leg for leg in legs[1:] if same(leg)]
     spread: dict[str, float] = {}
     for leg in control:
         for key, value in _flatten(leg["metrics"]).items():
@@ -157,9 +161,8 @@ def _deltas(legs: list[dict[str, Any]]) -> dict[str, Any]:
             if key in spread:
                 entry["distinguishable"] = abs(delta) > spread[key]
             deltas[key] = entry
-        out["legs"].append({"leg": index, "plan": leg["plan"],
-                            "same_plan_as_reference": leg["plan"] == legs[0]["plan"],
-                            "deltas": deltas})
+        out["legs"].append({"leg": index, "plan": leg["plan"], "options": leg["options"],
+                            "same_as_reference": same(leg), "deltas": deltas})
     return out
 
 
@@ -197,19 +200,28 @@ def _driver_version() -> str | None:
 
 def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         warmup: int = _LAT["warmup"], seed: int = 0, calibrate: bool = False,
-        **overrides) -> dict[str, Any]:
-    """Build one engine per leg, measure it, and report legs, deltas and calibration."""
+        leg_options: list[dict[str, Any]] | None = None, **overrides) -> dict[str, Any]:
+    """Build one engine per leg, measure it, and report legs, deltas and calibration.
+
+    `leg_options` gives each leg its own target-local options on top of
+    `overrides` (a Pi0 A/B/A over the fused overlay); a leg is a control leg
+    when both its plan and its options equal the first leg's.
+    """
     require_cuda()
     torch.cuda.init()
     target = resolve(target)
     if calibrate:
         plans = [plans[0]] * 3
+    leg_options = list(leg_options or [{}] * len(plans))
+    if len(leg_options) != len(plans):
+        raise ValueError("leg_options must have one entry per plan")
     legs = []
-    for index, plan in enumerate(plans):
-        print(f"== leg {index}: {target} plan={plan}", flush=True)
-        engine = build(target, plan, seed=seed, **overrides)
+    for index, (plan, options) in enumerate(zip(plans, leg_options)):
+        print(f"== leg {index}: {target} plan={plan} options={options}", flush=True)
+        engine = build(target, plan, seed=seed, **{**overrides, **options})
         inputs = engine.sample_inputs(seed)
-        legs.append({"leg": index, "plan": plan, "identity": engine.identity.as_dict(),
+        legs.append({"leg": index, "plan": plan, "options": dict(options),
+                     "identity": engine.identity.as_dict(),
                      "metrics": measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"])})
         print(json.dumps(legs[-1]["metrics"]), flush=True)
         del engine

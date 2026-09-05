@@ -1,9 +1,9 @@
 # Autonomous Optimization Plane
 
-Status: partial. The skills, the Agent Notes lifecycle and the PR rules are
-implemented. The target-onboarding skill and the promotion gate are planned.
-Continuous integration is deferred and under discussion; nothing here assumes
-it.
+Status: partial. The skills, the Agent Notes lifecycle, the PR rules and the
+promotion gate script are implemented. The target-onboarding skill is
+planned. Continuous integration is deferred and under discussion; nothing
+here assumes it.
 
 ## Human role
 
@@ -20,7 +20,7 @@ stays the source of truth.
 ## The flywheel
 
 ```text
-Profile -> Analyze -> Design -> Implement -> Validate -> Promote -> Profile
+Profile -> Analyze -> Design -> Implement -> Validate -> deploy -> Profile
 ```
 
 Analyze starts from the gap decomposition: measured minus structural names
@@ -47,7 +47,7 @@ that exclusion is not recorded as a conclusion.
 | `hardware-unit-test` | measured machine constants with tags; the denominator under every floor |
 | `gpu-profiler-analysis` | capture of Torch, Nsight Systems and Nsight Compute evidence |
 | `ncu-report` | reading a Nsight Compute report into a named bottleneck and a next move |
-| `target-onboarding` (planned) | bringing a new model or device up as a Target: model contract and reference, pipeline against the op table, buffer plan, reference backend, parity scripts, e2e case, acceptance module |
+| `target-onboarding` (planned) | bringing a new model or device up as a Target: model contract and reference, pipeline against the op table, buffer plan and segment list, cost declarations, reference backend, factory entry, acceptance entry |
 
 Skills carry distilled, portable experience only. Evidence (job ids,
 measurements, experiment history) lives project-side, in Agent Notes and in
@@ -67,12 +67,17 @@ of equal rank: it stops a later agent from repeating an expensive, invalid
 experiment. Lifecycle and format follow
 [`.agents/notes/README.md`](../../.agents/notes/README.md).
 
-## Promotion gate (planned)
+## Promotion gate
 
-A script, not a service. It reads the acceptance registry, runs the
-correctness checks and the A/B/A latency run through the generic harnesses,
-applies the gate semantics, and writes one evidence record. A promotion PR
-attaches the record; the PR rules in
+A script, not a service (`python -m eval.promotion_gate`). It reads the
+Target's entry of the acceptance registry, runs the in-engine correctness
+checks and the same-process A/B/A latency run through the generic harnesses,
+computes the candidate's floor model as context, applies the gate semantics,
+and writes one evidence record with a verdict: `pass`, `fail`, or `blocked`
+when a gate could not run (a baseline adapter not installed). The
+baseline-tier scripts run only when asked for, as subprocesses; not running
+them blocks the verdict rather than passing it. A promotion PR attaches the
+record; the PR rules in
 [`.claude/rules/agent-notes-and-pr-workflow.md`](../../.claude/rules/agent-notes-and-pr-workflow.md)
 govern the rest. Only a candidate that passes every gate enters the Target's
 shipped plans; a failed candidate keeps its reason in a note and never touches

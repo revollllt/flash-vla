@@ -1,9 +1,12 @@
 # Acceptance Criteria
 
-Status: partial. The registry exists (`eval/acceptance.py`) with the
-framework defaults, the bf16 tolerances every shipped gate reads, and one
-entry per Target. The derived latency objective, the generic runners and the
-promotion gate do not exist yet.
+Status: implemented. The registry (`eval/acceptance.py`) holds the framework
+defaults, the bf16 tolerances every shipped gate reads, and one entry per
+Target; the generic runners produce the reports; the promotion gate
+(`python -m eval.promotion_gate`) turns them into a verdict and an evidence
+record; the latency objective comes from the floor model in its first form.
+The budgets in the Target entries are the kernel-design loop's defaults and
+await the owner's numbers.
 
 ## What the human defines
 
@@ -116,7 +119,8 @@ evidence pack.
   calibration, missing plan stamp, floor model out of date for the plan)
   counts as failed, not as skipped.
 - The promotion gate ([`40-optimization-plane.md`](40-optimization-plane.md))
-  is the only consumer that turns this registry into a pass/fail; harnesses
-  only produce reports.
+  is the only consumer that turns this registry into a verdict; harnesses
+  only produce reports. A verdict is `pass`, `fail`, or `blocked` when a
+  gate could not run; blocked is never promoted.
 - Changing a default is a framework decision and is its own PR with its own
   Agent Note; changing a Target entry is a Target decision.

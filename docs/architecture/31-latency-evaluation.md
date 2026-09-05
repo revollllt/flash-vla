@@ -1,11 +1,12 @@
 # End-to-End Latency Evaluation
 
-Status: partial. The generic runner (`python -m benchmarks latency`) measures
-any Target through the engine protocol, emits the report schema below, reads
-A/B/A deltas against the control spread and runs the noise calibration. The
-older per-model harnesses remain for their profile checks; the Pi0.5 one
-still carries datasheet-based stage floors, which the floor model replaces.
-Floors in the generic report are empty until the floor model exists.
+Status: implemented. The generic runner (`python -m benchmarks latency`)
+measures any Target through the engine protocol, emits the report schema
+below, reads A/B/A deltas against the control spread and runs the noise
+calibration. Floors are a separate report of the floor model
+(`python -m benchmarks floor`); the promotion gate joins the two. The older
+per-model harnesses remain for their production-graph structure checks and
+report no floors.
 
 ## Scope
 
