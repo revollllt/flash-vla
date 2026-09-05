@@ -38,12 +38,13 @@ import os
 
 import torch
 
+from eval.acceptance import tolerances
 from eval.baselines import openpi05
+from eval.correctness.metrics import error_metrics
 from eval.correctness.pi05.prefix_parity import (
     DEFAULT_PROMPT,
     _cache_layers,
     _to_pair_layout,
-    error_metrics,
 )
 from flash_vla.models.pi05.spec import VISION_TOKENS
 from flash_vla.models.pi05.tokenize import Pi05Tokenizer
@@ -53,7 +54,7 @@ CHUNK = 50
 
 #: One step on random weights is a direct reading of the wiring, so it is held
 #: tightly. Ten steps is the chaotic regime and is reported, not gated.
-STEP1_COSINE = 0.999
+STEP1_COSINE = tolerances("bf16")["shallow_cosine"]
 
 
 def _transplant(engine, reference_cache, seq_len: int) -> None:
@@ -116,6 +117,7 @@ def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
     output = engine.buffers["diffusion_noise"].float().clone()
 
     report: dict[str, object] = {
+        "identity": engine.identity.as_dict(),
         "mode": "full pass" if full else "transplanted KV cache",
         "steps": steps,
         "layers": layers,

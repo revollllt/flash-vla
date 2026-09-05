@@ -1,8 +1,9 @@
 # Acceptance Criteria
 
-Status: planned. The registry, the derived latency objective and the
-promotion gate do not exist yet; today's closest artifacts are per-kernel
-task contracts and constants inside individual harnesses.
+Status: partial. The registry exists (`eval/acceptance.py`) with the
+framework defaults, the bf16 tolerances every shipped gate reads, and one
+entry per Target. The derived latency objective, the generic runners and the
+promotion gate do not exist yet.
 
 ## What the human defines
 

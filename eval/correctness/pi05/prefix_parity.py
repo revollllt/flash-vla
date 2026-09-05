@@ -43,39 +43,25 @@ import json
 import os
 
 import torch
-import torch.nn.functional as F  # noqa: N812
 
 from benchmarks.plans import PLANS, parse_plan
+from eval.acceptance import tolerances
 from eval.baselines import openpi05
+from eval.correctness.metrics import error_metrics
 from flash_vla.models.pi05.spec import HEAD_DIM, VISION_TOKENS
 from flash_vla.models.pi05.tokenize import Pi05Tokenizer
 from flash_vla.models.pi05.weights import fold
 
 DEFAULT_PROMPT = "pick up the plate and put it in the sink"
 
-#: Layer 0 carries no accumulated error, so it is held tightly.
-LAYER0_COSINE = 0.9999
-#: By layer 17 the input has been through 45 bfloat16 layers; on random weights
-#: that drift is expected. Trained weights are better conditioned and drift less.
-DEEPEST_COSINE = 0.99
-#: A single layer losing this much is a bug in that layer, not accumulation.
-MAX_COSINE_STEP = 0.005
-
-
-def error_metrics(reference: torch.Tensor, output: torch.Tensor) -> dict[str, float]:
-    """The five numerical error metrics this repository reports."""
-    if reference.shape != output.shape:
-        raise ValueError(f"shape mismatch: reference={reference.shape}, output={output.shape}")
-    reference = reference.float().flatten()
-    output = output.float().flatten()
-    absolute_error = (output - reference).abs()
-    return {
-        "max_abs": absolute_error.max().item(),
-        "mean_abs": absolute_error.mean().item(),
-        "rms_error": torch.sqrt(torch.mean((output - reference) ** 2)).item(),
-        "p99_abs": torch.quantile(absolute_error, 0.99).item(),
-        "cosine_similarity": F.cosine_similarity(reference, output, dim=0).item(),
-    }
+#: Thresholds come from the acceptance registry, keyed by precision policy.
+#: Layer 0 carries no accumulated error, so it is held tightly; by layer 17 the
+#: input has been through 45 bfloat16 layers and drift is expected on random
+#: weights; a single layer losing more than the step is a bug in that layer.
+_TOL = tolerances("bf16")
+LAYER0_COSINE = _TOL["layer0_cosine"]
+DEEPEST_COSINE = _TOL["deepest_cosine"]
+MAX_COSINE_STEP = _TOL["max_cosine_step"]
 
 
 def _to_pair_layout(x: torch.Tensor) -> torch.Tensor:
@@ -144,6 +130,7 @@ def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
     keys, values = engine.kv_cache
 
     report: dict[str, object] = {
+        "identity": engine.identity.as_dict(),
         "prompt_tokens": n_tokens,
         "n_valid_prefix": n_valid,
         "n_valid_engine": engine_n_valid,

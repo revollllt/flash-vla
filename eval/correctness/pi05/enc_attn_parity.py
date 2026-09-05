@@ -31,13 +31,13 @@ import argparse
 import json
 
 import torch
-import torch.nn.functional as F  # noqa: N812
 
 from flash_vla.hardware.nvidia.h100.pi05.backends.cuda import enc_attn
 from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels.attention import (
     encoder_attention)
 from flash_vla.hardware.nvidia.h100.pi05.buffers import MASK_NEG
 from flash_vla.models.pi05.spec import DECODER_HEADS, HEAD_DIM, VISION_TOKENS
+from eval.correctness.metrics import error_metrics
 
 #: Production prefix: 3 views x 256 image tokens + a prompt padded to 200.
 DEFAULT_SEQ = 3 * VISION_TOKENS + 200
@@ -51,13 +51,12 @@ MIN_COSINE = 0.99999
 MAX_REL = 1e-2
 
 
-def error_metrics(got: torch.Tensor, ref: torch.Tensor) -> dict[str, float]:
-    g, r = got.float().flatten(), ref.float().flatten()
-    scale = r.abs().max().item()
-    return {"cosine_similarity": F.cosine_similarity(g, r, dim=0).item(),
-            "max_abs": (g - r).abs().max().item(),
-            "max_rel": (g - r).abs().max().item() / scale if scale else 0.0,
-            "rms_error": ((g - r) ** 2).mean().sqrt().item()}
+def _compare(got: torch.Tensor, ref: torch.Tensor) -> dict[str, float]:
+    """The shared metrics plus `max_rel`, the max error against the reference's scale."""
+    metrics = error_metrics(ref, got)
+    scale = ref.float().abs().max().item()
+    metrics["max_rel"] = metrics["max_abs"] / scale if scale else 0.0
+    return metrics
 
 
 def fp32_reference(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
@@ -96,9 +95,9 @@ def run(seq: int, valid: int, seed: int, device: str) -> dict:
         "config": {"seq": seq, "valid_keys": valid, "heads": heads,
                    "head_dim": head_dim, "seed": seed,
                    "geometry": enc_attn.geometry()},
-        "vs_chain": error_metrics(out[rows], chain[rows]),
-        "vs_fp32": error_metrics(out[rows], reference[rows]),
-        "chain_vs_fp32": error_metrics(chain[rows], reference[rows]),
+        "vs_chain": _compare(out[rows], chain[rows]),
+        "vs_fp32": _compare(out[rows], reference[rows]),
+        "chain_vs_fp32": _compare(chain[rows], reference[rows]),
         "all_rows_finite": bool(torch.isfinite(out.float()).all()),
         "padded_rows_finite": bool(torch.isfinite(out[valid * heads:].float()).all()),
         "thresholds": {"min_cosine": MIN_COSINE, "max_rel": MAX_REL},

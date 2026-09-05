@@ -155,7 +155,8 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
     torch.cuda.synchronize()
 
     keys = engine.encoder_seq_len + chunk_size
-    report = {"device": torch.cuda.get_device_name(0), "sm_count": SM_COUNT,
+    report = {"identity": engine.identity.as_dict(),
+              "device": torch.cuda.get_device_name(0), "sm_count": SM_COUNT,
               "config": {"chunk": chunk_size, "steps": steps, "layers": layers,
                          "decoder_keys": keys, "plan": engine.plan},
               "stages": {}, "waves": wave_report(chunk_size, keys),

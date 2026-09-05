@@ -26,9 +26,10 @@ from benchmarks.plans import PLANS, parse_plan
 from flash_vla.models.pi05.tokenize import Pi05Tokenizer
 from flash_vla.models.pi05.weights import fold, random_checkpoint
 
-from .prefix_parity import error_metrics
+from eval.acceptance import tolerances
+from eval.correctness.metrics import error_metrics
 
-GATE_COSINE = 0.999
+GATE_COSINE = tolerances("bf16")["shallow_cosine"]
 
 
 def _forward(engine, images, state, noise):
@@ -59,10 +60,12 @@ def run(plan: str = "attn-cuda", num_views: int = 3, chunk_size: int = 50, steps
     noise = torch.randn(chunk_size, 32, generator=generator, device=device, dtype=torch.bfloat16)
 
     outputs = {}
+    identities = {}
     for name in ("tilelang", plan):
         engine = Pi05Inference(checkpoint, tokenizer, num_views=num_views, chunk_size=chunk_size,
                                steps=steps, layers=layers, device=device, plan=parse_plan(name))
         engine.set_task(prompt)
+        identities[name] = engine.identity.as_dict()
         _forward(engine, images, state, noise)              # settles n_valid
         outputs[name] = _forward(engine, images, state, noise)
         # replay determinism of the candidate: a second replay is bit-identical
@@ -74,6 +77,7 @@ def run(plan: str = "attn-cuda", num_views: int = 3, chunk_size: int = 50, steps
 
     ref, got = outputs["tilelang"], outputs[plan]
     report = {"plan": parse_plan(plan), "steps": steps, "layers": layers, "seed": seed,
+              "identity": {"reference": identities["tilelang"], "candidate": identities[plan]},
               "replay_identical": {n: outputs[n]["replay_identical"] for n in outputs},
               "actions": error_metrics(ref["actions"], got["actions"]),
               "k_suffix": error_metrics(ref["k_suffix"], got["k_suffix"]),

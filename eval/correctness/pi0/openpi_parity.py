@@ -6,26 +6,9 @@ import argparse
 import json
 
 import torch
-import torch.nn.functional as F
 
 from eval.baselines import openpi
-
-
-def error_metrics(reference: torch.Tensor, output: torch.Tensor) -> dict[str, float]:
-    """Return the five numerical error metrics reported by this evaluation."""
-    if reference.shape != output.shape:
-        raise ValueError(f"shape mismatch: reference={reference.shape}, output={output.shape}")
-
-    reference = reference.float().flatten()
-    output = output.float().flatten()
-    absolute_error = (output - reference).abs()
-    return {
-        "max_abs": absolute_error.max().item(),
-        "mean_abs": absolute_error.mean().item(),
-        "rms_error": torch.sqrt(torch.mean((output - reference) ** 2)).item(),
-        "p99_abs": torch.quantile(absolute_error, 0.99).item(),
-        "cosine_similarity": F.cosine_similarity(reference, output, dim=0).item(),
-    }
+from eval.correctness.metrics import error_metrics
 
 
 def run(checkpoint: str, seed: int = 0, device: str = "cuda") -> dict[str, float]:
@@ -57,7 +40,7 @@ def run(checkpoint: str, seed: int = 0, device: str = "cuda") -> dict[str, float
     output = engine.forward(images, state, noise).clone()
     torch.cuda.synchronize()
 
-    metrics = error_metrics(reference, output)
+    metrics = {"identity": engine.identity.as_dict(), **error_metrics(reference, output)}
     print(json.dumps(metrics, indent=2))
     return metrics
 

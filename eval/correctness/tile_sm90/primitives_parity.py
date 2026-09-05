@@ -26,6 +26,8 @@ from pathlib import Path
 
 import torch
 
+from eval.correctness.metrics import error_metrics
+
 _HERE = Path(__file__).resolve().parent
 _REPO = _HERE.parents[2]
 _SRC = _HERE / "primitives.cu"
@@ -128,11 +130,11 @@ def run_case(lib: ctypes.CDLL, case: Case, seed: int) -> dict:
     a32, b32 = a.float(), b.float()
     ref = a32 @ (b32.t() if case.b_layout == "nk" else b32)
     got = c.float()
-    err = (got - ref).abs()
+    shared = error_metrics(ref, got)
     scale = ref.abs().max().item()
-    max_abs = err.max().item()
+    max_abs = shared["max_abs"]
     rel = max_abs / scale if scale > 0 else max_abs
-    cos = torch.nn.functional.cosine_similarity(got.flatten(), ref.flatten(), dim=0).item()
+    cos = shared["cosine_similarity"]
     ok = rc == 0 and torch.isfinite(got).all().item() and rel <= case.rel_tol
     return {
         "case": case.name, "rc": rc, "max_abs": max_abs, "rel": rel,

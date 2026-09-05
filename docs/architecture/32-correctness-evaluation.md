@@ -1,9 +1,11 @@
 # Numerical Correctness Evaluation
 
-Status: partial. The five metrics exist, duplicated across parity scripts; the
-Pi0.5 Target has the in-engine and official-baseline oracle tiers with stage
-injection for the decoder; the shared metrics module, the generic runner and
-the fixed report schema are planned.
+Status: partial. The five metrics live in one module
+(`eval/correctness/metrics.py`) that every parity script imports; thresholds
+come from the acceptance registry keyed by precision policy; engine-level
+reports carry the identity block. The Pi0.5 Target has the in-engine and
+official-baseline oracle tiers with stage injection for the decoder. The
+generic runner and the fixed report schema are planned.
 
 ## Levels
 
@@ -18,8 +20,8 @@ is what is deployed.
 
 ## Metrics
 
-One shared module (planned) implements five metrics; parity scripts import it
-and never re-declare them:
+One shared module implements five metrics; parity scripts import it and
+never re-declare them:
 
 `max_abs`, `mean_abs`, `rms_error`, `p99_abs`, `cosine_similarity`.
 

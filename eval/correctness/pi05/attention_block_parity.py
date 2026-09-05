@@ -28,7 +28,7 @@ import time
 
 import torch
 
-from eval.correctness.pi05.prefix_parity import error_metrics
+from eval.correctness.metrics import error_metrics
 from flash_vla.hardware.nvidia.h100.pi05.backends.cuda import attn_block_reference as blockref
 from flash_vla.hardware.nvidia.h100.pi05.backends.cuda import attn_reference as taskref
 from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.attn_taskloop import (

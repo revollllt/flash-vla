@@ -1,8 +1,8 @@
 # The Target
 
-Status: partial. The four axes, target ownership and the engine identity
-property are the repository state; the acceptance registry entry, the
-call-site cost declarations and identity stamping in reports are planned.
+Status: partial. The four axes, target ownership, the engine identity
+property, its stamping into engine-level reports and the acceptance registry
+entry are the repository state; the call-site cost declarations are planned.
 
 ## Definition
 
@@ -54,8 +54,8 @@ nearly has:
 
 - **identity** is a property of the engine (`runtime.Identity`): the named
   axes, the shape profile's numbers, the resolved plan, any target-local
-  table option, and the git revision. Every harness stamps it into its report
-  (planned). Nothing restates a shape that the model spec or the engine
+  table option, and the git revision. Every engine-level harness stamps it
+  into its report. Nothing restates a shape that the model spec or the engine
   already knows.
 - **acceptance** is one entry in the framework's acceptance registry
   ([`30-acceptance-criteria.md`](30-acceptance-criteria.md)): the budget and

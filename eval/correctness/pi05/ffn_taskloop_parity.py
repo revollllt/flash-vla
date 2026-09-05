@@ -32,7 +32,7 @@ import statistics
 
 import torch
 
-from eval.correctness.pi05.prefix_parity import error_metrics
+from eval.correctness.metrics import error_metrics
 from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.taskloop import (
     COUNTER_ARRIVE,
     FFNTaskloop,

@@ -30,7 +30,7 @@ import json
 
 import torch
 
-from eval.correctness.pi05.prefix_parity import error_metrics
+from eval.correctness.metrics import error_metrics
 from flash_vla.models.pi05.spec import (
     ACTION_DIM,
     DECODER_DIM,

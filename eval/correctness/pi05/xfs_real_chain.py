@@ -14,7 +14,6 @@ import argparse
 import statistics
 
 import torch
-import torch.nn.functional as F
 
 from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.taskloop import (
     COUNTER_ARRIVE,
@@ -30,6 +29,7 @@ from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels import (
     xfs as xfs_kernels,
 )
 from .xfs_producer import out_proj_residual_rms_xfs_reference
+from eval.correctness.metrics import error_metrics
 
 
 M, M_PAD, ATTENTION_K, D, FF = 50, 64, 2048, 1024, 4096
@@ -82,9 +82,9 @@ def _make_case(gen: torch.Generator) -> dict[str, torch.Tensor]:
 
 
 def _metrics(reference: torch.Tensor, actual: torch.Tensor) -> tuple[float, float]:
-    ref = reference.float().flatten()
-    act = actual.float().flatten()
-    return F.cosine_similarity(ref, act, dim=0).item(), (ref - act).abs().max().item()
+    """(cosine, max_abs) from the shared metrics module."""
+    shared = error_metrics(reference, actual)
+    return shared["cosine_similarity"], shared["max_abs"]
 
 
 def _capture(cases, body) -> torch.cuda.CUDAGraph:

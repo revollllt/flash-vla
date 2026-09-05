@@ -111,6 +111,7 @@ def run(num_views: int = 3, chunk_size: int = 50, steps: int = 10, layers: int =
 
     prompt_tokens = engine.inputs.n_valid - num_views * 256
     report = {
+        "identity": engine.identity.as_dict(),
         "device": torch.cuda.get_device_name(0),
         "config": {"num_views": num_views, "chunk": chunk_size, "steps": steps,
                    "layers": layers, "reps": reps, "prompt_len": engine.prompt_len,
