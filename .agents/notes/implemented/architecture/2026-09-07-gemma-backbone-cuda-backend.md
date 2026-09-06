@@ -173,12 +173,23 @@ GPU, all jobs from this lane's worktree, clocks unlocked:
 - **Same-process A/B/A against shipped**, 100 reps: chunk `min` -0.096 ms on
   ACD1-58 with a 0.010 ms control spread (job 599788) and -0.111 ms on ACD1-8
   with 0.052 (job 599832), both before the down projection was dropped.
-- **Promotion gate** (job 600111): `eval.gate --baseline --reps 100` returns
-  `pass` on both Targets. Pi0 under `improve`, chunk `min` -1.574 ms against
-  the reference route with a 0.026 ms control spread, tail 0.276 ms inside the
-  0.5 ms bound, `baseline_layer0` passed. Pi0.5 under `no-regression`, which
-  is the right mode for a change proven bit-identical, no regressions, tail
-  0.228 ms, `baseline_layer0` passed. Evidence records are named in the log.
+- **Promotion gate** (job 600388, ACD1-4): `eval.gate --baseline --reps 100`
+  returns `pass` on both Targets, with the latency legs controlled against the
+  route that shipped **before** this lane (`lab/plans/<target>-preshipped.json`)
+  rather than against the all-TileLang reference. That distinction matters on
+  Pi0: against the reference route the candidate reads -1.574 ms (job 600111),
+  but most of that is the action-expert fusions it inherits from shipped and
+  not this lane's work. Against the pre-lane route it reads **-0.272 ms** on
+  chunk `min`, against a 0.10 ms bar and a 0.054 ms control spread, tail
+  0.139 ms inside the 0.5 ms bound, `baseline_layer0` passed. Pi0.5 under
+  `no-regression`, the right mode for a change proven bit-identical: no
+  regressions, control spread 0.005 ms, tail 0.128 ms, `baseline_layer0`
+  passed. Correctness inside the gate is judged against the Target's reference
+  route in both runs.
+- The two A/B/As of -0.096 and -0.111 ms quoted above were taken while the
+  candidate plan still routed Pi0's FFN down projection to cuBLAS, which the
+  in-graph subtraction later showed costs 112 us over 17 layers. Dropping it
+  accounts for the gap to -0.272.
 - **Not obtained**: the Nsight Compute capture of the incumbent gated FFN.
   Job 599809 passed `--launch-count 2` with no name filter, which counts from
   process start and profiled torch's weight-initialisation kernels instead;
