@@ -105,9 +105,21 @@ form, so the model could not apply them.
   `check_wiki.py` and `check_templates.py` pass; the three columns computed
   on the declared graphs of both Targets without a device, with the declared
   Pi0.5 ceiling attached to `action_expert_norm_gated_ffn`.
-- GPU (job PENDING): `benchmarks floor` on both Targets is `valid`, every
-  call site carries the three columns, and `roofline <= ceiling <= measured`
-  holds per site; `eval.gate` prints the new floor line.
+- GPU, job 598949 (ACD1-1), the first form: `eval.gate` printed the new floor
+  line and the skill's `constants.py` discovered the moved table from the
+  job's tree; the reports were invalid on three sites, which produced the
+  noise-floor tolerance and the group rule above. Job 598964 (ACD1-55),
+  the form that shipped: both Targets `valid`, every site with its three
+  columns and `roofline <= ceiling` everywhere.
+
+  | Target | roofline | ceiling | measured | sites within ceiling |
+  |---|---:|---:|---:|---|
+  | Pi0.5 | 6.56 ms | 9.88 ms | 16.94 ms | `llm_backbone_ffn_down_residual` 110%, `action_expert_action_in_proj` 105% |
+  | Pi0 | 5.75 ms | 9.01 ms | 16.20 ms | `action_expert_norm_gated_ffn` 99%, `action_expert_state_proj` 95% |
+
+  Neither Target is within its ceiling as a whole: the vision encoder
+  measures 2.0-2.5x its ceiling on both, Pi0.5's attention chain 5.7x and
+  its FFN chain 1.7x. That is the guidance this model exists to give.
 
 ## Related notes
 
