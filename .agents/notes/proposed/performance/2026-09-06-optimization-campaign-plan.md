@@ -51,6 +51,14 @@ Analyze 已完成（job 598964 的 floor 报告，shipped plan，同一节点 AC
   逐候选算术达不到（预计 −0.69 至 −0.86 ms），目标是方向，停止条件以注册表为准。
 - 共享的 TileLang JIT 装饰器由 lane D0 提到 `hardware/nvidia/tilelang/jit.py`，两个 Target
   的 `base.py` 与组件包都从它导入。
+- **lane A 已收口，过渡策略撤销**：尾部机制是 Pi0.5 的 `prompt` host slot 在 GPU 关键路径上做
+  逐元素 torch 运算，torch 把它派到 intra-op 线程池，池屏障的等待没有上界（slot 耗时双峰：
+  96.5% 的 forward 0.34 ms，其余 8–16 ms）。修法是把只依赖 token 数的三个向量在构造时制表
+  （逐位等价），host slot 只做选行与拷贝。ACD1-8 上连续三次 A/B/A 两个 plan 的 p99 − min 全部
+  在 0.5 ms 内，job 599815 产出 Pi0.5 首次 `pass`。此后 Pi0.5 的候选也必须拿到 `pass`。
+- **lane D 结案**：D0 组件包搬迁完成（bit-identity），Pi0 移植在动手前被同节点 A/B/A 否决
+  （链 40.8–41.0 us/层步对 Pi0 路由 38.0–38.4）；D1 定价上限 0.76 ms < 1 ms，未建原型。
+  action_expert 段的余量归于依赖链延迟，见两份 rejected note。
 
 ## 探索结果（执行时的依据）
 
