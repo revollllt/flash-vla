@@ -32,7 +32,7 @@ import json
 
 import torch
 
-from flash_vla.hardware.nvidia.h100.pi05.backends.cuda import enc_attn
+from flash_vla.hardware.nvidia.h100.gemma_backbone.backends.cuda import enc_attn
 from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels.attention import (
     llm_backbone_attention)
 from flash_vla.models.pi05.spec import DECODER_HEADS, HEAD_DIM, MASK_NEG, VISION_TOKENS

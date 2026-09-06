@@ -1,10 +1,11 @@
 """Raw-CUDA backend for the Pi0.5 H100 target.
 
-`wrappers` provides the call sites a plan can route here -- the encoder
-attention this Target owns, and the action-expert halves the shared
-`gemma_expert` component package owns -- as a stateful backend, so each op
-table owns its own libraries, scratch, and packed weights. `FFNTaskloop` is the
-persistent FFN kernel's host side, re-exported from the package.
+`wrappers` provides the call sites a plan can route here -- the backbone
+attention from the shared `gemma_backbone` component package, and the
+action-expert halves the shared `gemma_expert` package owns -- as a stateful
+backend, so each op table owns its own libraries, scratch, and packed weights.
+`FFNTaskloop` is the persistent FFN kernel's host side, re-exported from the
+expert package.
 
 `ROUTE_CONSTRAINTS` declares which call sites share a buffer contract that
 holds only when they resolve here together; the runtime validates a plan

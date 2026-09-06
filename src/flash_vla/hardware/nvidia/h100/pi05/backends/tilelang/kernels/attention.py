@@ -27,7 +27,8 @@ true of `llm_backbone_attention`, which is a hand-written multi-query chain that
 materializes the score matrix -- 7744 x 968 at Pi0.5's sequence length, at least
 60 MB of traffic per layer against 0.14 ms of arithmetic over all 18 layers.
 Replacing it with a flash-style MQA kernel was done in the CUDA backend
-(`backends/cuda/enc_attn.py`); this chain remains the reference route.
+(`hardware/nvidia/h100/gemma_backbone/backends/cuda/enc_attn.py`); this chain remains
+the reference route.
 """
 from __future__ import annotations
 

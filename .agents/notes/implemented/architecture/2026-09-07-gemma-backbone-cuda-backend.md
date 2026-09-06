@@ -36,8 +36,10 @@ The segment is also the campaign's second-largest headroom
    byte-identically; the output projection is cuBLAS `addmm_`, which Pi0.5 has
    used since [prefix GEMM epilogues](2026-09-03-prefix-gemm-epilogue.md).
 4. **Pi0's FFN down projection stays on TileLang.** cuBLAS is slower there.
-5. **Pi0.5's shipped plan takes its backbone attention from the package**, so
-   the Target's own copy of `enc_attn` is now unreferenced and can be retired.
+5. **Pi0.5's shipped plan takes its backbone attention from the package**, and
+   the Target's own copy of `enc_attn` is retired: its `cuda` / `cuda-pdl`
+   backends provide `llm_backbone_attention` through the package's wrapper, so
+   the candidate plans that route the site to `cuda` keep binding.
 6. **A persistent warp-specialized gated FFN was built and is not shipped.**
    `kernels/gated_ffn.cu` stays in the tree, correct and unrouted, with its
    ablation switches; the rejection and what a successor should start from are
