@@ -83,4 +83,15 @@ for target in h100/pi05 h100/pi0; do
  done
 done
 
+# Optional promotion gate, on the deployed configuration: GATE is a
+# space-separated list of "<target>=<plan>" pairs.
+for spec in ${GATE:-}; do
+  target="${spec%%=*}"; plan="${spec#*=}"
+  echo "== eval.gate ${target} ${plan} against shipped"
+  mkdir -p "${WS}/runs/gate_${TAG}"
+  "${PYTHON}" -u -m eval.gate --target "${target}" --candidate "${plan}" \
+    --reference shipped --baseline --reps "${REPS}" \
+    --out-dir "${WS}/runs/gate_${TAG}" || echo "[job] gate exit $? for ${target} (verdict is in the record)"
+done
+
 echo "[job] finished $(date)"
