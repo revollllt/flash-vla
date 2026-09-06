@@ -32,6 +32,13 @@ export PALIGEMMA_TOKENIZER="${PALIGEMMA_TOKENIZER:-/data/user/jzou521/models/ope
 export FLASH_VLA_BUILD_VERBOSE=1
 
 PLAN_SUFFIX="${PLAN_SUFFIX:-gemma-cuda}"
+# The latency legs' control. `reference` measures the candidate against the
+# all-TileLang oracle, which on Pi0 credits this lane with the action-expert
+# fusions the candidate merely inherits from shipped; `preshipped` is the
+# shipped route as it stood before this lane, and is the honest incremental
+# control. Correctness inside the gate is judged against the Target's
+# reference route either way -- only the latency legs change.
+REFERENCE_SUFFIX="${REFERENCE_SUFFIX:-preshipped}"
 MODE_PI0="${MODE_PI0:-improve}"
 MODE_PI05="${MODE_PI05:-no-regression}"
 REPS="${REPS:-100}"
@@ -49,6 +56,7 @@ gate() {
     echo; echo "=================== gate ${t} (${mode}) ==================="
     "${PYTHON}" -u -m eval.gate --target "h100/${t}" \
         --candidate "lab/plans/${t}-${PLAN_SUFFIX}.json" \
+        --reference "lab/plans/${t}-${REFERENCE_SUFFIX}.json" \
         --mode "${mode}" --baseline --reps "${REPS}" \
         --out-dir "${OUT}" 2>&1 | tee "${OUT}/gate_${t}.log"
     echo "!! gate ${t} exit ${PIPESTATUS[0]}  (0 pass / 1 fail / 2 blocked)"
