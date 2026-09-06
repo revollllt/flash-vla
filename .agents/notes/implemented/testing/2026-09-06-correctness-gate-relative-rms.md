@@ -79,10 +79,17 @@ could not have been gated at all.
   0.99985. Ten steps (reported, not gated): Pi0.5 suffix cache 0.25 / 0.970.
   The registry's pairs are ten times the worst shallow and the worst
   full-depth dispersion.
-- GPU verification of the pairs (job PENDING): 1x1 on both Targets passes
-  both gates; `eval.gate --baseline` on Pi0.5 prints both numbers per check
-  and the baseline tier passes under its pairs; `eval.pi05.reference`
-  reports its layer-0 and deepest `rel_rms` under the OpenPI interpreter.
+- GPU verification of the pairs (job 599021, ACD1-33): 1x1 on both Targets
+  passes both gates. `eval.gate --baseline` on Pi0.5: every correctness
+  gate passed with both numbers printed (shallow `rel_rms` 1.06e-3, cosine
+  0.9999994; deep 3.4e-2 / 0.99943 and ten-step 0.25 / 0.970 reported),
+  the baseline tier passed under its pairs, and the verdict was `fail` on
+  the tail bound alone (the open finding of the acceptance note: 10.9 ms
+  on the candidate leg, 0.14 on the reference). `eval.pi05.reference`
+  under the OpenPI interpreter: backbone layer 0 `rel_rms` 0.011, cosine
+  0.99994; deepest 0.075 / 0.9972; worst per-layer step 0.00025; the
+  expert's one step 0.0042 / 0.999991; both passed. The `layer0` pair
+  sits six times above the measured layer-0 dispersion against OpenPI.
 
 ## Related notes
 
