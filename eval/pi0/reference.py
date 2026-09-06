@@ -1,19 +1,42 @@
-"""Compare H100/Pi0 output against the official OpenPI PyTorch implementation."""
+"""Compare H100/Pi0 output against the official OpenPI PyTorch implementation.
+
+    python -m eval.pi0.reference                       # the registry's checkpoint, reference route
+    python -m eval.pi0.reference --plan shipped
+    OPENPI_PI0_CHECKPOINT=/path/to/pi0 python -m eval.pi0.reference
+
+The official-baseline tier of the acceptance registry: the Target's reference
+route, built from the OpenPI checkpoint's weights, against OpenPI's own
+forward on the same inputs and noise, judged at the registry's full-depth
+tolerance. The promotion gate runs it with no arguments under the OpenPI
+interpreter; the checkpoint comes from `eval.acceptance.OPENPI_PI0_CHECKPOINT`
+and a missing one is reported as unavailable (exit 3), never as a failure.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
+from pathlib import Path
 
 import torch
 
 from eval.baselines import openpi
-from eval.acceptance import tolerances
+from eval.acceptance import OPENPI_PI0_CHECKPOINT, tolerances
 from eval.metrics import error_metrics
 
+#: The exit code and stderr marker the gate reads as "unavailable".
+UNAVAILABLE = 3
 
-def run(checkpoint: str, seed: int = 0, device: str = "cuda") -> dict[str, object]:
-    """Run both implementations with identical synthetic inputs and noise."""
+
+def run(checkpoint: str, seed: int = 0, device: str = "cuda",
+        plan: str = "reference") -> dict[str, object]:
+    """Run both implementations with identical synthetic inputs and noise.
+
+    `plan` is the call-site plan the runner is built with; the reference route
+    by default, so the tier judges the correctness oracle every candidate is
+    compared against, as the Pi0.5 tier does.
+    """
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
 
@@ -34,8 +57,8 @@ def run(checkpoint: str, seed: int = 0, device: str = "cuda") -> dict[str, objec
     del baseline
     torch.cuda.empty_cache()
 
-    engine = ModelRunner(TARGET, target_weights, device=device, num_views=3, chunk_size=50,
-                         steps=10, layers=18)
+    engine = ModelRunner(TARGET, target_weights, plan=plan, device=device, num_views=3,
+                         chunk_size=50, steps=10, layers=18)
     del target_weights
     torch.cuda.empty_cache()
     output = engine.forward(images=images, state=state, noise=noise).clone()
@@ -57,12 +80,24 @@ def run(checkpoint: str, seed: int = 0, device: str = "cuda") -> dict[str, objec
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--checkpoint", required=True, help="OpenPI model.safetensors or its directory"
+        "--checkpoint", default=OPENPI_PI0_CHECKPOINT,
+        help="OpenPI model.safetensors or its directory (default: the registry's "
+             "OPENPI_PI0_CHECKPOINT)"
     )
+    parser.add_argument("--plan", default="reference",
+                        help="the call-site plan to build the runner with (default: reference)")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args(argv)
-    return 0 if run(args.checkpoint, seed=args.seed, device=args.device)["passed"] else 1
+    checkpoint = Path(args.checkpoint)
+    if checkpoint.is_dir():
+        checkpoint = checkpoint / "model.safetensors"
+    if not checkpoint.is_file():
+        print(f"baseline unavailable: OpenPI checkpoint not found at {checkpoint} "
+              "(set OPENPI_PI0_CHECKPOINT)", file=sys.stderr)
+        return UNAVAILABLE
+    report = run(str(checkpoint), seed=args.seed, device=args.device, plan=args.plan)
+    return 0 if report["passed"] else 1
 
 
 if __name__ == "__main__":
