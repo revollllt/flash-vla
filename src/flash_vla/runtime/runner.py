@@ -19,6 +19,7 @@ the CPU smoke check uses.
 """
 from __future__ import annotations
 
+import gc
 from contextlib import contextmanager
 from functools import partial
 from types import SimpleNamespace
@@ -75,7 +76,15 @@ class Scratch:
 
 
 class ModelRunner:
-    """One constructed Target: graph built, plan bound, buffers allocated, stages captured."""
+    """One constructed Target: graph built, plan bound, buffers allocated, stages captured.
+
+    Python's cyclic collector is disabled while the stages are captured and the
+    objects alive afterwards are frozen: a collection inside a capture frees
+    device memory and invalidates the capture, and a full collection during a
+    forward scans every object torch and the backends created, a pause of
+    milliseconds that reads as chunk latency. A deployment loop keeps its own
+    collector policy on top of this.
+    """
 
     def __init__(self, target: VLA, checkpoint: Mapping[str, torch.Tensor] | None = None, *,
                  plan: Any = "shipped", device: str = "cuda", capture: bool = True,
@@ -120,7 +129,18 @@ class ModelRunner:
         if capture:
             segments = [Segment(name, partial(self.run_eager, name))
                         for name in self.graph.segment_names]
-            self.graphs = Program(segments, warmup=warmup, after_warmup=self.scratch.freeze)
+            # A collection during capture invalidated it (CUDA error 901, job
+            # 598959); a full collection during a forward cost Pi0.5 a 2-3 ms
+            # p99 tail that vanished with the collector off (same job).
+            collector_was_enabled = gc.isenabled()
+            gc.disable()
+            try:
+                self.graphs = Program(segments, warmup=warmup, after_warmup=self.scratch.freeze)
+            finally:
+                if collector_was_enabled:
+                    gc.enable()
+            gc.collect()
+            gc.freeze()
 
     # -- binding and execution ---------------------------------------------
 
