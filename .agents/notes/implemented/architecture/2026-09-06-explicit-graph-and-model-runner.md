@@ -125,15 +125,39 @@ that never reached the identity.
 
 ## Verification
 
-All on H100 SXM5 (`acd_u`, ACD1-33, clocks unlocked), against the seeded
-random weights and inputs of `artifacts/refactor/pr1/before` (job 598393 at
-655d7fe).
+All on H100 SXM5 (`acd_u`, clocks unlocked), seeded random weights and inputs
+(seed 0), the reference configuration of each Target (3 views, chunk 50,
+10 steps, 18 layers; Pi0.5 prompt padded to 200).
 
-- Bit-identity (job 598829): PENDING.
-- Same-node latency, baseline worktree at 655d7fe then this tree, in one job
-  (job 598830): PENDING.
-- In-engine checks, kernels, profile, floor and the gate on this tree (job
-  598830): PENDING.
+- Bit-identity (job 598856, ACD1-55, one job): the pre-refactor tree at
+  655d7fe and this tree dumped the action chunk of two consecutive forwards,
+  every declared stage output and every input, for Pi0.5 on the reference and
+  the shipped plan and for Pi0 on the reference and the shipped plan. All four
+  configurations are bit-identical between the trees, with the old stage and
+  buffer names mapped to the new ones and Pi0's old whole-cache dump split at
+  the prefix length. The same four dumps are also bit-identical to the
+  ACD1-33 baseline of job 598393.
+- Same-node latency (job 598857, ACD1-58, one job, `benchmarks latency
+  --calibrate`, 100 reps x 3 legs per tree): Pi0.5 shipped plan chunk `min`
+  16.135 ms before, 16.080 ms after (-0.056 ms, control spreads 0.009 and
+  0.090 ms); Pi0 shipped plan 15.187 ms before, 15.277 ms after (+0.090 ms,
+  control spreads 0.038 and 0.050 ms, consistent across the three legs). The
+  Pi0 increase is the cost of splitting its one graph into three, accepted
+  for the per-stage split and oracle injection every Target now has; the
+  vision attention rewrite issues the same three launches per layer as before
+  (memset, cuDNN SDPA, one fused transpose-copy).
+- In-engine checks on this tree (job 598857): Pi0.5 shipped vs reference at
+  1 step x 1 layer passes (min cosine 0.9999994, replay identical, allocations
+  finite; the same number as before the change), Pi0 shipped vs reference
+  passes (0.9999812); at 1 x 18 both report (0.9994283, 0.9998544).
+- Harness paths (job 598857): `benchmarks kernels` times 17 cases of the
+  Pi0.5 shipped plan through the node arguments and atomic groups;
+  `benchmarks profile` attributes all three Pi0 stages with the graph
+  contract satisfied (245, 192 and 1311 launches, only the ten copy nodes
+  unattributed); `benchmarks floor` is valid on every Pi0.5 stage;
+  `eval.promotion_gate` reproduces the pre-change verdict (`blocked`, baseline
+  scripts not run) with every in-engine gate passed and the shipped plan
+  -1.08 ms against a 0.054 ms spread.
 - Login node: `python -m eval.smoke` passes 24/24; every module under
   `benchmarks/` and `eval/` imports.
 
