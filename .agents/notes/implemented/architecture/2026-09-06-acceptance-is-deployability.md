@@ -46,7 +46,12 @@ which cannot import OpenPI, so every gate ended `blocked`.
    detectable effect for the other statistics.
 4. **Two candidate modes.** `improve` for a performance candidate; `no_regression`
    for a refactor or a correctness fix, which passes when no chunk statistic
-   regresses beyond the control spread. The mode is recorded in the evidence.
+   regresses by more than the larger of the bar and that statistic's own
+   control spread (the `min` spread is not the median's noise, and a
+   regression below the bar is not one the bar would have promoted). Each
+   leg soaks for `soak_s` seconds before its warmup so an unlocked GPU's
+   clocks settle before anything is read. The mode is recorded in the
+   evidence.
 5. **A stop condition as data.** `stop.headroom_pct` (10): a Target's
    optimization stops when the deployment bound holds and no candidate is
    left, when the budget is spent, or when every call site measures within

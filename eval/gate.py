@@ -159,6 +159,17 @@ def _latency_verdict(report: dict[str, Any], lat: dict[str, Any], mode: str) -> 
     if spread is None:
         out.update({"passed": False, "reason": "no control leg"})
         return out
+    # A statistic regresses when it moves by more than the larger of the bar
+    # and its own control spread: the `min` spread is not the median's noise.
+    own_spread = deltas.get("minimum_detectable_effect") or {}
+
+    def regressed(k: str) -> dict[str, float] | None:
+        entry = candidate.get(k)
+        if entry is None:
+            return None
+        limit = max(bar, own_spread.get(k, spread))
+        return {k: entry["delta"], "limit_ms": limit} if entry["delta"] > limit else None
+
     if mode == "improve":
         metric, stat = rule["improve"]
         key = f"{metric}.{stat}"
@@ -168,18 +179,14 @@ def _latency_verdict(report: dict[str, Any], lat: dict[str, Any], mode: str) -> 
         out["improve"] = {key: delta, "needed_ms": needed}
         for metric_r, stat_r in rule["no_regression"]:
             k = f"{metric_r}.{stat_r}"
-            if k == key:
-                continue
-            entry = candidate.get(k)
-            if entry is not None and entry["delta"] > spread:
-                out["regressions"].append({k: entry["delta"], "spread": spread})
+            if k != key and regressed(k):
+                out["regressions"].append(regressed(k))
         out["passed"] = bool(improved and not out["regressions"])
     elif mode == "no_regression":
         for metric_r, stat_r in rule["no_regression"]:
             k = f"{metric_r}.{stat_r}"
-            entry = candidate.get(k)
-            if entry is not None and entry["delta"] > spread:
-                out["regressions"].append({k: entry["delta"], "spread": spread})
+            if regressed(k):
+                out["regressions"].append(regressed(k))
         out["passed"] = not out["regressions"]
     else:
         raise ValueError(f"unknown mode {mode!r}; registry modes: {rule['modes']}")

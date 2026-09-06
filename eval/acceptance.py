@@ -52,6 +52,11 @@ DEFAULTS: dict[str, Any] = {
         "statistics": STATISTICS,
         "reps": 100,
         "warmup": 5,
+        # Seconds of forwards before each leg's warmup, so clocks and
+        # temperature settle before anything is read: the first run of a job
+        # spread its control legs by 0.17 ms while the later runs of the same
+        # job read 0.004 to 0.05 (job 598975).
+        "soak_s": 10,
         # Below this many repetitions the 99th percentile is the maximum; it is
         # then reported as insufficient rather than as a tail.
         "p99_min_reps": 100,
@@ -73,8 +78,12 @@ DEFAULTS: dict[str, Any] = {
         "control_spread_max_ms": 0.10,
         # Two modes. `improve` is for a performance candidate: improve the
         # first statistic by more than max(bar, spread) and regress none of the
-        # others by more than the spread. `no_regression` is for a refactor or
-        # a correctness fix: regress nothing by more than the spread.
+        # others by more than max(bar, that statistic's own control spread).
+        # `no_regression` is for a refactor or a correctness fix: regress no
+        # statistic by more than that. A plan against itself regressed its
+        # median by 0.065 ms over a 0.050 ms `min` spread (job 598975): the
+        # `min` spread is not the noise of the median, and a regression
+        # smaller than the bar is not one the bar would have promoted.
         "candidate_rule": {
             "improve": ("chunk_latency", "min"),
             "no_regression": (("chunk_latency", "min"), ("chunk_latency", "median"),

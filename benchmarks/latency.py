@@ -90,9 +90,17 @@ def _time_event(call: Callable[[], Any], reps: int, warmup: int) -> list[float]:
 
 
 def measure(engine, inputs: dict[str, Any], reps: int, warmup: int,
-            p99_min_reps: int) -> dict[str, Any]:
-    """Every latency metric of one engine on `inputs`, min/median/p99 each."""
+            p99_min_reps: int, soak_s: float = 0.0) -> dict[str, Any]:
+    """Every latency metric of one engine on `inputs`, min/median/p99 each.
+
+    `soak_s` seconds of forwards run first so an unlocked GPU's clocks and
+    temperature settle before anything is read.
+    """
     engine.forward(**inputs)                     # settles any host-side state
+    torch.cuda.synchronize()
+    deadline = time.perf_counter() + soak_s
+    while time.perf_counter() < deadline:
+        engine.forward(**inputs)
     torch.cuda.synchronize()
     forward = lambda: engine.forward(**inputs)   # noqa: E731
     metrics: dict[str, Any] = {
@@ -233,7 +241,8 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         inputs = engine.sample_inputs(seed)
         legs.append({"leg": index, "plan": plan,
                      "identity": engine.identity.as_dict(),
-                     "metrics": measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"])})
+                     "metrics": measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
+                                        soak_s=_LAT["soak_s"])})
         print(json.dumps(legs[-1]["metrics"]), flush=True)
         del engine
         torch.cuda.empty_cache()
