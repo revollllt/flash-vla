@@ -107,30 +107,48 @@ along M because two live f32 accumulators are 256 registers per thread over
 one, three 32 KB rings filling 224 KB of the 227 KB maximum, one 3-D TMA box
 per operand per K-step, 168 registers and no spills.
 
-**Its mainloop succeeded and its epilogue sank it.** Ablation columns, one
-rebuild each in one job, isolated cudagraph timer at the Pi0.5 shape:
+**One shared-memory budget causes both of its problems.** Six ablation
+columns, one rebuild each in one job (600168, ACD1-28, isolated cudagraph
+timer, Pi0.5 shape, `min` us per call):
 
-| column | us/call |
-|---|---:|
-| copy ring + math, no epilogue | 157 |
-| everything | 318 |
-| incumbent TileLang body | 205 |
+| column | us | |
+|---|---:|---|
+| the TMA ring alone | 140.4 | |
+| ring + math (the mainloop) | 156.6 | math adds only 16.2 |
+| ring + epilogue | 198.7 | |
+| everything but the activation | 234.9 | |
+| everything, direct store | 314.7 | |
+| everything, staged TMA store | 321.9 | |
+| incumbent TileLang body | 206.2 | |
+| wgmma floor at this shape | 152.9 | `[wgmma.clock.sm]` |
 
-157 us against a 152.85 us wgmma floor is 97 % of the tensor core, where the
-incumbent sits at 74 %: 3-D boxes and persistent scheduling did exactly what
-they were meant to. The epilogue then adds 161 us, half the kernel. Two store
-mechanisms -- a staged shared tile with a TMA store, and bf16 pairs written
-straight from the accumulator -- land within 10 us of each other, so the store
-mechanism is not the cause.
+Read it in two halves. **The mainloop is copy-bound, not math-bound**: the
+ring alone is 140.4 us and adding every wgmma costs 16.2 more, so the math is
+almost entirely hidden and the 156.6 us mainloop is the copy column. Three
+32 KB boxes per K-step at `[tma.issue.warp]` predicted 92 us; the extra 48 us
+is the two-stage ring failing to cover a 32 KB box's `[tma.lat.warp]` latency.
+**The epilogue costs 158.2 us and splits evenly**: 79.8 for the activation and
+78.4 for the stores, which is why a staged TMA store and bf16 pairs written
+straight from the accumulator land within 10 us of each other -- the store
+mechanism was never the variable.
 
-What a successor should start from: the mainloop, unchanged, and the
-observation that a persistent CTA pays its epilogue 7.76 times where a
-tile-per-CTA kernel pays it once. The "stage the C tile through shared memory"
-finding of the two GEMM epilogue notes was established on non-persistent
-kernels and does not carry over. The remaining structural answer is to overlap
-tile *t*'s epilogue with tile *t+1*'s mainloop, which needs either a second
-accumulator set (no registers are left) or a dedicated epilogue warpgroup,
-whose cost `ext-fa3-pingpong` prices as smem staging plus a sync.
+Both halves are the same cause. Three 32 KB rings plus a staging tile is
+224 KB of the SM's 228, so the kernel runs one CTA per SM at 384 threads:
+**12 warps of a 64-warp maximum, 18.8 % occupancy**. That is harmless for a
+wgmma mainloop, which is issue-bound, and ruinous for an epilogue whose
+transcendental and store latency has 12 warps to hide behind. The incumbent
+TileLang body holds about 128 KB and fits 1.8 CTAs per SM. Meanwhile the same
+224 KB is what caps the ring at two stages, which is what leaves the copy
+column exposed.
+
+What a successor should start from: not this tile. The ring footprint has to
+come down far enough to run two CTAs per SM *and* leave room for a deeper
+ring, which at BK=128 and two weight streams it cannot; the escape is either
+one weight stream per kernel (and then the 63 MB round trip the fusion exists
+to avoid) or a smaller BK with the box count paid back some other way. The
+"stage the C tile through shared memory" finding of the two GEMM epilogue
+notes was established on non-persistent kernels at high occupancy and does not
+transfer here.
 
 ## Verification
 

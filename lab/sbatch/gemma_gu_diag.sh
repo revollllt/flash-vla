@@ -85,8 +85,14 @@ ncu_kernel() {
     fi
 }
 
-ncu_kernel "gated_ffn_kernel" mine   lab/plans/pi05-gemma-cuda-gu.json
-ncu_kernel "tl_matmul_gate_kernel" incumbent shipped
+# SKIP_NCU=1 runs the six columns on any node; the capture needs one of
+# ACD1-10/20/21/31/40/62 and those were fully allocated for this lane's window.
+if [[ -z "${SKIP_NCU:-}" ]]; then
+    ncu_kernel "gated_ffn_kernel" mine   lab/plans/pi05-gemma-cuda-gu.json
+    ncu_kernel "tl_matmul_gate_kernel" incumbent shipped
+else
+    echo "[job] SKIP_NCU set: the six ablation columns only"
+fi
 
 echo
 echo "[job] artifacts in ${OUT} and ${NCU_DIR}"

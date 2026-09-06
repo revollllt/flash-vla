@@ -47,7 +47,30 @@
 //   plus a 32 KB C staging tile is 224 KB of the 227 KB dynamic maximum.  This
 //   is BELOW the 4-stage knee for a cold-fed mainloop
 //   [pipeline.stages.wg.knee] and is the one property this kernel does NOT
-//   improve over the incumbent; the gain, if any, is the box count.
+//   improve over the incumbent.
+//
+// WHY THIS KERNEL IS NOT ROUTED, measured (job 600168, isolated cudagraph
+// timer, Pi0.5 shape, min us per call).  That 224 KB is one budget causing two
+// losses, and it is the whole result:
+//
+//   ring alone                   140.4      ring + math      156.6
+//   ring + epilogue              198.7      everything       314.7
+//   everything but the activation 234.9     incumbent        206.2
+//
+//   - The mainloop is COPY-bound, not math-bound: every wgmma adds only 16.2 us
+//     on top of the ring.  Three 32 KB boxes per K-step at [tma.issue.warp]
+//     price the copy column at 92 us; it measures 140, and the extra is a
+//     two-stage ring failing to cover a 32 KB box's [tma.lat.warp].
+//   - The epilogue costs 158 us, split 80 activation / 78 stores, which is why
+//     a staged TMA store and direct bf16 pairs land within 10 us of each other.
+//     At 224 KB the kernel runs ONE CTA per SM at 384 threads -- 12 warps of a
+//     64-warp maximum, 18.8% occupancy -- so there is nothing to hide
+//     transcendental and store latency behind.  The incumbent holds ~128 KB and
+//     fits 1.8 CTAs per SM.
+//
+// A successor should not start from this tile.  The ring footprint has to fall
+// far enough for two CTAs per SM AND a deeper ring, which at BK=128 with two
+// weight streams it cannot.
 //
 // The RMSNorm is a separate launch, not fused.  Folding it needs whole-row
 // statistics over K=2048 (64 rows is 256 KB, past smem) and the normalized
