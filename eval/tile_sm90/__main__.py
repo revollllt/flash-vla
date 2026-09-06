@@ -29,7 +29,7 @@ import torch
 from eval.metrics import error_metrics
 
 _HERE = Path(__file__).resolve().parent
-_REPO = _HERE.parents[2]
+_REPO = _HERE.parents[1]
 _SRC = _HERE / "primitives.cu"
 _TILE_ROOT = _REPO / "src" / "flash_vla" / "hardware" / "nvidia" / "cuda"
 _CUTLASS = Path(os.environ.get("CUTLASS_DIR", _REPO / "third_party" / "cutlass"))

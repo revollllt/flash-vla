@@ -102,11 +102,14 @@ No GPU is required to falsify most of this; the checks are:
   `grep -rn "docs/architecture\|PLAN.md\|promotion_gate\|in_engine"
   --include=*.md --include=*.py --include=*.sh` finds nothing outside
   `third_party/` and archived notes.
-- **GPU.** `python -m eval.correctness` and `python -m eval.gate` each run once
-  under their registry parameters, confirming the renamed modules still produce
-  their reports; `lab/pi05/kernels.py` and `lab/pi05/ffn_taskloop.py` each run
-  once, confirming a moved trial script still imports its backend and passes
-  its own check.
+- **GPU** (job 598879, ACD1-15, the PR's tree). `eval.correctness` 1 step x 1
+  layer: Pi0.5 shipped vs reference min cosine 0.9999994, Pi0 0.9999812, both
+  replay-identical and finite. `eval.gate` on Pi0.5 shipped vs reference: every
+  in-engine gate passed, the A/B/A read -0.995 ms on chunk min, verdict
+  `blocked` on the baseline tier not run (the interpreter fix is the next
+  note's). `lab.pi05.kernels` and `lab.pi05.ffn_taskloop --modes gu,dr,full`
+  passed their own checks. `eval.tile_sm90` failed to compile: after its move
+  it derived the repository root one level too high; fixed, re-run as job 598942.
 
 ## Related notes
 
