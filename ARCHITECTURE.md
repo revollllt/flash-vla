@@ -73,7 +73,7 @@ The deployment path never imports lab/.
 | `runtime/engine.py` | the `Engine` protocol every harness is written against |
 | `runtime/cuda/` | `StaticArena` (fixed addresses), `Program` (warmup, freeze, capture, replay) |
 | `runtime/identity.py` | `Identity`: the axes, shape numbers, plan and revision on every report |
-| `runtime/cost.py` | `Cost`, `Invocation`, `SegmentCosts`: the minimal traffic and math a floor divides |
+| `runtime/cost.py` | `Cost`, `Invocation`, `Ceiling`, `SegmentCosts`: the minimal traffic and math a floor divides, and a call site's declared measured ceiling |
 
 ## Invariants
 
@@ -88,7 +88,10 @@ The deployment path never imports lab/.
 - Every report carries an `Identity`. Two numbers are comparable only when
   target, hardware, model, shape profile and precision policy match and the
   plan is stated.
-- A floor divides by a measured constant with a tag, never by a datasheet peak.
+- The floor model is guidance, never an objective. Its ceiling divides only by
+  tagged measured constants of the hardware axis's `measured/` table, its
+  roofline only by the axis's `spec.py` peaks, and the registry's stop
+  condition reads the headroom between measured and ceiling.
 
 ## What a Target is
 
