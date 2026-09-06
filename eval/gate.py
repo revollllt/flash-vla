@@ -21,7 +21,8 @@ Verdicts, in the order they are decided:
   fail     the candidate's tail sits above the deployment jitter bound while
            the reference's does not
   fail     the candidate rule of the chosen mode does not hold
-  blocked  a baseline-tier gate was not run or its interpreter is missing
+  blocked  a baseline-tier gate was not run, or its interpreter or its
+           checkpoint is missing
   pass     everything above held
 
 `--mode improve` (default) is for a performance candidate: it must improve the
@@ -109,8 +110,10 @@ def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
 
     Each script runs once under the registry's interpreter; a baseline check
     passes when every script passed, is unavailable when the interpreter is
-    missing or a script could not import its adapter, and fails otherwise.
-    The scripts own their own gate/report split internally.
+    missing, a script could not import its adapter, or a script reported
+    itself unavailable (`baseline unavailable:` on stderr, a missing
+    checkpoint), and fails otherwise. The scripts own their own gate/report
+    split internally.
     """
     baseline_checks = [c for c in checks if c.get("oracle") == "official_baseline"]
     if not baseline_checks:
@@ -129,7 +132,7 @@ def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
         proc = subprocess.run([python, "-m", script], capture_output=True, text=True,
                               cwd=REPO, env=env)
         status = "passed" if proc.returncode == 0 else "failed"
-        if "ModuleNotFoundError" in proc.stderr:
+        if "ModuleNotFoundError" in proc.stderr or "baseline unavailable:" in proc.stderr:
             status = "unavailable"
         runs.append({"script": script, "python": python, "status": status,
                      "returncode": proc.returncode, "stderr_tail": proc.stderr[-2000:]})

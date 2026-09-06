@@ -47,6 +47,14 @@ CORRECTNESS_METRICS = ("max_abs", "mean_abs", "rms_error", "rel_rms", "p99_abs",
 OPENPI_PYTHON = os.environ.get(
     "OPENPI_PYTHON", "/data/user/jzou521/codes/cuda/openpi-official/.venv/bin/python")
 
+#: The OpenPI checkpoint the Pi0 official-baseline tier compares against. Pi0's
+#: adapter loads real weights (Pi0.5's builds random ones), so its script needs
+#: a path; override with `OPENPI_PI0_CHECKPOINT`. The script reports the tier
+#: as unavailable when the path does not exist, and the gate records it so.
+OPENPI_PI0_CHECKPOINT = os.environ.get(
+    "OPENPI_PI0_CHECKPOINT",
+    "/data/user/jzou521/models/openpi/openpi-assets/checkpoints/pi0_libero_pytorch")
+
 DEFAULTS: dict[str, Any] = {
     "latency": {
         "metrics": LATENCY_METRICS,
@@ -242,5 +250,6 @@ def for_target(name: str) -> dict[str, Any]:
     return merged
 
 
-__all__ = ["CALIBRATION_SOURCE", "CORRECTNESS_METRICS", "DEFAULTS", "LATENCY_METRICS", "OPENPI_PYTHON", "STATISTICS",
-           "TARGETS", "for_target", "tolerances"]
+__all__ = ["CALIBRATION_SOURCE", "CORRECTNESS_METRICS", "DEFAULTS", "LATENCY_METRICS",
+           "OPENPI_PI0_CHECKPOINT", "OPENPI_PYTHON", "STATISTICS", "TARGETS", "for_target",
+           "tolerances"]
