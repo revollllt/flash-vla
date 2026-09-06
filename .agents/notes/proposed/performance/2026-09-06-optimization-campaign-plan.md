@@ -56,6 +56,15 @@ Analyze 已完成（job 598964 的 floor 报告，shipped plan，同一节点 AC
   96.5% 的 forward 0.34 ms，其余 8–16 ms）。修法是把只依赖 token 数的三个向量在构造时制表
   （逐位等价），host slot 只做选行与拷贝。ACD1-8 上连续三次 A/B/A 两个 plan 的 p99 − min 全部
   在 0.5 ms 内，job 599815 产出 Pi0.5 首次 `pass`。此后 Pi0.5 的候选也必须拿到 `pass`。
+- **lane B 结案**：SigLIP 组件包 `hardware/nvidia/h100/siglip/` 落地（`siglip-cublas`、`siglip-cuda`
+  两个后端，两 Target 都注册）。Pi0 的 vision 改走 `siglip-cuda`（手写 LayerNorm + cuBLASLt 投影 +
+  单 launch 融合 attention，head_dim 72→80 的 pad 只在 smem 里），chunk min −0.42 ms，gate `pass`
+  含基线层（job 599893，ACD1-20）。Pi0.5 最佳候选 −0.094 ms 不过 0.10 ms 门槛（四次 gate 一致），
+  shipped plan 不变。contract 的主候选 B1（LayerNorm 折进 GEMM A 侧）未花作业即否决：先前
+  short-K GEMM 的消融表明每 SM 的 TMA 事务发射成本是瓶颈，折叠迫使 BLOCK_M ≤ 64 把 QKV 关键路径
+  的 box 数从约 36 翻到约 72；"折叠不增加流量"对字节成立、对事务不成立。可复用的结论：短 K
+  形状下 floor 的 measured ceiling 达不到，因为第三个常数（每 SM TMA 发射成本）先于带宽与
+  tensor core 项绑定。用了 12 个作业中的 7 个。
 - **lane D 结案**：D0 组件包搬迁完成（bit-identity），Pi0 移植在动手前被同节点 A/B/A 否决
   （链 40.8–41.0 us/层步对 Pi0 路由 38.0–38.4）；D1 定价上限 0.76 ms < 1 ms，未建原型。
   action_expert 段的余量归于依赖链延迟，见两份 rejected note。
