@@ -29,7 +29,9 @@ The user picks the mode per task; the contract records it.
 1. **Contract** — copy `assets/contract-template.md`, fill every field: tensor
    table (named dims -> fixed numbers, dtype, mutation), fusion region,
    validation command, baselines, floor from measured tags, promotion
-   criteria, budget, mode. Hand it back — one screen — and wait for the ack.
+   criteria (the registry's `promotion_bar_ms` and tail bound, cited, not a
+   number of its own), budget, mode. Hand it back — one screen — and wait
+   for the ack.
    A wrong op boundary is more expensive than any lost optimization.
 2. **Baselines first** — measure the best existing implementations of this op
    at the exact production shape BEFORE any candidate exists: the current

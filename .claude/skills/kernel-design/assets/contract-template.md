@@ -38,7 +38,9 @@ Gates: <which parity checks gate promotion; which are report-only>.
 
 Floor: <arithmetic over measured tags, e.g. bytes / [ld.bw.dev.dram] +
 [launch.lat.dev.ramp]> = <value>, with tags and job ids.
-Promotion: <e.g. min_ms <= X at the production shape AND all gates pass>.
+Promotion: <the registry rule: `eval/acceptance.py` promotion_bar_ms on chunk
+min in the A/B/A, the deployment tail bound, every correctness gate; verdict
+from `python -m eval.gate --candidate <plan>`>.
 
 ## Allowed approaches
 

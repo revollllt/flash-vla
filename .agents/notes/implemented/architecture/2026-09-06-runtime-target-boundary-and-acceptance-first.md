@@ -44,14 +44,25 @@ that decide whether a new VLA model or device can be brought up quickly:
    one entry per Target holding only budget, baseline-tier scripts and
    overrides. Parity scripts read their thresholds from it. Precision policy
    is an identity axis with `bf16` its only value; a policy other than
-   `bf16` cannot be promoted while the policy-quality slot is empty.
+   `bf16` cannot be promoted while the policy-quality slot is empty. The
+   registry names no latency objective: what it holds on the latency side is
+   the promotion bar, the run-validity limit, the two candidate modes, the
+   deployment tail bound and the stop condition, as
+   [acceptance is deployability](2026-09-06-acceptance-is-deployability.md)
+   defines them.
 3. **Latency for VLA.** `benchmarks/latency.py` reports chunk, device, host,
    segment and overhead latency with `min`, `median` and `p99`, clocks
    unlocked because deployment does not lock them; deltas come only from
    same-process legs, the control-leg spread is the minimum detectable
-   effect, and a delta below it is indistinguishable. No metric carries a
-   human-chosen bound.
-4. **Derived latency objective.** `benchmarks/floor.py` computes, from the
+   effect, and a delta below it is indistinguishable. One metric carries a
+   human-chosen bound: the chunk latency's `p99 - min` on the candidate leg,
+   the deployment jitter bound of
+   [acceptance is deployability](2026-09-06-acceptance-is-deployability.md).
+4. **Derived latency floor, as guidance.** (The objective reading of this
+   section is withdrawn by
+   [acceptance is deployability](2026-09-06-acceptance-is-deployability.md):
+   the floor says where to look, and the stop condition is the registry's
+   deployment bound, budget and headroom.) `benchmarks/floor.py` computes, from the
    Target's cost declarations (`runtime/cost.py`, per-Target `costs.py`) and
    the hardware-unit-test constants (cited by tag, versioned by the
    constants file), a plan-independent roofline tier and a plan-dependent
@@ -70,7 +81,9 @@ that decide whether a new VLA model or device can be brought up quickly:
 6. **Promotion gate.** `eval/gate.py` runs the registry's checks
    and the A/B/A through the generic harnesses, computes the floor as
    context, and writes one evidence record with a verdict of pass, fail or
-   blocked.
+   blocked, in the order
+   [acceptance is deployability](2026-09-06-acceptance-is-deployability.md)
+   fixes: correctness, run validity, tail bound, candidate rule, baseline tier.
 7. **Documentation is one page.** `ARCHITECTURE.md` is the whole normative
    architecture: the premise and the Target definition, the boundary rule, the
    three-stage template and what onboarding a model means, the dependency
@@ -179,6 +192,9 @@ random weights and inputs before and after each step.
 - [deployment configuration and the lab workspace](../process/2026-09-06-deploy-config-and-lab.md):
   the single shipped plan per Target, and the one-page architecture that
   replaces Decision §7's tree.
+- [acceptance is deployability](2026-09-06-acceptance-is-deployability.md):
+  the registry's latency side after the objective was withdrawn; amends
+  Decision §2–§4 and §6 above.
 
 ## Open items
 

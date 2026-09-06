@@ -18,8 +18,9 @@ metric the acceptance registry names (`eval/acceptance.py`) is reported with
 Deltas are read only within one process. Legs run in the order given; a leg
 whose plan repeats the first leg's is a control leg, and the spread between
 control legs is the run's minimum detectable effect per statistic. A delta
-below it is reported as indistinguishable. `--calibrate` runs the first plan
-three times to measure that spread on its own.
+below it is reported as indistinguishable, and a chunk `min` spread above the
+registry's `control_spread_max_ms` marks the whole run invalid. `--calibrate`
+runs the first plan three times to measure that spread on its own.
 
 The runner contains no model or stage names: it builds the engine through
 `benchmarks.targets`, takes the program from the engine, and samples inputs
@@ -107,8 +108,14 @@ def measure(engine, inputs: dict[str, Any], reps: int, warmup: int,
     for name in segments(engine):
         metrics["segment_latency"][name] = _stats(
             _time_event(lambda name=name: engine.replay(name), reps, warmup), p99_min_reps)
+    # Overhead is the chunk statistic minus the sum of the segments' same
+    # statistic; for `p99` that is a difference of tails, not a tail of a
+    # difference, and is reported as such.
     overhead = {}
-    for stat in ("min", "median"):
+    for stat in ("min", "median", "p99"):
+        if metrics["chunk_latency"].get(stat) is None or any(
+                s.get(stat) is None for s in metrics["segment_latency"].values()):
+            continue
         overhead[stat] = metrics["chunk_latency"][stat] - sum(
             s[stat] for s in metrics["segment_latency"].values())
     metrics["overhead"] = overhead
@@ -147,8 +154,17 @@ def _deltas(legs: list[dict[str, Any]]) -> dict[str, Any]:
         for key, value in _flatten(leg["metrics"]).items():
             if key in first:
                 spread[key] = max(spread.get(key, 0.0), abs(value - first[key]))
+    # The control spread is the run's minimum detectable effect, and above the
+    # registry's limit it invalidates the run: the gate blocks rather than
+    # reading a delta against a node that did not hold still.
+    limit = _LAT["control_spread_max_ms"]
+    key = "chunk_latency.min"
     out = {"reference_leg": 0, "control_legs": len(control),
-           "minimum_detectable_effect": spread or None, "legs": []}
+           "minimum_detectable_effect": spread or None,
+           "control_spread_ms": spread.get(key) if spread else None,
+           "control_spread_max_ms": limit,
+           "valid": bool(control) and spread.get(key, float("inf")) <= limit,
+           "legs": []}
     for index, leg in enumerate(legs[1:], start=1):
         flat = _flatten(leg["metrics"])
         deltas = {}
@@ -235,10 +251,11 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         "env": _env(),
         "config": {"reps": reps, "warmup": warmup, "seed": seed, "plans": plans,
                    "calibration": calibrate, "statistics": list(_LAT["statistics"]),
-                   "p99_min_reps": _LAT["p99_min_reps"]},
+                   "p99_min_reps": _LAT["p99_min_reps"],
+                   "promotion_bar_ms": _LAT["promotion_bar_ms"],
+                   "control_spread_max_ms": _LAT["control_spread_max_ms"]},
         "legs": legs,
         "deltas": _deltas(legs) if len(legs) > 1 else None,
-        "floors": None,        # from the floor model, once it exists
     }
     if calibrate:
         report["calibration"] = report["deltas"]["minimum_detectable_effect"]

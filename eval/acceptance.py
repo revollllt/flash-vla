@@ -1,29 +1,33 @@
-"""The acceptance registry: framework defaults and per-Target entries.
+"""The acceptance registry: what the human defines, and the framework's conventions.
 
-What the human defines lives here and nowhere else -- accuracy requirements,
-the metric and framework conventions, and each Target's budget. The latency
-objective is not a number in this file: it is derived from the Target's floor
-model, and the optimization closes the gap to it. See
-`ARCHITECTURE.md`.
+Acceptance means deployable. The human defines three things and one latency
+number: the accuracy requirements (the precision policy, which oracle tiers
+are required, any tolerance override), the deployment jitter bound that the
+chunk latency's tail must satisfy, and each Target's budget. Everything else
+here is a framework convention ratified once for every Target. No latency
+objective is written here: the floor model (`benchmarks/floor.py`) is
+guidance for where to look, never a target to reach.
 
 Structure:
 
 - `DEFAULTS` holds everything that is the same for every Target: the metric
-  set, the statistics, repetition counts, the mandatory gates and their
-  comparison structure, the noise policy, and the tolerance defaults keyed by
-  precision policy (the tolerance for a `bf16` Target is a property of `bf16`,
-  not of the model).
+  set, the statistics, repetition counts, the promotion bar, the run-validity
+  limit on the control spread, the candidate rule and its two modes, the
+  deployment jitter bound, the stop condition, the mandatory correctness
+  checks, and the tolerance defaults keyed by precision policy (the tolerance
+  for a `bf16` Target is a property of `bf16`, not of the model).
 - `TARGETS` holds one entry per Target with only what differs: its budget,
-  the model-specific scripts that implement the official-baseline tier, and
-  any override of a default, each with a reason.
+  the scripts that implement the official-baseline tier and the interpreter
+  they need, and any override of a default, each with a reason.
 
-`for_target(name)` merges the two. No torch, no device: the plan registry's
-precedent, so offline tools and the promotion gate read it without a GPU.
-Parity scripts read their thresholds from `tolerances(precision)` rather than
-declaring them, so a change here is a change everywhere.
+`for_target(name)` merges the two. No torch, no device: offline tools and the
+gate read it without a GPU. Checks read their thresholds through
+`tolerances(precision)[key]` rather than declaring numbers, so a change here
+is a change everywhere.
 """
 from __future__ import annotations
 
+import os
 from copy import deepcopy
 from typing import Any, Mapping
 
@@ -32,8 +36,15 @@ LATENCY_METRICS = ("chunk_latency", "device_latency", "host_time", "segment_late
                    "overhead")
 #: Every latency metric reports all three.
 STATISTICS = ("min", "median", "p99")
-#: The five correctness metrics of `eval/metrics.py`.
+#: The correctness metrics of `eval/metrics.py`.
 CORRECTNESS_METRICS = ("max_abs", "mean_abs", "rms_error", "p99_abs", "cosine_similarity")
+
+#: The interpreter the official-baseline scripts run under: the OpenPI
+#: environment, which carries the reference implementation. Override with
+#: `OPENPI_PYTHON`; the gate records a baseline check as unavailable when the
+#: interpreter does not exist.
+OPENPI_PYTHON = os.environ.get(
+    "OPENPI_PYTHON", "/data/user/jzou521/codes/cuda/openpi-official/.venv/bin/python")
 
 DEFAULTS: dict[str, Any] = {
     "latency": {
@@ -46,15 +57,43 @@ DEFAULTS: dict[str, Any] = {
         "p99_min_reps": 100,
         # Deployment does not lock clocks, so neither does any measurement.
         "clocks": "unlocked",
-        # A delta is claimable only from a same-process A/B/A whose control leg
-        # reproduces, and only above the calibrated minimum detectable effect.
+        # Deltas come only from a same-process A/B/A; the spread between the
+        # two control legs is the run's minimum detectable effect.
         "deltas": "same_process_aba",
-        "objective": "gap_to_structural_floor",
+        # A performance candidate must improve the chunk `min` by at least
+        # this much, in absolute terms, on top of being distinguishable from
+        # the control spread. The number is the bar the Pi0.5 optimization
+        # loop used for every promotion it recorded.
+        "promotion_bar_ms": 0.10,
+        # A run whose two control legs differ by more than this on the chunk
+        # `min` is not evidence of anything: the verdict is `blocked`, rerun.
+        "control_spread_max_ms": 0.05,
+        # Two modes. `improve` is for a performance candidate: improve the
+        # first statistic by more than max(bar, spread) and regress none of the
+        # others by more than the spread. `no_regression` is for a refactor or
+        # a correctness fix: regress nothing by more than the spread.
         "candidate_rule": {
             "improve": ("chunk_latency", "min"),
-            "no_regression": (("chunk_latency", "median"), ("chunk_latency", "p99")),
+            "no_regression": (("chunk_latency", "min"), ("chunk_latency", "median"),
+                              ("chunk_latency", "p99")),
+            "modes": ("improve", "no_regression"),
+            "default_mode": "improve",
         },
     },
+    # The one latency number the human sets: how far the tail may sit above
+    # the floor of the same run. A closed-loop controller misses a tick on a
+    # late chunk, so this is a deployment property, read on the candidate leg
+    # under deployment conditions (clocks unlocked, shared node). When the
+    # reference leg violates it in the same run the node is the cause and the
+    # verdict is `blocked`, not `fail`.
+    "deployment": {
+        "metric": "chunk_latency",
+        "jitter_ms": 0.5,
+    },
+    # When a Target's optimization stops: the deployment bound holds and no
+    # candidate is left to build, or the budget is spent, or every call site
+    # measures within this much of its measured ceiling in the floor report.
+    "stop": {"headroom_pct": 10},
     "correctness": {
         "metrics": CORRECTNESS_METRICS,
         # Keyed by precision policy: a tolerance is a property of the rounding,
@@ -75,8 +114,9 @@ DEFAULTS: dict[str, Any] = {
                 "max_cosine_step": 0.005,
             },
         },
-        # Ordered. `mode` is gate or report; `requires` names a Target
-        # capability without which the check is skipped and recorded as such.
+        # Ordered. `mode` is gate or report; `threshold` names a key of the
+        # precision policy's tolerances; `requires` names a Target capability
+        # without which the check is skipped and recorded as such.
         "checks": (
             {"check": "replay_determinism", "mode": "gate"},
             {"check": "finiteness", "mode": "gate"},
@@ -100,9 +140,9 @@ DEFAULTS: dict[str, Any] = {
     "policy_quality": {"suite": None, "threshold": None},
 }
 
-#: Per-Target entries: budget, the scripts that implement the official-baseline
-#: tier for this model, and overrides with reasons. Nothing that the model spec
-#: or the engine already holds is restated here.
+#: Per-Target entries: budget, the official-baseline scripts and their
+#: interpreter, and overrides with reasons. Nothing that the model spec or the
+#: runner already holds is restated here.
 TARGETS: dict[str, dict[str, Any]] = {
     "hardware/nvidia/h100/pi05": {
         "budget": {"candidates": 6, "non_improving": 3, "jobs": 12},
@@ -110,6 +150,7 @@ TARGETS: dict[str, dict[str, Any]] = {
             "in_engine_reference": "eval.correctness",
             "official_baseline": ("eval.pi05.reference",),
         },
+        "baseline_python": OPENPI_PYTHON,
         "capabilities": ("baseline_adapter",),
         "overrides": {},
     },
@@ -119,6 +160,7 @@ TARGETS: dict[str, dict[str, Any]] = {
             "in_engine_reference": "eval.correctness",
             "official_baseline": ("eval.pi0.reference",),
         },
+        "baseline_python": OPENPI_PYTHON,
         "capabilities": ("baseline_adapter",),
         "overrides": {},
     },
@@ -138,15 +180,17 @@ def for_target(name: str) -> dict[str, Any]:
     """The framework defaults merged with `name`'s entry.
 
     A Target without an entry gets every default and no budget; it can run
-    every check but cannot enter the promotion gate. An override replaces one
-    dotted path in the defaults (`"latency.reps": 200`) and must carry a
-    reason in the entry, which is kept beside the merged value.
+    every check but cannot enter the gate. An override replaces one dotted
+    path in the defaults (`"deployment.jitter_ms": {"value": 1.0, "reason":
+    ...}`) and must carry a reason in the entry, which is kept beside the
+    merged value.
     """
     merged = deepcopy(DEFAULTS)
     entry = TARGETS.get(name, {})
     merged["target"] = name
     merged["budget"] = deepcopy(entry.get("budget"))
     merged["scripts"] = deepcopy(entry.get("scripts", {}))
+    merged["baseline_python"] = entry.get("baseline_python")
     merged["capabilities"] = tuple(entry.get("capabilities", ()))
     merged["overrides"] = {}
     for path, value in entry.get("overrides", {}).items():
@@ -161,5 +205,5 @@ def for_target(name: str) -> dict[str, Any]:
     return merged
 
 
-__all__ = ["CORRECTNESS_METRICS", "DEFAULTS", "LATENCY_METRICS", "STATISTICS", "TARGETS",
-           "for_target", "tolerances"]
+__all__ = ["CORRECTNESS_METRICS", "DEFAULTS", "LATENCY_METRICS", "OPENPI_PYTHON", "STATISTICS",
+           "TARGETS", "for_target", "tolerances"]

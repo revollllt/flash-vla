@@ -64,18 +64,23 @@ def _compare(name: str, reference: torch.Tensor, candidate: torch.Tensor,
 
 def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
         layers: int | None = 1, seed: int = 0, isolate: bool = False,
-        **overrides) -> dict[str, Any]:
+        threshold: str = "shallow_cosine", **overrides) -> dict[str, Any]:
     """Compare `plan` against the Target's reference plan, stage by stage.
 
     `steps` / `layers` of `None` mean the Target's full default depth.
+    `threshold` names the tolerance key (of the Target's precision policy)
+    that gates a shallow run.
     """
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this on a GPU node")
     target = resolve(target)
-    tol = tolerances("bf16")
     depth = {k: v for k, v in (("steps", steps), ("layers", layers)) if v is not None}
     reference = build(target, "reference", seed=seed, **depth, **overrides)
     candidate = build(target, plan or "shipped", seed=seed, **depth, **overrides)
+    tol = tolerances(reference.identity.precision)
+    if threshold not in tol:
+        raise KeyError(f"threshold {threshold!r} is not a tolerance of "
+                       f"{reference.identity.precision}: {sorted(tol)}")
     steps = reference.identity.shape.get("steps", steps)
     layers = reference.identity.shape.get("layers", layers)
     if not reference.identity.same_workload(candidate.identity):
@@ -141,13 +146,14 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
         "replay_identical": replay_identical,
         "finite": finite,
         "min_cosine": min(cosines),
-        "threshold": tol["shallow_cosine"],
+        "threshold": tol[threshold],
+        "threshold_key": threshold,
         "mode": "gate" if shallow else "report",
         "checks": [c["check"] for c in DEFAULTS["correctness"]["checks"]
                    if c.get("oracle") in (None, "in_engine_reference")],
     }
     report["passed"] = bool(replay_identical and finite
-                            and (not shallow or min(cosines) > tol["shallow_cosine"]))
+                            and (not shallow or min(cosines) > tol[threshold]))
     return report
 
 

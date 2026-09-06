@@ -46,11 +46,13 @@ value of the ledger.
 
 Stop at the first of:
 
-1. promotion criteria met;
-2. the remaining blockers are explicit — a named constant GAP, a floor shown
-   unreachable with evidence, a dependency outside the task;
-3. the contract's budget is exhausted (default: 6 candidates, or 3
-   consecutive without improvement; the contract may override).
+1. promotion criteria met: the acceptance registry's candidate rule
+   (`eval/acceptance.py`, `promotion_bar_ms` on chunk `min` in `improve`
+   mode) and its deployment tail bound, decided by `python -m eval.gate`;
+2. the remaining blockers are explicit — a named constant GAP, a ceiling
+   shown reached with evidence, a dependency outside the task;
+3. the Target's budget in the registry is exhausted (the contract may
+   narrow it, never widen it).
 
 Auto mode returns only at a stop condition, with the evidence pack: the
 ledger, the best candidate's parity and benchmark results, and what it would
@@ -60,7 +62,8 @@ try next with more budget.
 
 - parity gates pass (the gate set named in the contract);
 - benchmark evidence at the stated reproducible config, meeting the criteria;
-- wired into the op table; the e2e plan run shows no regression;
+- wired into the op table; `python -m eval.gate --candidate <plan>` on the
+  Target returns `pass` (a `blocked` run is rerun, never read as a pass);
 - a built-in case added to `benchmarks/kernels.py` when the kernel is
   production;
 - Agent Note added or updated; the evidence summary copied from the workspace
