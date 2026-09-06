@@ -66,8 +66,11 @@ DEFAULTS: dict[str, Any] = {
         # loop used for every promotion it recorded.
         "promotion_bar_ms": 0.10,
         # A run whose two control legs differ by more than this on the chunk
-        # `min` is not evidence of anything: the verdict is `blocked`, rerun.
-        "control_spread_max_ms": 0.05,
+        # `min` cannot decide a bar-sized effect: the verdict is `blocked`,
+        # rerun. Equal to the bar. On this cluster the spread of an unlocked,
+        # shared node read 0.007 to 0.12 ms across five runs (jobs 598904 and
+        # 598948); a limit at half the bar blocked three of them.
+        "control_spread_max_ms": 0.10,
         # Two modes. `improve` is for a performance candidate: improve the
         # first statistic by more than max(bar, spread) and regress none of the
         # others by more than the spread. `no_regression` is for a refactor or
