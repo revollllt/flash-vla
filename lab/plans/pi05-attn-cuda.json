@@ -1,0 +1,5 @@
+{
+  "llm_backbone_attention": "cuda",
+  "action_expert_norm_qkv_rope": "cuda",
+  "action_expert_attention": "cuda"
+}

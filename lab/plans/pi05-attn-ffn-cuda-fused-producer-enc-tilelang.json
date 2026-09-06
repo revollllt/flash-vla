@@ -1,0 +1,7 @@
+{
+  "action_expert_norm_qkv_rope": "cuda",
+  "action_expert_attention": "cuda",
+  "action_expert_out_proj_residual": "cuda",
+  "action_expert_norm_gated_ffn": "cuda",
+  "action_expert_ffn_down_residual": "cuda"
+}

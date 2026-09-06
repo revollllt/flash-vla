@@ -10,6 +10,8 @@ venv/
 # benchmark and profiler output
 *.pt
 *.json
+# candidate plans are tracked (lab/plans/README.md)
+!lab/plans/*.json
 *.ncu-rep
 *.nsys-rep
 artifacts/
