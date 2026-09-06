@@ -58,10 +58,12 @@ class Pi05(VLA):
     )
 
     registry = REGISTRY
-    #: The shipped plan: the fused CUDA encoder attention, and the decoder's
+    #: The shipped plan: the fused backbone attention, now from the shared
+    #: Gemma component package rather than this Target's own copy of the same
+    #: kernel source (proven bit-identical, job 599788), and the decoder's
     #: attention and FFN halves on the CUDA backend with the PDL chain armed.
     plan = {
-        "llm_backbone_attention": "cuda",
+        "llm_backbone_attention": "gemma-cuda",
         "action_expert_norm_qkv_rope": "cuda-pdl",
         "action_expert_attention": "cuda-pdl",
         "action_expert_out_proj_residual": "cuda-pdl",
