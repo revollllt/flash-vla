@@ -140,7 +140,9 @@ def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
 
 
 def _candidate_leg(report: dict[str, Any]) -> dict[str, Any]:
-    return next(leg for leg in report["deltas"]["legs"] if not leg["same_as_reference"])
+    """The middle leg of the A/B/A, by position: a candidate may share the reference's plan
+    (a no-regression self-test), so plan names cannot identify it."""
+    return report["deltas"]["legs"][0]
 
 
 def _latency_verdict(report: dict[str, Any], lat: dict[str, Any], mode: str) -> dict[str, Any]:
@@ -197,7 +199,7 @@ def _deployment_verdict(report: dict[str, Any], dep: dict[str, Any]) -> dict[str
 
     legs = report["legs"]
     reference = tail(legs[0])
-    candidate = tail(next(l for l in legs if l["plan"] != legs[0]["plan"]))
+    candidate = tail(legs[1])
     out = {"metric": metric, "jitter_ms": jitter, "candidate_p99_minus_min": candidate,
            "reference_p99_minus_min": reference}
     if candidate is None or reference is None:
