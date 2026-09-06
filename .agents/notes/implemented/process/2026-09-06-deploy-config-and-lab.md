@@ -43,8 +43,10 @@ tell which document was authoritative.
    technique it happens to use.
 4. **Documentation collapses to one page.** `ARCHITECTURE.md` owns the premise,
    the boundary, the template, the dependency direction, the runtime interface
-   as locators, the invariants, what a Target consists of, and the evaluation
-   entry points. The nine-document tree and the Pi0.5 bring-up plan are
+   as locators, the invariants, what a Target consists of, the optimization
+   loop (the human's role, the flywheel, the order of evidence, the exclusion
+   rule before attribution, the stop condition, the skill table), and the
+   evaluation entry points. The nine-document tree and the Pi0.5 bring-up plan are
    deleted. Decisions, their alternatives and their evidence live in
    `.agents/notes/`; source is authoritative for implementation.
 

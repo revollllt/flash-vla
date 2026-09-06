@@ -108,6 +108,62 @@ correctness oracle route). Everything else — candidate plans, ablations,
 per-kernel trials — lives in `lab/`, the optimization workspace, which is
 tracked in git, may import the deployment path, and is never imported by it.
 
+## The optimization loop
+
+The human defines the accuracy requirements, one deployment bound (the chunk
+latency's tail, `deployment.jitter_ms`) and each Target's budget, chooses auto
+or human mode per kernel task, and reviews promotion PRs. The human sets no
+latency objective. Everything else is one loop per Target:
+
+```text
+Profile -> Analyze -> Design -> Implement -> Validate -> Deploy -> Profile
+```
+
+- **Profile.** `benchmarks profile` attributes a captured stage's kernels to
+  call sites in graph-node order; `benchmarks floor` puts the attributed time
+  beside the datasheet roofline and the measured ceiling, per call site and
+  per atomic group (a dependent-launch chain is judged on its sums).
+- **Analyze.** Starts from the floor report: a call site or chain far above
+  its ceiling is where kernel work can recover time; one within the
+  registry's headroom is done. Evidence is gathered in order of cost:
+  arithmetic over the measured constants first, then a same-process A/B/A,
+  then a profile when the A/B needs localizing. Three sources stay
+  independent: correctness reports, latency on the captured workload, and
+  profiler diagnostics. Profilers localize, the latency harness decides, and
+  correctness is overridden by neither.
+- **Design and Implement.** A `kernel-design` task: a one-screen contract
+  that prices the candidate against its ceiling (a gain below the promotion
+  bar is not built), a torch reference, a parity harness, then the candidate
+  loop in `lab/` with every candidate and every rejection logged.
+- **Validate.** `python -m eval.gate` on the candidate plan: the correctness
+  gates, the run's validity (control spread), the deployment bound, the
+  candidate rule (`improve` or `no-regression`) and the baseline tier, in
+  that order, into one verdict: `pass`, `fail`, or `blocked`. A blocked run
+  is rerun, never read as a pass.
+- **Deploy.** The winner becomes the Target's one shipped plan, in a PR that
+  carries the gate's evidence record and its Agent Note; the trial that
+  produced it stays in `lab/`.
+
+Before a change is attributed, the other causes are excluded: node and clock
+drift (the control legs), measurement regime (eager against in-graph), and
+identity mismatch (a different plan or shape). The loop stops when the
+deployment bound holds and no candidate is left, when the budget is spent, or
+when every call site is within the registry's headroom of its ceiling.
+
+| skill | owns |
+|---|---|
+| `kernel-design` | the entry point for kernel work: contract, reference, parity, candidate loop, promotion; the sm90 wiki and templates |
+| `benchmark-kernel` | per-kernel timing and the amortized in-graph regime |
+| `hardware-unit-test` | the measured constants under every ceiling, and their probes |
+| `gpu-profiler-analysis` | Torch, Nsight Systems and Nsight Compute capture |
+| `ncu-report` | reading a Nsight Compute report into a named bottleneck |
+
+A skill for bringing up a new Target is not written yet; the sequence is the
+"What a Target is" section above. Skills carry portable experience only;
+evidence (job ids, measurements, rejected candidates) lives in Agent Notes,
+where a rejection ranks with an acceptance: it stops the next agent from
+repeating an expensive, invalid experiment.
+
 ## Evaluation
 
 `python -m benchmarks {latency,profile,kernels,floor}` take the Target as an
