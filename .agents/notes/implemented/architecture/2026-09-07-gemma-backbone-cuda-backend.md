@@ -16,7 +16,7 @@ projection was a TileLang body where Pi0.5's was cuBLAS. A kernel written for
 one Target could not be reached by the other.
 
 The segment is also the campaign's second-largest headroom
-([campaign plan](../../proposed/performance/2026-09-06-optimization-campaign-plan.md)):
+([campaign plan](../../implemented/performance/2026-09-06-optimization-campaign-plan.md)):
 6.75 ms on Pi0.5 and 5.95 on Pi0 against measured ceilings of 4.46 and 3.54.
 
 ## Decision

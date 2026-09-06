@@ -1,5 +1,55 @@
 # Flash-VLA 优化战役执行计划：三段全开的 kernel-design lanes（A 尾部归因、B 视觉编码器、C 骨干 GEMM、D 动作专家形态）
 
+
+Status: implemented — executed 2026-09-07; the outcome is recorded below, every
+lane's evidence in its own note.
+
+## 战役结果（2026-09-07，协调者记录）
+
+同进程 A/B/A（`benchmarks latency`，100 rep，时钟未锁），两个 Target 的 shipped 对战役前的
+shipped（`lab/plans/<target>-preshipped.json`），job 600566，ACD1-3，`eval.gate --baseline`：
+
+| Target | 战役前 chunk min | 战役后 | Δ | 段（前 → 后，min ms） | verdict |
+|---|---|---|---|---|---|
+| Pi0 | 15.27 / 15.34 ms | 14.56 ms | **−0.71 ms** | vision 2.50 → 2.07；backbone 5.82 / 5.57 → 5.31；expert 7.01 → 7.02 | `pass`（含基线层，尾部 0.12 ms） |
+| Pi0.5 | 15.79 / 15.80 ms | 15.86 ms | +0.07 ms（同一程序，见下） | vision 2.03 → 2.04；backbone 6.61 / 6.30 → 6.53；expert 7.39 → 7.42 | `fail`（候选规则；无变化的程序） |
+
+Pi0.5 的两条腿在 enc_attn 退役后运行的是同一个程序（shipped 与 preshipped 只在
+`llm_backbone_attention` 的后端名上不同，两者现在都是组件包的同一个 wrapper），+0.07 ms 是两个
+engine 实例之间的差异，而 control spread 只有 0.007 ms：这是 promotion bar 0.10 ms 所对着的
+噪声下限，比 control spread 高一个量级，与验收 note 里"plan 对自己 median 动 0.065 ms"的记录
+一致。Pi0.5 在本战役拿到的是可部署性而非延迟：chunk 尾部从间歇 2.5–11.5 ms 降到 ≤ 0.13 ms，
+`eval.gate` 首次 `pass`（job 599815）。
+
+floor 报告（归因态仪器，只用于逐 site 余量；job 598964 ACD1-55 → job 600566 ACD1-3，跨节点）：
+
+| 段 | Pi0.5 measured / ceiling（前 → 后） | Pi0 measured / ceiling（前 → 后） |
+|---|---|---|
+| vision_encoder | 2.05 → 2.07 / 1.01 | 2.54 → 2.23 / 1.01 |
+| llm_backbone | 6.75 → 6.16 / 4.46 | 5.95 → 5.57 / 3.54 |
+| action_expert | 8.13 → 8.08 / 4.41 | 7.70 → 7.73 / 4.46 |
+| 合计 | 16.94 → 16.31 / 9.88 | 16.20 → 15.53 / 9.01 |
+
+各 lane 的结论与预算（GPU 作业）：
+
+| lane | 结果 | note | 作业 |
+|---|---|---|---|
+| PR0 | 组件包规则；两个 harness 缺陷修复；Pi0 首次 gate pass（599777） | `implemented/architecture/2026-09-07-device-component-packages.md` | 2 |
+| A | 尾部机制 = host slot 的 torch intra-op 线程池；制表修复；Pi0.5 首次 pass（599815） | `implemented/performance/2026-09-07-pi05-chunk-tail-is-the-host-slots-thread-pool.md` | 4 / 12 |
+| B | SigLIP 包；Pi0 vision −0.42 ms `pass`；Pi0.5 −0.094 不过门槛；B1 折叠按事务成本否决 | `implemented/architecture/2026-09-07-siglip-cuda-backend.md` | 7 / 12 |
+| C | Gemma 骨干包；Pi0 −0.27 ms `pass`；Pi0.5 attention 改从包取（逐位一致）；C1 gated FFN 因占用率否决 | `implemented/architecture/2026-09-07-gemma-backbone-cuda-backend.md` | 10 / 12 |
+| D0 | expert 包搬迁（逐位一致）；Pi0 移植被 A/B/A 否决 | `implemented/architecture/2026-09-07-gemma-expert-package.md`、`rejected/architecture/2026-09-07-pi0-expert-cuda-chain.md` | 2 / 8 |
+| D1 | megakernel 定价 0.76 ms < 1 ms，未建 | `rejected/architecture/2026-09-07-expert-megakernel-pricing.md` | 0 / 6 |
+| 集成 | enc_attn 退役逐位一致（600564/600565）；收官 gate 与 floor（600566） | 本节 | 3 |
+
+**剩余余量的具名阻塞**（下一轮的起点，不是本战役的遗留工作）：vision 的四个 GEMM——短 K 下每
+SM 的 TMA 事务发射成本先于带宽与 tensor core 项绑定，floor 的 ceiling 在这些形状上达不到；
+骨干 gated FFN——224 KB smem 迫使 1 CTA/SM、18.8% 占用率，后继 kernel 不应从该 tile 起步；
+Pi0 的两个 N=2048 site——波量化（96 tile / 132 SM），tile 库无 split-K；骨干 QKV 投影——
+27% ceiling，本轮未动，是骨干里最大的单项；expert——依赖链延迟，重开需要"减 hop 不减字节"的
+机制。已写好未合入的候选：lane B 的流水化 attention B2a（定价 −0.09 至 −0.10 ms，
+`artifacts/ktasks/siglip/staging/`）。
+
 ## Context
 
 重构五个 PR 已合入本地 main（c7afd03）：显式计算图 + ModelRunner、单一部署配置 + lab/、

@@ -10,7 +10,7 @@ Date: 2026-09-07
 
 ## Problem
 
-The [optimization campaign](../../proposed/performance/2026-09-06-optimization-campaign-plan.md)
+The [optimization campaign](../../implemented/performance/2026-09-06-optimization-campaign-plan.md)
 opened lane D0 to move Pi0.5's action-expert CUDA/PDL chain onto Pi0, on the
 premise that the chain measures 7.39 ms of `action_expert` against Pi0's
 7.70 ms, so a port worth 0.3 ms was there for the taking once the buffers were

@@ -9,7 +9,7 @@ Date: 2026-09-07
 
 ## Problem
 
-The [optimization campaign](../../proposed/performance/2026-09-06-optimization-campaign-plan.md)
+The [optimization campaign](../../implemented/performance/2026-09-06-optimization-campaign-plan.md)
 opened lane D1 to price a Pi0.5 action-expert megakernel and, if the price
 justified it, prototype one layer of it against the shipped
 [`cuda-pdl` chain](../../implemented/architecture/2026-09-02-decoder-pdl-chain.md).
@@ -213,5 +213,5 @@ workspace contract at `artifacts/ktasks/expert-megakernel/`.
 - [the Gemma expert package](../../implemented/architecture/2026-09-07-gemma-expert-package.md)
   and [Pi0's expert chain priced out](2026-09-07-pi0-expert-cuda-chain.md):
   lane D0, which supplied the per-layer-step number this note prices against.
-- [the optimization campaign plan](../../proposed/performance/2026-09-06-optimization-campaign-plan.md):
+- [the optimization campaign plan](../../implemented/performance/2026-09-06-optimization-campaign-plan.md):
   lane D1's charter and its 1 ms entry condition.

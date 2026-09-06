@@ -13,7 +13,7 @@ shares them, bit-identically. The action-expert CUDA/PDL chain
 ([decoder PDL chain](2026-09-02-decoder-pdl-chain.md),
 [cooperative XFS producer](2026-08-28-cooperative-xfs-pdl.md)) was the first
 such move to come up: lane D0 of the
-[optimization campaign](../../proposed/performance/2026-09-06-optimization-campaign-plan.md)
+[optimization campaign](../../implemented/performance/2026-09-06-optimization-campaign-plan.md)
 set out to run it on Pi0 as well, and lane D1 needs it addressable from
 outside the Pi0.5 Target.
 

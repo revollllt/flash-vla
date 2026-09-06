@@ -5,7 +5,7 @@ Status: implemented
 ## Problem
 
 The `vision_encoder` segment is the campaign's first lane
-([optimization campaign plan](../../proposed/performance/2026-09-06-optimization-campaign-plan.md),
+([optimization campaign plan](../../implemented/performance/2026-09-06-optimization-campaign-plan.md),
 lane B). Both H100 Targets run the same SigLIP tower at the same shapes, and
 job 598964's floor report put the segment at 2.05 ms (Pi0.5) and 2.54 ms (Pi0)
 against a measured ceiling of 1.01 ms on both, with 245 launches per pass.

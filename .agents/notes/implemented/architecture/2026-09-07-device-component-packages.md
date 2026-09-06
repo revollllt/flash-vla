@@ -13,7 +13,7 @@ FFN-up projections to different TileLang kernels than Pi0.5's, and the two
 Targets' `base.py` and `attention.py` kernel files differ in length and
 content. A kernel written for one Target therefore had to be written twice or
 shipped once, and the optimization campaign
-([campaign plan](../../proposed/performance/2026-09-06-optimization-campaign-plan.md))
+([campaign plan](../../implemented/performance/2026-09-06-optimization-campaign-plan.md))
 opens three lanes whose kernels both Targets need.
 
 Two smaller things stood in the way of sharing. The op vocabulary's two vision

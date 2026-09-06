@@ -139,6 +139,7 @@ which cannot import OpenPI, so every gate ended `blocked`.
   | shipped vs reference, rerun | 599008 | ACD1-1 | gates and rule passed; spread 0.1004 ms, 0.4 us over the limit; the candidate leg's tail 2.94 ms against the reference's 0.15 |
   | both, `--baseline`, last attempt | 599019 | ACD1-1 | every gate and the baseline tier passed on both; spreads 0.122 and 0.113 ms, `blocked`; one candidate leg's tail 11.5 ms, the self-test's 0.22 / 0.20 |
   | Pi0 shipped vs reference, `--baseline`, after the tier could run its script | 599777 | ACD1-55 | every in-engine gate and the baseline tier passed (`baseline_layer0` gate, `baseline_depth` report); chunk `min` -1.347 ms with spread 0.030 ms; tails 0.128 / 0.036 ms: **`pass`**, Pi0's first of record; `artifacts/gate/hardware_nvidia_h100_pi0/shipped-2026-09-07T02:44:03.json` |
+  | campaign close: each shipped plan vs its pre-campaign plan, `--baseline` | 600566 | ACD1-3 | Pi0: every gate and the baseline tier passed, chunk `min` -0.711 ms (spread 0.069), tails 0.122 / 0.099: `pass`. Pi0.5: every gate passed, `fail` on the candidate rule at +0.070 ms for two plans that build the identical program (spread 0.007): the difference between two engine instances of one program, the noise the bar sits above; tails 0.067 / 0.079 |
 
 - **The Pi0.5 tail this bound blocked on is closed.** It was the third
   host-side defect the bound found: the `prompt` slot evaluated elementwise
