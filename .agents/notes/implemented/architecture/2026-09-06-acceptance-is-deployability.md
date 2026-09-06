@@ -110,10 +110,11 @@ which cannot import OpenPI, so every gate ended `blocked`.
   a noisy node, which is recorded as such.
 - Reports from before this change carry an `objective` string and no
   `deployment` block; they are not re-read.
-- The tail bound found two host-side defects before it passed anything: a
-  mid-forward synchronization and collector pauses. Both were in the
-  deployment path, not in the measurement, which is what a deployment
-  bound is for.
+- The tail bound found three host-side defects before it passed anything: a
+  mid-forward synchronization, collector pauses, and a host slot whose
+  elementwise work reached torch's intra-op thread pool. All three were in the
+  deployment path, not in the measurement, which is what a deployment bound is
+  for.
 
 ## Verification
 
@@ -133,17 +134,12 @@ which cannot import OpenPI, so every gate ended `blocked`.
   | shipped vs reference, rerun | 599008 | ACD1-1 | gates and rule passed; spread 0.1004 ms, 0.4 us over the limit; the candidate leg's tail 2.94 ms against the reference's 0.15 |
   | both, `--baseline`, last attempt | 599019 | ACD1-1 | every gate and the baseline tier passed on both; spreads 0.122 and 0.113 ms, `blocked`; one candidate leg's tail 11.5 ms, the self-test's 0.22 / 0.20 |
 
-- **Open finding: an intermittent 2.5-3 ms tail on Pi0.5.** In 3 of about 20
-  legs one or two forwards in a hundred ran 2.5-3 ms late, on either plan,
-  never on Pi0 (six legs), never with the collector off (three legs), and
-  with the collector frozen in two of five legs. The magnitude matches a
-  scheduler time slice, and Pi0.5 is the Target with host-side work inside
-  the forward (the prompt slot). On this cluster's shared nodes the tail
-  bound therefore `fail`s or `block`s Pi0.5 intermittently; across eight
-  runs on the branch it has not produced a `pass` of record, and the
-  control spread on ACD1-1 sat above the limit in five of them. The bound is the owner's and stays; what the
-  harness should add next is per-leg collector and scheduling evidence so a
-  tail is attributable rather than argued about.
+- **The Pi0.5 tail this bound blocked on is closed.** It was the third
+  host-side defect the bound found: the `prompt` slot evaluated elementwise
+  torch expressions on the GPU's critical path and the wait at the intra-op
+  thread pool's barrier is unbounded. Pi0.5 now passes on both plans, and every
+  leg carries the attribution record that named it
+  ([the Pi0.5 chunk tail is the host slot's thread pool](../performance/2026-09-07-pi05-chunk-tail-is-the-host-slots-thread-pool.md)).
 
 ## Related notes
 
