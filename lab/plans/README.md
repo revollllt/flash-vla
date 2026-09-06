@@ -19,3 +19,5 @@ prefix names no Target fails the smoke check.
 | `pi05-attn-ffn-cuda-fused-producer.json` | the shipped route without the PDL chain |
 | `pi05-attn-ffn-cuda-fused-producer-enc-tilelang.json` | shipped decoder route, encoder attention on the torch chain (the encoder A/B leg) |
 | `pi05-attn-ffn-cuda-fused-producer-pdlffn.json` | PDL chain on the FFN half only |
+| `pi05-gemma-cuda.json` | the shipped Pi0.5 route with the backbone attention taken from the shared `gemma_backbone` component instead of the Target's own copy |
+| `pi0-gemma-cuda.json` | the shipped Pi0 route plus the backbone attention and the output projection on the shared `gemma_backbone` component. The FFN down projection is deliberately NOT here: cuBLAS measured 6.6 us per call slower than Pi0's TileLang body in the graph, where the hidden buffer it reads is L2-resident (job 599832) |
