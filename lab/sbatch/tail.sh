@@ -70,8 +70,16 @@ for step in ${TAIL_STEPS}; do
         echo "== step probe: where inside one forward the host blocks, both Targets"
         for t in h100/pi05 h100/pi0; do
             "${PYTHON}" -u -m lab.pi05.tail_probe --target "${t}" --plan shipped \
-                --reps "${TAIL_PROBE_REPS:-400}" \
+                --reps "${TAIL_PROBE_REPS:-1000}" \
                 --out "${OUT}/probe_${t//\//_}.json"
+        done
+        ;;
+    splitprobe)
+        echo "== step probe with the host slot split into its two halves"
+        for plan in shipped reference; do
+            "${PYTHON}" -u -m lab.pi05.tail_probe --target h100/pi05 --plan "${plan}" \
+                --split-host --reps "${TAIL_PROBE_REPS:-3000}" \
+                --out "${OUT}/splitprobe_${plan}.json"
         done
         ;;
     gate)
