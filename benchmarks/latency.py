@@ -22,6 +22,14 @@ below it is reported as indistinguishable, and a chunk `min` spread above the
 registry's `control_spread_max_ms` marks the whole run invalid. `--calibrate`
 runs the first plan three times to measure that spread on its own.
 
+Beside each leg's `metrics` sits an additive `attribution` block
+(`benchmarks/attribution.py`): every timed loop's per-forward samples with
+their timestamps, the process's per-forward context-switch and page-fault
+deltas, the cyclic collector's collections, and a 10 Hz record of the device's
+clocks and of the other compute processes on it. A tail is then attributable
+from the record instead of argued about. `metrics` keeps its exact shape, so
+the report stays readable by anything written against the older schema.
+
 The runner contains no model or stage names: it builds the engine through
 `benchmarks.targets`, takes the program from the engine, and samples inputs
 from it. Verdicts are not produced here; the promotion gate reads this report
@@ -42,6 +50,8 @@ import torch
 from eval.acceptance import DEFAULTS
 from flash_vla.runtime.engine import host_slots, segments
 
+from .attribution import Attribution, LoopTrace
+from .attribution import summary as attribution_summary
 from .metrics import env_block, require_cuda
 from .targets import PLAN_NAMES, build, resolve
 
@@ -60,42 +70,76 @@ def _stats(samples: list[float], p99_min_reps: int) -> dict[str, Any]:
     return out
 
 
-def _time_wall(call: Callable[[], Any], reps: int, warmup: int) -> list[float]:
+def _time_wall(call: Callable[[], Any], reps: int, warmup: int,
+               trace: LoopTrace | None = None) -> list[float]:
+    """Wall clock of `call` plus a synchronize, `reps` times.
+
+    A `trace` is filled outside the timed region only: the repetition's start
+    is the same `perf_counter` reading the sample is computed from, and the
+    process counters are read after the synchronize has returned.
+    """
     for _ in range(warmup):
         call()
     torch.cuda.synchronize()
     samples = []
-    for _ in range(reps):
+    if trace is not None:
+        trace.enter()
+    for index in range(reps):
         start = time.perf_counter()
         call()
         torch.cuda.synchronize()
         samples.append((time.perf_counter() - start) * 1e3)
+        if trace is not None:
+            trace.start(index, start)
+            trace.mark(index)
+    if trace is not None:
+        trace.leave()
     return samples
 
 
-def _time_event(call: Callable[[], Any], reps: int, warmup: int) -> list[float]:
+def _time_event(call: Callable[[], Any], reps: int, warmup: int,
+                trace: LoopTrace | None = None) -> list[float]:
     for _ in range(warmup):
         call()
     torch.cuda.synchronize()
     samples = []
-    for _ in range(reps):
+    if trace is not None:
+        trace.enter()
+    for index in range(reps):
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
+        host_start = time.perf_counter()
         start.record()
         call()
         end.record()
         torch.cuda.synchronize()
         samples.append(start.elapsed_time(end))
+        if trace is not None:
+            trace.start(index, host_start)
+            trace.mark(index)
+    if trace is not None:
+        trace.leave()
     return samples
 
 
 def measure(engine, inputs: dict[str, Any], reps: int, warmup: int,
-            p99_min_reps: int, soak_s: float = 0.0) -> dict[str, Any]:
+            p99_min_reps: int, soak_s: float = 0.0,
+            attribution: Attribution | None = None) -> dict[str, Any]:
     """Every latency metric of one engine on `inputs`, min/median/p99 each.
 
     `soak_s` seconds of forwards run first so an unlocked GPU's clocks and
-    temperature settle before anything is read.
+    temperature settle before anything is read. An `attribution` collector, if
+    given, is filled with one record per timed loop, keyed by the same
+    `metric.name` the flattened report uses; it is read by its owner after the
+    collector's context closes and never appears in `metrics`.
     """
+    def timed(key: str, timer: Callable[..., list[float]], call: Callable[[], Any]):
+        trace: LoopTrace | None = attribution.trace(key, reps) if attribution else None
+        samples = timer(call, reps, warmup, trace)
+        if attribution is not None and trace is not None:
+            attribution.record(trace, samples)
+        return _stats(samples, p99_min_reps)
+
     engine.forward(**inputs)                     # settles any host-side state
     torch.cuda.synchronize()
     deadline = time.perf_counter() + soak_s
@@ -104,18 +148,17 @@ def measure(engine, inputs: dict[str, Any], reps: int, warmup: int,
     torch.cuda.synchronize()
     forward = lambda: engine.forward(**inputs)   # noqa: E731
     metrics: dict[str, Any] = {
-        "chunk_latency": _stats(_time_wall(forward, reps, warmup), p99_min_reps),
-        "device_latency": _stats(_time_event(forward, reps, warmup), p99_min_reps),
+        "chunk_latency": timed("chunk_latency", _time_wall, forward),
+        "device_latency": timed("device_latency", _time_event, forward),
         "host_time": {},
         "segment_latency": {},
     }
     for slot in host_slots(engine):
-        metrics["host_time"][slot] = _stats(
-            _time_wall(lambda slot=slot: engine.host(slot, **inputs), reps, warmup),
-            p99_min_reps)
+        metrics["host_time"][slot] = timed(
+            f"host_time.{slot}", _time_wall, lambda slot=slot: engine.host(slot, **inputs))
     for name in segments(engine):
-        metrics["segment_latency"][name] = _stats(
-            _time_event(lambda name=name: engine.replay(name), reps, warmup), p99_min_reps)
+        metrics["segment_latency"][name] = timed(
+            f"segment_latency.{name}", _time_event, lambda name=name: engine.replay(name))
     # Overhead is the chunk statistic minus the sum of the segments' same
     # statistic; for `p99` that is a difference of tails, not a tail of a
     # difference, and is reported as such.
@@ -211,6 +254,24 @@ def parse_options(items: list[str]) -> dict[str, Any]:
     return out
 
 
+def device_selector() -> str | None:
+    """What `nvidia-smi -i` must be given to sample the device this process runs on.
+
+    `CUDA_VISIBLE_DEVICES` renumbers the process's view but not `nvidia-smi`'s,
+    and on this partition it can hold a UUID rather than an index, so the UUID
+    torch reports for device 0 is the only selector that means the same thing to
+    both. Falls back to the first visible index, then to every device.
+    """
+    try:
+        uuid = getattr(torch.cuda.get_device_properties(0), "uuid", None)
+        if uuid is not None:
+            return f"GPU-{uuid}"
+    except (AssertionError, RuntimeError, AttributeError):
+        pass
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")[0].strip()
+    return visible or None
+
+
 def _driver_version() -> str | None:
     try:
         import subprocess
@@ -223,10 +284,12 @@ def _driver_version() -> str | None:
 
 def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         warmup: int = _LAT["warmup"], seed: int = 0, calibrate: bool = False,
-        **overrides) -> dict[str, Any]:
+        attribution: bool = True, **overrides) -> dict[str, Any]:
     """Build one runner per leg, measure it, and report legs, deltas and calibration.
 
-    A leg whose plan equals the first leg's is a control leg.
+    A leg whose plan equals the first leg's is a control leg. Each leg also
+    carries an `attribution` block unless `attribution=False`; the collector
+    spans the leg's soak as well as its timed loops.
     """
     require_cuda()
     torch.cuda.init()
@@ -234,16 +297,27 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
     plans = [plan or "shipped" for plan in plans]
     if calibrate:
         plans = [plans[0]] * 3
+    selector = device_selector() if attribution else None
     legs = []
     for index, plan in enumerate(plans):
         print(f"== leg {index}: {target} plan={plan}", flush=True)
         engine = build(target, plan, seed=seed, **overrides)
         inputs = engine.sample_inputs(seed)
-        legs.append({"leg": index, "plan": plan,
-                     "identity": engine.identity.as_dict(),
-                     "metrics": measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
-                                        soak_s=_LAT["soak_s"])})
+        collector = Attribution(device_index=selector) if attribution else None
+        if collector is None:
+            metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
+                              soak_s=_LAT["soak_s"])
+            evidence = None
+        else:
+            with collector:
+                metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
+                                  soak_s=_LAT["soak_s"], attribution=collector)
+            evidence = collector.as_dict()
+        legs.append({"leg": index, "plan": plan, "identity": engine.identity.as_dict(),
+                     "metrics": metrics, "attribution": evidence})
         print(json.dumps(legs[-1]["metrics"]), flush=True)
+        if evidence is not None:
+            print(attribution_summary(evidence), flush=True)
         del engine
         torch.cuda.empty_cache()
 
@@ -262,7 +336,8 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
                    "calibration": calibrate, "statistics": list(_LAT["statistics"]),
                    "p99_min_reps": _LAT["p99_min_reps"],
                    "promotion_bar_ms": _LAT["promotion_bar_ms"],
-                   "control_spread_max_ms": _LAT["control_spread_max_ms"]},
+                   "control_spread_max_ms": _LAT["control_spread_max_ms"],
+                   "attribution": attribution},
         "legs": legs,
         "deltas": _deltas(legs) if len(legs) > 1 else None,
     }
@@ -287,13 +362,17 @@ def main(argv=None) -> int:
     parser.add_argument("--layers", type=int, default=None)
     parser.add_argument("--option", action="append", default=[],
                         help="target-local construction option as key=value, every leg")
+    parser.add_argument("--no-attribution", dest="attribution", action="store_false",
+                        help="skip the per-leg attribution record (no nvidia-smi sampler, "
+                             "no per-forward sample list)")
     parser.add_argument("--out", default=None, help="write the JSON report here")
     args = parser.parse_args(argv)
     overrides = {k: v for k, v in (("steps", args.steps), ("layers", args.layers))
                  if v is not None}
     overrides.update(parse_options(args.option))
     report = run(args.target, args.plan or [None], reps=args.reps, warmup=args.warmup,
-                 seed=args.seed, calibrate=args.calibrate, **overrides)
+                 seed=args.seed, calibrate=args.calibrate, attribution=args.attribution,
+                 **overrides)
     text = json.dumps(report, indent=2)
     print(text)
     if args.out:
