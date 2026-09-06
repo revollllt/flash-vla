@@ -52,11 +52,16 @@ class Pi0(VLA):
 
     registry = REGISTRY
     #: The shipped plan: the three action-expert fusions (lazy pre-norm on the
-    #: gated FFN and the output projection, FlashDecoding attention).
+    #: gated FFN and the output projection, FlashDecoding attention), and the
+    #: vision tower's two pre-norm projections and its attention on the shared
+    #: SigLIP CUDA backend.
     plan = {
         "action_expert_norm_gated_ffn": "tilelang-fused",
         "action_expert_action_out_proj": "tilelang-fused",
         "action_expert_attention": "tilelang-fused",
+        "vision_encoder_norm_qkv": "siglip-cuda",
+        "vision_encoder_norm_ffn_up": "siglip-cuda",
+        "vision_encoder_attention": "siglip-cuda",
     }
     #: The reference route: every call site on the unfused TileLang wrappers.
     reference_plan: Mapping[str, str] = {}

@@ -1,0 +1,4 @@
+{
+  "vision_encoder_norm_qkv": "siglip-cublas",
+  "vision_encoder_norm_ffn_up": "siglip-cublas"
+}
