@@ -60,8 +60,13 @@ which cannot import OpenPI, so every gate ended `blocked`.
 6. **The baseline tier runs under its own interpreter.** Each Target entry
    names `baseline_python` (the OpenPI environment, `OPENPI_PYTHON` to
    override); the gate runs the official-baseline scripts under it with the
-   repository on the path, and records `unavailable` only when that
-   interpreter does not exist.
+   repository on the path, with no arguments, and records `unavailable` when
+   that interpreter does not exist or a script reports itself unavailable.
+   Each tier judges the Target's reference route, the oracle every candidate
+   is compared against in-engine. Pi0's tier builds that route from the
+   OpenPI checkpoint's weights (`OPENPI_PI0_CHECKPOINT`, the Libero Pi0
+   checkpoint on this machine, env-overridable) and reports a missing
+   checkpoint as unavailable; Pi0.5's builds random weights.
 7. **Thresholds are keys.** A registry check's `threshold` names a key of the
    precision policy's tolerances; `eval/correctness.py` reads that key, for the
    precision the reference runner reports, rather than one hard-coded name.
@@ -132,6 +137,7 @@ which cannot import OpenPI, so every gate ended `blocked`.
   | no-regression, a plan against itself | 598948, 598975, 599008 | ACD1-19, ACD1-1 | first crashed (the plan-name candidate leg), then `fail` on a 0.065 ms median move over a 0.050 ms `min` spread, then the candidate rule and the tail bound passed (`blocked` only because `--baseline` was not given) |
   | shipped vs reference, rerun | 599008 | ACD1-1 | gates and rule passed; spread 0.1004 ms, 0.4 us over the limit; the candidate leg's tail 2.94 ms against the reference's 0.15 |
   | both, `--baseline`, last attempt | 599019 | ACD1-1 | every gate and the baseline tier passed on both; spreads 0.122 and 0.113 ms, `blocked`; one candidate leg's tail 11.5 ms, the self-test's 0.22 / 0.20 |
+  | Pi0 shipped vs reference, `--baseline`, after the tier could run its script | 599777 | ACD1-55 | every in-engine gate and the baseline tier passed (`baseline_layer0` gate, `baseline_depth` report); chunk `min` -1.347 ms with spread 0.030 ms; tails 0.128 / 0.036 ms: **`pass`**, Pi0's first of record; `artifacts/gate/hardware_nvidia_h100_pi0/shipped-2026-09-07T02:44:03.json` |
 
 - **Open finding: an intermittent 2.5-3 ms tail on Pi0.5.** In 3 of about 20
   legs one or two forwards in a hundred ran 2.5-3 ms late, on either plan,
