@@ -72,13 +72,16 @@ which cannot import OpenPI, so every gate ended `blocked`.
    comparable. Resident on the device it forced a synchronization inside
    `forward`, which cost Pi0.5 0.4-0.6 ms of chunk `min` and put every
    host hiccup during the wait on the chunk (jobs 598904, 598952).
-9. **The cyclic collector is out of the capture and frozen after it.**
+9. **The cyclic collector is out of the capture, and that is all.**
    `ModelRunner` disables Python's collector while the stages are captured
-   (a collection inside a capture invalidated it, CUDA error 901) and runs
-   `gc.collect(); gc.freeze()` afterwards: with the collector on, Pi0.5's
-   chunk `p99 - min` read 2.5-3 ms on a quiet node, with it off 0.10-0.24 ms
-   (job 598959). A deployment loop keeps its own policy on top; the
-   framework's default is what the gate measures.
+   (a collection inside a capture invalidated it, CUDA error 901, job
+   598959) and collects once afterwards. It does not freeze the heap: a
+   runner references itself through its captured segments, so a frozen
+   runner would never be collected, and the freeze that shipped for one day
+   made every runner permanent. The owner's ruling: the collector is
+   preparation only; the deployment path is graph replay and owns no
+   collector policy. The collector-off reading of job 598959 (0.10-0.24 ms
+   tails against 2.5-3 ms) stays as evidence for the tail lane.
 
 ## Alternatives considered
 
