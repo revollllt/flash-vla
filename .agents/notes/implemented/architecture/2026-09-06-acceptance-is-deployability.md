@@ -128,6 +128,7 @@ which cannot import OpenPI, so every gate ended `blocked`.
   | five runs on the branch head | 598975 | ACD1-1 | shipped vs reference: every gate passed, tail 0.095 ms, `blocked` on a 0.17 ms first-run spread; Pi0 with the reference route as candidate: `fail` on the candidate rule (+1.34 ms), tails 0.09 ms; jitter overridden to 0: `blocked` with both legs over; collector counted: 1669 collections, 18 full, tails 0.12 / 0.17 ms |
   | no-regression, a plan against itself | 598948, 598975, 599008 | ACD1-19, ACD1-1 | first crashed (the plan-name candidate leg), then `fail` on a 0.065 ms median move over a 0.050 ms `min` spread, then the candidate rule and the tail bound passed (`blocked` only because `--baseline` was not given) |
   | shipped vs reference, rerun | 599008 | ACD1-1 | gates and rule passed; spread 0.1004 ms, 0.4 us over the limit; the candidate leg's tail 2.94 ms against the reference's 0.15 |
+  | both, `--baseline`, last attempt | 599019 | ACD1-1 | every gate and the baseline tier passed on both; spreads 0.122 and 0.113 ms, `blocked`; one candidate leg's tail 11.5 ms, the self-test's 0.22 / 0.20 |
 
 - **Open finding: an intermittent 2.5-3 ms tail on Pi0.5.** In 3 of about 20
   legs one or two forwards in a hundred ran 2.5-3 ms late, on either plan,
@@ -135,8 +136,9 @@ which cannot import OpenPI, so every gate ended `blocked`.
   with the collector frozen in two of five legs. The magnitude matches a
   scheduler time slice, and Pi0.5 is the Target with host-side work inside
   the forward (the prompt slot). On this cluster's shared nodes the tail
-  bound therefore `fail`s or `block`s Pi0.5 intermittently; it has not
-  produced a `pass` of record. The bound is the owner's and stays; what the
+  bound therefore `fail`s or `block`s Pi0.5 intermittently; across eight
+  runs on the branch it has not produced a `pass` of record, and the
+  control spread on ACD1-1 sat above the limit in five of them. The bound is the owner's and stays; what the
   harness should add next is per-leg collector and scheduling evidence so a
   tail is attributable rather than argued about.
 
