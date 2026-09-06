@@ -25,7 +25,8 @@ and TB/s are against the same minimal-traffic model the floor uses.
 Call sites a plan must invoke together (`engine.atomic_groups`: a producer
 and the persistent consumer that waits on its counters) are one case, their
 recorded invocations replayed in pipeline order, because one of them alone is
-not a valid program.
+not a valid program. A case whose derived cost is zero at the Target's shape
+issues no kernel and is skipped rather than timed.
 """
 from __future__ import annotations
 
@@ -131,6 +132,13 @@ def run(target: str, plan: str | None = None, seed: int = 0, only_segments: list
             flops = sum(per_call[s].flops for s in members if s in per_call) or None
             nbytes = sum(per_call[s].bytes for s in members if s in per_call) or None
             label = f"{segment}/" + "+".join(members)
+            if not flops and not nbytes:
+                # A site that moves no bytes and does no math at this shape
+                # (Pi0's prompt embedding at prompt_len 0) issues no kernel:
+                # the CUPTI timer raises on an empty iteration and the other
+                # timers would time nothing. Skipped, as the floor model does.
+                print(f"{label:24} :: skipped (no device work at this shape)", flush=True)
+                continue
             if timer == "cudagraph":
                 samples = _graph_samples(invoke, n_inner=min(n_inner, count), reps=reps)
             else:
