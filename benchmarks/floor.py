@@ -21,10 +21,14 @@ and, per site, `pct_of_ceiling` and `within_ceiling`: measured at most
 within its ceiling has no kernel-level work left to find; the distance from
 ceiling to roofline belongs to the machine, not to the kernel.
 
-Validity is checked, not assumed: a site's ceiling above its attributed time,
-a stage's ceiling sum above its measured minimum, or a roofline above its
-ceiling is a model error and marks the report invalid. Under-one-wave
-launches (grid below the CTA knee) are counted and reported; their derating
+Validity is checked, not assumed: a site's ceiling above its attributed time
+by more than the table's noise floor (`machine.noise_floor_pct`), a stage's
+ceiling sum above its measured minimum, or a roofline above its ceiling is a
+model error and marks the report invalid. Call sites of one atomic group (a
+dependent-launch chain) are judged on the group's sums: under such a chain a
+kernel's recorded duration overlaps its neighbours' (`benchmarks.profile`),
+so only the chain's total is a measurement. Under-one-wave launches (grid
+below the CTA knee) are counted and reported; their derating
 (`ld.ctas.dev.knee`) is carried as information, not applied.
 
 The report carries the measured table's version, so a re-measured constant
@@ -81,12 +85,12 @@ def hardware_axis(hardware: str) -> tuple[type, Path]:
 
 
 def load_constants(path: Path) -> tuple[dict[str, Any], str]:
-    """The tagged rows the ceiling uses, and the table's version."""
+    """The tagged rows the ceiling uses (plus the machine's noise floor), and the table's version."""
     import yaml
     raw = path.read_bytes()
     doc = yaml.safe_load(raw)
     rows = {row["tag"]: row for row in doc.get("constants", [])}
-    picked = {}
+    picked: dict[str, Any] = {"noise_floor_pct": float(doc["machine"]["noise_floor_pct"])}
     for role, tag in TAGS.items():
         if tag not in rows:
             raise KeyError(f"constant {tag!r} ({role}) not in {path}")
@@ -165,6 +169,8 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
     torch.cuda.synchronize()
     sm_count = torch.cuda.get_device_properties(0).multi_processor_count
     costs = engine.costs
+    groups = [frozenset(g) for g in engine.atomic_groups]
+    tolerance = 1.0 - constants["noise_floor_pct"] / 100.0
     report_segments: dict[str, Any] = {}
     valid = True
     for name in segments(engine):
@@ -179,6 +185,7 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
         within_all = bool(attributed)
         for row in rows:
             site = attributed.get(row["call_site"])
+            row["group"] = next((sorted(g) for g in groups if row["call_site"] in g), None)
             row["measured_us"] = site["dur_us"] if site else None
             row["launches"] = site["launches"] if site else None
             row["under_one_wave"] = site["under_one_wave"] if site else None
@@ -187,7 +194,31 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
             row["within_ceiling"] = (site is not None and row["ceiling_us"] > 0
                                      and site["dur_us"] <= limit * row["ceiling_us"])
             row["valid"] = row["roofline_us"] <= row["ceiling_us"] and (
-                site is None or row["ceiling_us"] <= site["dur_us"])
+                site is None or row["group"] is not None
+                or tolerance * row["ceiling_us"] <= site["dur_us"])
+        # A dependent-launch chain is judged on its sums: its members' recorded
+        # durations overlap, so a member's own number is not a measurement.
+        seg_groups = []
+        for group in groups:
+            members = [r for r in rows if r["call_site"] in group]
+            if not members:
+                continue
+            g_ceiling = sum(r["ceiling_us"] for r in members)
+            attributed_members = [r for r in members if r["measured_us"] is not None]
+            g_measured = (sum(r["measured_us"] for r in attributed_members)
+                          if attributed_members else None)
+            g_within = g_measured is not None and g_ceiling > 0 and g_measured <= limit * g_ceiling
+            g_valid = g_measured is None or tolerance * g_ceiling <= g_measured
+            for r in members:
+                r["within_ceiling"], r["valid"] = g_within, g_valid and r["valid"]
+            seg_groups.append({"call_sites": sorted(group), "ceiling_us": g_ceiling,
+                               "measured_us": g_measured,
+                               "unattributed_members": sorted(r["call_site"] for r in members
+                                                              if r["measured_us"] is None),
+                               "pct_of_ceiling": (g_measured / g_ceiling * 100
+                                                  if g_measured is not None and g_ceiling else None),
+                               "within_ceiling": g_within, "valid": g_valid})
+        for row in rows:
             seg_valid &= row["valid"]
             within_all &= row["within_ceiling"]
         valid &= seg_valid
@@ -199,6 +230,7 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
             "pct_of_ceiling": measured_us / ceiling * 100 if ceiling else None,
             "all_within_ceiling": within_all,
             "valid": seg_valid,
+            "groups": seg_groups,
             "launches": profiled["launches"],
             "attribution_valid": profiled["valid"],
             "kernel_time_us": profiled["total_us"],
@@ -226,8 +258,9 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
         "valid": valid,
         "note": ("guidance, not an objective: roofline is the datasheet, ceiling is what the "
                  "machine delivered for the geometry, measured is the attributed in-graph time; "
-                 "a ceiling above a measured time or a roofline above a ceiling invalidates the "
-                 "report; under-one-wave derating is reported, not applied"),
+                 "a ceiling above a measured time by more than the noise floor, or a roofline "
+                 "above a ceiling, invalidates the report; a dependent-launch chain is judged on "
+                 "its sums; under-one-wave derating is reported, not applied"),
     }
     del engine
     torch.cuda.empty_cache()

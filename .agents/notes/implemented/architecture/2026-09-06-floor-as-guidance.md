@@ -48,7 +48,13 @@ form, so the model could not apply them.
    ceiling, `headroom_pct` from the acceptance registry's `stop`); each stage
    and the Target report `all_within_ceiling`. That flag is what the registry's
    stop condition reads. Validity stays checked: a ceiling above its measured
-   time or a roofline above its ceiling marks the report invalid.
+   time by more than the table's own noise floor (`machine.noise_floor_pct`,
+   6%), or a roofline above its ceiling, marks the report invalid. The
+   members of an atomic group (a dependent-launch chain) are judged on the
+   group's sums, because under such a chain a kernel's recorded duration
+   overlaps its neighbours' and only the chain's total is a measurement;
+   the first GPU run showed exactly that (a chained gate/up GEMM attributed
+   7.2 us against a 9.4 us cold ceiling, job 598949).
 4. **The measured table lives on the hardware axis.**
    `src/flash_vla/hardware/nvidia/h100/measured/` holds `constants.yaml`, the
    arch index and the unit references, beside `spec.py`. The skill keeps its
