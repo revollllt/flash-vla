@@ -25,6 +25,33 @@ Analyze 已完成（job 598964 的 floor 报告，shipped plan，同一节点 AC
 `.agents/notes/proposed/performance/2026-09-06-pi05-chunk-tail-attribution.md`。
 没有它，任何性能 lane 都拿不到 `pass` 记录。
 
+## 执行中修正的前提（2026-09-07，协调者记录）
+
+- **Pi0 骨干原不按 `layers` 二分**（lane C 发现）：`pi0/pipeline.py` 的骨干循环写死 18 层，
+  `eval.correctness --layers 1` 在 Pi0 上曾是 18 层累积漂移对 shallow 容差的比较。已修
+  （d537e01），全深度图不变。
+- **Pi0 的官方基线层**（lane B 发现）：Libero Pi0 checkpoint 在机器上存在（`models/openpi/
+  openpi-assets/checkpoints/pi0_libero_pytorch`），下文"机器上没有"是错的；且 gate 无参数调用
+  `eval.pi0.reference` 而脚本要求 `--checkpoint`，Pi0 的门从结构上必 fail。已修（76b85eb，
+  注册表 `OPENPI_PI0_CHECKPOINT`），Pi0 shipped 对 reference 的首次 `pass` 是 job 599777
+  （ACD1-55）。Pi0 的 `pass` 因此是真实要求，不再需要"记 unavailable"的例外。
+- **floor 报告的段 measured 是归因态数字**（lane D0 发现）：本文 Context 表的 measured 列取自
+  `benchmarks floor`（kernel 归因下运行），高于 latency harness 同段同进程 A/B/A 的读数
+  （action_expert：Pi0.5 8.13 对 7.40 ms，Pi0 7.70 对 7.05 ms）。lane D0 一节的"Pi0.5 的链是
+  7.39"是 latency 数字，与表不同源。裁定：floor 报告只用于逐 site 归因与 ceiling；段级与
+  chunk 级数字、以及一切 promotion 判断，用各 lane 作业里的 `benchmarks latency`，并标明仪器。
+- **lane D0 的目标不成立**：按 latency 数字，Pi0.5 的链每层步仍比 Pi0 的 tilelang-fused 慢
+  2.4–2.9 us（Pi0 的路由能把 RMS 折进 GEMM，AdaRMS 在 Pi0.5 上不允许；CUDA attention 把 Pi0
+  的 819 个 key pad 到 1024）。裁定：J1 基线定价后按规则决定——明显更慢则只做组件包搬迁
+  （bit-identity 判）并写 rejected note；接近则加候选 C3（key pad 1024→896）且只按 improve
+  门 promotion；不用 no-regression 模式 ship 不提速的路由。D1 在 Pi0.5 上定价，不依赖移植。
+- **候选顺序调整**：lane C 把 Pi0 的 cuBLAS 替换（原 C4）提前为 C0（预计 Pi0 骨干 −0.63 至
+  −0.68 ms，无新 kernel）；lane B 新增 B0，Pi0 的两个 vision pre-norm GEMM 改走 Pi0.5 已 ship
+  的 cuBLASLt 路由（两 Target 间 0.49 ms 差距的来源）。lane C 的 Pi0.5 骨干目标 5.5 ms 按其
+  逐候选算术达不到（预计 −0.69 至 −0.86 ms），目标是方向，停止条件以注册表为准。
+- 共享的 TileLang JIT 装饰器由 lane D0 提到 `hardware/nvidia/tilelang/jit.py`，两个 Target
+  的 `base.py` 与组件包都从它导入。
+
 ## 探索结果（执行时的依据）
 
 ### 形状（两个 Target 的 vision 完全同形）
