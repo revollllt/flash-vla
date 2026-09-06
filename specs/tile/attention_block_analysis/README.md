@@ -3,7 +3,7 @@
 Hypothesis-screening scripts for the Pi0.5 attention block. They price a
 geometry before it is built (see `../attention_block_plan.md`, working rule 1)
 using the measured constants in
-`.claude/skills/hardware-unit-test/sm90/constants.yaml`; nothing here is a
+`src/flash_vla/hardware/nvidia/h100/measured/constants.yaml`; nothing here is a
 measurement.
 
 - `wave.py`    — CTA count, wave fraction and floor per tile choice for qkv,

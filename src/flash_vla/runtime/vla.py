@@ -33,6 +33,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import torch
 
+from .cost import Ceiling
 from .graph import Graph
 from .ops import Vocabulary
 from .registry import Registry
@@ -80,6 +81,10 @@ class VLA:
     #: The one shipped plan and the reference (oracle) plan, call site -> backend.
     plan: Mapping[str, str] = {}
     reference_plan: Mapping[str, str] = {}
+    #: Measured ceilings a hardware unit test established for a call site's own
+    #: geometry on this hardware, call site -> `Ceiling`; the floor model's
+    #: ceiling column uses them in place of the constants' rule.
+    CEILINGS: Mapping[str, Ceiling] = {}
     #: The backends this Target routes to.
     registry: Registry
 

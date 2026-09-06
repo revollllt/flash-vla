@@ -1,6 +1,6 @@
 """Tile / wave analysis for the Pi0.5 action-expert attention block.
 
-Floors use MEASURED constants (hardware-unit-test/sm90/constants.yaml):
+Floors use MEASURED constants (src/flash_vla/hardware/nvidia/h100/measured/constants.yaml):
   ld.bw.dev.dram        2.77 TB/s marginal HBM        (not the 3.35 datasheet)
   tma.bw.cta.dram   132.7 GB/s into ONE CTA; >=23 CTAs for peak BW, ~48 for 90%
   tma.issue.warp      248 ns per TMA per producer warp

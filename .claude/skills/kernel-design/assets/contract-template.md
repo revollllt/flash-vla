@@ -34,10 +34,12 @@ Gates: <which parity checks gate promotion; which are report-only>.
 | torch / SDPA | | | |
 | <library kernel, if one applies> | | | |
 
-## Floor and promotion criteria
+## Ceiling, headroom and promotion
 
-Floor: <arithmetic over measured tags, e.g. bytes / [ld.bw.dev.dram] +
-[launch.lat.dev.ramp]> = <value>, with tags and job ids.
+Ceiling: <tag arithmetic over the measured table, e.g. bytes / [ld.bw.dev.dram]
++ [launch.lat.dev.ramp], or a declared ceiling with its job id> = <value>.
+Upper bound of gain if the candidate fully succeeds: <ms> (below the registry's
+promotion_bar_ms, do not build it).
 Promotion: <the registry rule: `eval/acceptance.py` promotion_bar_ms on chunk
 min in the A/B/A, the deployment tail bound, every correctness gate; verdict
 from `python -m eval.gate --candidate <plan>`>.
@@ -45,7 +47,7 @@ from `python -m eval.gate --candidate <plan>`>.
 ## Allowed approaches
 
 <backends permitted; constraints: graph-capturable, no allocation on the
-replay path, scratch via ScratchPool, PDL control points, plan-route
+replay path, workspace via the injected `scratch` allocator, PDL control points, plan-route
 atomicity rules that apply, ...>
 
 ## Budget and stop

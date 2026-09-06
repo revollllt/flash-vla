@@ -20,6 +20,7 @@ import torch
 
 from flash_vla.models.pi05.spec import ENCODER_LAYERS, MAX_TOKEN_LEN, runtime_shapes
 from flash_vla.runtime import VLA, Input
+from flash_vla.runtime.cost import Ceiling
 from flash_vla.runtime.graph import Graph
 
 from . import pipeline
@@ -70,6 +71,10 @@ class Pi05(VLA):
     #: The reference route: every call site on TileLang, the backbone
     #: attention on the torch chain.
     reference_plan: Mapping[str, str] = {}
+    #: The gate/up GEMM's 16.8 MB of weights delivered cold by the copy engine
+    #: at this call site's own geometry (tma_ring sweep Q, one node, one job):
+    #: the machine's number for the phase, used in place of the constants' rule.
+    CEILINGS = {"action_expert_norm_gated_ffn": Ceiling(us=9.41, tag="tma.bw.dev.burst", job=591174)}
 
     def configure(self, **config: Any) -> Pi05Config:
         return Pi05Config(**config)

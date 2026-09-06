@@ -12,8 +12,10 @@ gate: add a row only when a stable boundary and a maintained skill exist.
 - **Machine constants, hardware microbenchmarks, or the denominator under a
   floor / roofline target**
   -> [`hardware-unit-test`](../skills/hardware-unit-test/SKILL.md) and the unit
-  reference for the primitive concerned. A floor divides by a measured
-  constant with a tag, never by a datasheet peak.
+  reference for the primitive concerned. The floor model reports a datasheet
+  roofline and a measured ceiling side by side: the ceiling divides only by
+  tagged measured constants of the hardware axis's `measured/` table, the
+  roofline only by `spec.py` peaks, and neither is an objective.
 - **Profiler capture, trace export, offline analysis, or Nsight wrappers**
   -> [`gpu-profiler-analysis`](../skills/gpu-profiler-analysis/SKILL.md) and
   its relevant capture-mode reference.

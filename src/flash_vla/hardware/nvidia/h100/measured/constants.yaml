@@ -24,26 +24,26 @@ units:
 - id: tma
   status: measured
   probe: probes/units/tma_ring/tma_ring.py
-  reference: sm90/unit-tma.md
+  reference: unit-tma.md
   covers: 'Copy-engine delivery rate: what one producer warp sustains, what ring stages buys, what box
     geometry costs, and where the saturation frontier sits in (CTAs x warps x bytes-per-TMA).'
 - id: launch
   status: measured
   probe: none in-repo -- absorbed from tile-dataflow Phase 0 and its job logs
-  reference: sm90/unit-launch.md
+  reference: unit-launch.md
   covers: Per-launch grid ramp, cold streaming bandwidth vs transfer size and vs CTA count, cluster declaration
     and barrier cost, cluster placement limits, and the capacity-is-not-residency correction.
 - id: atomic
   status: measured
   probe: probes/units/gmem_atomic/gmem_atomic.py
-  reference: sm90/unit-atomic.md
+  reference: unit-atomic.md
   covers: Global atomic throughput as a function of instruction, width, scope, address placement and sharing,
     plus the arrive->observe latency of a gmem counter and how it scales with observers. Everything here
     resolves in L2, not DRAM.
 - id: mma
   status: measured
   probe: probes/units/mma_rate/mma_rate.py
-  reference: sm90/unit-mma.md
+  reference: unit-mma.md
   covers: 'Both tensor-core instructions. For warpgroup `wgmma`: issue cadence against N, the in-flight
     stages and wait_group setting needed to fill the pipeline, whether a second math warpgroup buys anything,
     the sustained clock under load, and the bytes-per-ns ratio against the TMA unit. For warp-level `mma.sync`:
@@ -53,7 +53,7 @@ units:
 - id: coop
   status: measured
   probe: probes/units/coop_launch/coop_launch.py
-  reference: sm90/unit-coop.md
+  reference: unit-coop.md
   covers: 'Cooperative launch: what one cooperative_groups grid_sync costs against grid size, how many
     blocks cudaLaunchCooperativeKernel will actually place, and whether a grid_sync is cheaper than the
     kernel relaunch it replaces.'
@@ -150,6 +150,9 @@ constants:
     climbs with burst size -- 2.02 TB/s at 33.6 MB, 2.19 at 67, 2.53 at 134, 2.80 at 268 -- and is flat
     in ring stages (2-6), box (16 vs 32 KB) and CTA count (32-132)
   short: cold burst ramps -- 16.8 MB in ~9.3 us (1.8 TB/s), not 5.6
+  # End-to-end delivered rate vs burst size, the same numbers as `units`,
+  # machine-readable for the floor model's ceiling column.
+  curve_mb_gbs: [[16.8, 1814], [33.6, 2020], [67, 2190], [134, 2530], [268, 2800]]
   rule: A phase that streams a cold weight set of tens of MB is bounded by THIS curve, not by tma.bw.dev.dram
     -- ring depth, box size and CTA count cannot move it; only warmth (the set already in L2) or
     continuity (one longer stream instead of several bursts) can.
@@ -187,11 +190,13 @@ constants:
   units: TB/s marginal, behind 1.85 us of fixed cost
   short: 1.85us + MB/2.77
   rule: Replace bytes / 3.35 TB/s with 1.85 + MB/2.77 in every floor, per launch.
+  fixed_us: 1.85
 - tag: ld.ctas.dev.knee
   unit: launch
   value: 128
   units: CTAs at which a 4.19 MB cold read is fastest (3.33 us)
   short: knee @128 CTA
+  derate_at_32: 1.63
   rule: 32 CTAs cost 1.63x what 128 do for identical bytes -- this is what justifies split-K over a coarser
     tile, and what kills a grid sized to the output tiling alone.
 - tag: cluster.lat.sync

@@ -4,7 +4,8 @@
 The copy engine, the atomic unit, the caches, and the address maps that decide
 how many transactions a given access pattern becomes.
 
-Arch-independent. Results live in `<arch>/unit-*.md`; this file is what to
+Arch-independent. Results live in the measured table's `unit-*.md` beside
+`measured/constants.yaml` (`<arch>/unit-*.md` in a standalone copy of the skill); this file is what to
 measure and how to think about it when a new architecture arrives.
 
 ## Units in this category

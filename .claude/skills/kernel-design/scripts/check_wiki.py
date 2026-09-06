@@ -216,7 +216,7 @@ def known_tags():
     try:
         import constants  # the authority on what a tag means
         return {c["tag"] for _, doc in constants.load() for c in doc.get("constants", [])}, None
-    except Exception as exc:  # noqa: BLE001 -- any import/parse failure is the same note
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 -- import, parse or no-table: the same note
         return None, f"constants.py unusable ({exc}); tag resolution skipped"
     finally:
         sys.path.pop(0)

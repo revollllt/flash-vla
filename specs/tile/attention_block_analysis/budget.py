@@ -1,7 +1,7 @@
 """Step 1 (TMA descriptor legality) + Step 2 (smem / register union) for the
 Pi0.5 action-expert attention block, at the tiles chosen by wave.py.
 
-Rules, all from hardware-unit-test/sm90/constants.yaml:
+Rules, all from src/flash_vla/hardware/nvidia/h100/measured/constants.yaml:
   tma.bytes.txn.max  boxDim[0]*elem <= swizzle width (SW128:128B SW64:64B SW32:32B
                  none:unbounded); boxDim[1] <= 256; max SW128 frame = 32 KB.
                  "Check this BEFORE choosing BK."

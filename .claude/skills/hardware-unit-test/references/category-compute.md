@@ -5,7 +5,8 @@ cores, the special-function units — how fast each retires instructions, what
 must be in flight to keep it fed, and which instruction to choose when more
 than one reaches the same hardware.
 
-Arch-independent. Results live in `<arch>/unit-*.md`.
+Arch-independent. Results live in the measured table's `unit-*.md` beside
+`measured/constants.yaml` (`<arch>/unit-*.md` in a standalone copy of the skill).
 
 ## Units in this category
 
@@ -57,7 +58,7 @@ which produce a plausible wrong number rather than an error:
   loop still runs, and the number it produces is the serialised rate.
 
 Check the build diagnostics, and treat a serialisation warning as a build
-failure. The details for this arch are in `sm90/unit-mma.md`.
+failure. The details for this arch are in `measured/unit-mma.md`.
 
 ## The questions a compute unit must answer
 

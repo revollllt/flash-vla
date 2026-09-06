@@ -28,9 +28,9 @@ The user picks the mode per task; the contract records it.
 
 1. **Contract** — copy `assets/contract-template.md`, fill every field: tensor
    table (named dims -> fixed numbers, dtype, mutation), fusion region,
-   validation command, baselines, floor from measured tags, promotion
-   criteria (the registry's `promotion_bar_ms` and tail bound, cited, not a
-   number of its own), budget, mode. Hand it back — one screen — and wait
+   validation command, baselines, ceiling from measured tags and the upper
+   bound of gain, promotion criteria (the registry's `promotion_bar_ms` and
+   tail bound, cited, not a number of its own), budget, mode. Hand it back — one screen — and wait
    for the ack.
    A wrong op boundary is more expensive than any lost optimization.
 2. **Baselines first** — measure the best existing implementations of this op
@@ -54,7 +54,7 @@ The user picks the mode per task; the contract records it.
 
 | Need | Go to |
 |---|---|
-| a machine number, a floor, "is this target reachable" | `hardware-unit-test` — cite tags, never datasheet peaks |
+| a machine number, a floor, "is this target reachable" | `hardware-unit-test` — the measured table under the hardware axis; the ceiling cites tags, the roofline cites `spec.py`, neither is a target |
 | per-kernel timing, comparing two implementations | `benchmark-kernel` |
 | capturing a trace or an NCU report | `gpu-profiler-analysis` |
 | reading an NCU report -> naming the bottleneck | `ncu-report` |

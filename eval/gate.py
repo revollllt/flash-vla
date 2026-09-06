@@ -321,8 +321,10 @@ def summary(record: dict[str, Any]) -> str:
                      f"reference={d['reference_p99_minus_min']} jitter={d['jitter_ms']}")
     if record.get("floor") and "totals" in record["floor"]:
         t = record["floor"]["totals"]
-        lines.append("  floor: " + ", ".join(f"{k} {v:.0f} us" for k, v in t.items()
-                                              if k.endswith("_us")) + f", valid={record['floor']['valid']}")
+        lines.append("  floor (guidance): " + ", ".join(f"{k} {v:.0f} us" for k, v in t.items()
+                                                         if k.endswith("_us"))
+                     + f", all_within_ceiling={t.get('all_within_ceiling')}"
+                     + f", valid={record['floor']['valid']}")
     return "\n".join(lines)
 
 

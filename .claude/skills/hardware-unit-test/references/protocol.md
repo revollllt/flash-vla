@@ -26,8 +26,9 @@ sweep was a demonstration, not an experiment. Establish these, then write the
 narrative into `<arch>/unit-<name>.md` and the decision into an Agent Note --
 the places built to hold reasoning.
 
-**What the published table stores.** `<arch>/constants.yaml` is a distributable
-results manual, not a lab notebook. It carries only what a reader needs to USE
+**What the published table stores.** The measured table -- the hardware axis's
+`measured/constants.yaml` in a host repository, or `<arch>/constants.yaml` in a
+standalone copy of the skill -- is a distributable results manual, not a lab notebook. It carries only what a reader needs to USE
 the number:
 
 | Field | Is |
@@ -266,7 +267,7 @@ category's roster.
 3. Build the probe so every axis is a runtime argument: one binary, one sweep
    harness, no recompiles between points (a recompile between points is a
    confound you cannot see). It goes in `probes/units/<name>/`.
-4. Run it, then write the RESULT into `<arch>/constants.yaml`: value, units,
+4. Run it, then write the RESULT into that measured table: value, units,
    short, rule. Nothing else goes in that file.
 5. `python3 scripts/constants.py --validate`.
 6. Write `<arch>/unit-<name>.md`: the questions, the sweep design, the results

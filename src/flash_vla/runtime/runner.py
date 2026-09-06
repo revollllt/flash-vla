@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import gc
 from contextlib import contextmanager
+from dataclasses import replace
 from functools import partial
 from types import SimpleNamespace
 from typing import Any, Callable, Iterator, Mapping
@@ -196,8 +197,11 @@ class ModelRunner:
 
     @property
     def costs(self) -> SegmentCosts:
-        """Per stage, every call site's minimal bytes and FLOPs, derived from the graph."""
-        return self.graph.costs()
+        """Per stage, every call site's minimal bytes and FLOPs, derived from the graph,
+        with the ceilings the Target declares (`VLA.CEILINGS`) attached by call site."""
+        ceilings = self.target.CEILINGS
+        return {stage: [replace(inv, ceiling=ceilings.get(inv.call_site)) for inv in rows]
+                for stage, rows in self.graph.costs().items()}
 
     @property
     def graph_contract(self) -> dict[str, list[str]]:

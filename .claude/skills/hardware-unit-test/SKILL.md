@@ -33,14 +33,18 @@ probes/         the experiments -- one directory per unit over a shared library
   hut/            the host side: abi, harness, regime, tma, toolchain
   units/<name>/   <name>.cuh (kernels), <name>.cu (ABI), <name>.py (sweeps)
                   tma_ring, gmem_atomic, mma_rate, overlap, pipeline_ws
-sm90/           THE RESULTS for one machine
+measured/       THE RESULTS for one machine -- in the host repository's hardware
+                axis, src/flash_vla/hardware/<vendor>/<arch>/measured/, beside
+                that architecture's datasheet spec.py; a standalone copy of the
+                skill may carry its own <arch>/ directory instead
   README.md         the arch index: machine, toolchains, headline results
   constants.yaml    the extracted claims -- read via scripts/, not by eye
   unit-*.md         narrative, sweep tables, design rules, open gaps
 scripts/        design-time query tools -- no GPU, no torch
 ```
 
-`<arch>/constants.yaml` is a RESULTS TABLE -- value, the condition it holds
+The measured table (`measured/constants.yaml`, or `<arch>/constants.yaml`
+standalone) is a RESULTS TABLE -- value, the condition it holds
 under, the one-line answer, the rule to apply, and nothing else. The evidence
 that justifies a number -- what was held fixed, what would have refuted it, which
 job produced it -- lives in the unit reference beside the rows it came from. The
@@ -49,7 +53,7 @@ scripts read the YAML, so nothing is transcribed twice.
 ## Consulting it — the common case
 
 You are choosing a tile, a grid, or a ring's stage count and need a real number. Start
-at `sm90/README.md` for the map, then:
+at `src/flash_vla/hardware/nvidia/h100/measured/README.md` for the map, then:
 
 ```bash
 python3 scripts/constants.py                    # every constant, one line each
@@ -61,9 +65,9 @@ python3 scripts/frontier.py --copy-floor --txns-per-warp 32 --bytes 4194304
 Then **cite the tag in the spec** — `[tma.issue.warp]`, `[ld.bw.dev.dram]` — so a reviewer
 can trace the floor to a job id. A measured constant retires an `[I]`.
 
-Read `--tag` output before spending a constant, not after. Every one carries a
-`valid:` range, and quoting it outside that range is the mistake this format was
-built to catch: `tma.issue.warp` is 248 ns *while fewer than ~256 KB are in flight*,
+Read `--tag` output before spending a constant, not after. Every one carries the
+`units` it holds under, and quoting it outside that condition is the mistake this
+format was built to catch: `tma.issue.warp` is 248 ns *while fewer than ~256 KB are in flight*,
 and the same probe reads 2863 ns where bandwidth binds instead.
 
 ## What is measured, and what is not
@@ -110,7 +114,7 @@ There is **no per-CTA bandwidth ceiling** — the issue interval stays flat whil
 delivery rises linearly to at least 40 KB per CTA. Ring stages is likewise per-source:
 **4 stages for DRAM, 2 for L2**. The product law holds to ~10% at the 90th
 percentile but has a 19–29% tail driven by CTA count, so use it to size a
-configuration and then measure the one you chose. See `sm90/unit-tma.md`.
+configuration and then measure the one you chose. See `measured/unit-tma.md`.
 
 **Atomics:** address layout is worth **6.3×** and every other lever ≤1.3×. The
 unit is per-transaction, so `red.global.add.v4.f32` moves 3.8× the bytes for
@@ -143,13 +147,17 @@ sbatch sbatch/pi05_cuda.sh .claude/skills/hardware-unit-test/probes/units/tma_ri
     --sweeps A,E,F --json profiles/hardware-unit-test/tma_frontier.json
 ```
 
-Then write the constants into `<arch>/constants.yaml` **with the job id**, and
+Then write the constants into the hardware axis's `measured/constants.yaml`
+**with the job id**, and
 run `python3 scripts/constants.py --validate`.
 
 ### What the skill needs from its host
 
-It is a self-contained plugin: copy the directory into any repo and it works.
-Nothing outside it is imported, and no path to one machine is compiled in.
+The probes and the scripts import nothing outside the skill, and no path to one
+machine is compiled in. The constants table is *discovered*, in this order:
+`HUT_CONSTANTS_ROOT` when set; else `src/flash_vla/hardware/**/measured/constants.yaml`
+found by walking up from the working directory; else the skill's own
+`<arch>/constants.yaml`, so a copy that carries one works standalone.
 Three environment variables, each discovered when unset and each **failing with
 the variable's name** rather than falling back to a guess:
 
@@ -160,23 +168,20 @@ the variable's name** rather than falling back to a guess:
 | `HW_UNIT_TEST_CACHE` | where built `.so` files land | the host repo's `.cache/cuda_ext`, else `~/.cache/hardware-unit-test` |
 
 Pinning `CUDA_HOME` and `CUTLASS_DIR` explicitly is the **supported** path, not
-a fallback: `provenance.toolchain` has to record what actually built the probe,
+a fallback: `machine.caution` has to record what actually built the probe,
 and a discovered toolchain is one that can change under you between jobs.
 
 Built artefacts never land inside the skill directory. A stale `.so` there would
 be copied along with the skill to the next machine, where it is a binary for the
 wrong GPU.
 
-Two optional couplings, both of which degrade loudly rather than silently:
+One optional coupling, which degrades loudly rather than silently:
 
 - **The timer.** Probes prefer the host repo's CUPTI harness
   (`flash_vla.bench.bench_gpu_time` here) and fall back to CUDA events, printing
   which one they used. The two disagree by the launch overhead events include,
   so a number taken under one is not comparable with a constant recorded under
   the other — hence rule 8, and hence the fallback announces itself.
-- **The alias scan.** `constants.py --validate` reports files in the enclosing
-  git repo that still cite a retired tag. Standalone, there is no repo and it
-  reports nothing, which is correct rather than degraded.
 
 Read `references/protocol.md` first if you are writing or extending a probe. Its
 nine rules are what separate a unit test from a benchmark; the two that get
@@ -192,14 +197,17 @@ for a *slope* measured on a kernel, across kernel bodies.
 
 1. Read the three `references/category-*.md` files. They are the questions,
    with none of this machine's answers in them.
-2. `mkdir <arch>/`, re-run the probes, write `<arch>/constants.yaml`. Any
-   directory holding a `constants.yaml` is discovered automatically, and
-   `--machine <arch>` selects it.
+2. `mkdir src/flash_vla/hardware/<vendor>/<arch>/measured/` in the host repo (or
+   `<arch>/` in a standalone copy), re-run the probes, write its
+   `constants.yaml`. Discovery follows the order above -- `HUT_CONSTANTS_ROOT`,
+   then the hardware axis, then the skill's own `<arch>/` -- and
+   `--machine <arch>` selects one of several.
 3. Write `<arch>/unit-*.md` and an `<arch>/README.md` index.
 4. Where a probe's PTX is arch-specific, branch inside it rather than forking
    it — the sweep design is the portable part and is worth keeping shared.
 
-Every number in `sm90/` is wrong for another architecture until re-measured, and
+Every number in a `measured/` directory is wrong for another architecture until
+re-measured, and
 the category files mark which of them were *surprises* here and should therefore
 be re-tested rather than assumed.
 
@@ -232,8 +240,8 @@ output path, a timer harness — is marked as one where it appears.
 
 | Path | Read when |
 |---|---|
-| `sm90/README.md` | **start here** — the machine, its toolchains, and the headline result per unit |
-| `sm90/constants.yaml` | the source of truth; read via `scripts/constants.py` rather than by eye |
+| `src/flash_vla/hardware/nvidia/h100/measured/README.md` | **start here** — the machine, its toolchains, and the headline result per unit |
+| `measured/constants.yaml` | the source of truth; read via `scripts/constants.py` rather than by eye |
 | `references/protocol.md` | writing or extending a probe, or judging whether a number is usable |
 | `references/naming.md` | naming a new constant, or decoding an existing tag; the retired-spelling map |
 | `references/vocabulary.md` | naming anything in probe code — the authority for each term, and what is deliberately ours |
@@ -241,11 +249,11 @@ output path, a timer harness — is marked as one where it appears.
 | `references/category-memory.md` | adding or porting a memory-side unit — the questions without this machine's answers |
 | `references/category-compute.md` | adding or porting a compute unit |
 | `references/category-execution.md` | adding or porting a launch / occupancy / sync unit |
-| `sm90/unit-tma.md` | choosing a tile, grid, ring stages, or `BK`; anything TMA-fed |
-| `sm90/unit-launch.md` | fusion decisions, grid sizing, clusters, occupancy |
-| `sm90/unit-atomic.md` | split-K reduction, histogram-shaped accumulates, or the megakernel counter protocol |
+| `measured/unit-tma.md` | choosing a tile, grid, ring stages, or `BK`; anything TMA-fed |
+| `measured/unit-launch.md` | fusion decisions, grid sizing, clusters, occupancy |
+| `measured/unit-atomic.md` | split-K reduction, histogram-shaped accumulates, or the megakernel counter protocol |
 | `probes/units/gmem_atomic/gmem_atomic.{cu,py}` | re-measuring the atomic unit, or adding a sweep to it |
-| `sm90/unit-mma.md` | choosing a wgmma N, a pipeline stages, or the number of math warpgroups; checking an overlap claim by arithmetic |
+| `measured/unit-mma.md` | choosing a wgmma N, a pipeline stages, or the number of math warpgroups; checking an overlap claim by arithmetic |
 | `probes/units/mma_rate/mma_rate.{cu,py}` | re-measuring the tensor core, or adding a sweep to it |
 | `scripts/constants.py` | consult or validate the constants |
 | `scripts/frontier.py` | "how few CTAs", "how small a TMA", "what is my copy floor" |

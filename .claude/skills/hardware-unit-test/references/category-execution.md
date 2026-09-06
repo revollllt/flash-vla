@@ -5,7 +5,8 @@ residency, thread-block clusters, barriers, and the counters kernels use to
 sequence themselves. Nothing here moves useful bytes or does useful math; it is
 all the overhead a design must budget around.
 
-Arch-independent. Results live in `<arch>/unit-*.md`.
+Arch-independent. Results live in the measured table's `unit-*.md` beside
+`measured/constants.yaml` (`<arch>/unit-*.md` in a standalone copy of the skill).
 
 ## Units in this category
 

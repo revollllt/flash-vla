@@ -268,7 +268,7 @@ samples = bench_gpu_time(block_fn, input_args=(...),   # one block per call
 - The control for the block is the TileLang composition through the same
   call signature. The control for a fused-family experiment is the previous
   fused revision, rebuilt from source in the same job.
-- Floors and targets divide by `hardware-unit-test/sm90/constants.yaml` tags
+- Floors and targets divide by `src/flash_vla/hardware/nvidia/h100/measured/constants.yaml` tags
   (`tma.issue.warp`, `tma.bw.cta.dram`, `ld.bw.dev.dram`, `launch.lat.dev.ramp`, ...), never by
   datasheet peaks. A result is classified against the binding term of its
   floor, or it is marked exploratory.

@@ -27,9 +27,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
 # One directory per architecture, each holding a `constants.yaml` and the unit
-# references written against it. Nothing arch-specific lives above that
-# directory, so porting is "add sm120/, re-run the probes" rather than "edit
-# every file and hope".
+# references written against it. In this repository that directory is the
+# hardware axis's `measured/` (src/flash_vla/hardware/<vendor>/<arch>/measured),
+# beside the datasheet `spec.py`, so a floor's two denominators sit together.
+# Discovery, in order: `HUT_CONSTANTS_ROOT` (a directory holding one or more
+# `*/constants.yaml` or a `constants.yaml` itself), then every `measured/`
+# under a `src/flash_vla/hardware` found walking up from the working
+# directory, then `<skill>/*/constants.yaml` so a copied skill still works
+# standalone. Porting is "add a measured/ directory, re-run the probes".
 
 # What an entry must carry to be USABLE as a reference: the number, the
 # condition it holds under, the one-line answer, and the rule to apply.
@@ -45,7 +50,32 @@ REQUIRED = ["value", "units", "short", "rule"]
 
 
 def arch_dirs():
-    """Every directory holding a constants.yaml is an architecture."""
+    """Every directory holding a constants.yaml is an architecture.
+
+    `HUT_CONSTANTS_ROOT` wins when set; otherwise the enclosing repository's
+    `src/flash_vla/hardware/**/measured/` directories; otherwise the skill's
+    own `*/constants.yaml`, which is what a standalone copy uses.
+    """
+    env = os.environ.get("HUT_CONSTANTS_ROOT")
+    if env:
+        if os.path.isfile(os.path.join(env, "constants.yaml")):
+            return [os.path.abspath(env)]
+        found = glob.glob(os.path.join(env, "*", "constants.yaml"))
+        if not found:
+            sys.exit("HUT_CONSTANTS_ROOT=%r holds no constants.yaml" % env)
+        return sorted(os.path.dirname(p) for p in found)
+    here = os.getcwd()
+    while True:
+        hw = os.path.join(here, "src", "flash_vla", "hardware")
+        if os.path.isdir(hw):
+            found = glob.glob(os.path.join(hw, "**", "measured", "constants.yaml"),
+                              recursive=True)
+            if found:
+                return sorted(os.path.dirname(p) for p in found)
+        parent = os.path.dirname(here)
+        if parent == here:
+            break
+        here = parent
     return sorted(os.path.dirname(p) for p in
                   glob.glob(os.path.join(ROOT, "*", "constants.yaml")))
 

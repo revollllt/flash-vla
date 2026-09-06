@@ -19,7 +19,7 @@ backbone) and decoder (action expert), bf16 numerics preserved.
 - Env: `.venv` (torch 2.13.0+cu130, tilelang 0.1.11), CUDA 13.1 + gcc 13.3
   modules via `sbatch/_common.sh`; openpi parity env
   `/data/user/jzou521/codes/cuda/openpi-official/.venv`.
-- Machine constants: `.claude/skills/hardware-unit-test/sm90/constants.yaml`
+- Machine constants: `src/flash_vla/hardware/nvidia/h100/measured/constants.yaml`
   (850 TFLOP/s bf16, 2.77 TB/s DRAM marginal, 1.24 us launch ramp,
   `tma.bw.dev.burst` cold-burst curve).
 

@@ -11,8 +11,9 @@
 // land.
 //
 // Geometry comes from the tile analysis, whose floors use measured machine
-// constants (hardware-unit-test/sm90/constants.yaml) rather than datasheet
-// peaks.  Each constant below names the tag that pins it.
+// constants (src/flash_vla/hardware/nvidia/h100/measured/constants.yaml)
+// rather than datasheet peaks.  Each constant below names the tag that pins
+// it.
 
 #include <cstdint>
 #include <type_traits>

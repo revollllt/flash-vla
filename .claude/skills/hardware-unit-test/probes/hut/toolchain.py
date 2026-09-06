@@ -8,8 +8,9 @@ failure `protocol.md` rule 11 exists to prevent.
 Each lookup is the same three steps, in this order:
 
 1. **An environment variable**, so a job script can pin an exact toolchain --
-   and because `provenance.toolchain` in `constants.yaml` has to record what was
-   actually used, pinning it explicitly is the supported path, not a fallback.
+   and because `machine.caution` in the measured `constants.yaml` has to record
+   what was actually used, pinning it explicitly is the supported path, not a
+   fallback.
 2. **Discovery** from whatever is on PATH.
 3. **A failure that names the variable to set.** Never a default that happens to
    work on the author's machine.

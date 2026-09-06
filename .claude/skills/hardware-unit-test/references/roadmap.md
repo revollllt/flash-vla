@@ -1,7 +1,9 @@
 # Roadmap — the units not yet measured, and the pairs that would settle them
 
 Most of this is **planned, not measured**; rows marked **done** have landed in
-`<arch>/constants.yaml` and are cited from there, not from here.
+the measured table -- the hardware axis's `measured/constants.yaml`, or
+`<arch>/constants.yaml` in a standalone copy of the skill -- and are cited from
+there, not from here.
 
 > **This table is a roadmap, not a record.** Values here go stale the moment a
 > constant is re-measured -- `tma.bw.dev.dram` sat at "3.02 T" here for a day

@@ -1,7 +1,9 @@
-# sm90 — H100 SXM5, `acd_u` partition
+# sm90 — the measured layer of the H100 hardware axis
 
-The measured constants for this machine. **Nothing here transfers to another
-architecture**; the arch-independent layer — what to measure and how — is in
+What this machine actually costs, beside the datasheet peaks in `../spec.py`:
+those two are the roofline's denominator and the ceiling's. **Nothing here
+transfers to another architecture**; the arch-independent layer — what to
+measure and how — stays in the `hardware-unit-test` skill's
 `references/category-*.md` and `references/protocol.md`.
 
 | | |
@@ -21,16 +23,22 @@ combine a number from one with a number from the other without saying so.
 ## Consulting
 
 ```bash
-python3 scripts/constants.py --machine sm90            # every constant, one line each
-python3 scripts/constants.py --tag tma.issue.warp           # one, with what would refute it
-python3 scripts/constants.py --unit mma                # one unit, in full
-python3 scripts/frontier.py --table                    # the TMA saturation frontier
-python3 scripts/frontier.py --copy-floor --txns-per-warp 32 --bytes 4194304
+# from the repository root
+python3 .claude/skills/hardware-unit-test/scripts/constants.py --machine sm90
+python3 .claude/skills/hardware-unit-test/scripts/constants.py --tag tma.issue.warp
+python3 .claude/skills/hardware-unit-test/scripts/constants.py --unit mma
+python3 .claude/skills/hardware-unit-test/scripts/frontier.py --table
+python3 .claude/skills/hardware-unit-test/scripts/frontier.py --copy-floor --txns-per-warp 32 --bytes 4194304
 ```
 
-Cite tags — `[tma.issue.warp]`, `[mma.xover.n.wgmma]` — so a floor traces to a job id.
-**Read the `valid:` range before spending a constant**: quoting one outside the
-range it was measured over is the mistake this format exists to catch.
+`--machine sm90` selects this table; `--tag` prints one constant in full, `--unit`
+one unit. Cite tags — `[tma.issue.warp]`, `[mma.xover.n.wgmma]` — so a measured
+ceiling traces to a job id.
+
+**Read `units` before spending a constant**: it states the condition the number
+holds under, and quoting one outside that condition is the mistake this format
+exists to catch. The sweep design, and what would refute the number, live in the
+unit reference beside it.
 
 ## What is measured here
 

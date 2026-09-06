@@ -30,11 +30,28 @@ class Cost:
 
 
 @dataclass(frozen=True)
+class Ceiling:
+    """What this machine has delivered for one call of a call site's geometry.
+
+    Declared by a Target when a hardware unit test measured the call site's
+    own geometry (bytes, CTAs, box) cold, so the floor model's ceiling column
+    uses the observed number rather than the constants' rule. `tag` names the
+    measured constant it was read against and `job` the Slurm job that
+    produced it; both are copied into every floor report that uses it.
+    """
+    us: float
+    tag: str
+    job: int
+
+
+@dataclass(frozen=True)
 class Invocation:
-    """A call site in a segment: its cost per call and how often it is called."""
+    """A call site in a segment: its cost per call, how often it is called, and
+    optionally the measured ceiling of one call."""
     call_site: str
     cost: Cost
     count: int
+    ceiling: Ceiling | None = None
 
     @property
     def bytes(self) -> int:
@@ -80,5 +97,5 @@ def total(costs: SegmentCosts) -> dict[str, dict[str, int]]:
             for segment, invocations in costs.items()}
 
 
-__all__ = ["BF16", "Cost", "Invocation", "SegmentCosts", "attention", "dual_gemm", "gemm",
-           "total"]
+__all__ = ["BF16", "Ceiling", "Cost", "Invocation", "SegmentCosts", "attention", "dual_gemm",
+           "gemm", "total"]

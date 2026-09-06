@@ -1,36 +1,41 @@
-"""The latency floor model: the derived objective of a Target.
+"""The latency floor model: three columns per call site, all guidance, none a target.
 
     python -m benchmarks floor --target h100/pi05
 
-Two tiers per segment, every term dividing by a measured, tagged constant of
-the `hardware-unit-test` skill:
+Per call site of every stage, at the Target's shapes:
 
-  roofline     per call site, max(bytes / streaming rate, flops / tensor rate),
-               times its invocation count; plan-independent, from the
-               Target's cost declarations
-  structural   roofline plus the launch count of the captured segment times
-               the measured grid ramp; plan-dependent, the launch count read
-               from a profiler trace of one replay
+  roofline_us   datasheet: max(bytes / HBM peak, flops / dense bf16 peak), the
+                peaks read from the hardware axis's `spec.py`; plan-independent
+  ceiling_us    measured: what this machine has delivered for the geometry,
+                from the tagged rows of the hardware axis's measured table
+                (`measured/constants.yaml`): below the burst curve
+                fixed_us + bytes / marginal rate, on the curve bytes /
+                delivered rate, against flops / observed tensor rate; a Target
+                may declare a call site's ceiling outright (`Invocation.ceiling`
+                with its tag and job)
+  measured_us   the in-graph time `benchmarks.profile` attributes to the site
 
-and the gap decomposition against the measured segment minimum:
+and, per site, `pct_of_ceiling` and `within_ceiling`: measured at most
+(1 + headroom_pct / 100) times the ceiling, the registry's stop condition
+(`eval/acceptance.py`, `stop.headroom_pct`). A stage where every site is
+within its ceiling has no kernel-level work left to find; the distance from
+ceiling to roofline belongs to the machine, not to the kernel.
 
-  measured - structural   what kernel-level work can still recover
-  structural - roofline   what a change of the plan's form can recover
+Validity is checked, not assumed: a site's ceiling above its attributed time,
+a stage's ceiling sum above its measured minimum, or a roofline above its
+ceiling is a model error and marks the report invalid. Under-one-wave
+launches (grid below the CTA knee) are counted and reported; their derating
+(`ld.ctas.dev.knee`) is carried as information, not applied.
 
-The model is validated in the same report, per segment and per call site: a
-structural floor above the measured segment time, or a call site's roofline
-above its attributed in-graph time (from `benchmarks.profile`), is a model
-error and marks the report invalid. Under-one-wave kernels (grid below the
-CTA knee) are counted and reported; their derating is not yet a term of the
-structural tier, so the structural floor is optimistic where they dominate.
-
-Datasheet peaks appear nowhere. The report carries the constants file's
-version so a re-measured constant changes every floor's version.
+The report carries the measured table's version, so a re-measured constant
+changes every floor's version; the datasheet peaks are named with the spec
+class they came from.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import json
 import os
 from pathlib import Path
@@ -38,6 +43,7 @@ from typing import Any
 
 import torch
 
+from eval import acceptance
 from flash_vla.runtime.cost import Invocation, total
 from flash_vla.runtime.engine import segments
 
@@ -46,70 +52,113 @@ from .metrics import require_cuda
 from .profile import attribute
 from .targets import PLAN_NAMES, build, resolve
 
-#: The model form; bump when a term is added or changed.
-FORM_VERSION = "1"
+#: The model form; bump when a column or a term changes.
+FORM_VERSION = "2"
 REPO = Path(__file__).resolve().parent.parent
-CONSTANTS_ROOT = REPO / ".claude" / "skills" / "hardware-unit-test"
-#: hardware axis of the identity -> constants directory of the skill.
-ARCH = {"h100-sxm5-80gb": "sm90"}
-#: The tags the form consumes.
+#: hardware axis of the identity -> the package holding `spec.py` and `measured/`.
+HARDWARE = {"h100-sxm5-80gb": "flash_vla.hardware.nvidia.h100"}
+#: The tagged rows the ceiling column consumes.
 TAGS = {
-    "stream_tbps": "ld.bw.dev.dram",       # TB/s marginal streaming rate, cold
-    "tensor_tflops": "wgmma.clock.sm",     # TFLOP/s bf16 observed at real clocks
-    "launch_us": "launch.lat.dev.ramp",    # us of grid ramp per launch
-    "cta_knee": "ld.ctas.dev.knee",        # CTAs below which a cold read is derated
+    "stream": "ld.bw.dev.dram",      # TB/s marginal cold streaming rate behind `fixed_us`
+    "burst": "tma.bw.dev.burst",     # GB/s delivered end-to-end vs burst size, `curve_mb_gbs`
+    "tensor": "wgmma.clock.sm",      # TFLOP/s bf16 observed at real clocks
+    "launch": "launch.lat.dev.ramp",  # us of grid ramp per launch (information)
+    "knee": "ld.ctas.dev.knee",      # CTAs below which a cold read is derated (information)
 }
+#: Machine-readable fields a row may carry beside value/units/short/rule.
+ROW_FIELDS = ("fixed_us", "curve_mb_gbs", "derate_at_32")
 
 
-def load_constants(hardware: str) -> tuple[dict[str, Any], str, str]:
-    """The tagged rows the form uses, the constants file path and its version."""
+def hardware_axis(hardware: str) -> tuple[type, Path]:
+    """The datasheet spec class and the measured table of one hardware axis."""
+    package = HARDWARE.get(hardware)
+    if package is None:
+        raise KeyError(f"no hardware axis known for {hardware!r}; known: {sorted(HARDWARE)}")
+    module = importlib.import_module(package)
+    spec = importlib.import_module(package + ".spec")
+    spec_cls = next(getattr(spec, name) for name in spec.__all__ if name.endswith("Spec"))
+    return spec_cls, Path(module.__file__).parent / "measured" / "constants.yaml"
+
+
+def load_constants(path: Path) -> tuple[dict[str, Any], str]:
+    """The tagged rows the ceiling uses, and the table's version."""
     import yaml
-    arch = ARCH.get(hardware)
-    if arch is None:
-        raise KeyError(f"no constants directory known for hardware {hardware!r}; "
-                       f"known: {sorted(ARCH)}")
-    path = CONSTANTS_ROOT / arch / "constants.yaml"
     raw = path.read_bytes()
     doc = yaml.safe_load(raw)
-    rows = {row["tag"]: row for row in doc.get("constants", doc if isinstance(doc, list) else [])}
-    if not rows:
-        for section in doc.values() if isinstance(doc, dict) else []:
-            if isinstance(section, list):
-                rows.update({r["tag"]: r for r in section if isinstance(r, dict) and "tag" in r})
+    rows = {row["tag"]: row for row in doc.get("constants", [])}
     picked = {}
     for role, tag in TAGS.items():
         if tag not in rows:
             raise KeyError(f"constant {tag!r} ({role}) not in {path}")
         row = rows[tag]
         picked[role] = {"tag": tag, "value": row["value"], "units": row.get("units"),
-                        "short": row.get("short")}
-    return picked, str(path), hashlib.sha1(raw).hexdigest()[:12]
+                        "short": row.get("short"),
+                        **{f: row[f] for f in ROW_FIELDS if f in row}}
+    for role, field in (("stream", "fixed_us"), ("burst", "curve_mb_gbs")):
+        if field not in picked[role]:
+            raise KeyError(f"row {TAGS[role]!r} in {path} lacks the machine-readable {field!r}")
+    return picked, hashlib.sha1(raw).hexdigest()[:12]
 
 
-def roofline_us(invocation: Invocation, stream_bps: float, tensor_fps: float) -> dict[str, Any]:
-    """One invocation's roofline: the larger of its streaming and tensor times."""
+def datasheet(spec_cls: type) -> dict[str, Any]:
+    """The two datasheet peaks the roofline divides by, with their source named."""
+    return {"hbm_bps": float(spec_cls.HBM_BANDWIDTH_BYTES_PER_SECOND),
+            "bf16_fps": float(spec_cls.TENSOR_CORE_DENSE_PEAK_FLOPS["bf16"]),
+            "source": f"{spec_cls.__module__}.{spec_cls.__name__}"}
+
+
+def delivered_us(nbytes: int, constants: dict[str, Any]) -> tuple[float, str]:
+    """Cold delivery time for `nbytes` from the measured rows, and the rule applied."""
+    mb = nbytes / 1e6
+    curve = constants["burst"]["curve_mb_gbs"]
+    stream = constants["stream"]
+    if mb < curve[0][0]:
+        return stream["fixed_us"] + mb / float(stream["value"]), (
+            f"{stream['fixed_us']} us + MB / {stream['value']} TB/s [{stream['tag']}]")
+    for (m0, r0), (m1, r1) in zip(curve, curve[1:]):
+        if mb <= m1:
+            rate = r0 + (mb - m0) / (m1 - m0) * (r1 - r0)
+            return mb * 1e3 / rate, f"MB / {rate:.0f} GB/s interpolated [{constants['burst']['tag']}]"
+    return mb * 1e3 / curve[-1][1], f"MB / {curve[-1][1]} GB/s (curve top) [{constants['burst']['tag']}]"
+
+
+def site_row(invocation: Invocation, peaks: dict[str, Any], constants: dict[str, Any]) -> dict[str, Any]:
+    """One call site's roofline and ceiling columns, per call and times its count."""
     cost = invocation.cost
-    stream = cost.bytes / stream_bps * 1e6
-    tensor = cost.flops / tensor_fps * 1e6
-    each = max(stream, tensor)
-    return {"call_site": invocation.call_site, "count": invocation.count,
+    roof_stream = cost.bytes / peaks["hbm_bps"] * 1e6
+    roof_tensor = cost.flops / peaks["bf16_fps"] * 1e6
+    roofline = max(roof_stream, roof_tensor)
+    tensor_fps = float(constants["tensor"]["value"]) * 1e12
+    tensor_us = cost.flops / tensor_fps * 1e6
+    if invocation.ceiling is not None:
+        ceiling = invocation.ceiling.us
+        source = {"declared": True, "tag": invocation.ceiling.tag, "job": invocation.ceiling.job}
+    else:
+        memory_us, rule = delivered_us(cost.bytes, constants)
+        ceiling = max(memory_us, tensor_us)
+        source = {"declared": False,
+                  "rule": rule if memory_us >= tensor_us else f"FLOPs / {constants['tensor']['value']} TFLOP/s [{constants['tensor']['tag']}]"}
+    n = invocation.count
+    return {"call_site": invocation.call_site, "count": n,
             "bytes": cost.bytes, "flops": cost.flops,
-            "bound": "compute" if tensor > stream else "memory",
-            "roofline_us_each": each, "roofline_us": each * invocation.count}
+            "bound": "compute" if roof_tensor > roof_stream else "memory",
+            "roofline_us_each": roofline, "roofline_us": roofline * n,
+            "ceiling_us_each": ceiling, "ceiling_us": ceiling * n, "ceiling_source": source}
 
 
 def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, seed: int = 0,
         **overrides) -> dict[str, Any]:
-    """Compute both floor tiers per segment, measure the segment, and decompose the gap."""
+    """Compute the three columns per stage and call site, and check the model against them."""
     require_cuda()
     torch.cuda.init()
     target = resolve(target)
+    headroom_pct = acceptance.for_target(target)["stop"]["headroom_pct"]
     engine = build(target, plan or "shipped", seed=seed, **overrides)
     identity = engine.identity
-    constants, constants_path, constants_version = load_constants(identity.hardware)
-    stream_bps = float(constants["stream_tbps"]["value"]) * 1e12
-    tensor_fps = float(constants["tensor_tflops"]["value"]) * 1e12
-    launch_us = float(constants["launch_us"]["value"])
+    spec_cls, constants_path = hardware_axis(identity.hardware)
+    constants, constants_version = load_constants(constants_path)
+    peaks = datasheet(spec_cls)
+    limit = 1.0 + headroom_pct / 100.0
 
     inputs = engine.sample_inputs(seed)
     engine.forward(**inputs)
@@ -119,38 +168,38 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
     report_segments: dict[str, Any] = {}
     valid = True
     for name in segments(engine):
-        rows = [roofline_us(inv, stream_bps, tensor_fps) for inv in costs.get(name, ())]
+        rows = [site_row(inv, peaks, constants) for inv in costs.get(name, ())]
         roofline = sum(r["roofline_us"] for r in rows)
+        ceiling = sum(r["ceiling_us"] for r in rows)
         profiled = attribute(engine, name, sm_count)
-        launches = profiled["launches"]
-        structural = roofline + launches * launch_us
         measured = _stats(_time_event(lambda name=name: engine.replay(name), reps, warmup), reps)
         measured_us = measured["min"] * 1e3
-        seg_valid = structural <= measured_us
-        # Per call site: the attributed in-graph time must not sit below its
-        # own roofline; an unattributed segment reports no per-site check.
+        seg_valid = ceiling <= measured_us and roofline <= ceiling
         attributed = profiled["call_sites"] if profiled["valid"] else {}
+        within_all = bool(attributed)
         for row in rows:
             site = attributed.get(row["call_site"])
             row["measured_us"] = site["dur_us"] if site else None
             row["launches"] = site["launches"] if site else None
             row["under_one_wave"] = site["under_one_wave"] if site else None
-            row["valid"] = (site is None) or (row["roofline_us"] <= site["dur_us"])
-            row["above_roofline"] = (site["dur_us"] / row["roofline_us"]
-                                     if site and row["roofline_us"] else None)
+            row["pct_of_ceiling"] = (site["dur_us"] / row["ceiling_us"] * 100
+                                     if site and row["ceiling_us"] else None)
+            row["within_ceiling"] = (site is not None and row["ceiling_us"] > 0
+                                     and site["dur_us"] <= limit * row["ceiling_us"])
+            row["valid"] = row["roofline_us"] <= row["ceiling_us"] and (
+                site is None or row["ceiling_us"] <= site["dur_us"])
             seg_valid &= row["valid"]
+            within_all &= row["within_ceiling"]
         valid &= seg_valid
         report_segments[name] = {
             "roofline_us": roofline,
-            "structural_us": structural,
+            "ceiling_us": ceiling,
             "measured_min_us": measured_us,
             "measured_median_us": measured["median"] * 1e3,
-            "gap_kernel_us": measured_us - structural,
-            "gap_form_us": structural - roofline,
-            "above_structural": measured_us / structural if structural else None,
-            "above_roofline": measured_us / roofline if roofline else None,
+            "pct_of_ceiling": measured_us / ceiling * 100 if ceiling else None,
+            "all_within_ceiling": within_all,
             "valid": seg_valid,
-            "launches": launches,
+            "launches": profiled["launches"],
             "attribution_valid": profiled["valid"],
             "kernel_time_us": profiled["total_us"],
             "copy_us": profiled["copy_us"],
@@ -159,24 +208,26 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
             "unattributed_us": profiled["unattributed"]["dur_us"],
             "call_sites": rows,
         }
-    sums = total(costs)
     totals = {key: sum(seg[key] for seg in report_segments.values())
-              for key in ("roofline_us", "structural_us", "measured_min_us",
-                          "gap_kernel_us", "gap_form_us", "launches")}
+              for key in ("roofline_us", "ceiling_us", "measured_min_us", "launches")}
+    totals["all_within_ceiling"] = all(seg["all_within_ceiling"] for seg in report_segments.values())
+    totals["headroom_pct"] = headroom_pct
     report = {
         "identity": identity.as_dict(),
         "env": _env(),
-        "floor_model": {"form": FORM_VERSION, "constants_file": constants_path,
+        "floor_model": {"form": FORM_VERSION, "constants_file": str(constants_path),
                         "constants_version": constants_version, "constants": constants,
+                        "datasheet": peaks,
                         "version": f"{FORM_VERSION}+{constants_version}"},
         "config": {"reps": reps, "warmup": warmup, "seed": seed, "plan": plan},
         "segments": report_segments,
-        "declared": sums,
+        "declared": total(costs),
         "totals": totals,
         "valid": valid,
-        "note": ("under-one-wave derating is reported, not modelled; a structural floor "
-                 "above a measured segment time, or a call-site roofline above its "
-                 "attributed in-graph time, invalidates the report"),
+        "note": ("guidance, not an objective: roofline is the datasheet, ceiling is what the "
+                 "machine delivered for the geometry, measured is the attributed in-graph time; "
+                 "a ceiling above a measured time or a roofline above a ceiling invalidates the "
+                 "report; under-one-wave derating is reported, not applied"),
     }
     del engine
     torch.cuda.empty_cache()

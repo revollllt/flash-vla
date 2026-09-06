@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Reduce a tma_ring JSON to the bandwidth-vs-product curve, for <arch>/constants.yaml.
+"""Reduce a tma_ring JSON to the bandwidth-vs-product curve, for the measured
+table -- the hardware axis's measured/constants.yaml, or <arch>/constants.yaml
+in a standalone copy of the skill.
 
 The probe's own claim is that delivered bandwidth is a function of the PRODUCT
 `n_ctas * num_producers * box_bytes` alone. If that is true, every configuration at
@@ -117,7 +119,7 @@ def main(argv=None):
     print("\nworst within-bin spread: %.1f%%  (noise floor is ~6%%)" % worst)
 
     if a.yaml:
-        print("\n# --- paste into <arch>/constants.yaml ---")
+        print("\n# --- paste into the measured constants.yaml ---")
         print("  - id: tma-bw-vs-product")
         print("    x: product_kb   # n_ctas * num_producers * box_bytes / 1024")
         print("    y: gbs")
