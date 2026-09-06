@@ -121,12 +121,12 @@ def build(g: Graph, shape: Mapping[str, int]) -> None:
          proj_w=g.w("encoder_multi_modal_projector_w"),
          proj_b=g.w("encoder_multi_modal_projector_b"), out=bx, x_norm=vnorm)
     scale = HEAD_DIM ** -0.5
-    for i in range(ENCODER_LAYERS):
+    for i in range(layers):
         g.op("llm_backbone_norm_qkv_rope", x=bx, weight_qkv=g.w("encoder_attn_qkv_w")[i],
              rope=brope, q=bq, k=kv_k[i, :prefix_len], v=kv_v[i, :prefix_len], x_norm=bnorm)
         # The last layer runs only its QKV projection: nothing downstream reads
         # its output, only its K and V, which the action expert attends over.
-        if i == ENCODER_LAYERS - 1:
+        if i == layers - 1:
             break
         g.op("llm_backbone_attention", q=bq, k=kv_k[i, :prefix_len], v=kv_v[i, :prefix_len],
              scale=scale, mask=None, out=battn)
