@@ -56,6 +56,11 @@ Analyze 已完成（job 598964 的 floor 报告，shipped plan，同一节点 AC
   96.5% 的 forward 0.34 ms，其余 8–16 ms）。修法是把只依赖 token 数的三个向量在构造时制表
   （逐位等价），host slot 只做选行与拷贝。ACD1-8 上连续三次 A/B/A 两个 plan 的 p99 − min 全部
   在 0.5 ms 内，job 599815 产出 Pi0.5 首次 `pass`。此后 Pi0.5 的候选也必须拿到 `pass`。
+- **promotion gate 的延迟基线是 shipped plan**：`eval.gate` 默认把候选 plan 与 reference 路由做
+  A/B/A，而候选 plan 继承了 shipped 的全部融合，所以默认调用下任何候选都"改善"1.3–1.6 ms，
+  分辨不出本次改动本身。本战役的 promotion 调用统一为
+  `eval.gate --candidate <plan> --reference shipped --baseline --reps 100`（正确性仍在 gate 内部
+  对 reference 路由判，只有延迟腿换基线）。lane B 已按此执行；lane C 的 C0 gate 因此需重跑。
 - **lane B 结案**：SigLIP 组件包 `hardware/nvidia/h100/siglip/` 落地（`siglip-cublas`、`siglip-cuda`
   两个后端，两 Target 都注册）。Pi0 的 vision 改走 `siglip-cuda`（手写 LayerNorm + cuBLASLt 投影 +
   单 launch 融合 attention，head_dim 72→80 的 pad 只在 smem 里），chunk min −0.42 ms，gate `pass`
