@@ -4,7 +4,7 @@
 # drift cancel and the control leg has to reproduce.
 #   sbatch -w ACD1-33 sbatch/mqa_ab.sh
 # The two legs are call-site plans that differ in exactly one entry, so each
-# report records which route produced it (`benchmarks/plans.py`).
+# report records which route produced it (the plan in its identity).
 #
 # Read this design for provenance, not for the magnitude of a claim. One job,
 # one process, and a recorded plan per leg naming the route -- which the
@@ -31,8 +31,8 @@ export PALIGEMMA_TOKENIZER="${PALIGEMMA_TOKENIZER:-/data/user/jzou521/models/ope
 require_cuda
 report_env
 REPS="${E2E_REPS:-100}"
-CUDA_PLAN="${AB_PLAN:-attn-ffn-cuda-fused-producer}"
-CHAIN_PLAN="${AB_PLAN_REFERENCE:-attn-ffn-cuda-fused-producer-enc-tilelang}"
+CUDA_PLAN="${AB_PLAN:-lab/plans/pi05-attn-ffn-cuda-fused-producer.json}"
+CHAIN_PLAN="${AB_PLAN_REFERENCE:-lab/plans/pi05-attn-ffn-cuda-fused-producer-enc-tilelang.json}"
 "${PYTHON}" -u -m benchmarks latency --target h100/pi05 --reps "${REPS}" \
     --plan "${CUDA_PLAN}" --plan "${CHAIN_PLAN}" --plan "${CUDA_PLAN}"
 echo "[job] finished $(date)"

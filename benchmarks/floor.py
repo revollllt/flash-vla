@@ -1,6 +1,6 @@
 """The latency floor model: the derived objective of a Target.
 
-    python -m benchmarks floor --target h100/pi05 --plan attn-ffn-cuda-fused-producer-pdl
+    python -m benchmarks floor --target h100/pi05
 
 Two tiers per segment, every term dividing by a measured, tagged constant of
 the `hardware-unit-test` skill (`docs/architecture/33-latency-floor-model.md`):
@@ -43,9 +43,8 @@ from flash_vla.runtime.engine import segments
 
 from .latency import _env, _stats, _time_event
 from .metrics import require_cuda
-from .plans import PLANS
 from .profile import attribute
-from .targets import build, resolve
+from .targets import PLAN_NAMES, build, resolve
 
 #: The model form; bump when a term is added or changed.
 FORM_VERSION = "1"
@@ -105,7 +104,7 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
     require_cuda()
     torch.cuda.init()
     target = resolve(target)
-    engine = build(target, plan, seed=seed, **overrides)
+    engine = build(target, plan or "shipped", seed=seed, **overrides)
     identity = engine.identity
     constants, constants_path, constants_version = load_constants(identity.hardware)
     stream_bps = float(constants["stream_tbps"]["value"]) * 1e12
@@ -188,7 +187,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--target", required=True)
-    parser.add_argument("--plan", default=None, help=f"one of {sorted(PLANS)} or JSON")
+    parser.add_argument("--plan", default=None,
+                        help=f"one of {PLAN_NAMES}, a JSON object or a lab/plans/*.json path")
     parser.add_argument("--reps", type=int, default=30)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--option", action="append", default=[])

@@ -4,7 +4,7 @@
 #
 #   sbatch sbatch/profile.sh
 #   TARGET=h100/pi0 sbatch sbatch/profile.sh
-#   PLAN=attn-ffn-cuda-fused-producer-pdl REPS=100 CAPTURE_TRACES=1 sbatch sbatch/profile.sh
+#   PLAN=shipped REPS=100 CAPTURE_TRACES=1 sbatch sbatch/profile.sh
 #
 # Latency runs first: the profiler perturbs scheduling, so a latency claim must
 # not come from a process that has already profiled. Each command builds its
@@ -21,7 +21,7 @@ source "${SLURM_SUBMIT_DIR:-$PWD}/sbatch/_common.sh"
 export CUTLASS_DIR="${CUTLASS_DIR:-${REPO_DIR}/third_party/cutlass}"
 export PALIGEMMA_TOKENIZER="${PALIGEMMA_TOKENIZER:-/data/user/jzou521/models/openpi/big_vision/paligemma_tokenizer.model}"
 TARGET="${TARGET:-h100/pi05}"
-PLAN="${PLAN:-attn-ffn-cuda-fused-producer-pdl}"
+PLAN="${PLAN:-shipped}"
 REPS="${REPS:-100}"
 TAG="${SLURM_JOB_ID:-local}"
 OUT_DIR="${OUT_DIR:-${REPO_DIR}/profiles/$(echo "${TARGET}" | tr '/' '_')}"

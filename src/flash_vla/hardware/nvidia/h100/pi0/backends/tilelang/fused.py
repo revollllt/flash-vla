@@ -1,8 +1,9 @@
 """Fused decoder wrappers: fewer, larger kernels for the same maths.
 
 Each function here replaces the like-named wrapper in `wrappers.py` with an
-identical signature, so selecting between them is a table lookup (`ops.py`).
-Two fusions, both decoder-only:
+identical signature; the three are registered as the `tilelang-fused` backend,
+so the shipped plan routes these call sites to it and the reference plan does
+not. Two fusions, both in the action expert:
 
 Lazy pre-norm. RMS normalization commutes with the GEMM's reduction --
 rms(x) @ W equals (x @ W) * rstd(x)[:, None] -- so the scale factor does not
@@ -27,11 +28,13 @@ they are strictly closer to the fp32 reference.
 """
 from __future__ import annotations
 
+from functools import partial
+
 import torch
 
 from .kernels import base as kernels
 from .kernels import fused_norm as fused_norm_kernels
-from .wrappers import _compiled, scratch
+from .wrappers import _compiled, fresh_scratch
 
 _FUSED_GATE = dict(BLOCK_M=64, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128, PRO_K=64)
 _FUSED_OUT_PROJ = dict(BLOCK_M=16, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128, PRO_K=128)
@@ -42,19 +45,21 @@ _LOG2E = 1.4426950408889634
 DECODER_HEADS = 8
 
 
-def decoder_norm_gated_ffn(x, gate_w, up_w, out, norm_factor):
+def action_expert_norm_gated_ffn(x, scale, gate_w, up_w, gate_b, up_b, out, norm_factor):
     """Gated FFN with the RMS factor computed inside the kernel.
 
     `norm_factor` is accepted for signature parity but never written -- the
     factor exists only inside the kernel, and nothing downstream reads it.
+    `scale`, `gate_b`, `up_b` are Pi0.5's AdaRMS terms; Pi0 passes None.
     """
+    assert scale is None and gate_b is None and up_b is None, "Pi0 has no AdaRMS terms"
     M, K = x.shape
     _compiled(fused_norm_kernels.tl_fused_rms_gate, M=M, N=gate_w.shape[1], K=K,
               **_FUSED_GATE)(x, gate_w, up_w, out)
     return out
 
 
-def decoder_action_out_proj(x, weight, bias, out, norm_factor):
+def action_expert_action_out_proj(x, weight, bias, out, norm_factor):
     """Out-projection with the RMS factor computed inside the kernel, written in place.
 
     The unfused path allocates a result and copies it back, one extra
@@ -85,13 +90,16 @@ def _num_splits(keys: int, block_n: int, requested: int) -> tuple[int, int]:
     return requested, chunk_blocks(requested)
 
 
-def decoder_attention(Q, K, V, scores, out, encoder_seq_len):
+def action_expert_attention(Q, K, V, mask, out, prefix_len, *, scratch=fresh_scratch):
     """FlashDecoding attention: split over keys, then merge by log-sum-exp.
 
-    `scores` is accepted for signature parity and left untouched -- the score
-    matrix stays in SRAM. `out` aliases Q; the split kernel only reads Q and the
-    combine's write is ordered after it on the stream.
+    The score matrix stays in SRAM. Pi0 has no key mask (`mask` is None); the
+    prefix length arrives as the integer `prefix_len`. `out` aliases Q; the
+    split kernel only reads Q and the combine's write is ordered after it on
+    the stream.
     """
+    assert mask is None, "Pi0 has no key mask; the prefix length is the integer"
+    encoder_seq_len = prefix_len
     M, head_dim = Q.shape
     keys = K.shape[0]
     block_m, block_n = _FD_SPLIT["BLOCK_M"], _FD_SPLIT["BLOCK_N"]
@@ -116,7 +124,23 @@ def decoder_attention(Q, K, V, scores, out, encoder_seq_len):
 
 
 FUSED_WRAPPERS = {
-    "decoder_norm_gated_ffn": decoder_norm_gated_ffn,
-    "decoder_action_out_proj": decoder_action_out_proj,
-    "decoder_attention": decoder_attention,
+    "action_expert_norm_gated_ffn": action_expert_norm_gated_ffn,
+    "action_expert_action_out_proj": action_expert_action_out_proj,
+    "action_expert_attention": action_expert_attention,
 }
+
+#: The registry contract of the `tilelang-fused` backend: these three call
+#: sites, no constraints, no extension ops.
+NAMES = frozenset(FUSED_WRAPPERS)
+ROUTE_CONSTRAINTS: tuple = ()
+OPS: tuple = ()
+
+
+def make_wrappers(scratch, selected_names=None) -> dict:
+    names = NAMES if selected_names is None else set(selected_names)
+    unknown = names - NAMES
+    if unknown:
+        raise KeyError(f"tilelang-fused backend does not implement {sorted(unknown)}")
+    return {name: (partial(FUSED_WRAPPERS[name], scratch=scratch)
+                   if name == "action_expert_attention" else FUSED_WRAPPERS[name])
+            for name in names}

@@ -28,16 +28,15 @@ that decide whether a new VLA model or device can be brought up quickly:
 ## Decision
 
 1. **Boundary rule.** What is invariant across Targets lives under
-   `src/flash_vla/runtime/`; all else in the Target. A Target declares its
-   buffer plan (`Buffer`, with padding, in-padding values and alias views of
-   contract regions) and its segment list as data; `StaticArena` and
-   `Program` own materialization and the warmup -> freeze -> capture ->
-   replay lifecycle; `binding` validates a plan against backend-declared
-   `RouteConstraint`s at construction; `Identity` carries the four axes, the
-   shape numbers, the resolved plan, table options and the git revision;
-   the `Engine` protocol (identity, buffers, program, stage_outputs, costs,
-   sample_inputs, stage, forward, replay, host, allocation) is the only
-   surface generic harnesses consume. Both Targets construct through it.
+   `src/flash_vla/runtime/`; all else in the Target. *Amended by the
+   [explicit graph and ModelRunner note](2026-09-06-explicit-graph-and-model-runner.md):*
+   a Target now declares its computation graph (buffers, nodes, host slots)
+   with the graph API and subclasses the `VLA` template; `ModelRunner` is the
+   one implementation of the `Engine` protocol, owning materialization, plan
+   binding, workspace allocation, the warmup -> freeze -> capture -> replay
+   lifecycle and the derived costs; `Identity` carries the four axes, the
+   shape numbers, the resolved plan and the git revision (table options were
+   retired with the fused overlay becoming a backend route).
 2. **Acceptance as one registry.** `eval/acceptance.py` holds framework
    defaults (metrics, statistics, repetition policy, unlocked clocks,
    same-process A/B/A deltas, the candidate rule, the ordered correctness
@@ -74,7 +73,9 @@ that decide whether a new VLA model or device can be brought up quickly:
    blocked.
 7. **Documentation as a tree.** `docs/architecture/` owns the normative
    architecture with a status line per document; `ARCHITECTURE.md` is the
-   index.
+   index. *Superseded in part:* the tree predates the explicit graph and is
+   being collapsed into one `ARCHITECTURE.md` page; until then the source
+   named there is authoritative where the two disagree.
 
 ## Alternatives considered
 
@@ -163,5 +164,8 @@ random weights and inputs before and after each step.
 
 ## Related notes
 
+- [explicit graph and ModelRunner](2026-09-06-explicit-graph-and-model-runner.md):
+  the form the runtime/Target boundary took after this note; amends Decision
+  §1 and §7 above.
 - [kernel-design workflow](../process/2026-09-01-kernel-design-workflow.md):
   the kernel-task loop this note's Target-level acceptance wraps around.

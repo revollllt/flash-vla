@@ -8,7 +8,7 @@ names for that header set -- editing `tile/sm90/*.cuh` must re-run it.
 
 Three checks, each independently meaningful:
 
-- **chain**: against the torch route it replaced (`encoder_attention`), which
+- **chain**: against the torch route it replaced (`llm_backbone_attention`), which
   is what the pipeline still runs wherever a plan does not route this call site
   to the cuda backend. This is the comparison a promotion claim rests on.
 - **fp32**: against an fp32 recomputation of the same maths, over valid query
@@ -34,9 +34,8 @@ import torch
 
 from flash_vla.hardware.nvidia.h100.pi05.backends.cuda import enc_attn
 from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels.attention import (
-    encoder_attention)
-from flash_vla.hardware.nvidia.h100.pi05.buffers import MASK_NEG
-from flash_vla.models.pi05.spec import DECODER_HEADS, HEAD_DIM, VISION_TOKENS
+    llm_backbone_attention)
+from flash_vla.models.pi05.spec import DECODER_HEADS, HEAD_DIM, MASK_NEG, VISION_TOKENS
 from eval.correctness.metrics import error_metrics
 
 #: Production prefix: 3 views x 256 image tokens + a prompt padded to 200.
@@ -87,7 +86,8 @@ def run(seq: int, valid: int, seed: int, device: str) -> dict:
     enc_attn.attention(q, k, v, scale, mask, out)
     torch.cuda.synchronize()
 
-    chain = encoder_attention(q, k, v, scale, mask).view(seq * heads, head_dim)
+    chain = torch.empty_like(q)
+    llm_backbone_attention(q, k, v, scale, mask, chain)
     reference = fp32_reference(q, k, v, scale, mask, seq)
     rows = slice(0, valid * heads)
 

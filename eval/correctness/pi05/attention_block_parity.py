@@ -160,9 +160,9 @@ class TileLangControl:
         self.qkv(t["x"][:M], t["rms_factor"][:M], t["ada_scale"], t["w_qkv"], t["qkv_bias"],
                  t["rope"][:M], self.q_flat.view(M, H * DH),
                  t["k_cache"][PREFIX_LEN:KEYS], t["v_cache"][PREFIX_LEN:KEYS])
-        self.w.decoder_attention(self.q_flat, t["k_cache"][:KEYS], t["v_cache"][:KEYS],
+        self.w.action_expert_attention(self.q_flat, t["k_cache"][:KEYS], t["v_cache"][:KEYS],
                                  t["key_mask"][:KEYS], self.attn_out)
-        self.w.decoder_out_proj_residual(self.attn_out.view(M, H * DH), t["w_o"],
+        self.w.action_expert_out_proj_residual(self.attn_out.view(M, H * DH), t["w_o"],
                                          t["ada_gate"], t["out"][:M])
 
 
@@ -443,11 +443,11 @@ def run_op_bench(kt: AttnTaskloop, ws: Workspace, ctl, seed: int, device: str, r
                                    tt["qkv_bias"], tt["rope"][:M_], ctl.q_flat.view(M_, H_ * DH_),
                                    tt["k_cache"][PREFIX_LEN:KEYS], tt["v_cache"][PREFIX_LEN:KEYS])),
         "attention": (lambda tt: StandaloneBlock(kt, ws, (2, 3))(tt),
-                      lambda tt: ctl.w.decoder_attention(ctl.q_flat, tt["k_cache"][:KEYS],
+                      lambda tt: ctl.w.action_expert_attention(ctl.q_flat, tt["k_cache"][:KEYS],
                                                          tt["v_cache"][:KEYS], tt["key_mask"][:KEYS],
                                                          ctl.attn_out)),
         "oproj": (lambda tt: StandaloneBlock(kt, ws, STANDALONE_OP_GROUPS["oproj"])(tt),
-                  lambda tt: ctl.w.decoder_out_proj_residual(ctl.attn_out.view(M_, H_ * DH_), tt["w_o"],
+                  lambda tt: ctl.w.action_expert_out_proj_residual(ctl.attn_out.view(M_, H_ * DH_), tt["w_o"],
                                                              tt["ada_gate"], tt["out"][:M_])),
     }
     floors = {"qkv": 1.98, "attention": 1.62, "oproj": 1.51}

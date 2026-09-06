@@ -6,11 +6,12 @@ rows of the prompt are valid, the attention mask that follows from that, and the
 decoder's RoPE offset.
 
 All four are cheap -- 16 us of tokenization and 27 KB of copies -- and all four
-are *host* work, which is why they are here rather than in a kernel. The engine
-overlaps them with the vision tower: vision depends only on the images, this
-depends only on the state, and both inputs arrive together. See PLAN.md §3.2.
-The device-side alternative is real but buys nothing once the host work is
-hidden, and it would put the token ids out of reach of the parity gate.
+are *host* work, which is why they are here rather than in a kernel. The
+program overlaps them with the vision tower: the host slot sits between the
+vision_encoder and llm_backbone stages, vision depends only on the images, this
+depends only on the state, and both inputs arrive together. The device-side
+alternative is real but buys nothing once the host work is hidden, and it would
+put the token ids out of reach of the reference check.
 
 Staging is pinned and reused, so `build` allocates nothing and the copies can
 be issued `non_blocking=True` -- a pageable copy would synchronize and undo the
@@ -23,9 +24,13 @@ import math
 import numpy as np
 import torch
 
-from flash_vla.models.pi05.spec import ENCODER_DIM, HEAD_DIM, ROPE_THETA, VISION_TOKENS
-
-from .buffers import MASK_NEG
+from flash_vla.models.pi05.spec import (
+    ENCODER_DIM,
+    HEAD_DIM,
+    MASK_NEG,
+    ROPE_THETA,
+    VISION_TOKENS,
+)
 
 
 class PrefixInputs:
@@ -90,10 +95,10 @@ class PrefixInputs:
     @torch.no_grad()
     def copy_into(self, buffers: dict[str, torch.Tensor], non_blocking: bool = True) -> None:
         """Issue the staged copies onto the current stream."""
-        buffers["prompt_token_ids"].copy_(self.token_ids, non_blocking=non_blocking)
-        buffers["prompt_embed_scale"].copy_(self.embed_scale, non_blocking=non_blocking)
-        buffers["prefix_mask_bias"].copy_(self.mask_bias, non_blocking=non_blocking)
-        buffers["decoder_rope_weights"].copy_(self.decoder_rope, non_blocking=non_blocking)
+        buffers["prompt_ids"].copy_(self.token_ids, non_blocking=non_blocking)
+        buffers["prompt_scale"].copy_(self.embed_scale, non_blocking=non_blocking)
+        buffers["mask_bias"].copy_(self.mask_bias, non_blocking=non_blocking)
+        buffers["action_expert_rope"].copy_(self.decoder_rope, non_blocking=non_blocking)
 
     @property
     def nbytes(self) -> int:

@@ -1,10 +1,10 @@
 """Compare the H100/Pi0.5 prefix pass against the official OpenPI PyTorch model.
 
-The prefix pass is everything up to the KV cache the decoder attends over:
-vision, the prompt embedding gather, and 18 encoder layers. Its output is
-`encoder_K` / `encoder_V`, which is exactly what OpenPI's `sample_actions`
-builds before it starts denoising (`pi0_pytorch.py:185-201`), so the two are
-directly comparable.
+The prefix pass is everything up to the KV cache the action expert attends
+over: the vision encoder, the prompt embedding gather, and 18 backbone layers.
+Its output is `prefix_k` / `prefix_v`, which is exactly what OpenPI's
+`sample_actions` builds before it starts denoising (`pi0_pytorch.py:185-201`),
+so the two are directly comparable.
 
 Running this on randomly initialized weights is deliberate. Both sides consume
 the same tensors, so any difference is an implementation difference; a
@@ -44,7 +44,7 @@ import os
 
 import torch
 
-from benchmarks.plans import PLANS, parse_plan
+from benchmarks.targets import PLAN_NAMES
 from eval.acceptance import tolerances
 from eval.baselines import openpi05
 from eval.correctness.metrics import error_metrics
@@ -84,15 +84,16 @@ def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
         plan: str | None = None) -> dict[str, object]:
     """Run both implementations on identical inputs and report per-layer error.
 
-    `plan` names the call-site plan the target engine is built with; the default
-    is the all-TileLang reference route. Pass the shipped plan to gate what
-    production actually runs -- the encoder attention is plan-selected, so the
-    reference route does not exercise its CUDA kernel.
+    `plan` names the call-site plan the runner is built with; the default is
+    the reference route. Pass `shipped` to gate what production actually runs
+    -- the backbone attention is plan-selected, so the reference route does
+    not exercise its CUDA kernel.
     """
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
 
-    from flash_vla.hardware.nvidia.h100.pi05 import Pi05Inference
+    from flash_vla.hardware.nvidia.h100.pi05 import TARGET, forward_prefix
+    from flash_vla.runtime import ModelRunner
 
     torch_device = torch.device(device)
     generator = torch.Generator(device=torch_device).manual_seed(seed)
@@ -118,23 +119,23 @@ def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
     del baseline, past_key_values
     torch.cuda.empty_cache()
 
-    engine = Pi05Inference(target_weights, tokenizer, num_views=3, chunk_size=50,
-                           layers=layers, device=device,
-                           plan=parse_plan(plan) if plan else None)
+    engine = ModelRunner(TARGET, target_weights, plan=plan or "reference", device=device,
+                         num_views=3, chunk_size=50, layers=layers, tokenizer=tokenizer,
+                         prompt=prompt)
     del target_weights
     torch.cuda.empty_cache()
 
-    engine.set_task(prompt)
-    engine_n_valid = engine.forward_prefix(images, state)
+    engine_n_valid = forward_prefix(engine, images, state)
     torch.cuda.synchronize()
-    keys, values = engine.kv_cache
+    keys, values = engine.buffers["prefix_k"], engine.buffers["prefix_v"]
+    prefix_len = engine.derived["prefix_len"]
 
     report: dict[str, object] = {
         "identity": engine.identity.as_dict(),
         "prompt_tokens": n_tokens,
         "n_valid_prefix": n_valid,
         "n_valid_engine": engine_n_valid,
-        "encoder_seq_len": engine.encoder_seq_len,
+        "prefix_len": prefix_len,
         "layers_compared": min(layers, len(reference)),
         "checkpoint": checkpoint or "random",
         "plan": engine.plan,
@@ -159,8 +160,7 @@ def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
             "v": error_metrics(ref_v, values[index, :n_valid]),
         })
 
-    padded = torch.cat([keys[:, n_valid:engine.encoder_seq_len],
-                        values[:, n_valid:engine.encoder_seq_len]])
+    padded = torch.cat([keys[:, n_valid:prefix_len], values[:, n_valid:prefix_len]])
     report["padded_rows_finite"] = bool(torch.isfinite(padded.float()).all().item())
     report["per_layer"] = per_layer
 
@@ -193,12 +193,12 @@ def main(argv=None) -> int:
     parser.add_argument("--checkpoint", default=None,
                         help="OpenPI pi05 model.safetensors or its directory (default: random)")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
-    parser.add_argument("--layers", type=int, default=18, help="encoder depth, for bisection")
+    parser.add_argument("--layers", type=int, default=18, help="backbone depth, for bisection")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--plan", default=None,
-                        help=f"call-site plan for the target engine: one of "
-                             f"{sorted(PLANS)} or JSON (default: all-TileLang)")
+                        help=f"call-site plan for the runner: one of {PLAN_NAMES}, JSON or a "
+                             "lab/plans/*.json path (default: reference)")
     parser.add_argument("--openpi-rope-bf16", action="store_true",
                         help="keep OpenPI's bfloat16 rotary frequencies (see "
                              "openpi05.restore_rope_precision)")

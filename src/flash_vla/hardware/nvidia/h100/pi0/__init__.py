@@ -1,6 +1,5 @@
-"""Pi0 execution plan specialized for NVIDIA H100."""
+"""Pi0 execution target specialized for NVIDIA H100."""
 
-from .engine import Pi0Inference
-from .ops import op_table
+from .target import TARGET, Pi0, Pi0Config
 
-__all__ = ["Pi0Inference", "op_table"]
+__all__ = ["Pi0", "Pi0Config", "TARGET"]

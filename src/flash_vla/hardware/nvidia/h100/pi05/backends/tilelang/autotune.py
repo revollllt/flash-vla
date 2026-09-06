@@ -186,7 +186,7 @@ def sweep_decoder_attention(m_flat: int, head_dim: int, keys: int, mask,
 
     candidates = grid(BLOCK_N=list(block_n), NUM_SPLIT=list(split_requests))
     return sweep(candidates, build, lambda launch, i: launch(i), feasible=feasible,
-                 correct=correct, label="decoder_attention", n_inner=n_inner, **kwargs)
+                 correct=correct, label="action_expert_attention", n_inner=n_inner, **kwargs)
 
 
 def sweep_decoder_qkv(m: int, n: int, k: int, head_dim: int, num_heads: int,

@@ -1,4 +1,4 @@
-"""The identity every engine exposes and every report is stamped with.
+"""The identity every runner exposes and every report is stamped with.
 
 Two measurements are comparable only when their identities match. The four
 axes of a Target -- hardware, model revision, shape profile, precision policy
@@ -41,9 +41,6 @@ class Identity:
     shape: Mapping[str, int]                     # the shape profile's numbers
     plan: Mapping[str, str]                      # call site -> backend, resolved
     precision: str = "bf16"
-    #: Target-local table options that change what runs without changing the
-    #: route (Pi0's fused overlay flag). Part of comparability.
-    options: Mapping[str, Any] = field(default_factory=dict)
     revision: str | None = field(default_factory=git_revision)
 
     def __post_init__(self) -> None:
@@ -60,14 +57,13 @@ class Identity:
         return {"target": self.target, "hardware": self.hardware, "model": self.model,
                 "shape_profile": self.shape_profile, "shape": dict(self.shape),
                 "precision": self.precision, "plan": dict(self.plan),
-                "options": dict(self.options), "revision": self.revision}
+                "revision": self.revision}
 
     def same_workload(self, other: "Identity") -> bool:
-        """Same Target, shape and precision; plan and options may differ.
+        """Same Target, shape and precision; the plan may differ.
 
-        This is the relation between the legs of an A/B/A: a candidate
-        implementation (a plan, or a table option such as a fused overlay)
-        against the reference on one workload.
+        This is the relation between the legs of an A/B/A: a candidate plan
+        against the reference plan on one workload.
         """
         return (self.target == other.target and self.hardware == other.hardware
                 and self.model == other.model and dict(self.shape) == dict(other.shape)
@@ -75,5 +71,4 @@ class Identity:
 
     def comparable(self, other: "Identity") -> bool:
         """Whether a measurement under `self` may be compared with one under `other`."""
-        return (self.same_workload(other) and dict(self.plan) == dict(other.plan)
-                and dict(self.options) == dict(other.options))
+        return self.same_workload(other) and dict(self.plan) == dict(other.plan)

@@ -22,45 +22,27 @@ its destination in place.
 """
 from __future__ import annotations
 
-import contextlib
+from functools import partial
 
 import torch
 
-from flash_vla.runtime.cuda import ScratchPool
+from flash_vla.runtime.ops import OpSpec, gemm
 
 from .kernels import base as kernels
 from .kernels import attention as _attention
 
 _CACHE: dict = {}
-_POOL = ScratchPool()
 
 
-def set_pool(pool: ScratchPool) -> None:
-    """Install the scratch pool used by every wrapper (see `use_pool` for scoped swaps)."""
-    global _POOL
-    _POOL = pool
+def fresh_scratch(role: str, shape, dtype, device) -> torch.Tensor:
+    """The default workspace allocator: a new zeroed tensor per call.
 
-
-@contextlib.contextmanager
-def use_pool(pool: ScratchPool):
-    """Temporarily route scratch allocation through `pool`, e.g. during graph capture."""
-    global _POOL
-    previous = _POOL
-    _POOL = pool
-    try:
-        yield
-    finally:
-        _POOL = previous
-
-
-def scratch(role: str, shape, dtype, device) -> torch.Tensor:
-    """Graph-safe temporary from the active pool.
-
-    Always go through this rather than capturing `_POOL` at import time: the
-    active pool is swapped per engine by `use_pool`, and a module that bound the
-    object once would keep writing into the wrong one.
+    Only for calling a wrapper as a free function outside a runner. A runner
+    injects its own allocator through `make_wrappers`, which allocates each
+    workspace once and freezes before capture.
     """
-    return _POOL.get(role, shape, dtype, device)
+    del role
+    return torch.zeros(shape, dtype=dtype, device=device)
 
 
 def _compiled(kernel, **const):
@@ -107,14 +89,14 @@ def _rms_factor(x, out, cfg=_DEC_RMS):
     return out
 
 
-def decoder_state_proj(x, weight, bias, out):
+def action_expert_state_proj(x, weight, bias, out):
     """out = x @ weight + bias, for the single state token (upstream matmul_1_32_1024_bias)."""
     _compiled(kernels.tl_matmul_bias, M=1, N=weight.shape[1], K=weight.shape[0],
               **_DEC_STATE_PROJ)(x.view(1, -1), weight, bias, out)
     return out
 
 
-def decoder_action_in_proj(x, weight, bias, out):
+def action_expert_action_in_proj(x, weight, bias, out):
     """out = silu(x @ weight + bias) (upstream matmul_k_32_1024_bias_silu)."""
     M, K = x.shape
     kfn = _compiled(kernels.tl_matmul_bias_silu, M=M, N=weight.shape[1], K=K, **_DEC_ACTION_IN)
@@ -122,7 +104,7 @@ def decoder_action_in_proj(x, weight, bias, out):
     return out
 
 
-def decoder_action_mlp(x, weight, bias, out):
+def action_expert_action_mlp(x, weight, bias, out):
     """out = x @ weight + bias (upstream matmul_k_1024_1024_bias)."""
     M, K = x.shape
     _compiled(kernels.tl_matmul_bias, M=M, N=weight.shape[1], K=K,
@@ -130,13 +112,15 @@ def decoder_action_mlp(x, weight, bias, out):
     return out
 
 
-def decoder_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, norm_factor):
+def action_expert_norm_qkv_rope(x, scale, weight_qkv, bias, rope, Q, K, V, norm_factor):
     """RMS-scale x, project to QKV, apply RoPE, scatter into Q/K/V in place.
 
     Upstream rms_matmul_k_1024_2560_qkv_rope. The deep pipeline is what matters
     here: with 18 distinct per-layer weights the 5 MB projection weight is always
     a cold read, and overlapping it with compute is the whole cost of the kernel.
+    `scale` and `bias` are Pi0.5's AdaRMS terms; Pi0 has none and passes None.
     """
+    assert scale is None and bias is None, "Pi0 has no AdaRMS scale or shift"
     M, Kdim = x.shape
     head_dim = V.shape[1]
     num_heads = Q.shape[0] // M
@@ -146,17 +130,21 @@ def decoder_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, norm_factor):
     kfn(x, factor, weight_qkv, rope, Q.view(M, num_heads * head_dim), K, V)
 
 
-def decoder_attention(Q, K, V, scores, out, encoder_seq_len):
+def action_expert_attention(Q, K, V, mask, out, prefix_len, *, scratch=fresh_scratch):
     """out = softmax_mask0(Q @ K^T * scale) @ V, materializing the score matrix.
 
     Upstream matmul_k8_256_n_softmax_mask0 + matmul_k8_n_256. The fused path
-    replaces this with FlashDecoding (`fused_wrappers.decoder_attention`), which
+    replaces this with FlashDecoding (`fused.action_expert_attention`), which
     keeps the scores in SRAM; this version stays as the readable reference and
-    the fallback when the fusion is disabled.
+    the reference route.
 
-    `out` aliases Q (both are the query buffer) -- safe, since the final GEMM
-    reads its input through `scores`, not Q.
+    Pi0 runs an empty prompt and has no padding, so `mask` is None and the
+    prefix length arrives as the integer `prefix_len`. `out` aliases Q (both
+    are the query buffer) -- safe, since the final GEMM reads its input through
+    the softmaxed scores, a workspace, not Q.
     """
+    assert mask is None, "Pi0 has no key mask; the prefix length is the integer"
+    encoder_seq_len = prefix_len
     queries, head_dim = Q.shape
     keys = K.shape[0]
     frag_w = max(1024, 1 << (keys - 1).bit_length())
@@ -169,30 +157,37 @@ def decoder_attention(Q, K, V, scores, out, encoder_seq_len):
     attn_v_fn = _compiled(kernels.tl_matmul, M=queries, N=head_dim, K=keys, **_DEC_ATTN_V)
 
     raw = scratch("attn_scores", (queries, keys), Q.dtype, Q.device)
+    scores = scratch("attn_probs", (queries, keys), Q.dtype, Q.device)
     scores_fn(Q, K, raw)
     softmax_fn(raw, scores)
     attn_v_fn(scores, V, out)
     return out
 
 
-def decoder_out_proj_residual(x, weight, out):
-    """out += x @ weight, in place (upstream matmul_k_2048_1024_res)."""
+def action_expert_out_proj_residual(x, weight, gate, out):
+    """out += x @ weight, in place (upstream matmul_k_2048_1024_res). `gate` is Pi0.5's; None here."""
+    assert gate is None, "Pi0 has no AdaRMS gate"
     M, K = x.shape
     _compiled(kernels.tl_matmul_res, M=M, N=weight.shape[1], K=K,
               **_DEC_RESIDUAL)(x, weight, out, out)
     return out
 
 
-def decoder_ffn_down_residual(x, weight, out):
-    """out += x @ weight, in place (upstream matmul_k_4096_1024_res)."""
+def action_expert_ffn_down_residual(x, weight, gate, out):
+    """out += x @ weight, in place (upstream matmul_k_4096_1024_res). `gate` is Pi0.5's; None here."""
+    assert gate is None, "Pi0 has no AdaRMS gate"
     M, K = x.shape
     _compiled(kernels.tl_matmul_res, M=M, N=weight.shape[1], K=K,
               **_DEC_RESIDUAL)(x, weight, out, out)
     return out
 
 
-def decoder_norm_gated_ffn(x, gate_w, up_w, out, norm_factor):
-    """out = gelu(rms(x) @ gate_w) * (rms(x) @ up_w) (upstream rms_matmul_k_1024_4096_gate)."""
+def action_expert_norm_gated_ffn(x, scale, gate_w, up_w, gate_b, up_b, out, norm_factor):
+    """out = gelu(rms(x) @ gate_w) * (rms(x) @ up_w) (upstream rms_matmul_k_1024_4096_gate).
+
+    `scale`, `gate_b` and `up_b` are Pi0.5's AdaRMS terms; Pi0 passes None.
+    """
+    assert scale is None and gate_b is None and up_b is None, "Pi0 has no AdaRMS terms"
     M, K = x.shape
     factor = _rms_factor(x, norm_factor[:M])
     _compiled(kernels.tl_scaled_gate, M=M, N=gate_w.shape[1], K=K,
@@ -200,7 +195,7 @@ def decoder_norm_gated_ffn(x, gate_w, up_w, out, norm_factor):
     return out
 
 
-def decoder_action_out_proj(x, weight, bias, out, norm_factor):
+def action_expert_action_out_proj(x, weight, bias, out, norm_factor):
     """out += bias + rms(x) @ weight (upstream rms_matmul_k_1024_32_bias_res)."""
     M, K = x.shape
     factor = _rms_factor(x, norm_factor[:M])
@@ -211,15 +206,15 @@ def decoder_action_out_proj(x, weight, bias, out, norm_factor):
 
 
 DECODER_WRAPPERS = {
-    "decoder_state_proj": decoder_state_proj,
-    "decoder_action_in_proj": decoder_action_in_proj,
-    "decoder_action_mlp": decoder_action_mlp,
-    "decoder_norm_qkv_rope": decoder_norm_qkv_rope,
-    "decoder_attention": decoder_attention,
-    "decoder_out_proj_residual": decoder_out_proj_residual,
-    "decoder_ffn_down_residual": decoder_ffn_down_residual,
-    "decoder_norm_gated_ffn": decoder_norm_gated_ffn,
-    "decoder_action_out_proj": decoder_action_out_proj,
+    "action_expert_state_proj": action_expert_state_proj,
+    "action_expert_action_in_proj": action_expert_action_in_proj,
+    "action_expert_action_mlp": action_expert_action_mlp,
+    "action_expert_norm_qkv_rope": action_expert_norm_qkv_rope,
+    "action_expert_attention": action_expert_attention,
+    "action_expert_out_proj_residual": action_expert_out_proj_residual,
+    "action_expert_ffn_down_residual": action_expert_ffn_down_residual,
+    "action_expert_norm_gated_ffn": action_expert_norm_gated_ffn,
+    "action_expert_action_out_proj": action_expert_action_out_proj,
 }
 
 
@@ -251,7 +246,7 @@ def _vision_layer_norm(x, norm_w, norm_b, out):
     return out
 
 
-def vision_patch_embed(images, patch_w, patch_b, pos_emb, out):
+def vision_encoder_patch_embed(images, patch_w, patch_b, pos_emb, out):
     """Patchify, project, add bias and the positional embedding (upstream conv2d_embed_n256_1152_res).
 
     The 14x14x3 convolution is a GEMM over flattened patches; the positional
@@ -267,7 +262,7 @@ def vision_patch_embed(images, patch_w, patch_b, pos_emb, out):
     return out
 
 
-def vision_norm_qkv(x, norm_w, norm_b, qkv_w, qkv_b, out, x_norm):
+def vision_encoder_norm_qkv(x, norm_w, norm_b, qkv_w, qkv_b, out, x_norm):
     """LayerNorm then the packed QKV projection (upstream layer_norm_QKV_matmul_n256_1152_3456_bias)."""
     M = x.shape[0] * VISION_TOKENS
     hidden = qkv_w.shape[1]
@@ -278,7 +273,7 @@ def vision_norm_qkv(x, norm_w, norm_b, qkv_w, qkv_b, out, x_norm):
     return out
 
 
-def vision_out_proj_residual(x, weight, bias, res, out):
+def vision_encoder_out_proj_residual(x, weight, bias, res, out):
     """out = attn @ weight + bias + res (upstream matmul_n256_1152_1152_bias_res).
 
     Collapses upstream's masked/unmasked and split-K branches into one
@@ -290,7 +285,7 @@ def vision_out_proj_residual(x, weight, bias, res, out):
     return out
 
 
-def vision_norm_ffn_up(x, norm_w, norm_b, weight, bias, out, x_norm):
+def vision_encoder_norm_ffn_up(x, norm_w, norm_b, weight, bias, out, x_norm):
     """LayerNorm then the GELU feed-forward expansion (upstream layer_norm_matmul_..._bias_gelu)."""
     M = x.shape[0] * VISION_TOKENS
     x2, x_norm2 = x.view(M, VISION_DIM), x_norm.view(M, VISION_DIM)
@@ -300,7 +295,7 @@ def vision_norm_ffn_up(x, norm_w, norm_b, weight, bias, out, x_norm):
     return out
 
 
-def vision_ffn_down_residual(x, weight, bias, res, out):
+def vision_encoder_ffn_down_residual(x, weight, bias, res, out):
     """out = hidden @ weight + bias + res (upstream matmul_n256_4304_1152_bias_res)."""
     M = x.shape[0] * VISION_TOKENS
     kfn = _compiled(kernels.tl_matmul_bias_res, M=M, N=VISION_DIM, K=VISION_FFN, **_VIS_FFN_DOWN)
@@ -309,12 +304,12 @@ def vision_ffn_down_residual(x, weight, bias, res, out):
 
 
 VISION_WRAPPERS = {
-    "vision_patch_embed": vision_patch_embed,
-    "vision_attention": _attention.vision_attention,
-    "vision_norm_qkv": vision_norm_qkv,
-    "vision_out_proj_residual": vision_out_proj_residual,
-    "vision_norm_ffn_up": vision_norm_ffn_up,
-    "vision_ffn_down_residual": vision_ffn_down_residual,
+    "vision_encoder_patch_embed": vision_encoder_patch_embed,
+    "vision_encoder_attention": _attention.vision_encoder_attention,
+    "vision_encoder_norm_qkv": vision_encoder_norm_qkv,
+    "vision_encoder_out_proj_residual": vision_encoder_out_proj_residual,
+    "vision_encoder_norm_ffn_up": vision_encoder_norm_ffn_up,
+    "vision_encoder_ffn_down_residual": vision_encoder_ffn_down_residual,
 }
 
 
@@ -336,7 +331,7 @@ _ENC_FFN_DOWN = dict(BLOCK_M=128, BLOCK_N=128, BLOCK_K=128, NUM_STAGES=3, THREAD
 ENCODER_DIM = 2048
 
 
-def encoder_projector(x, norm_w, norm_b, proj_w, proj_b, out, x_norm):
+def llm_backbone_projector(x, norm_w, norm_b, proj_w, proj_b, out, x_norm):
     """Final vision LayerNorm then the projection into encoder width (upstream layer_norm_matmul_n256_1152_2048_bias)."""
     M = x.shape[0] * VISION_TOKENS
     x2, x_norm2 = x.view(M, VISION_DIM), x_norm.view(M, VISION_DIM)
@@ -347,7 +342,7 @@ def encoder_projector(x, norm_w, norm_b, proj_w, proj_b, out, x_norm):
     return out
 
 
-def encoder_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, x_norm):
+def llm_backbone_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, x_norm, *, scratch=fresh_scratch):
     """RMSNorm, QKV projection, then RoPE scattered into Q/K/V (upstream rms_matmul_n_2048_2560_qkv_rope).
 
     Three kernels rather than the decoder's one: the encoder normalizes x before
@@ -366,7 +361,7 @@ def encoder_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, x_norm):
               **_ENC_ROPE)(projected, rope, Q.view(M, num_heads * head_dim), K, V)
 
 
-def encoder_out_proj_residual(x, weight, out):
+def llm_backbone_out_proj_residual(x, weight, out):
     """out += attn @ weight, in place (upstream matmul_n_2048_2048_res)."""
     M, K = x.shape
     _compiled(kernels.tl_matmul_res_ws, M=M, N=weight.shape[1], K=K,
@@ -374,7 +369,7 @@ def encoder_out_proj_residual(x, weight, out):
     return out
 
 
-def encoder_norm_gated_ffn(x, gate_w, up_w, out, x_norm):
+def llm_backbone_norm_gated_ffn(x, gate_w, up_w, out, x_norm):
     """RMSNorm then the gated feed-forward (upstream rms_matmul_n_2048_16384_gate)."""
     M, K = x.shape
     _compiled(kernels.tl_rms_norm, M=M, K=K, **_ENC_RMS)(x, x_norm[:M])
@@ -383,7 +378,7 @@ def encoder_norm_gated_ffn(x, gate_w, up_w, out, x_norm):
     return out
 
 
-def encoder_ffn_down_residual(x, weight, out):
+def llm_backbone_ffn_down_residual(x, weight, out):
     """out += hidden @ weight, in place (upstream matmul_n_16384_2048_res).
 
     K=16384 makes the weight far larger than L2, so this one runs with the L2
@@ -395,13 +390,61 @@ def encoder_ffn_down_residual(x, weight, out):
     return out
 
 
+def llm_backbone_attention(Q, K, V, scale, mask, out):
+    """Multi-query attention over the prefix, written into `out` (torch chain).
+
+    Pi0's prefix has no padding, so `mask` is None; `out` is (seq*heads,
+    head_dim), which the graph reads as (seq, heads*head_dim).
+    """
+    assert mask is None, "Pi0 has no key mask"
+    _attention.llm_backbone_attention(Q, K, V, scale, out)
+    return out
+
+
+def llm_backbone_embed_prompt(token_ids, table, scale, out):
+    """out = table: Pi0's prompt is fixed at load time, so its embeddings are a
+    checkpoint tensor copied into the language rows of the prefix. Pi0.5 gathers
+    the same rows from a vocabulary table by token id; here ids and scale are None."""
+    assert token_ids is None and scale is None, "Pi0's prompt embeddings are precomputed"
+    out.copy_(table)
+    return out
+
+
 ENCODER_WRAPPERS = {
-    "encoder_projector": encoder_projector,
-    "encoder_attention": _attention.encoder_attention,
-    "encoder_norm_qkv_rope": encoder_norm_qkv_rope,
-    "encoder_out_proj_residual": encoder_out_proj_residual,
-    "encoder_norm_gated_ffn": encoder_norm_gated_ffn,
-    "encoder_ffn_down_residual": encoder_ffn_down_residual,
+    "llm_backbone_projector": llm_backbone_projector,
+    "llm_backbone_embed_prompt": llm_backbone_embed_prompt,
+    "llm_backbone_attention": llm_backbone_attention,
+    "llm_backbone_norm_qkv_rope": llm_backbone_norm_qkv_rope,
+    "llm_backbone_out_proj_residual": llm_backbone_out_proj_residual,
+    "llm_backbone_norm_gated_ffn": llm_backbone_norm_gated_ffn,
+    "llm_backbone_ffn_down_residual": llm_backbone_ffn_down_residual,
 }
 
 ALL_WRAPPERS = {**VISION_WRAPPERS, **ENCODER_WRAPPERS, **DECODER_WRAPPERS}
+
+#: The call sites this backend implements.
+NAMES = frozenset(ALL_WRAPPERS)
+
+#: Wrappers that request workspace and take the runner's allocator.
+_NEEDS_SCRATCH = ("action_expert_attention", "llm_backbone_norm_qkv_rope")
+
+#: Pi0's two extension ops beyond the standard vocabulary: the state token's
+#: projection and the second action MLP, both plain bias GEMMs.
+OPS = (
+    OpSpec("action_expert_state_proj", ("x", "weight", "bias", "out"), outputs=("out",),
+           weights=("weight", "bias"), flops=gemm("x", "weight")),
+    OpSpec("action_expert_action_mlp", ("x", "weight", "bias", "out"), outputs=("out",),
+           weights=("weight", "bias"), flops=gemm("x", "weight")),
+)
+ROUTE_CONSTRAINTS: tuple = ()
+
+
+def make_wrappers(scratch, selected_names=None) -> dict:
+    """The wrappers of `selected_names` (default: all), bound to `scratch`."""
+    names = NAMES if selected_names is None else set(selected_names)
+    unknown = names - NAMES
+    if unknown:
+        raise KeyError(f"tilelang backend does not implement {sorted(unknown)}")
+    return {name: (partial(ALL_WRAPPERS[name], scratch=scratch) if name in _NEEDS_SCRATCH
+                   else ALL_WRAPPERS[name])
+            for name in names}

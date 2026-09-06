@@ -16,7 +16,8 @@ def run(checkpoint: str, seed: int = 0, device: str = "cuda") -> dict[str, float
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
 
-    from flash_vla.hardware.nvidia.h100.pi0 import Pi0Inference
+    from flash_vla.hardware.nvidia.h100.pi0 import TARGET
+    from flash_vla.runtime import ModelRunner
 
     torch_device = torch.device(device)
     generator = torch.Generator(device=torch_device).manual_seed(seed)
@@ -32,12 +33,11 @@ def run(checkpoint: str, seed: int = 0, device: str = "cuda") -> dict[str, float
     del baseline
     torch.cuda.empty_cache()
 
-    engine = Pi0Inference(
-        target_weights, num_views=3, chunk_size=50, steps=10, layers=18, fused=True, device=device
-    )
+    engine = ModelRunner(TARGET, target_weights, device=device, num_views=3, chunk_size=50,
+                         steps=10, layers=18)
     del target_weights
     torch.cuda.empty_cache()
-    output = engine.forward(images, state, noise).clone()
+    output = engine.forward(images=images, state=state, noise=noise).clone()
     torch.cuda.synchronize()
 
     metrics = {"identity": engine.identity.as_dict(), **error_metrics(reference, output)}

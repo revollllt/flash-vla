@@ -1,11 +1,12 @@
 """In-engine correctness of any Target: the reference plan against a candidate.
 
-    python -m eval.correctness.in_engine --target h100/pi05 --plan attn-cuda --steps 1 --layers 1
-    python -m eval.correctness.in_engine --target h100/pi05 --plan attn-cuda --steps 1 --layers 18
-    python -m eval.correctness.in_engine --target h100/pi05 --plan attn-cuda --isolate
+    python -m eval.correctness.in_engine --target h100/pi05 --steps 1 --layers 1
+    python -m eval.correctness.in_engine --target h100/pi05 --steps 1 --layers 18
+    python -m eval.correctness.in_engine --target h100/pi05 --plan lab/plans/pi05-attn-cuda.json --isolate
 
-Two engines of one Target are built on the same seeded weights and fed the
-same seeded inputs; one runs the reference plan, the other the candidate. The
+Two runners of one Target are built on the same seeded weights and fed the
+same seeded inputs; one runs the reference plan, the other the candidate
+(the shipped plan unless `--plan` names another). The
 program runs in lockstep, one step at a time, and after every segment the
 outputs the Target declares for it (`engine.stage_outputs`) are compared with
 the shared five metrics, per layer where the Target marks a layer axis.
@@ -32,9 +33,7 @@ from typing import Any
 
 import torch
 
-from benchmarks.latency import parse_options
-from benchmarks.plans import PLANS
-from benchmarks.targets import build, resolve
+from benchmarks.targets import PLAN_NAMES, build, resolve
 from eval.acceptance import DEFAULTS, tolerances
 from eval.correctness.metrics import error_metrics
 
@@ -63,10 +62,10 @@ def _compare(name: str, reference: torch.Tensor, candidate: torch.Tensor,
     return entry
 
 
-def run(target: str, plan: str | None, steps: int | None = 1, layers: int | None = 1,
-        seed: int = 0, isolate: bool = False,
-        candidate_options: dict[str, Any] | None = None, **overrides) -> dict[str, Any]:
-    """Compare `plan` (and `candidate_options`) against the Target's reference, segment by segment.
+def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
+        layers: int | None = 1, seed: int = 0, isolate: bool = False,
+        **overrides) -> dict[str, Any]:
+    """Compare `plan` against the Target's reference plan, stage by stage.
 
     `steps` / `layers` of `None` mean the Target's full default depth.
     """
@@ -75,9 +74,8 @@ def run(target: str, plan: str | None, steps: int | None = 1, layers: int | None
     target = resolve(target)
     tol = tolerances("bf16")
     depth = {k: v for k, v in (("steps", steps), ("layers", layers)) if v is not None}
-    reference = build(target, None, seed=seed, **depth, **overrides)
-    candidate = build(target, plan, seed=seed, **depth,
-                      **{**overrides, **(candidate_options or {})})
+    reference = build(target, "reference", seed=seed, **depth, **overrides)
+    candidate = build(target, plan or "shipped", seed=seed, **depth, **overrides)
     steps = reference.identity.shape.get("steps", steps)
     layers = reference.identity.shape.get("layers", layers)
     if not reference.identity.same_workload(candidate.identity):
@@ -157,9 +155,9 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--target", required=True)
-    parser.add_argument("--plan", default=None, help=f"one of {sorted(PLANS)} or JSON")
-    parser.add_argument("--option", action="append", default=[],
-                        help="candidate-only target option as key=value (e.g. fused=false)")
+    parser.add_argument("--plan", default="shipped",
+                        help=f"candidate: one of {PLAN_NAMES}, a JSON object or a "
+                             "lab/plans/*.json path (default: shipped)")
     parser.add_argument("--steps", type=int, default=1, help="0 = the Target's full depth")
     parser.add_argument("--layers", type=int, default=1, help="0 = the Target's full depth")
     parser.add_argument("--seed", type=int, default=0)
@@ -167,8 +165,7 @@ def main(argv=None) -> int:
                         help="inject the reference's stage outputs into the candidate")
     args = parser.parse_args(argv)
     report = run(args.target, args.plan, steps=args.steps or None, layers=args.layers or None,
-                 seed=args.seed, isolate=args.isolate,
-                 candidate_options=parse_options(args.option))
+                 seed=args.seed, isolate=args.isolate)
     print(json.dumps(report, indent=2))
     return 0 if report["passed"] else 1
 

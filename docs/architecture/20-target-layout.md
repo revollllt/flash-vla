@@ -1,5 +1,11 @@
 # Target Composition and Dependency Rules
 
+> Superseded in part: the engine protocol's one implementation is now
+> `ModelRunner` over an explicit computation graph, Targets subclass the `VLA`
+> template and declare no buffer plan or cost table of their own, and the
+> three stages are `vision_encoder`, `llm_backbone`, `action_expert`. See
+> `ARCHITECTURE.md` and `src/flash_vla/runtime/`.
+
 Status: implemented for the layout and rules marked as such; items marked
 planned follow [`10-runtime.md`](10-runtime.md).
 

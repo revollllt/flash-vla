@@ -1,8 +1,8 @@
 """Per-call-site time inside the captured graphs of any Target.
 
-    python -m benchmarks profile --target h100/pi05 --plan attn-ffn-cuda-fused-producer-pdl
-    python -m benchmarks profile --target h100/pi05 --plan tilelang --plan attn-cuda   # A/B
-    python -m benchmarks profile --target h100/pi0 --option fused=false --trace-dir artifacts/profile
+    python -m benchmarks profile --target h100/pi05
+    python -m benchmarks profile --target h100/pi05 --plan reference --plan shipped   # A/B
+    python -m benchmarks profile --target h100/pi0 --plan reference --trace-dir artifacts/profile
 
 Diagnostic timings from an instrumented replay, never a latency baseline
 (`python -m benchmarks latency` owns that). Two runs per segment:
@@ -54,8 +54,7 @@ from flash_vla.runtime.engine import segments
 
 from .latency import _env, parse_options
 from .metrics import require_cuda
-from .plans import PLANS
-from .targets import build, resolve
+from .targets import PLAN_NAMES, build, resolve
 
 ANNOTATION = "callsite:"
 MARKER_BEGIN = "flash_vla_profile_begin_kernel"
@@ -323,6 +322,7 @@ def run(target: str, plans: list[str | None], seed: int = 0, trace_dir: str | No
     torch.cuda.init()
     target = resolve(target)
     sm_count = torch.cuda.get_device_properties(0).multi_processor_count
+    plans = [plan or "shipped" for plan in plans]
     leg_options = list(leg_options or [{}] * len(plans))
     legs = []
     for index, (plan, options) in enumerate(zip(plans, leg_options)):
@@ -394,7 +394,8 @@ def main(argv=None) -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--target", required=True)
     parser.add_argument("--plan", action="append", default=None,
-                        help=f"a plan name ({', '.join(sorted(PLANS))}) or JSON; repeat for A/B")
+                        help=f"one of {PLAN_NAMES}, a JSON object or a lab/plans/*.json path; "
+                             "repeat for A/B (default: shipped)")
     parser.add_argument("--option", action="append", default=[],
                         help="target-local option key=value applied to every leg")
     parser.add_argument("--seed", type=int, default=0)

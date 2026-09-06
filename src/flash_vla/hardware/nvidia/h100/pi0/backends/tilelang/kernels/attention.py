@@ -18,17 +18,21 @@ ENCODER_DIM = 2048
 
 
 @torch.compile
-def vision_attention(QKV: torch.Tensor) -> torch.Tensor:
-    """Multi-head self-attention over a packed QKV buffer, (views, 256, 3*1152) -> (views*256, 1152)."""
+def vision_encoder_attention(QKV: torch.Tensor, out: torch.Tensor) -> None:
+    """Multi-head self-attention over a packed QKV buffer, (views, 256, 3*1152), into `out` (views, 256, 1152)."""
     QKV = QKV.view(-1, 256, 3, VISION_HEADS, VISION_HEAD_DIM).permute(0, 2, 3, 1, 4)
     Q, K, V = QKV[:, 0], QKV[:, 1], QKV[:, 2]
     attn = torch.nn.functional.scaled_dot_product_attention(Q, K, V)
-    return attn.transpose(1, 2).reshape(Q.shape[0], 256, VISION_HEADS * VISION_HEAD_DIM)
+    out.copy_(attn.transpose(1, 2).reshape(Q.shape[0], 256, VISION_HEADS * VISION_HEAD_DIM))
 
 
 @torch.compile
-def encoder_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, scale: float) -> torch.Tensor:
-    """Multi-query attention: all query heads share one K/V head. Q is (seq*heads, head_dim)."""
+def llm_backbone_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, scale: float,
+                           out: torch.Tensor) -> None:
+    """Multi-query attention: all query heads share one K/V head, written into `out`.
+
+    Q and `out` are (seq*heads, head_dim); the graph reads `out` as (seq, heads*head_dim).
+    """
     logits = torch.matmul(Q, K.T) * scale
     logits = torch.nn.functional.softmax(logits, dim=-1)
-    return torch.matmul(logits, V).view(-1, ENCODER_DIM)
+    out.copy_(torch.matmul(logits, V))

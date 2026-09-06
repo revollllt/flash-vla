@@ -58,8 +58,8 @@ STEP1_COSINE = tolerances("bf16")["shallow_cosine"]
 
 
 def _transplant(engine, reference_cache, seq_len: int) -> None:
-    """Write OpenPI's prefix K/V into the engine's buffers, in the target's layout."""
-    keys, values = engine.buffers["encoder_K"], engine.buffers["encoder_V"]
+    """Write OpenPI's prefix K/V into the runner's cache, in the target's layout."""
+    keys, values = engine.buffers["kv_k"], engine.buffers["kv_v"]
     for index, (ref_k, ref_v) in enumerate(reference_cache):
         keys[index, :seq_len] = _to_pair_layout(ref_k[0, 0, :seq_len]).bfloat16()
         values[index, :seq_len] = ref_v[0, 0, :seq_len].bfloat16()
@@ -72,7 +72,8 @@ def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
 
-    from flash_vla.hardware.nvidia.h100.pi05 import Pi05Inference
+    from flash_vla.hardware.nvidia.h100.pi05 import TARGET, forward_prefix
+    from flash_vla.runtime import ModelRunner
 
     torch_device = torch.device(device)
     generator = torch.Generator(device=torch_device).manual_seed(seed)
@@ -102,19 +103,19 @@ def run(tokenizer_path: str | None = None, checkpoint: str | None = None,
     del baseline, past_key_values
     torch.cuda.empty_cache()
 
-    engine = Pi05Inference(target_weights, tokenizer, num_views=3, chunk_size=CHUNK,
-                           steps=steps, layers=layers, device=device)
+    engine = ModelRunner(TARGET, target_weights, plan="reference", device=device, num_views=3,
+                         chunk_size=CHUNK, steps=steps, layers=layers, tokenizer=tokenizer,
+                         prompt=prompt)
     del target_weights
     torch.cuda.empty_cache()
-    engine.set_task(prompt)
 
-    engine.buffers["diffusion_noise"].copy_(noise)
-    engine_n_valid = engine.forward_prefix(images, state)     # sets rope, mask, n_valid
+    engine.buffers["actions"].copy_(noise)
+    engine_n_valid = forward_prefix(engine, images, state)     # sets rope, mask, n_valid
     if not full:
-        _transplant(engine, cache, engine.encoder_seq_len)
-    engine.replay("decoder")
+        _transplant(engine, cache, engine.derived["prefix_len"])
+    engine.replay("action_expert")
     torch.cuda.synchronize()
-    output = engine.buffers["diffusion_noise"].float().clone()
+    output = engine.buffers["actions"].float().clone()
 
     report: dict[str, object] = {
         "identity": engine.identity.as_dict(),
@@ -147,7 +148,7 @@ def main(argv=None) -> int:
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
     parser.add_argument("--steps", type=int, default=1,
                         help="flow-matching steps; read 1 first, 10 is the chaotic regime")
-    parser.add_argument("--layers", type=int, default=18, help="decoder depth, for bisection")
+    parser.add_argument("--layers", type=int, default=18, help="expert depth, for bisection")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--full", action="store_true",
                         help="run both end to end instead of transplanting the KV cache")

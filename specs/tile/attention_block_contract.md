@@ -146,7 +146,7 @@ independence of section 3.1 is what makes that sufficient.
 The per-op form (`standalone` mode, `STANDALONE_OPS`) additionally offers a
 token-major combine (op 6) that writes the attention output as
 `(M, H * DH)` into the pipeline's `decoder_q_buf`, the layout the TileLang
-`decoder_out_proj_residual` consumes; only the `M` real rows are written.
+`action_expert_out_proj_residual` consumes; only the `M` real rows are written.
 
 ## 4. Numerical contract and parity gate
 

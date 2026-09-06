@@ -9,10 +9,15 @@ abstraction.
 Target = hardware x model revision x shape profile x precision policy
 ```
 
-A Target owns its pipeline, buffer plan, call-site bindings, fusion boundaries,
-kernels, tuning results, plans, parity scripts, benchmark cases and cost
-declarations. A small runtime owns only what is invariant across Targets:
-static addresses, scratch, graph segments and their lifecycle. An agent-driven
+A Target is a subclass of the VLA template (`src/flash_vla/runtime/vla.py`)
+that declares its model contract and writes its computation graph as data
+against the framework's op vocabulary (`runtime/ops.py`, `runtime/graph.py`):
+three stages, `vision_encoder -> llm_backbone -> action_expert`, every op with
+explicit inputs, outputs and weights, one shipped plan and one reference plan.
+One runner (`runtime/runner.py`, `ModelRunner`) allocates the buffers the
+graph declares, binds the plan through the Target's backend registry, executes
+and captures each stage, attributes profiles and derives costs -- for every
+Target, without model knowledge. An agent-driven
 optimization plane produces and improves Targets from measured evidence; the
 human defines accuracy requirements, the metric and framework conventions and
 a budget, and the latency objective is derived from a floor model over
@@ -33,6 +38,8 @@ The architecture is documented as a tree under
 | [`33-latency-floor-model.md`](docs/architecture/33-latency-floor-model.md) | the derived latency objective and its validation |
 | [`40-optimization-plane.md`](docs/architecture/40-optimization-plane.md) | the agent flywheel, skills, notes and promotion gate |
 
-Read `20-target-layout.md` before changing a pipeline, backend or buffer plan;
-it carries the dependency direction and the specialization rules. Decisions
-and their alternatives live in [Agent Notes](.agents/notes/README.md).
+The documents under `docs/architecture/` predate the explicit graph and the
+runner; where they describe engines, buffer plans or cost declarations, the
+source above is authoritative (they are collapsed into this page in the next
+change). Decisions and their alternatives live in
+[Agent Notes](.agents/notes/README.md).

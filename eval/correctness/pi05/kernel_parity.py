@@ -94,7 +94,7 @@ def check_qkv_rope(gen, device) -> dict[str, float]:
     K = torch.empty((CHUNK, HEAD_DIM), dtype=torch.bfloat16, device=device)
     V = torch.empty((CHUNK, HEAD_DIM), dtype=torch.bfloat16, device=device)
     factor = torch.empty((CHUNK,), dtype=torch.bfloat16, device=device)
-    wrappers.decoder_norm_qkv_rope(x, s, w, bias, rope, Q, K, V, factor)
+    wrappers.action_expert_norm_qkv_rope(x, s, w, bias, rope, Q, K, V, factor)
     torch.cuda.synchronize()
 
     scaled = (x * s[None, :])                                   # bf16, as in the mainloop
@@ -123,7 +123,7 @@ def check_gated_ffn(gen, device) -> dict[str, float]:
 
     out = torch.empty((CHUNK, DECODER_FFN), dtype=torch.bfloat16, device=device)
     factor = torch.empty((CHUNK,), dtype=torch.bfloat16, device=device)
-    wrappers.decoder_norm_gated_ffn(x, s, w1, w2, b1, b2, out, factor)
+    wrappers.action_expert_norm_gated_ffn(x, s, w1, w2, b1, b2, out, factor)
     torch.cuda.synchronize()
 
     a = (x * _rstd(x).bfloat16() * s[None, :])                  # bf16 throughout, as in the kernel
@@ -148,7 +148,7 @@ def check_gated_res(gen, device, k: int) -> dict[str, float]:
 
     reference = (residual.float() + (x.float() @ w.float()) * g.float()[None, :]).bfloat16()
     out = residual.clone()
-    wrappers.decoder_out_proj_residual(x, w, g, out)
+    wrappers.action_expert_out_proj_residual(x, w, g, out)
     torch.cuda.synchronize()
     return error_metrics(reference, out)
 
@@ -174,7 +174,7 @@ def check_attention(gen, device) -> dict[str, float]:
     reference = (torch.softmax(logits, dim=-1) @ v.float()).bfloat16()
 
     out = torch.empty_like(q)
-    wrappers.decoder_attention(q, k, v, mask, out)
+    wrappers.action_expert_attention(q, k, v, mask, out)
     torch.cuda.synchronize()
     return error_metrics(reference, out)
 

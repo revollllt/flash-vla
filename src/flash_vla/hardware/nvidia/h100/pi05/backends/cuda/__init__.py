@@ -7,7 +7,8 @@ backend, so each op table owns its own libraries, scratch, and packed weights.
 
 `ROUTE_CONSTRAINTS` declares which call sites share a buffer contract that
 holds only when they resolve here together; the runtime validates a plan
-against it at engine construction (`flash_vla.runtime.binding`).
+against it at engine construction (`flash_vla.runtime.binding`). The module
+satisfies the registry contract of `flash_vla.runtime.registry`.
 """
 
 from flash_vla.runtime.binding import RouteConstraint
@@ -16,8 +17,8 @@ from . import wrappers
 from .taskloop import FFNTaskloop, build_table
 
 ATTENTION_NAMES = wrappers.ATTENTION_NAMES
-WRAPPER_NAMES = wrappers.WRAPPER_NAMES
-FUSED_WRAPPERS = dict(wrappers.FUSED_WRAPPERS)
+NAMES = wrappers.NAMES
+OPS = wrappers.OPS
 make_wrappers = wrappers.make_wrappers
 
 ROUTE_CONSTRAINTS = (
@@ -30,13 +31,13 @@ ROUTE_CONSTRAINTS = (
     # The XFS producer resets the readiness counters the persistent consumer
     # waits on, and the two must be adjacent launches for the PDL contract.
     RouteConstraint.atomic(
-        ("decoder_norm_gated_ffn", "decoder_ffn_down_residual"),
+        ("action_expert_norm_gated_ffn", "action_expert_ffn_down_residual"),
         "the XFS producer and the persistent FFN share readiness counters"),
     # The fused producer writes the K-major FFN input directly, so it is only
     # meaningful ahead of this backend's FFN pair; the pair may run without it.
     RouteConstraint.requires(
-        "decoder_out_proj_residual",
-        ("decoder_norm_gated_ffn", "decoder_ffn_down_residual"),
+        "action_expert_out_proj_residual",
+        ("action_expert_norm_gated_ffn", "action_expert_ffn_down_residual"),
         "the fused out-projection producer feeds the persistent FFN's K-major input"),
 )
 
@@ -52,23 +53,23 @@ def graph_contract(routes) -> dict[str, list[str]]:
     mine = {name for name, backend in routes.items() if backend in ("cuda", "cuda-pdl")}
     forbid: list[str] = []
     require_one: list[str] = []
-    if {"decoder_norm_gated_ffn", "decoder_ffn_down_residual"} <= mine:
+    if {"action_expert_norm_gated_ffn", "action_expert_ffn_down_residual"} <= mine:
         forbid.append("reset_ffn_counters_kernel")
-    if "decoder_out_proj_residual" in mine:
+    if "action_expert_out_proj_residual" in mine:
         forbid += ["_matmul_gated_res", "tl_rms_xfs_kmajor",
                    "tl_out_proj_residual_partials", "tl_rms_xfs_from_partials"]
         require_one.append("tl_out_proj_residual_rms_xfs")
     return {"forbid": forbid, "require_one": require_one}
 
 
-# `encoder_attention` deliberately carries no constraint. Both routes read the
-# pipeline's own encoder_Q/K/V in the layout `encoder_norm_qkv_rope` writes and
+# `llm_backbone_attention` deliberately carries no constraint. Both routes read the
+# pipeline's own encoder_Q/K/V in the layout `llm_backbone_norm_qkv_rope` writes and
 # neither owns scratch that crosses a call site, so it may route alone. What
 # keeps that layout single-sourced is that the encoder QKV projection is
 # TileLang-only. A CUDA encoder QKV writing head-major scratch would need a
 # constraint like the decoder pair's.
 
 __all__ = [
-    "ATTENTION_NAMES", "WRAPPER_NAMES", "FUSED_WRAPPERS", "ROUTE_CONSTRAINTS",
+    "ATTENTION_NAMES", "NAMES", "OPS", "ROUTE_CONSTRAINTS",
     "graph_contract", "make_wrappers", "FFNTaskloop", "build_table", "wrappers",
 ]

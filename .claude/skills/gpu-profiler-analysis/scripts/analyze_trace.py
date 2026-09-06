@@ -12,7 +12,7 @@ from typing import Any, Iterable
 
 
 COPY_TOKENS = ("memcpy", "memset", "copy_", "copy ", "cuda memcpy")
-STAGE_NAMES = ("vision", "prefix", "encoder", "decoder", "full")
+STAGE_NAMES = ("vision_encoder", "llm_backbone", "action_expert", "full")
 
 
 def _open_text(path: Path):

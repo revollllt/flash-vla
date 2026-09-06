@@ -47,10 +47,12 @@ Measured on an H100 SXM5, driver 610.43.02, python 3.12, torch 2.13.0.
 ## Use
 
 ```python
-from flash_vla import Pi0Inference, random_checkpoint
+from flash_vla import ModelRunner
+from flash_vla.hardware.nvidia.h100.pi0 import TARGET
+from flash_vla.models.pi0 import random_checkpoint
 
-engine = Pi0Inference(random_checkpoint(), num_views=3, chunk_size=50)
-actions = engine.forward(images, state, noise)
+runner = ModelRunner(TARGET, random_checkpoint(), num_views=3, chunk_size=50)
+actions = runner.forward(images=images, state=state, noise=noise)
 ```
 
 `random_checkpoint()` fabricates weights so the pipeline can be run and timed
@@ -60,9 +62,9 @@ without a trained model. For real weights, pass a dict matching
 ## Benchmarks
 
 ```
-python -m benchmarks latency --target h100/pi0 --option fused=true --option fused=false
-python -m benchmarks profile --target h100/pi0
-python -m eval.correctness.in_engine --target h100/pi0 --option fused=false --steps 1 --layers 1
+python -m benchmarks latency --target h100/pi05 --plan reference --plan shipped --plan reference
+python -m benchmarks profile --target h100/pi05
+python -m eval.correctness.in_engine --target h100/pi05 --steps 1 --layers 1
 ```
 
 The model is an input to every benchmark and correctness runner: see

@@ -72,6 +72,11 @@ DEFAULT_FLOW_STEPS = 10
 TIME_MIN_PERIOD = 4e-3
 TIME_MAX_PERIOD = 4.0
 
+#: Masked keys get a large finite negative rather than -inf, matching OpenPI
+#: (`models/gemma.py:225`). An all-masked row then softmaxes to uniform instead
+#: of NaN, which is what upstream produces for the padded query rows.
+MASK_NEG = -3.0e38
+
 
 def weight_shapes() -> dict[str, tuple[int, ...]]:
     """Expected checkpoint tensors for a Pi0.5 model, aligned with OpenPI.

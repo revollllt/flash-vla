@@ -11,17 +11,17 @@
 # against the Target's reference plan, then the latency A/B/A in one process
 # on one node.
 #   sbatch sbatch/plan_e2e.sh
-#   PLAN=attn-cuda E2E_REPS=100 sbatch sbatch/plan_e2e.sh
+#   PLAN=lab/plans/pi05-attn-cuda.json E2E_REPS=100 sbatch sbatch/plan_e2e.sh
 set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$PWD}/sbatch/_common.sh"
 export CUTLASS_DIR="${CUTLASS_DIR:-${REPO_DIR}/third_party/cutlass}"
 export PALIGEMMA_TOKENIZER="${PALIGEMMA_TOKENIZER:-/data/user/jzou521/models/openpi/big_vision/paligemma_tokenizer.model}"
 export FLASH_VLA_BUILD_VERBOSE=1
 TARGET="${TARGET:-h100/pi05}"
-PLAN="${PLAN:-attn-cuda}"
+PLAN="${PLAN:-shipped}"
 E2E_REPS="${E2E_REPS:-100}"
 # Space-separated run order for the latency comparison; default keeps the A/B/A.
-E2E_PLANS="${E2E_PLANS:-tilelang ${PLAN} tilelang}"
+E2E_PLANS="${E2E_PLANS:-reference ${PLAN} reference}"
 
 require_cuda
 report_env

@@ -1,8 +1,8 @@
 """End-to-end latency of any Target through the engine protocol.
 
-    python -m benchmarks latency --target h100/pi05 --plan tilelang
-    python -m benchmarks latency --target h100/pi05 --plan a --plan b --plan a   # A/B/A
-    python -m benchmarks latency --target h100/pi05 --plan a --calibrate         # a, a, a
+    python -m benchmarks latency --target h100/pi05
+    python -m benchmarks latency --target h100/pi05 --plan reference --plan shipped --plan reference
+    python -m benchmarks latency --target h100/pi05 --plan shipped --calibrate   # shipped x3
 
 One request, batch 1, the Target's fixed shapes, clocks unlocked. Every
 metric of `docs/architecture/31-latency-evaluation.md` is reported with
@@ -42,8 +42,7 @@ from eval.acceptance import DEFAULTS
 from flash_vla.runtime.engine import host_slots, segments
 
 from .metrics import env_block, require_cuda
-from .plans import PLANS
-from .targets import build, resolve
+from .targets import PLAN_NAMES, build, resolve
 
 _LAT = DEFAULTS["latency"]
 
@@ -140,7 +139,7 @@ def _deltas(legs: list[dict[str, Any]]) -> dict[str, Any]:
     first = _flatten(legs[0]["metrics"])
 
     def same(leg):
-        return leg["plan"] == legs[0]["plan"] and leg["options"] == legs[0]["options"]
+        return leg["plan"] == legs[0]["plan"]
 
     control = [leg for leg in legs[1:] if same(leg)]
     spread: dict[str, float] = {}
@@ -161,7 +160,7 @@ def _deltas(legs: list[dict[str, Any]]) -> dict[str, Any]:
             if key in spread:
                 entry["distinguishable"] = abs(delta) > spread[key]
             deltas[key] = entry
-        out["legs"].append({"leg": index, "plan": leg["plan"], "options": leg["options"],
+        out["legs"].append({"leg": index, "plan": leg["plan"],
                             "same_as_reference": same(leg), "deltas": deltas})
     return out
 
@@ -200,27 +199,23 @@ def _driver_version() -> str | None:
 
 def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         warmup: int = _LAT["warmup"], seed: int = 0, calibrate: bool = False,
-        leg_options: list[dict[str, Any]] | None = None, **overrides) -> dict[str, Any]:
-    """Build one engine per leg, measure it, and report legs, deltas and calibration.
+        **overrides) -> dict[str, Any]:
+    """Build one runner per leg, measure it, and report legs, deltas and calibration.
 
-    `leg_options` gives each leg its own target-local options on top of
-    `overrides` (a Pi0 A/B/A over the fused overlay); a leg is a control leg
-    when both its plan and its options equal the first leg's.
+    A leg whose plan equals the first leg's is a control leg.
     """
     require_cuda()
     torch.cuda.init()
     target = resolve(target)
+    plans = [plan or "shipped" for plan in plans]
     if calibrate:
         plans = [plans[0]] * 3
-    leg_options = list(leg_options or [{}] * len(plans))
-    if len(leg_options) != len(plans):
-        raise ValueError("leg_options must have one entry per plan")
     legs = []
-    for index, (plan, options) in enumerate(zip(plans, leg_options)):
-        print(f"== leg {index}: {target} plan={plan} options={options}", flush=True)
-        engine = build(target, plan, seed=seed, **{**overrides, **options})
+    for index, plan in enumerate(plans):
+        print(f"== leg {index}: {target} plan={plan}", flush=True)
+        engine = build(target, plan, seed=seed, **overrides)
         inputs = engine.sample_inputs(seed)
-        legs.append({"leg": index, "plan": plan, "options": dict(options),
+        legs.append({"leg": index, "plan": plan,
                      "identity": engine.identity.as_dict(),
                      "metrics": measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"])})
         print(json.dumps(legs[-1]["metrics"]), flush=True)
@@ -233,7 +228,7 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
                                                    "precision"))
         if not same_workload:
             raise ValueError(f"leg {leg['leg']} is not the same workload as leg 0; "
-                             "legs of one run may differ in plan and options only")
+                             "legs of one run may differ in plan only")
 
     report = {
         "identity": legs[0]["identity"],
@@ -255,7 +250,8 @@ def main(argv=None) -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--target", required=True, help="h100/pi05, h100/pi0, or a full name")
     parser.add_argument("--plan", action="append", default=None,
-                        help=f"a plan name ({', '.join(sorted(PLANS))}) or JSON; repeat for A/B/A")
+                        help=f"one of {PLAN_NAMES}, a JSON object or a lab/plans/*.json path; "
+                             "repeat for A/B/A (default: shipped)")
     parser.add_argument("--reps", type=int, default=_LAT["reps"])
     parser.add_argument("--warmup", type=int, default=_LAT["warmup"])
     parser.add_argument("--seed", type=int, default=0)
@@ -264,7 +260,7 @@ def main(argv=None) -> int:
     parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--layers", type=int, default=None)
     parser.add_argument("--option", action="append", default=[],
-                        help="target-local option as key=value (e.g. fused=false), every leg")
+                        help="target-local construction option as key=value, every leg")
     parser.add_argument("--out", default=None, help="write the JSON report here")
     args = parser.parse_args(argv)
     overrides = {k: v for k, v in (("steps", args.steps), ("layers", args.layers))

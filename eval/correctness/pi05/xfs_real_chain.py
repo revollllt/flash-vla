@@ -53,7 +53,7 @@ def _make_case(gen: torch.Generator) -> dict[str, torch.Tensor]:
     gate_w = _rand(gen, D, FF)
     up_w = _rand(gen, D, FF)
     return {
-        # Real decoder_out_proj_residual inputs.
+        # Real action_expert_out_proj_residual inputs.
         "attention": _rand(gen, M, ATTENTION_K),
         "attention_weight": _rand(gen, ATTENTION_K, D),
         "attention_gate": _rand(gen, D),
@@ -184,17 +184,17 @@ def main() -> None:
         M=M, N=D, **wrappers._DEC_XFS_FROM_PARTIALS)
     def legacy_out_proj(case) -> None:
         case["x_xfs"].copy_(case["residual_seed"])
-        wrappers.decoder_out_proj_residual(
+        wrappers.action_expert_out_proj_residual(
             case["attention"], case["attention_weight"],
             case["attention_gate"], case["x_xfs"])
 
     def legacy_xfs(case) -> None:
-        wrappers.decoder_rms_xfs(
+        wrappers.action_expert_rms_xfs(
             case["x_xfs"], case["ffn_scale"], hidden_ready, down_ready,
             case["xfs"], trigger_programmatic_launch=True)
 
     def legacy_xfs_before_reset_fusion(case) -> None:
-        wrappers.decoder_rms_xfs(
+        wrappers.action_expert_rms_xfs(
             case["x_xfs"], case["ffn_scale"], hidden_ready, down_ready,
             case["xfs"], reset_readiness=False)
 
@@ -220,7 +220,7 @@ def main() -> None:
 
     def production_producer(case) -> None:
         case["x_production"].copy_(case["residual_seed"])
-        wrappers.decoder_out_proj_residual_rms_xfs(
+        wrappers.action_expert_out_proj_residual_rms_xfs(
             case["attention"], case["attention_weight"],
             case["attention_gate"], case["x_production"],
             case["ffn_scale"], hidden_ready, down_ready,
@@ -273,7 +273,7 @@ def main() -> None:
 
     def baseline_path(case) -> None:
         case["x_base"].copy_(case["residual_seed"])
-        wrappers.decoder_out_proj_residual(
+        wrappers.action_expert_out_proj_residual(
             case["attention"], case["attention_weight"],
             case["attention_gate"], case["x_base"])
         wrappers._rms_factor(case["x_base"], case["factor"])

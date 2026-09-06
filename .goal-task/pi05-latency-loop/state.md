@@ -1,6 +1,6 @@
 # pi05-latency-loop — state
 
-Goal: pi0.5 H100 forward wall min on ACD1-33 (pdl plan, `sbatch/profile_pi05.sh`)
+Goal: pi0.5 H100 forward wall min on ACD1-33 (pdl plan, today `sbatch/profile.sh`)
 from 16.838 ms (job 585554) to <= 14.5 ms, via repeated
 profile -> analyze -> optimize -> validate rounds over vision, prefix (LLM
 backbone) and decoder (action expert), bf16 numerics preserved.
@@ -52,7 +52,7 @@ Skills that bind each step: `kernel-design` (contract -> reference -> parity
 | G7 | every promoted change has: parity gate passed, Agent Note, ledger line, local commit | git log + notes | met, after review repairs: the QKV+RoPE note carried PENDING gates that had in fact passed (6388f39) |
 | G8 | final independent review: 3 read-only reviewers, no unresolved high-severity finding | review reports | reviews done; repairs landed 6388f39 / 85773e1 / 95cac30 / 8e80e61; remaining: re-review the repairs |
 
-Each round: (1) profile (`CAPTURE_TRACES=1 CAPTURE_PLAN=attn-ffn-cuda-fused-producer-pdl sbatch -w ACD1-33 sbatch/profile_pi05.sh`, plus a non-PDL profile when decoder per-kernel numbers are needed); (2) analyze with `benchmarks/layer_breakdown.py` and re-rank `todo.md`; (3) run the top items as kernel-design tasks, parallel subagents in worktrees where file ownership is disjoint; (4) validate + promote; (5) update this file.
+Each round: (1) profile (`CAPTURE_TRACES=1 PLAN=shipped sbatch -w ACD1-33 sbatch/profile.sh`, plus a non-PDL profile when decoder per-kernel numbers are needed); (2) analyze with `python -m benchmarks profile` and re-rank `todo.md`; (3) run the top items as kernel-design tasks, parallel subagents in worktrees where file ownership is disjoint; (4) validate + promote; (5) update this file.
 
 ## Execution contract
 

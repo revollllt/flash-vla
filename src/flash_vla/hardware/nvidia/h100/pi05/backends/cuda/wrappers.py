@@ -3,14 +3,14 @@
 Six call sites carrying the TileLang wrappers' signatures, so a plan can move
 the pipeline one piece at a time:
 
-    {"encoder_attention": "cuda"}
-    {"decoder_norm_qkv_rope": "cuda", "decoder_attention": "cuda"}
-    {"decoder_norm_gated_ffn": "cuda", "decoder_ffn_down_residual": "cuda"}
+    {"llm_backbone_attention": "cuda"}
+    {"action_expert_norm_qkv_rope": "cuda", "action_expert_attention": "cuda"}
+    {"action_expert_norm_gated_ffn": "cuda", "action_expert_ffn_down_residual": "cuda"}
 
-with "decoder_out_proj_residual" joining the last pair on the fused three-call
+with "action_expert_out_proj_residual" joining the last pair on the fused three-call
 route.
 
-`encoder_attention` is the prefix's full bidirectional multi-query attention
+`llm_backbone_attention` is the prefix's full bidirectional multi-query attention
 (`kernels/enc_attn.cu`, host side in `enc_attn.py`). Unlike the decoder pair it
 is independent of every other call site: it reads the pipeline's own Q/K/V
 buffers in the layout the TileLang encoder QKV wrapper writes and owns no
@@ -24,9 +24,9 @@ was built, is correct, and lost;
 records the measured attribution.
 
 The FFN pair runs the persistent 132-CTA task loop of `kernels/ffn_taskloop.cu`
-(`taskloop.FFNTaskloop`). `decoder_norm_gated_ffn` launches the K-major XFS
+(`taskloop.FFNTaskloop`). `action_expert_norm_gated_ffn` launches the K-major XFS
 producer, which resets the readiness counters itself, with a
-programmatic-dependent-launch trigger; `decoder_ffn_down_residual` immediately
+programmatic-dependent-launch trigger; `action_expert_ffn_down_residual` immediately
 launches the persistent consumer with wait mode 1 (every warp waits at entry)
 or, on the `pdl_chain` variant, mode 2 (weight loaders released early). The
 two calls are adjacent in the pipeline, which is the direct-predecessor
@@ -40,7 +40,7 @@ padded base from the view it is handed and refuses a view not cut from one.
 
 Q crosses the two attention call sites head-major in implementation-owned
 scratch rather than through the token-major `Q` the pipeline passes, so
-`decoder_attention` here requires `decoder_norm_qkv_rope` here as well:
+`action_expert_attention` here requires `action_expert_norm_qkv_rope` here as well:
 `ops.py` rejects the split when the plan is resolved and the wrapper checks
 again at call time.
 
@@ -80,21 +80,18 @@ class _AttnState:
 
 
 class _FFNState:
-    """Persistent library, fixed schedule, and owned scratch."""
+    """Persistent library, fixed schedule, and workspace from the runner's allocator."""
 
-    def __init__(self, device: torch.device):
+    def __init__(self, device: torch.device, scratch):
         self.device = device
         self.kernel = _ffn.FFNTaskloop(
             verbose=bool(os.environ.get("FLASH_VLA_BUILD_VERBOSE")))
         self.table = _ffn.build_table("full").to(device)
-        self.xfs = torch.empty(
-            (_ffn.D, _ffn.M_PAD), dtype=torch.bfloat16, device=device)
-        self.counters = torch.empty(
-            (_ffn.N_COUNTERS,), dtype=torch.int32, device=device)
-        self.legacy_factor = torch.empty(
-            (M,), dtype=torch.bfloat16, device=device)
-        self.square_partials = torch.empty(
-            (4, 32, 16), dtype=torch.float32, device=device)
+        self.xfs = scratch("ffn_xfs", (_ffn.D, _ffn.M_PAD), torch.bfloat16, device)
+        self.counters = scratch("ffn_counters", (_ffn.N_COUNTERS,), torch.int32, device)
+        self.legacy_factor = scratch("ffn_legacy_factor", (M,), torch.bfloat16, device)
+        self.square_partials = scratch("ffn_square_partials", (4, 32, 16), torch.float32,
+                                       device)
         self.packed: dict[tuple[int, ...], tuple[tuple[torch.Tensor, ...],
                                                  torch.Tensor]] = {}
         self.pending_out_proj: _PendingOutProj | None = None
@@ -165,23 +162,29 @@ def _packed(state: _FFNState, sources: tuple[torch.Tensor, ...], pack):
 
 
 #: The two attention call sites are one unit: `ops.py` refuses to split them.
-ATTENTION_NAMES = ("decoder_norm_qkv_rope", "decoder_attention")
+ATTENTION_NAMES = ("action_expert_norm_qkv_rope", "action_expert_attention")
 
-WRAPPER_NAMES = frozenset({
-    "encoder_attention",
-    "decoder_norm_qkv_rope",
-    "decoder_attention",
-    "decoder_out_proj_residual",
-    "decoder_norm_gated_ffn",
-    "decoder_ffn_down_residual",
+NAMES = frozenset({
+    "llm_backbone_attention",
+    "action_expert_norm_qkv_rope",
+    "action_expert_attention",
+    "action_expert_out_proj_residual",
+    "action_expert_norm_gated_ffn",
+    "action_expert_ffn_down_residual",
 })
-FUSED_WRAPPERS: dict = {}
+#: No extension ops: every call site here is one of the standard vocabulary.
+OPS: tuple = ()
 
 
 def make_wrappers(
+        scratch,
         selected_names: set[str] | None = None,
         pdl_chain: bool = False) -> dict[str, object]:
     """Create one CUDA runtime whose lifetime follows its owning op table.
+
+    ``scratch`` is the runner's workspace allocator; the persistent FFN's
+    K-major input, counters and partials come from it, so they are allocated
+    once and frozen before capture like every other workspace.
 
     ``pdl_chain`` extends PDL over every boundary this backend owns: the rms
     factor kernel triggers early, qkv / attention / combine launch with the
@@ -190,8 +193,8 @@ def make_wrappers(
     dependency-free weight loaders ahead of the XFS producer. Off, launch
     semantics are exactly the shipped ones.
     """
-    selected = set(WRAPPER_NAMES if selected_names is None else selected_names)
-    fuse_out_proj = "decoder_out_proj_residual" in selected
+    selected = set(NAMES if selected_names is None else selected_names)
+    fuse_out_proj = "action_expert_out_proj_residual" in selected
     ffn_wait_mode = 2 if pdl_chain else 1
     attn: _AttnState | None = None
     ffn: _FFNState | None = None
@@ -208,7 +211,7 @@ def make_wrappers(
     def ffn_for(device: torch.device) -> _FFNState:
         nonlocal ffn
         if ffn is None:
-            ffn = _FFNState(device)
+            ffn = _FFNState(device, scratch)
         elif ffn.device != device:
             raise ValueError(
                 f"one CUDA op table cannot span {ffn.device} and {device}")
@@ -217,7 +220,7 @@ def make_wrappers(
     def current_stream(device: torch.device) -> int:
         return torch.cuda.current_stream(device).cuda_stream
 
-    def encoder_attention(Q, K, V, scale, mask, out):
+    def llm_backbone_attention(Q, K, V, scale, mask, out):
         """One fused kernel for the prefix's QK^T / softmax / PV chain.
 
         Same contract as the TileLang call site: `Q` is (M*heads, head_dim) with
@@ -239,11 +242,11 @@ def make_wrappers(
                 f"for Q {tuple(Q.shape)}")
         return _enc.attention(Q, K, V, scale, mask, out).view(K.shape[0], -1)
 
-    def decoder_norm_qkv_rope(x, scale, weight_qkv, bias, rope, Q, K, V,
+    def action_expert_norm_qkv_rope(x, scale, weight_qkv, bias, rope, Q, K, V,
                               norm_factor):
         """AdaRMS-scale x, project to QKV, add the shift, apply RoPE, scatter.
 
-        `Q` is not written: the head-major Q this backend's `decoder_attention`
+        `Q` is not written: the head-major Q this backend's `action_expert_attention`
         reads lands in implementation-owned scratch. K/V are written into the
         cache suffix rows.
         """
@@ -277,16 +280,17 @@ def make_wrappers(
                 out=None, use_programmatic_dependency=pdl_chain)
         runtime.q_owner = Q.data_ptr()
 
-    def decoder_attention(Q, K, V, mask, out):
+    def action_expert_attention(Q, K, V, mask, out, prefix_len=None):
         """Split-K flash decoding over the padded cache, combined token-major.
 
-        `Q` must be the tensor this backend's `decoder_norm_qkv_rope` was asked
+        `Q` must be the tensor this backend's `action_expert_norm_qkv_rope` was asked
         to fill; the real Q is head-major scratch. `out` may alias `Q`.
+        `prefix_len` is signature parity with the vocabulary; the mask carries it.
         """
         runtime = attn_for(Q.device)
         if runtime.q_owner != Q.data_ptr():
             raise RuntimeError(
-                "CUDA decoder_attention requires CUDA decoder_norm_qkv_rope on "
+                "CUDA action_expert_attention requires CUDA action_expert_norm_qkv_rope on "
                 "the same plan: Q is head-major scratch, not the pipeline buffer")
         if mask.shape[0] != _at.KEYS or K.shape[0] != _at.KEYS:
             raise ValueError(
@@ -307,7 +311,7 @@ def make_wrappers(
                               use_programmatic_dependency=pdl_chain, **common)
         return out
 
-    def decoder_out_proj_residual(attention, weight, gate, out):
+    def action_expert_out_proj_residual(attention, weight, gate, out):
         """Defer out projection to the adjacent residual/partial producer."""
         runtime = ffn_for(out.device)
         if not fuse_out_proj:
@@ -315,7 +319,7 @@ def make_wrappers(
                 "CUDA out_proj_residual requires the fused three-op route")
         if runtime.pending_out_proj is not None or runtime.pending is not None:
             raise RuntimeError(
-                "decoder_out_proj_residual started with unfinished FFN state")
+                "action_expert_out_proj_residual started with unfinished FFN state")
         if (tuple(attention.shape) != (M, 2048)
                 or tuple(weight.shape) != (2048, _ffn.D)
                 or tuple(gate.shape) != (_ffn.D,)
@@ -333,7 +337,7 @@ def make_wrappers(
             residual=out, stream=current_stream(out.device))
         return out
 
-    def decoder_norm_gated_ffn(
+    def action_expert_norm_gated_ffn(
             x, scale, gate_w, up_w, gate_b, up_b, out, norm_factor):
         """Reset readiness state, produce XFS, and arm the persistent FFN."""
         if tuple(x.shape) != (M, _ffn.D) or tuple(out.shape) != (M, _ffn.FF):
@@ -342,7 +346,7 @@ def make_wrappers(
         runtime = ffn_for(x.device)
         if runtime.pending is not None:
             raise RuntimeError(
-                "decoder_norm_gated_ffn armed twice without down_residual")
+                "action_expert_norm_gated_ffn armed twice without down_residual")
         packed_gate_up = _packed(
             runtime, (gate_w, up_w), lambda: _pack_gate_up(gate_w, up_w))
         hidden_ready, down_ready = runtime.kernel.readiness_counter_buffers(
@@ -356,7 +360,7 @@ def make_wrappers(
                 raise RuntimeError(
                     "fused CUDA norm_gated_ffn requires adjacent out projection "
                     "on the same residual and stream")
-            _tilelang.decoder_out_proj_residual_rms_xfs(
+            _tilelang.action_expert_out_proj_residual_rms_xfs(
                 out_proj.attention, out_proj.weight, out_proj.gate, x, scale,
                 hidden_ready, down_ready, runtime.square_partials,
                 runtime.xfs, trigger_at_entry=pdl_chain)
@@ -364,7 +368,7 @@ def make_wrappers(
         else:
             if runtime.pending_out_proj is not None:
                 raise RuntimeError("unexpected deferred out-projection state")
-            _tilelang.decoder_rms_xfs(
+            _tilelang.action_expert_rms_xfs(
                 x, scale, hidden_ready, down_ready, runtime.xfs,
                 trigger_programmatic_launch=True)
         runtime.pending = _PendingFFN(
@@ -373,7 +377,7 @@ def make_wrappers(
             scale=scale, gate_bias=gate_b,
             up_bias=up_b, packed_gate_up=packed_gate_up)
 
-    def decoder_ffn_down_residual(x, weight, gate, out):
+    def action_expert_ffn_down_residual(x, weight, gate, out):
         """Launch the persistent FFN armed by norm/gated-FFN."""
         runtime = ffn_for(x.device)
         pending = runtime.pending
@@ -399,15 +403,13 @@ def make_wrappers(
         return out
 
     return {
-        "encoder_attention": encoder_attention,
-        "decoder_norm_qkv_rope": decoder_norm_qkv_rope,
-        "decoder_attention": decoder_attention,
-        "decoder_out_proj_residual": decoder_out_proj_residual,
-        "decoder_norm_gated_ffn": decoder_norm_gated_ffn,
-        "decoder_ffn_down_residual": decoder_ffn_down_residual,
+        "llm_backbone_attention": llm_backbone_attention,
+        "action_expert_norm_qkv_rope": action_expert_norm_qkv_rope,
+        "action_expert_attention": action_expert_attention,
+        "action_expert_out_proj_residual": action_expert_out_proj_residual,
+        "action_expert_norm_gated_ffn": action_expert_norm_gated_ffn,
+        "action_expert_ffn_down_residual": action_expert_ffn_down_residual,
     }
 
 
-__all__ = [
-    "ATTENTION_NAMES", "WRAPPER_NAMES", "FUSED_WRAPPERS", "make_wrappers",
-]
+__all__ = ["ATTENTION_NAMES", "NAMES", "OPS", "make_wrappers"]

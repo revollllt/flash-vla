@@ -128,7 +128,7 @@ def main() -> None:
         hidden_ready, down_ready = taskloop.readiness_counter_buffers(counters)
         if not reset_in_producer:
             taskloop.reset_counters(counters)
-        wrappers.decoder_rms_xfs(
+        wrappers.action_expert_rms_xfs(
             case["x"], case["scale"], hidden_ready, down_ready, case["xfs"],
             trigger_programmatic_launch=use_pdl,
             reset_readiness=reset_in_producer)
@@ -147,7 +147,7 @@ def main() -> None:
             case["gate_w"], case["up_w"], case["gate_b"], case["up_b"],
             case["hidden_base"],
         )
-        wrappers.decoder_ffn_down_residual(
+        wrappers.action_expert_ffn_down_residual(
             case["hidden_base"], case["down_w"], case["down_gate"],
             case["out_base"],
         )

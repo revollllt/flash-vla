@@ -1,21 +1,16 @@
-"""Static addresses for a captured pipeline: the arena and the scratch pool.
+"""Static addresses for a captured pipeline: the arena.
 
-A Target declares its buffer plan as data -- one `Buffer` per name, with the
-allocation shape, dtype, initialization and the region the pipeline sees --
-and `StaticArena` materializes it once, at addresses that never move for the
-engine's lifetime. The runtime does not infer lifetimes, aliasing or padding:
-the declaration is authoritative, and a kernel that needs the padded
+A Target's graph declares its buffers as data -- one `Buffer` per name, with
+the allocation shape, dtype, initialization and the region the graph sees --
+and `StaticArena` materializes them once, at addresses that never move for
+the engine's lifetime. The runtime does not infer lifetimes, aliasing or
+padding: the declaration is authoritative, and a kernel that needs the padded
 allocation behind a view recovers it from the view's storage, which is why a
 view is always cut from its own base allocation here rather than copied.
 
-Most of the pipeline writes straight into those buffers, but a handful of
-operations produce an intermediate -- the score matrix in the unfused
-attention, the partial outputs in FlashDecoding, the projected QKV in the
-encoder. Nothing inside a captured CUDA graph may allocate, so those come from
-the `ScratchPool` instead of `torch.empty`. Each (role, shape, dtype) is
-allocated once, zeroed, and reused. After warmup the pool is frozen: a request
-for a shape that warmup did not cover then raises instead of allocating during
-capture, which would otherwise fail in a far more confusing way.
+Backend workspaces (the split partials of FlashDecoding, a staged projection)
+are not declared here: the runner hands every backend a workspace allocator
+that allocates on first use and is frozen before capture (`runtime/runner.py`).
 """
 from __future__ import annotations
 
@@ -118,33 +113,3 @@ class StaticArena:
 
     def __len__(self) -> int:
         return len(self.buffers)
-
-
-class ScratchPool:
-    def __init__(self) -> None:
-        self._buffers: dict = {}
-        self._frozen = False
-
-    def get(self, role: str, shape, dtype, device) -> torch.Tensor:
-        """Return the buffer for this (role, shape, dtype), allocating it on first use."""
-        key = (role, tuple(shape), dtype, str(device))
-        buffer = self._buffers.get(key)
-        if buffer is None:
-            if self._frozen:
-                raise RuntimeError(
-                    f"ScratchPool is frozen but {key} was requested: warmup did not cover this "
-                    "shape, so it would allocate mid-capture.")
-            buffer = torch.zeros(shape, dtype=dtype, device=device)
-            self._buffers[key] = buffer
-        return buffer
-
-    def freeze(self) -> None:
-        """Forbid further allocation; call after warmup and before graph capture."""
-        self._frozen = True
-
-    @property
-    def frozen(self) -> bool:
-        return self._frozen
-
-    def __len__(self) -> int:
-        return len(self._buffers)

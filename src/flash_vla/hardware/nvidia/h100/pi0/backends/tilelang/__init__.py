@@ -1,9 +1,9 @@
-"""TileLang backend for Pi0 call sites.
+"""TileLang backends for Pi0 call sites.
 
-Exposes the wrapper registry contract (ALL_WRAPPERS / FUSED_WRAPPERS) that the
-backend dispatcher consumes: `wrappers` supplies the standard call sites and
-`fused_wrappers` overlays the fused decoder kernels. Both modules stay
-importable individually for benchmarks that want a specific one.
+Two backends satisfy the registry contract of `flash_vla.runtime.registry`:
+`wrappers` (every call site; the reference route) and `fused` (the three
+action-expert fusions the shipped plan routes to). Both stay importable on
+their own for scripts that call their functions directly.
 
 `autotune` is deliberately not imported here. It is this backend's tuning
 adapter -- the TileLang half of the sweep that produced the configs in
@@ -16,9 +16,7 @@ construction:
 
 from __future__ import annotations
 
-from . import fused_wrappers, wrappers
+from . import fused, wrappers
+from .wrappers import NAMES, OPS, ROUTE_CONSTRAINTS, make_wrappers
 
-ALL_WRAPPERS = dict(wrappers.ALL_WRAPPERS)
-FUSED_WRAPPERS = dict(fused_wrappers.FUSED_WRAPPERS)
-
-__all__ = ["ALL_WRAPPERS", "FUSED_WRAPPERS", "wrappers", "fused_wrappers"]
+__all__ = ["NAMES", "OPS", "ROUTE_CONSTRAINTS", "fused", "make_wrappers", "wrappers"]

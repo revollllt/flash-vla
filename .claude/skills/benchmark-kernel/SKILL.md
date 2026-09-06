@@ -37,13 +37,13 @@ and the recorded invocations are cycled so weight-heavy call sites read cold.
 
 ```bash
 # Every call site of every segment, amortised in-graph timing (default):
-python -m benchmarks kernels --target h100/pi05 --plan attn-ffn-cuda-fused-producer-pdl
+python -m benchmarks kernels --target h100/pi05
 
 # One call site, CUPTI kernel time (auto-fallback to events):
-python -m benchmarks kernels --target h100/pi05 --plan tilelang --segment decoder --site decoder_attention --timer cupti
+python -m benchmarks kernels --target h100/pi05 --plan reference --segment action_expert --site action_expert_attention --timer cupti
 
-# Pi0's fused overlay off, CSV appended:
-python -m benchmarks kernels --target h100/pi0 --option fused=false --csv kernel_bench.csv
+# Pi0's reference route (the fusions off), CSV appended:
+python -m benchmarks kernels --target h100/pi0 --plan reference --csv kernel_bench.csv
 ```
 
 Sibling commands: `python -m benchmarks latency` is the end-to-end latency
@@ -56,18 +56,18 @@ On the cluster, run through sbatch — the login node has no GPU:
 
 ```bash
 sbatch -J kernelbench \
-  --export=ALL,CMD="-m benchmarks kernels --target h100/pi05 --plan tilelang --csv sbatch/logs/kernel_cold.csv" \
+  --export=ALL,CMD="-m benchmarks kernels --target h100/pi05 --plan reference --csv sbatch/logs/kernel_cold.csv" \
   sbatch/run.sbatch
 ```
 
 ### Output
 
 ```
-decoder_attention         :: median time 0.021 ms; std 0.001 ms; achieved tflops 16.0 TFLOPs/sec; achieved tb_per_sec 0.33 TB/sec
+action_expert_attention   :: median time 0.021 ms; std 0.001 ms; achieved tflops 16.0 TFLOPs/sec; achieved tb_per_sec 0.33 TB/sec
 
 label                     median ms   std ms   min ms    tflops      TB/s
 -------------------------------------------------------------------------
-decoder_attention             0.021    0.001    0.019      16.0      0.33
+action_expert_attention       0.021    0.001    0.019      16.0      0.33
 ```
 
 The CSV contains one row per kernel: `label, median_ms, min_ms, mean_ms,

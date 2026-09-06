@@ -11,7 +11,7 @@ eleven measured revisions, 26.3 us per layer-step against the composition's
 23.4 us (0.88x; event-graph 28.0 vs 25.2). Phase 3's gate ("target 10 us") is not met and the note records the
 reason: ~16 us of split-join latency in series on the critical path. Phase 5
 integrates the standalone-first winners instead of the fused kernel: the
-`cuda` backend routes `decoder_norm_qkv_rope` and `decoder_attention`, o_proj
+`cuda` backend routes `action_expert_norm_qkv_rope` and `action_expert_attention`, o_proj
 stays on TileLang (see Standalone-first, sa7, and Phase 5).
 Sibling plan for the other half of the layer:
 [`ffn_megakernel_optimization_plan.md`](ffn_megakernel_optimization_plan.md).
@@ -79,7 +79,7 @@ Nothing in this phase touches kernel code.
         tables (`qkv`, `attn`, `oproj`).
   - [x] TileLang **control adapter** with the same call signature: compiled
         `tl_ada_qkv_gemm_rope` fed `rms_factor[:M]` directly (no
-        `tl_rms_factor` node), `decoder_attention` on the `KEYS` rows of the
+        `tl_rms_factor` node), `action_expert_attention` on the `KEYS` rows of the
         caches with a private token-major Q scratch, `tl_matmul_gated_res`
         into `out[:M]`; `q_buf` / `o_buf` left untouched.
   - [x] `--bench`: CUPTI-over-graph timer (§6.2), per-kernel record dump with
@@ -272,13 +272,13 @@ earn a `decoder_attention_block` call site, the standalone winners did.
       old keys as leading-row views, so every TileLang consumer keeps its
       shapes; pad mask entries `MASK_NEG`, every other pad row zero, nothing
       writes a pad row (contract 3.4).
-- [x] `backends/cuda/wrappers.py`: `decoder_norm_qkv_rope` and
-      `decoder_attention` with the TileLang signatures, registered as backend
+- [x] `backends/cuda/wrappers.py`: `action_expert_norm_qkv_rope` and
+      `action_expert_attention` with the TileLang signatures, registered as backend
       `cuda`; Q crosses head-major in backend scratch (the attention wrapper
       checks its qkv ran), the combine writes token-major into the
       pipeline's `decoder_q_buf` (standalone op 6) so the TileLang o_proj is
-      unchanged. `Pi05Inference(plan={"decoder_norm_qkv_rope": "cuda",
-      "decoder_attention": "cuda"})`; `benchmarks.e2e_pi05 --plan attn-cuda`.
+      unchanged. `Pi05Inference(plan={"action_expert_norm_qkv_rope": "cuda",
+      "action_expert_attention": "cuda"})`; `benchmarks.e2e_pi05 --plan attn-cuda`.
 - [x] `eval/correctness/pi05/plan_parity.py`: two engines, one checkpoint and
       input, actions + cache-suffix metrics, replay check; gate at
       `--steps 1` (cosine > 0.999), deep run reported.

@@ -1,7 +1,7 @@
 """CUDA-graph capture and in-graph timing.
 
-These are graph mechanisms, not benchmark policy, which is why they sit beside
-`ScratchPool` rather than in the benchmark harness: the backend autotuner needs
+These are graph mechanisms, not benchmark policy, which is why they sit in the
+runtime rather than in the benchmark harness: the backend autotuner needs
 them to measure a kernel at all, and a production package must not import a test
 harness to do it. `benchmarks.metrics` re-exports both.
 

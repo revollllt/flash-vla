@@ -1,8 +1,8 @@
 """Per-call-site GPU time in isolation, for any Target: python -m benchmarks kernels.
 
-    python -m benchmarks kernels --target h100/pi05 --plan attn-ffn-cuda-fused-producer-pdl
-    python -m benchmarks kernels --target h100/pi05 --segment decoder --site decoder_attention
-    python -m benchmarks kernels --target h100/pi0 --option fused=false --timer cupti --csv out.csv
+    python -m benchmarks kernels --target h100/pi05
+    python -m benchmarks kernels --target h100/pi05 --segment action_expert --site action_expert_attention
+    python -m benchmarks kernels --target h100/pi0 --plan reference --timer cupti --csv out.csv
 
 Where `profile` attributes time inside the captured graph, this launches one
 call site at a time outside any graph, the way FlashInfer benchmarks its
@@ -19,8 +19,8 @@ Timing backends (--timer):
              cold L2 by flush (needs cupti-python; auto-fallback to events)
   events     CUDA events around the first recorded invocation, cold L2 by flush
 
-FLOPs and bytes come from the Target's cost declarations, so the achieved
-TFLOP/s and TB/s are against the same minimal-traffic model the floor uses.
+FLOPs and bytes come from the graph's derived costs, so the achieved TFLOP/s
+and TB/s are against the same minimal-traffic model the floor uses.
 
 Call sites a plan must invoke together (`engine.atomic_groups`: a producer
 and the persistent consumer that waits on its counters) are one case, their
@@ -41,8 +41,7 @@ from flash_vla.runtime.engine import segments
 
 from .latency import parse_options
 from .metrics import require_cuda
-from .plans import PLANS
-from .targets import build, resolve
+from .targets import PLAN_NAMES, build, resolve
 
 
 def record_invocations(engine, segment: str) -> dict[str, list[tuple[tuple, dict]]]:
@@ -94,7 +93,7 @@ def run(target: str, plan: str | None = None, seed: int = 0, only_segments: list
     """Time every selected call site of every selected segment in isolation."""
     require_cuda()
     torch.cuda.init()
-    engine = build(resolve(target), plan, seed=seed, **overrides)
+    engine = build(resolve(target), plan or "shipped", seed=seed, **overrides)
     inputs = engine.sample_inputs(seed)
     engine.forward(**inputs)
     torch.cuda.synchronize()
@@ -132,13 +131,12 @@ def run(target: str, plan: str | None = None, seed: int = 0, only_segments: list
             flops = sum(per_call[s].flops for s in members if s in per_call) or None
             nbytes = sum(per_call[s].bytes for s in members if s in per_call) or None
             label = f"{segment}/" + "+".join(members)
-            with engine.scratch_scope():
-                if timer == "cudagraph":
-                    samples = _graph_samples(invoke, n_inner=min(n_inner, count), reps=reps)
-                else:
-                    samples = bench_gpu_time(
-                        invoke, input_args=(0,), enable_cupti=(timer == "cupti"),
-                        repeat_time_ms=repeat_time_ms, dry_run_time_ms=dry_run_time_ms)
+            if timer == "cudagraph":
+                samples = _graph_samples(invoke, n_inner=min(n_inner, count), reps=reps)
+            else:
+                samples = bench_gpu_time(
+                    invoke, input_args=(0,), enable_cupti=(timer == "cupti"),
+                    repeat_time_ms=repeat_time_ms, dry_run_time_ms=dry_run_time_ms)
             results.append(KernelResult(label=label, samples=samples, flops=flops, bytes=nbytes))
             print(results[-1].perf_line(), flush=True)
     del engine
@@ -151,7 +149,8 @@ def main(argv=None) -> int:
                                      description=__doc__.split("\n")[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--target", required=True)
-    parser.add_argument("--plan", default=None, help=f"one of {sorted(PLANS)} or JSON")
+    parser.add_argument("--plan", default=None,
+                        help=f"one of {PLAN_NAMES}, a JSON object or a lab/plans/*.json path")
     parser.add_argument("--option", action="append", default=[])
     parser.add_argument("--segment", action="append", default=None, help="restrict to a segment")
     parser.add_argument("--site", action="append", default=None, help="restrict to a call site")

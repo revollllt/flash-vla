@@ -1,5 +1,11 @@
 # Static Inference Runtime
 
+> Superseded in part: the engine protocol's one implementation is now
+> `ModelRunner` over an explicit computation graph, Targets subclass the `VLA`
+> template and declare no buffer plan or cost table of their own, and the
+> three stages are `vision_encoder`, `llm_backbone`, `action_expert`. See
+> `ARCHITECTURE.md` and `src/flash_vla/runtime/`.
+
 Status: implemented. The arena, scratch pool, segment list with host slots,
 shared lifecycle, in-graph timing, plan validation against backend-declared
 route constraints, the identity and the engine protocol live under

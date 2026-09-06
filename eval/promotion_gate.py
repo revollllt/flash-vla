@@ -1,7 +1,7 @@
 """The promotion gate: one candidate against the acceptance registry, one evidence record.
 
-    python -m eval.promotion_gate --target h100/pi05 --candidate attn-ffn-cuda-fused-producer-pdl
-    python -m eval.promotion_gate --target h100/pi0 --candidate-option fused=false
+    python -m eval.promotion_gate --target h100/pi05
+    python -m eval.promotion_gate --target h100/pi05 --candidate lab/plans/pi05-attn-cuda.json
 
 A script, not a service. It reads the Target's entry of the acceptance
 registry, runs the in-engine correctness checks and the same-process A/B/A
@@ -35,7 +35,6 @@ from typing import Any
 
 from benchmarks import floor as floor_model
 from benchmarks import latency
-from benchmarks.latency import parse_options
 from benchmarks.targets import resolve
 from eval import acceptance
 from eval.correctness import in_engine
@@ -56,7 +55,7 @@ def _depth(config: dict[str, Any] | None) -> dict[str, int | None]:
     return out
 
 
-def _run_in_engine_checks(target: str, candidate: str | None, options: dict[str, Any],
+def _run_in_engine_checks(target: str, candidate: str,
                           checks: list[dict[str, Any]], seed: int) -> list[dict[str, Any]]:
     """The in-engine tier: one lockstep comparison per registry check."""
     results = []
@@ -68,7 +67,7 @@ def _run_in_engine_checks(target: str, candidate: str | None, options: dict[str,
             # Folded into every in-engine comparison; read from the shallow one.
             continue
         depth = _depth(check.get("config"))
-        report = in_engine.run(target, candidate, seed=seed, candidate_options=options, **depth)
+        report = in_engine.run(target, candidate, seed=seed, **depth)
         threshold = report["threshold"] if check.get("threshold") else None
         passed = report["replay_identical"] and report["finite"] and (
             threshold is None or check["mode"] != "gate" or report["min_cosine"] > threshold)
@@ -138,15 +137,16 @@ def _latency_verdict(report: dict[str, Any], rule: dict[str, Any]) -> dict[str, 
             "regressions": regressions, "passed": improved and not regressions}
 
 
-def run(target: str, candidate: str | None, options: dict[str, Any] | None = None,
-        reference: str | None = None, reps: int | None = None, seed: int = 0,
-        baseline: bool = False, out_dir: str | None = None) -> dict[str, Any]:
-    """Run every check for one candidate and write the evidence record."""
+def run(target: str, candidate: str = "shipped", reference: str = "reference",
+        reps: int | None = None, seed: int = 0, baseline: bool = False,
+        out_dir: str | None = None) -> dict[str, Any]:
+    """Run every check for one candidate plan and write the evidence record."""
     target = resolve(target)
-    options = options or {}
+    candidate = candidate or "shipped"
+    reference = reference or "reference"
     spec = acceptance.for_target(target)
     record: dict[str, Any] = {
-        "target": target, "candidate": {"plan": candidate, "options": options},
+        "target": target, "candidate": {"plan": candidate},
         "reference": {"plan": reference}, "acceptance_version": _registry_version(),
         "budget": spec["budget"], "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "checks": [], "latency": None, "floor": None, "verdict": None,
@@ -157,7 +157,7 @@ def run(target: str, candidate: str | None, options: dict[str, Any] | None = Non
         return _finish(record, out_dir)
 
     checks = list(spec["correctness"]["checks"])
-    record["checks"] += _run_in_engine_checks(target, candidate, options, checks, seed)
+    record["checks"] += _run_in_engine_checks(target, candidate, checks, seed)
     baseline_scripts = tuple(spec["scripts"].get("official_baseline", ()))
     if "baseline_adapter" in spec["capabilities"]:
         record["checks"] += _run_baseline_checks(baseline_scripts, checks, baseline)
@@ -165,11 +165,11 @@ def run(target: str, candidate: str | None, options: dict[str, Any] | None = Non
     lat = spec["latency"]
     plans = [reference, candidate, reference]
     latency_report = latency.run(target, plans, reps=reps or lat["reps"], warmup=lat["warmup"],
-                                 seed=seed, leg_options=[{}, options, {}])
+                                 seed=seed)
     record["latency"] = {"report": latency_report,
                          "rule": _latency_verdict(latency_report, lat["candidate_rule"])}
     try:
-        record["floor"] = floor_model.run(target, candidate, seed=seed, **options)
+        record["floor"] = floor_model.run(target, candidate, seed=seed)
     except Exception as exc:  # the floor is context, never a gate
         record["floor"] = {"error": f"{type(exc).__name__}: {exc}"}
 
@@ -192,9 +192,7 @@ def run(target: str, candidate: str | None, options: dict[str, Any] | None = Non
 def _finish(record: dict[str, Any], out_dir: str | None) -> dict[str, Any]:
     record["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     base = Path(out_dir or REPO / "artifacts" / "gate")
-    slug = (record["candidate"]["plan"] or "reference") + (
-        "-" + "-".join(f"{k}={v}" for k, v in record["candidate"]["options"].items())
-        if record["candidate"]["options"] else "")
+    slug = Path(str(record["candidate"]["plan"])).stem
     path = base / record["target"].replace("/", "_") / f"{slug}-{record['finished']}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record, indent=2, default=str))
@@ -225,18 +223,17 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--target", required=True)
-    parser.add_argument("--candidate", default=None, help="candidate plan name or JSON")
-    parser.add_argument("--candidate-option", action="append", default=[],
-                        help="candidate-only table option key=value (Pi0: fused=false)")
-    parser.add_argument("--reference", default=None, help="reference plan (default: the Target's)")
+    parser.add_argument("--candidate", default="shipped",
+                        help="candidate plan: shipped, reference, JSON or a lab/plans/*.json path")
+    parser.add_argument("--reference", default="reference",
+                        help="reference plan (default: the Target's reference route)")
     parser.add_argument("--reps", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--baseline", action="store_true", help="also run the baseline-tier scripts")
     parser.add_argument("--out-dir", default=None)
     args = parser.parse_args(argv)
-    record = run(args.target, args.candidate, parse_options(args.candidate_option),
-                 reference=args.reference, reps=args.reps, seed=args.seed,
-                 baseline=args.baseline, out_dir=args.out_dir)
+    record = run(args.target, args.candidate, reference=args.reference, reps=args.reps,
+                 seed=args.seed, baseline=args.baseline, out_dir=args.out_dir)
     print(summary(record))
     return {"pass": 0, "fail": 1, "blocked": 2}[record["verdict"]]
 

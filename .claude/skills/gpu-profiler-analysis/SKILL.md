@@ -46,7 +46,7 @@ Use `--` to pass a command without shell interpretation:
 python scripts/run_local_profile.py \
   --backend nsys \
   --output-dir artifacts/profile/nsys-001 \
-  -- python -m benchmarks profile --target h100/pi05 --plan attn-ffn-cuda-fused-producer-pdl
+  -- python -m benchmarks profile --target h100/pi05
 ```
 
 For a workload-specific adapter, provide a JSON plan with `command`, `env`,
