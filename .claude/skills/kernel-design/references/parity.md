@@ -4,7 +4,7 @@
 
 Five metrics, one implementation: `max_abs`, `mean_abs`, `rms_error`,
 `p99_abs`, `cosine_similarity`. They live in one shared module under the
-correctness suite (`eval/correctness/metrics.py`; the first task that needs it
+correctness suite (`eval/metrics.py`; the first task that needs it
 creates it by lifting the implementation the existing scripts duplicate).
 Parity scripts import it, never re-declare it.
 

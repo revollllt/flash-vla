@@ -54,7 +54,7 @@ overlap, or fine-grained L2 prefetch.
 
 ## Validation
 
-`eval/correctness/pi05/ffn_taskloop_parity.py` checks GU-only, DR-only and
+`lab/pi05/ffn_taskloop.py` checks GU-only, DR-only and
 full-graph parity, then replays the full schedule with fresh residual/counter
 state. `--bench` compares the 132-CTA fused launch with the existing TileLang
 two-kernel composition after parity passes.

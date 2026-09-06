@@ -23,7 +23,7 @@ toolchain:
       transaction-bound, not bandwidth-bound, on the DR side -- so ld.ctas.dev.knee is
       the wrong curve to reason from there; tma.issue.warp is."
     best_known_impl: "the composition this kernel replaces: tl_ada_scaled_gate 14.25 us
-      + tl_matmul_gated_res(ffn_down) 9.10 us = 23.35 us, isolated cold (PLAN.md 4.9)"
+      + tl_matmul_gated_res(ffn_down) 9.10 us = 23.35 us, isolated cold (the retired PLAN.md 4.9; see the pi05 target decisions note)"
     barrier_costs: "cluster barriers unused here. gmem counter RTT (fence.release
       + red.add -> ld.acquire poll), MEASURED 2026-08-24 job 541290, 40 concurrent
       CTA pairs x 200 iters via %globaltimer: median 640 ns, p95 736, max 960.
@@ -59,7 +59,7 @@ toolchain:
       residency is unreachable anyway (h100-cluster-placement-limits). ncu on
       the shipped BK=64 build confirms the pattern -- theoretical 3 CTAs/SM at
       66 KB, achieved 7.7%, because 132 CTAs is 0.33 waves."
-  job_ids: "PLAN.md 4.7-4.9 (e2e, profile, roofline); example-phase0.md job set"
+  job_ids: "the retired PLAN.md 4.7-4.9 (e2e, profile, roofline); example-phase0.md job set"
 
 # ---------------------------------------------------------------- 0. problem
 arch: sm90a
@@ -506,7 +506,7 @@ checks:                          # budget.py --sms 132: PASS 15, MANUAL 8, FAIL 
 verification:
   reference: "torch chain mirroring adarms.py exactly (bf16 in-loop F*S scale,
     f32 acc, gelu_tanh f32, f32 gate/residual), transplanted inputs, per
-    kernel_parity conventions; truncated task lists localize a failure to a task"
+    lab/pi05/kernels.py conventions; truncated task lists localize a failure to a task"
   tolerance: "cosine > 0.999 per call site (PLAN ground rule, relaxed 2026-08-21)"
   perf_target: "<= 15 us median, acceptance harness below (floor 11.3, composition 23.35)"
 open_questions: []

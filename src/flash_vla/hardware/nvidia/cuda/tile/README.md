@@ -66,16 +66,16 @@ constraint; there is no runtime fallback.
 ## Validation
 
 - Compile-time: every table entry is instantiated by the parity build.
-- Device parity: `eval/correctness/tile_sm90/primitives_parity.py` runs one
+- Device parity: `python -m eval.tile_sm90` runs one
   CTA per case through g2s, s2r, gemm, r2s and s2g against a float32 torch
   reference (SS/RS wgmma bf16 with K- and MN-major B, fp8 wgmma including a
   mixed pair, two stacked warpgroups, mma.sync bf16 and fp8 through cp.async
   and ldmatrix). Run on a GPU node with
-  `sbatch sbatch/pi05_cuda.sh -m eval.correctness.tile_sm90.primitives_parity`.
+  `sbatch sbatch/pi05_cuda.sh -m eval.tile_sm90`.
 - Production kernels: the FFN task loop, the decoder attention task loop and
   the encoder attention kernel build on these headers. Their parity scripts
   are the regression gate for any change here, and all three must pass:
-  `eval/correctness/pi05/ffn_taskloop_parity.py --modes gu,dr,full`,
-  `attention_block_parity.py --impl standalone`, and
-  `enc_attn_parity.py`. The build wrappers hash these headers, the nvcc
+  `lab/pi05/ffn_taskloop.py --modes gu,dr,full`,
+  `lab/pi05/attention_block.py --impl standalone`, and
+  `lab/pi05/enc_attn.py`. The build wrappers hash these headers, the nvcc
   flags and the CUTLASS identity, so an edit never reuses a stale binary.

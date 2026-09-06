@@ -12,7 +12,7 @@ Not bit-exact by construction, and not trying to be. Accumulation is fp32 and
 stores are bf16 at the same points the kernel rounds, but the kernel forms
 `x * ada_scale` in bf16 inside its mainloop and applies RoPE to an fp32
 accumulator held in registers; small residuals against this module are expected
-and are not a defect. `eval/correctness/pi05/kernel_parity.py` owns the
+and are not a defect. `lab/pi05/kernels.py` owns the
 rounding-exact references for the TileLang call sites.
 
 Geometry is PARSED from `kernels/sm90_attn_task_desc.cuh` rather than restated.

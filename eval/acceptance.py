@@ -4,7 +4,7 @@ What the human defines lives here and nowhere else -- accuracy requirements,
 the metric and framework conventions, and each Target's budget. The latency
 objective is not a number in this file: it is derived from the Target's floor
 model, and the optimization closes the gap to it. See
-`docs/architecture/30-acceptance-criteria.md`.
+`ARCHITECTURE.md`.
 
 Structure:
 
@@ -27,12 +27,12 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping
 
-#: The latency metrics of `docs/architecture/31-latency-evaluation.md`.
+#: The latency metrics `benchmarks/latency.py` reports.
 LATENCY_METRICS = ("chunk_latency", "device_latency", "host_time", "segment_latency",
                    "overhead")
 #: Every latency metric reports all three.
 STATISTICS = ("min", "median", "p99")
-#: The five correctness metrics of `eval/correctness/metrics.py`.
+#: The five correctness metrics of `eval/metrics.py`.
 CORRECTNESS_METRICS = ("max_abs", "mean_abs", "rms_error", "p99_abs", "cosine_similarity")
 
 DEFAULTS: dict[str, Any] = {
@@ -107,9 +107,8 @@ TARGETS: dict[str, dict[str, Any]] = {
     "hardware/nvidia/h100/pi05": {
         "budget": {"candidates": 6, "non_improving": 3, "jobs": 12},
         "scripts": {
-            "in_engine_reference": "eval.correctness.in_engine",
-            "official_baseline": ("eval.correctness.pi05.prefix_parity",
-                                  "eval.correctness.pi05.suffix_parity"),
+            "in_engine_reference": "eval.correctness",
+            "official_baseline": ("eval.pi05.reference",),
         },
         "capabilities": ("baseline_adapter",),
         "overrides": {},
@@ -117,8 +116,8 @@ TARGETS: dict[str, dict[str, Any]] = {
     "hardware/nvidia/h100/pi0": {
         "budget": {"candidates": 6, "non_improving": 3, "jobs": 12},
         "scripts": {
-            "in_engine_reference": "eval.correctness.in_engine",
-            "official_baseline": ("eval.correctness.pi0.openpi_parity",),
+            "in_engine_reference": "eval.correctness",
+            "official_baseline": ("eval.pi0.reference",),
         },
         "capabilities": ("baseline_adapter",),
         "overrides": {},

@@ -68,7 +68,7 @@ Nothing in this phase touches kernel code.
       `OMP_NUM_THREADS=1` on the login node).
 - [x] Analysis scripts committed under `specs/tile/attention_block_analysis/`
       and re-run once; their printed tables match the proposal's floor table.
-- [x] `eval/correctness/pi05/attention_block_parity.py` (job 555044: all fused modes pass):
+- [x] `lab/pi05/attention_block.py` (job 555044: all fused modes pass):
   - [x] Inputs from `attn_block_reference.make_inputs(device="cuda", seed,
         alias_out)`; both aliasing modes are exercised.
   - [x] Block gate: `AttnBlockReference.forward` on cloned inputs, compared on
@@ -279,7 +279,7 @@ earn a `decoder_attention_block` call site, the standalone winners did.
       pipeline's `decoder_q_buf` (standalone op 6) so the TileLang o_proj is
       unchanged. `Pi05Inference(plan={"action_expert_norm_qkv_rope": "cuda",
       "action_expert_attention": "cuda"})`; `benchmarks.e2e_pi05 --plan attn-cuda`.
-- [x] `eval/correctness/pi05/plan_parity.py`: two engines, one checkpoint and
+- [x] `eval/correctness.py` (then `plan_parity.py`): two engines, one checkpoint and
       input, actions + cache-suffix metrics, replay check; gate at
       `--steps 1` (cosine > 0.999), deep run reported.
 - [x] End-to-end before/after in one process (A/B/A), `sbatch

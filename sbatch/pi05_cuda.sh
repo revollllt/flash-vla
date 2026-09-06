@@ -8,7 +8,7 @@
 #SBATCH --error=sbatch/logs/%x_%j.err
 #
 # Run one command against the Pi0.5 target on a GPU node.
-#   sbatch sbatch/pi05_cuda.sh -m eval.correctness.pi05.kernel_parity --only qkv
+#   sbatch sbatch/pi05_cuda.sh -m lab.pi05.kernels --only qkv
 # Everything after the script name is passed to the interpreter verbatim.
 set -euo pipefail
 

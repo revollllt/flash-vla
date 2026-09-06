@@ -3,7 +3,7 @@
     python -m benchmarks floor --target h100/pi05
 
 Two tiers per segment, every term dividing by a measured, tagged constant of
-the `hardware-unit-test` skill (`docs/architecture/33-latency-floor-model.md`):
+the `hardware-unit-test` skill:
 
   roofline     per call site, max(bytes / streaming rate, flops / tensor rate),
                times its invocation count; plan-independent, from the

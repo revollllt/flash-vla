@@ -5,7 +5,7 @@
     python -m benchmarks latency --target h100/pi05 --plan shipped --calibrate   # shipped x3
 
 One request, batch 1, the Target's fixed shapes, clocks unlocked. Every
-metric of `docs/architecture/31-latency-evaluation.md` is reported with
+metric the acceptance registry names (`eval/acceptance.py`) is reported with
 `min`, `median` and `p99`:
 
   chunk_latency     wall clock from inputs available to the chunk available:

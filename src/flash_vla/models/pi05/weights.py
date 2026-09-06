@@ -25,7 +25,7 @@ shift and the Euler `dt` all collapse into the output projection.
 
 The fold runs in float32 and rounds once at the end, so it is slightly *more*
 accurate than OpenPI, which computes the modulation Dense in bfloat16. That is
-the same trade the Pi0 fused kernels make; `eval.correctness.pi05.fold_equivalence`
+the same trade the Pi0 fused kernels make; `eval.pi05.fold`
 measures it rather than assuming it.
 """
 from __future__ import annotations

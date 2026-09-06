@@ -8,7 +8,7 @@ names the maths the dataflow has to reproduce.
 It is deliberately NOT any of these:
 
 - not the fast path (`hardware/nvidia/h100/pi05/` owns that);
-- not the parity gate (`eval/correctness/pi05/kernel_parity.py` owns that, and
+- not the parity gate (`lab/pi05/kernels.py` owns that, and
   its references are the authority on rounding -- this file mirrors them);
 - not a training module: there are no parameters here, only folded constants.
 

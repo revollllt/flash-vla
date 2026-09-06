@@ -45,7 +45,7 @@ The user picks the mode per task; the contract records it.
    every candidate validated and logged in `candidates.jsonl` with parent
    links and reject reasons.
 6. **Promotion** — the winner ships in one PR: kernel into the target's
-   `backends/`, parity script into `eval/correctness/`, a built-in benchmark
+   `backends/`, its check into `eval/` (a shipped kernel) or `lab/` (a candidate), a built-in benchmark
    case, the Agent Note, and the evidence summary copied out of the workspace.
 
 ## Handoffs — this skill sequences, others own

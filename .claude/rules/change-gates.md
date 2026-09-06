@@ -17,9 +17,9 @@ gate: add a row only when a stable boundary and a maintained skill exist.
 - **Profiler capture, trace export, offline analysis, or Nsight wrappers**
   -> [`gpu-profiler-analysis`](../skills/gpu-profiler-analysis/SKILL.md) and
   its relevant capture-mode reference.
-- **Pipeline, backend, or buffer ownership changes** -> read
-  [`ARCHITECTURE.md`](../../ARCHITECTURE.md) and the target pipeline/backend
-  reference before editing.
+- **Graph, backend, or buffer ownership changes** -> read
+  [`ARCHITECTURE.md`](../../ARCHITECTURE.md) and the Target's `target.py` and
+  `pipeline.py` before editing.
 
 Two repository hygiene gates apply to every row:
 

@@ -118,10 +118,10 @@ that never reached the identity.
   materializes a contiguous patch view inside the wrapper on the shipped
   route; the CUDA attention `Workspace` allocates in its own constructor
   rather than through the injected allocator.
-- The experiment scripts still under `eval/correctness/pi05/` call the
-  renamed wrappers and move to `lab/` in the next change with the eval
-  reorganization; `plan_parity` was deleted, its comparisons being those of
-  the generic in-engine check.
+- The experiment scripts moved to `lab/pi05/` with the eval reorganization
+  ([deploy config and lab](../process/2026-09-06-deploy-config-and-lab.md));
+  `plan_parity` was deleted, its comparisons being those of the generic
+  in-engine check.
 
 ## Verification
 

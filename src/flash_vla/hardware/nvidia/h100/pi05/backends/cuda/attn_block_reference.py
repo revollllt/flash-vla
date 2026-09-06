@@ -21,7 +21,7 @@ replaces this one:
 - `flash_vla.models.pi05.reference` is the hardware-independent algorithm with
   no padding and no ABI, split into the three call sites. This module is checked
   against it.
-- `eval.correctness.pi05.kernel_parity` owns the ROUNDING contract and is the
+- `lab.pi05.kernels` owns the ROUNDING contract and is the
   authority when a parity number is in dispute.
 
 `kernels/sm90_attn_task_desc.cuh` remains authoritative for shapes, layouts and

@@ -28,7 +28,7 @@ ABI exist and the harness is built on them:
 
 Both are checked against the hardware-independent algorithm in
 [`models/pi05/reference.py`](../../src/flash_vla/models/pi05/reference.py);
-`eval/correctness/pi05/kernel_parity.py` owns the rounding contract when a
+`lab/pi05/kernels.py` owns the rounding contract when a
 parity number is disputed.
 
 ## 1. Scope: one layer-step of the attention half, RMS factor outside
@@ -167,7 +167,7 @@ boundaries, so agreement to a few `1e-4` in cosine is expected, not to the
 last bit.
 
 Gate, applied to every implementation in every configuration it is measured
-in (`eval/correctness/pi05/prefix_parity.error_metrics`; bar `cosine > 0.999`,
+in (`eval/metrics.error_metrics`; bar `cosine > 0.999`,
 `max_abs` reported):
 
 - `out[:M]` against `AttnBlockReference.forward` on the same inputs.
@@ -250,7 +250,7 @@ samples = bench_gpu_time(block_fn, input_args=(...),   # one block per call
   obtained; the previously recorded `10.44 / 10.25 / 5.42 us` are not cited
   because they predate the current toolchain.
 - **Cross-check timer**: the FFN harness's event-timed graph with rotating
-  cold sets (`ffn_taskloop_parity.run_bench` method, with enough sets to
+  cold sets (`lab/pi05/ffn_taskloop.py` `run_bench` method, with enough sets to
   exceed L2), reported alongside. The two timers agree to within the noise
   floor when the harness is sound; disagreement is a harness bug to fix
   before any kernel conclusion.
@@ -277,7 +277,7 @@ samples = bench_gpu_time(block_fn, input_args=(...),   # one block per call
 
 ### 6.5 Harness
 
-`eval/correctness/pi05/attention_block_parity.py` is the single entry point.
+`lab/pi05/attention_block.py` is the single entry point.
 Inputs come from `attn_block_reference.make_inputs` on the device; the block
 gate is `AttnBlockReference`; stage bisection uses `attn_reference`; timing
 is §6.2 with the §6.3 dump; `--bench` runs only after parity passed in the

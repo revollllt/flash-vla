@@ -60,22 +60,28 @@ that decide whether a new VLA model or device can be brought up quickly:
    decomposes the gap into kernel-level and form-level parts. The stop
    condition of a Target's optimization is attribution of the residual gap or
    budget exhaustion, never "reach the floor".
-5. **Correctness structure.** One metrics module (`eval/correctness/
-   metrics.py`); `eval/correctness/in_engine.py` compares any candidate plan
+5. **Correctness structure.** One metrics module (`eval/metrics.py`);
+   `eval/correctness.py` compares any candidate plan
    or table option against the Target's reference in lockstep over the
    program, on the declared stage outputs, with per-layer profiles over the
    active depth, padded-allocation finiteness, oracle injection and replay
    determinism; shallow runs gate, deep runs report. The official-baseline
    tier stays per model and is registered per Target.
-6. **Promotion gate.** `eval/promotion_gate.py` runs the registry's checks
+6. **Promotion gate.** `eval/gate.py` runs the registry's checks
    and the A/B/A through the generic harnesses, computes the floor as
    context, and writes one evidence record with a verdict of pass, fail or
    blocked.
-7. **Documentation as a tree.** `docs/architecture/` owns the normative
-   architecture with a status line per document; `ARCHITECTURE.md` is the
-   index. *Superseded in part:* the tree predates the explicit graph and is
-   being collapsed into one `ARCHITECTURE.md` page; until then the source
-   named there is authoritative where the two disagree.
+7. **Documentation is one page.** `ARCHITECTURE.md` is the whole normative
+   architecture: the premise and the Target definition, the boundary rule, the
+   three-stage template and what onboarding a model means, the dependency
+   direction, the runtime interface as locators, the invariants, what a Target
+   consists of, the single deployment configuration and its relation to
+   `lab/`, and the evaluation entry points. The `docs/architecture/` tree is
+   deleted: it predated the explicit graph and duplicated implementation that
+   the graph now states once in source. Decisions, their alternatives and
+   their evidence live in `.agents/notes/`; source is authoritative for
+   implementation. See
+   [deployment configuration and the lab workspace](../process/2026-09-06-deploy-config-and-lab.md).
 
 ## Alternatives considered
 
@@ -107,11 +113,12 @@ that decide whether a new VLA model or device can be brought up quickly:
 
 ## Consequences
 
-- Adding a Target is: model contract and reference, a pipeline against the
-  op table, a declared buffer plan and segment list, cost declarations, a
-  reference backend, a factory entry in `benchmarks/targets.py`, and an
-  acceptance entry. Every harness and the gate then work unchanged. A
-  `target-onboarding` skill to sequence this is still to be written.
+- Adding a Target is one `target.py` (the model contract, the shipped and
+  reference plans, the backend registry), one `pipeline.py` whose `build`
+  writes the computation graph, a factory entry in `benchmarks/targets.py`,
+  and an acceptance entry. Every harness and the gate then work unchanged.
+  There is no engine, buffer plan or cost table to write; those are derived
+  from the graph.
 - The structural tier models the launch term only; under-one-wave kernels
   are counted and reported, so the structural floor is optimistic where they
   dominate (the Pi0.5 decoder: 560 of 1100 launches below the CTA knee on
@@ -169,3 +176,42 @@ random weights and inputs before and after each step.
   §1 and §7 above.
 - [kernel-design workflow](../process/2026-09-01-kernel-design-workflow.md):
   the kernel-task loop this note's Target-level acceptance wraps around.
+- [deployment configuration and the lab workspace](../process/2026-09-06-deploy-config-and-lab.md):
+  the single shipped plan per Target, and the one-page architecture that
+  replaces Decision §7's tree.
+
+## Open items
+
+Owned here because they are Target-level, and because the documentation tree
+that used to carry them is gone. Each is a real gap, not a wish.
+
+- **A `target-onboarding` skill.** The sequence for bringing up a new Target is
+  fixed but unwritten: model contract, graph, reference backend, factory entry,
+  acceptance entry, then the precision gate against the original
+  implementation.
+- **CI.** There is no automated check on any change. `python -m eval.smoke` is
+  the only gate that runs without a GPU, and every other gate needs one, so
+  what CI could run and where it would run are still under discussion.
+- **The under-one-wave term of the floor.** The structural tier models the
+  launch term only; kernels below the CTA knee are counted and reported but not
+  modelled, so the floor is optimistic exactly where they dominate. Adding the
+  term bumps the model's form version.
+- **Policy quality.** The LIBERO slot in the acceptance registry is empty, so
+  no Target has a gate on what the policy actually does — only on numerical
+  agreement with its reference.
+- **Dtype-edge sample inputs.** `sample_inputs` draws well-conditioned normal
+  values; nothing exercises the edges of the precision policy (subnormals,
+  saturating magnitudes, an all-masked prefix), which is where a bf16 pipeline
+  fails silently.
+- **Profile attribution by graph node order.** `benchmarks profile` still
+  attributes call sites by marker kernels and a positional match against an
+  instrumented eager run. The graph's node order is the launch order, so it can
+  attribute directly; until it does, per-call-site floor validation is blocked.
+- **`vision_encoder_patch_embed` allocates in its wrapper.** It materializes a
+  contiguous patch view on the shipped route, which is the one known violation
+  of "nothing allocates after the workspace freezes". It needs a declared
+  staging buffer.
+- **The CUDA attention `Workspace` allocates outside the injected allocator.**
+  It allocates in its own constructor rather than through the runner's
+  `scratch`, so that memory is neither recorded against a node nor covered by
+  the freeze.

@@ -28,11 +28,11 @@ report_env
 pin_gpu_clocks
 echo "[job] started $(date) plan=${PLAN}"
 echo "== in-engine correctness: 1 step, 1 layer (gate)"
-"${PYTHON}" -u -m eval.correctness.in_engine --target "${TARGET}" --plan "${PLAN}" --steps 1 --layers 1
+"${PYTHON}" -u -m eval.correctness --target "${TARGET}" --plan "${PLAN}" --steps 1 --layers 1
 echo "== in-engine correctness: 1 step, full depth (report)"
-"${PYTHON}" -u -m eval.correctness.in_engine --target "${TARGET}" --plan "${PLAN}" --steps 1 --layers 0 || true
+"${PYTHON}" -u -m eval.correctness --target "${TARGET}" --plan "${PLAN}" --steps 1 --layers 0 || true
 echo "== in-engine correctness: full depth, isolated (report)"
-"${PYTHON}" -u -m eval.correctness.in_engine --target "${TARGET}" --plan "${PLAN}" --steps 0 --layers 0 --isolate || true
+"${PYTHON}" -u -m eval.correctness --target "${TARGET}" --plan "${PLAN}" --steps 0 --layers 0 --isolate || true
 echo "== latency A/B/A"
 plan_args=()
 for p in ${E2E_PLANS}; do plan_args+=(--plan "${p}"); done

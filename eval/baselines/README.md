@@ -10,7 +10,7 @@ Install OpenPI with its official PyTorch setup, then run the H100/Pi0 comparison
 against an official PyTorch `model.safetensors` checkpoint:
 
 ```bash
-python -m eval.correctness.pi0.openpi_parity \
+python -m eval.pi0.reference \
   --checkpoint /path/to/model.safetensors
 ```
 
