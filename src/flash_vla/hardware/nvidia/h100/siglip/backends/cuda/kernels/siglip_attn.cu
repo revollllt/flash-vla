@@ -233,8 +233,13 @@ void siglip_attn_kernel(__grid_constant__ const siglip_attn::Params params) {
 
   for (int g = 0; g < KEY_BLOCKS; ++g) {
     const int stage = g % STAGES;
-    // Wait until only the frames issued after this one are still in flight.
-    tile::cp_async_wait_group<STAGES - 1>();
+    // STAGES-1 groups are in flight once the prologue has issued, and this
+    // iteration reads the oldest of them, so at most STAGES-2 may remain
+    // pending. Asking for STAGES-1 waits for nothing at all: the first wgmma
+    // then reads a frame whose cp.async has not landed, which is finite and
+    // close but not reproducible -- `replay_determinism` caught exactly that,
+    // and no tolerance would have.
+    tile::cp_async_wait_group<STAGES - 2>();
     __syncthreads();
 
     Tensor tk = make_tensor(make_smem_ptr(sk + stage * TILE_ELEMS),
