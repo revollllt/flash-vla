@@ -1,4 +1,4 @@
-"""FFN input producers for the fixed Pi0.5 action-expert shape.
+"""FFN input producers for the Gemma action expert.
 
 The Phase-1 path converts an existing gated residual directly. The Phase-2
 path first writes the gated residual and exact row-square partials, then a
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import tilelang.language as T
 
-from .base import kernel
+from ..jit import kernel
 
 
 @kernel(warp_spec=False)

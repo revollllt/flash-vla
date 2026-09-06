@@ -23,47 +23,24 @@ which TileLang treats as part of the compile cache key.
 """
 from __future__ import annotations
 
-import tilelang
 import tilelang.language as T
 
-FAST_MATH = {tilelang.PassConfigKey.TL_ENABLE_FAST_MATH: True}
-NO_WARP_SPEC = {tilelang.PassConfigKey.TL_ENABLE_FAST_MATH: True,
-                tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED: True}
+# FAST_MATH / NO_WARP_SPEC are re-exported: `autotune.rewrap` reads them
+# from this module when it re-wraps a raw builder.
+from flash_vla.hardware.nvidia.tilelang.jit import (  # noqa: F401
+    FAST_MATH,
+    NO_WARP_SPEC,
+    KernelSet,
+)
 
-RAW_KERNELS: dict[str, tuple] = {}
-
-
-def variant(builder, name: str, *, warp_spec: bool = True, infer_output: bool = False):
-    """JIT-compile `builder` under `name` and record it for the autotuner.
-
-    `infer_output=False` passes `out_idx=None`: every tensor in the signature is
-    a parameter and the kernel writes its result through one of them.
-    `infer_output=True` leaves TileLang's default inference on, which is what the
-    two builders that end in `return C` need.
-
-    The raw builder is kept in `RAW_KERNELS` because `.compile(pass_configs=...)`
-    is rejected as unhashable and a compiled kernel does not expose its builder,
-    so the autotuner has no other way to re-wrap it with different flags. For the
-    same reason -- TileLang's kernel objects define equality but not a hash --
-    the name is stamped onto the object as `tl_name`, which is what the wrapper
-    compile cache keys on.
-    """
-    out_idx = "default" if infer_output else None
-    pass_configs = FAST_MATH if warp_spec else NO_WARP_SPEC
-    RAW_KERNELS[name] = (builder, out_idx)
-    if infer_output:
-        jitted = tilelang.jit(builder, pass_configs=pass_configs)
-    else:
-        jitted = tilelang.jit(builder, out_idx=out_idx, pass_configs=pass_configs)
-    jitted.tl_name = name
-    return jitted
-
-
-def kernel(builder=None, *, warp_spec: bool = True, infer_output: bool = False):
-    """Decorator form of `variant` for kernels that have only one variant."""
-    def decorate(fn):
-        return variant(fn, fn.__name__, warp_spec=warp_spec, infer_output=infer_output)
-    return decorate(builder) if builder is not None else decorate
+#: This module's own JIT namespace. Per module rather than shared: the
+#: two Targets and the component packages declare kernels under the same
+#: names with bodies that have diverged, and one registry would hand the
+#: autotuner whichever module imported last.
+_KERNELS = KernelSet()
+RAW_KERNELS = _KERNELS.RAW_KERNELS
+variant = _KERNELS.variant
+kernel = _KERNELS.kernel
 
 
 GELU_C0 = 1.5957691216057308

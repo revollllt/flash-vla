@@ -60,11 +60,11 @@ from functools import partial
 
 import torch
 
+from ....gemma_expert.backends.tilelang import producers as _producers
 from .kernels import adarms as ada_kernels
 from .kernels import attention as attention_kernels
 from .kernels import base as kernels
 from .kernels import fused_norm as fused_norm_kernels
-from .kernels import xfs as xfs_kernels
 
 _CACHE: dict = {}
 
@@ -380,33 +380,12 @@ _DEC_QKV = dict(BLOCK_M=64, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=4, THREADS=128)
 _DEC_RESIDUAL = dict(BLOCK_M=16, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=4, THREADS=128)
 _DEC_GATE = dict(BLOCK_M=64, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128)
 _DEC_OUT_PROJ = dict(BLOCK_M=16, BLOCK_N=32, BLOCK_K=256, NUM_STAGES=3, THREADS=128, PRO_K=128)
-_DEC_RMS = dict(BLOCK_M=2, BLOCK_K=256, THREADS=128,
-                TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False)
-_DEC_XFS = dict(
-    BLOCK_M=8,
-    BLOCK_K=256,
-    OUTPUT_K=32,
-    THREADS=128,
-    M_PAD=64,
-    TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=False,
-    RESET_READINESS_COUNTERS=True,
-)
-_DEC_OUT_PROJ_PARTIALS = dict(
-    BLOCK_M=16,
-    BLOCK_N=32,
-    BLOCK_K=256,
-    NUM_STAGES=4,
-    THREADS=128,
-    M_PAD=64,
-)
-_DEC_XFS_FROM_PARTIALS = dict(
-    BLOCK_M=16,
-    BLOCK_N=32,
-    ROWS_PER_CTA=16,
-    THREADS=128,
-    M_PAD=64,
-    TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH=True,
-)
+# The expert chain's producer configs live beside their kernels in the
+# `gemma_expert` package; aliased here so this Target's lab scripts keep one
+# import and there is still one copy of each number.
+_DEC_RMS = _producers._RMS
+_DEC_OUT_PROJ_PARTIALS = _producers._OUT_PROJ_PARTIALS
+_DEC_XFS_FROM_PARTIALS = _producers._XFS_FROM_PARTIALS
 
 # NUM_SPLIT is a request, not the realized count -- `_num_splits` shrinks it.
 # Pi0's 7 realizes as 6 at Pi0.5's 1018 keys; 8 realizes as 8 and measured
@@ -418,21 +397,15 @@ _LOG2E = 1.4426950408889634
 
 
 def _rms_factor(x, out, cfg=_DEC_RMS, *, trigger_programmatic_launch=False):
-    """Write rsqrt(mean(x^2)+eps) into `out`, which the consuming GEMM then scales by.
+    """Write rsqrt(mean(x^2)+eps) into `out`, which the consuming GEMM scales by.
 
     Pi0's fused path folded this into `tl_fused_rms_gate`. Pi0.5 cannot: that
     kernel accumulates the row sum of squares from the same shared tile the GEMM
     consumes, and AdaRMSNorm needs the tile unscaled for the norm and scaled for
     the GEMM. v1 pays the extra launch; see the spec for what v2 would need.
-
-    ``trigger_programmatic_launch`` selects the JIT variant that releases the
-    PDL dependency at entry; the successor must carry the wait.
     """
-    M, K = x.shape
-    config = dict(cfg)
-    config["TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH"] = trigger_programmatic_launch
-    _compiled(kernels.tl_rms_factor, M=M, K=K, **config)(x, out)
-    return out
+    return _producers.rms_factor(
+        x, out, cfg, trigger_programmatic_launch=trigger_programmatic_launch)
 
 
 def action_expert_rms_xfs(
@@ -440,35 +413,14 @@ def action_expert_rms_xfs(
         *, trigger_programmatic_launch=False, reset_readiness=True):
     """Write the next FFN's exact BF16 input as contiguous ``[1024,64]``.
 
-    ``x`` is the BF16 ``decoder_x`` *after* ``action_expert_out_proj_residual`` has
-    applied its gated residual update.  This replaces ``_rms_factor`` for the
-    persistent GatedProjection path; neither the row factor nor a row-major
-    normalized activation is materialized.  When ``trigger_programmatic_launch``
-    is true, the persistent consumer must be the direct successor on the same
-    stream. The producer resets both readiness arrays before publishing XFS.
+    ``x`` is the BF16 ``action_expert_x`` *after*
+    ``action_expert_out_proj_residual`` has applied its gated residual update.
+    Not a call site: this backend's CUDA neighbour launches it.
     """
-    M, K = x.shape
-    if (M != 50 or K != 1024 or tuple(scale.shape) != (1024,)
-            or tuple(out.shape) != (1024, 64)):
-        raise ValueError(
-            "action_expert_rms_xfs requires x[50,1024], scale[1024], out[1024,64]")
-    if (x.dtype != torch.bfloat16 or scale.dtype != torch.bfloat16
-            or out.dtype != torch.bfloat16):
-        raise ValueError("action_expert_rms_xfs tensors must be BF16")
-    if not x.is_contiguous() or not scale.is_contiguous() or not out.is_contiguous():
-        raise ValueError("action_expert_rms_xfs tensors must be contiguous")
-    for name, counters in (("hidden_ready", hidden_ready),
-                           ("down_ready", down_ready)):
-        if (tuple(counters.shape) != (32,)
-                or counters.dtype != torch.int32
-                or not counters.is_contiguous()):
-            raise ValueError(f"{name} must be contiguous int32[32]")
-    config = dict(_DEC_XFS)
-    config["TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH"] = trigger_programmatic_launch
-    config["RESET_READINESS_COUNTERS"] = reset_readiness
-    _compiled(xfs_kernels.tl_rms_xfs_kmajor, M=M, K=K, **config)(
-        x, scale, hidden_ready, down_ready, out)
-    return out
+    return _producers.rms_xfs(
+        x, scale, hidden_ready, down_ready, out,
+        trigger_programmatic_launch=trigger_programmatic_launch,
+        reset_readiness=reset_readiness)
 
 
 def action_expert_out_proj_residual_rms_xfs(
@@ -481,41 +433,10 @@ def action_expert_out_proj_residual_rms_xfs(
     dependency at kernel entry instead of after the grid sync; the persistent
     consumer's grid-dependency wait carries correctness either way.
     """
-    if (tuple(attention.shape) != (50, 2048)
-            or tuple(weight.shape) != (2048, 1024)
-            or tuple(attention_gate.shape) != (1024,)
-            or tuple(residual.shape) != (50, 1024)
-            or tuple(ffn_scale.shape) != (1024,)
-            or tuple(square_partials.shape) != (4, 32, 16)
-            or tuple(xfs.shape) != (1024, 64)):
-        raise ValueError("invalid fixed-shape fused out-projection/XFS tensors")
-    bf16_tensors = (
-        attention, weight, attention_gate, residual, ffn_scale,
-        xfs,
-    )
-    if any(tensor.dtype != torch.bfloat16 for tensor in bf16_tensors):
-        raise ValueError("fused out-projection/XFS data tensors must be BF16")
-    if square_partials.dtype != torch.float32:
-        raise ValueError("square_partials must be FP32 [4,32,16]")
-    if any(not tensor.is_contiguous() for tensor in (
-            *bf16_tensors, square_partials)):
-        raise ValueError(
-            "fused out-projection/XFS tensors must be contiguous")
-    for name, counters in (("hidden_ready", hidden_ready),
-                           ("down_ready", down_ready)):
-        if (tuple(counters.shape) != (32,)
-                or counters.dtype != torch.int32
-                or not counters.is_contiguous()):
-            raise ValueError(f"{name} must be contiguous int32[32]")
-    _compiled(
-        xfs_kernels.tl_out_proj_residual_rms_xfs,
-        M=50, N=1024, K=2048, **_DEC_OUT_PROJ_PARTIALS,
-        TRIGGER_AT_ENTRY=trigger_at_entry,
-    )(
+    return _producers.out_proj_residual_rms_xfs(
         attention, weight, attention_gate, residual, ffn_scale,
         hidden_ready, down_ready, square_partials, xfs,
-    )
-    return residual, xfs
+        trigger_at_entry=trigger_at_entry)
 
 
 def action_expert_action_in_proj(x, weight, bias, out):
