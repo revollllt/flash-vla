@@ -77,6 +77,16 @@ before either the bandwidth or the tensor-core term the ceiling divides by.**
   predicts the outcome from arithmetic this task does not change, and the
   budget is better spent on the two candidates whose prior rejection does not
   transfer.
+- **Software-pipelining the attention mainloop** so the softmax runs under the
+  P.V batch instead of between two batches retired with `wait_group<0>`. Built
+  and measured: numerically identical, and neutral on both Targets (Pi0's
+  vision delta -0.427 against -0.431, Pi0.5's -0.029 against -0.033, all inside
+  the run-to-run spread). Reverted rather than shipped, because the shipped
+  kernel must be the one the gate record describes and this one bought nothing.
+  It did establish two things worth keeping: the pipelined form needs the
+  mainloop fully unrolled or ptxas serializes it (C7514, the accumulator-read
+  form of `c7518-wgmma-serialization`), and the attention site is not
+  wgmma-bound, so its remaining headroom is somewhere else.
 - **A padded or split QKV produced by the projection's epilogue**, giving the
   attention kernel aligned TMA. Priced and deferred: it buys aligned loads at
   the cost of an atomic route group over two call sites and a second write of
@@ -183,6 +193,15 @@ deployed configuration rather than the change against the reference route:
 | Pi0.5 | fail | 15.9386 / 15.8450 / 15.9185 | -0.0936 | 0.0201 | 0.081 |
 
 Every gate passed on both Targets, `baseline_layer0` included, and both runs
-were valid with the tail well inside the 0.5 ms bound. Pi0.5 fails on the
-candidate rule alone and by 0.0064 ms; it is kept and not promoted. Pi0's
-vision segment goes 2.5075 to 2.0680 ms in the same run.
+were valid with the tail well inside the 0.5 ms bound. Pi0's vision segment
+goes 2.5075 to 2.0680 ms in the same run.
+
+Pi0.5 fails on the candidate rule alone, and four gate runs agree it is not
+promotable. Job 599893 read -0.0936 ms; job 600039, on a pipelined variant of
+the attention kernel, read -0.1337 ms and returned `pass`, but its two control
+legs disagreed by 0.0818 ms. Two repeats under different seeds (job 600062)
+returned +0.0172 and +0.0445 ms, i.e. the candidate measured slower than its
+own controls. The single pass was the first control leg, not the candidate.
+Pi0.5's vision segment does improve by about 0.03 ms consistently; that is
+below what a chunk-level A/B/A on this Target can resolve, and below the bar
+either way.

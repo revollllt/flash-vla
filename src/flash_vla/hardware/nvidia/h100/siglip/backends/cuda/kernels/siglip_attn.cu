@@ -211,8 +211,7 @@ void siglip_attn_kernel(__grid_constant__ const siglip_attn::Params params) {
   load_frame<LayoutQ>(sq, qkv_view, /*block=*/0, qb * BM, head, tid);
   // Prologue: fill STAGES-1 key frames so the first iteration finds one ready.
   CUTE_UNROLL
-  for (int g = 0; g < STAGES; ++g) {
-    if (g >= KEY_BLOCKS) { break; }
+  for (int g = 0; g < STAGES - 1; ++g) {
     load_frame<LayoutK>(sk + g * TILE_ELEMS, qkv_view, 1, g * BKK, head, tid);
     load_frame<LayoutV>(sv + g * TILE_ELEMS, qkv_view, 2, g * BKK, head, tid);
     tile::cp_async_commit_group();
@@ -229,31 +228,51 @@ void siglip_attn_kernel(__grid_constant__ const siglip_attn::Params params) {
   // max and sum are two scalars, not a vector.
   float m_run[2] = {-INFINITY, -INFINITY};
   float l_run[2] = {0.f, 0.f};
-  // Carried across one iteration: the rescale that belongs to block g is
-  // applied at the top of iteration g, after the previous block's P.V has
-  // retired and before this block's is issued.
-  float alpha[2] = {0.f, 0.f};
 
   Tensor tq = make_tensor(make_smem_ptr(sq), typename LayoutQ::type{});
 
-  // The softmax of one key block, in place on acc_s, in the log2 domain.
-  // Updates m_run, l_run and alpha; acc_s holds the unconverted probabilities
-  // on return. Every reduction is over the four lanes of the quad that share
-  // a row: each lane holds two of every eight columns of the C fragment.
-  auto softmax_block = [&](float scale_log2) {
+  for (int g = 0; g < KEY_BLOCKS; ++g) {
+    const int stage = g % STAGES;
+    // STAGES-1 groups are in flight once the prologue has issued, and this
+    // iteration reads the oldest of them, so at most STAGES-2 may remain
+    // pending. Asking for STAGES-1 waits for nothing at all: the first wgmma
+    // then reads a frame whose cp.async has not landed, which is finite and
+    // close but not reproducible -- `replay_determinism` caught exactly that,
+    // and no tolerance would have.
+    tile::cp_async_wait_group<STAGES - 2>();
+    __syncthreads();
+
+    Tensor tk = make_tensor(make_smem_ptr(sk + stage * TILE_ELEMS),
+                            typename LayoutK::type{});
+    Tensor tv = make_tensor(make_smem_ptr(sv + stage * TILE_ELEMS),
+                            typename LayoutV::type{});
+
+    // S = Q K^T over the padded head width. The batch is retired immediately
+    // because the softmax reads the accumulator next, which is the cost
+    // [wgmma.stages.wg.knee] warns about; removing it means software-pipelining
+    // the two GEMMs across key blocks, which is the first move if the profile
+    // shows wgmma stalls rather than load stalls.
+    tile::gemm_ss</*ZeroInit=*/true, /*WgWait=*/0>(mma_s, tid, tq, tk, acc_s);
+
+    // -------- online softmax over this key block, in place on acc_s
     float m_new[2];
     CUTE_UNROLL
     for (int r = 0; r < 2; ++r) { m_new[r] = m_run[r]; }
     CUTE_UNROLL
     for (int i = 0; i < size(acc_s); ++i) {
-      const int r = (i / 2) % 2;
-      acc_s(i) *= scale_log2;
+      const int r = (i / 2) % 2;  // the C fragment's two rows per eight
+      acc_s(i) *= params.scale_log2;
       m_new[r] = fmaxf(m_new[r], acc_s(i));
     }
+    // Row max across the four lanes of the quad that share a row.
     CUTE_UNROLL
     for (int r = 0; r < 2; ++r) {
       m_new[r] = fmaxf(m_new[r], __shfl_xor_sync(0xffffffffu, m_new[r], 1));
       m_new[r] = fmaxf(m_new[r], __shfl_xor_sync(0xffffffffu, m_new[r], 2));
+    }
+    float alpha[2];
+    CUTE_UNROLL
+    for (int r = 0; r < 2; ++r) {
       alpha[r] = (m_run[r] == -INFINITY) ? 0.f : fast_exp2(m_run[r] - m_new[r]);
       l_run[r] *= alpha[r];
       m_run[r] = m_new[r];
@@ -265,81 +284,27 @@ void siglip_attn_kernel(__grid_constant__ const siglip_attn::Params params) {
       acc_s(i) = p;
       l_run[r] += p;
     }
-  };
-
-  auto frame = [&](BF* ring, int slot) { return ring + slot * TILE_ELEMS; };
-
-  // Prologue: block 0's scores and softmax, so the loop always enters with a
-  // converted P in hand and can issue P.V before anything else. Block 0 is the
-  // first of STAGES committed groups, so STAGES-1 may still be pending.
-  tile::cp_async_wait_group<STAGES - 1>();
-  __syncthreads();
-  {
-    Tensor tk = make_tensor(make_smem_ptr(frame(sk, 0)), typename LayoutK::type{});
-    tile::gemm_ss<true, 0>(mma_s, tid, tq, tk, acc_s);
-  }
-  softmax_block(params.scale_log2);
-  auto p_frag = make_fragment_like<BF>(acc_s);
-  CUTE_UNROLL
-  for (int i = 0; i < size(acc_s); ++i) { p_frag(i) = static_cast<BF>(acc_s(i)); }
-
-  // Fully unrolled: KEY_BLOCKS is a compile-time 4, and a runtime back edge is
-  // half of what makes ptxas serialize a wgmma pipeline stage it cannot prove
-  // safe [c7518-wgmma-serialization].
-  CUTE_UNROLL
-  for (int g = 0; g < KEY_BLOCKS; ++g) {
-    const int stage = g % STAGES;
-
-    // 1. Rescale the running output by this block's factor. acc_o is settled:
-    //    the previous iteration waited for its P.V to retire.
+    // Rescale the running output by the same factor before accumulating.
     CUTE_UNROLL
-    for (int i = 0; i < size(acc_o); ++i) { acc_o(i) *= alpha[(i / 2) % 2]; }
-
-    // 2. Issue the NEXT block's scores first, then this block's P.V. wgmma
-    //    groups retire in commit order, so committing the score GEMM first is
-    //    what makes warpgroup_wait<1> below mean "scores landed, P.V may still
-    //    be running". Committing them the other way round would wait for the
-    //    P.V and leave the scores in flight, which is the reverse of the point.
-    const bool more = (g + 1 < KEY_BLOCKS);
-    if (more) {
-      // Block g+1's group; see the accounting beside NEW_PROLOGUE.
-      tile::cp_async_wait_group<STAGES - 2>();
-      __syncthreads();
-      Tensor tk = make_tensor(make_smem_ptr(frame(sk, (g + 1) % STAGES)),
-                              typename LayoutK::type{});
-      tile::gemm_ss<true, -1>(mma_s, tid, tq, tk, acc_s);
+    for (int i = 0; i < size(acc_o); ++i) {
+      acc_o(i) *= alpha[(i / 2) % 2];
     }
 
-    // 3. O += P_g V_g, left in flight so the softmax below runs under it
-    //    [wgmma.stages.wg.knee]. Slot g holds V_g, slot g+1 holds K_{g+1} and
-    //    the prefetch below targets slot g+2: three live slots, STAGES = 3.
-    Tensor tv = make_tensor(make_smem_ptr(frame(sv, stage)), typename LayoutV::type{});
+    // -------- O += P V, with P taken from the S fragment in registers
+    auto p_frag = make_fragment_like<BF>(acc_s);
+    CUTE_UNROLL
+    for (int i = 0; i < size(acc_s); ++i) { p_frag(i) = static_cast<BF>(acc_s(i)); }
     Tensor p_a = make_tensor(p_frag.data(), acc_to_aregs(p_frag.layout()));
-    tile::gemm_rs<false, -1>(mma_o, tid, p_a, tv, acc_o);
+    tile::gemm_rs</*ZeroInit=*/false, /*WgWait=*/0>(mma_o, tid, p_a, tv, acc_o);
 
-    if (more) {
-      // At most the P.V remains pending, so the score GEMM has landed.
-      cute::warpgroup_wait<1>();
-      softmax_block(params.scale_log2);
-    }
-
-    // 4. Retire P.V: only now is V's frame free and acc_o settled.
-    cute::warpgroup_wait<0>();
-
-    // 5. Convert the next block's probabilities. After the wait, because the
-    //    P.V above read p_frag as a register operand and must not have it
-    //    change underneath.
-    if (more) {
-      CUTE_UNROLL
-      for (int i = 0; i < size(acc_s); ++i) { p_frag(i) = static_cast<BF>(acc_s(i)); }
-    }
-
+    // The frame is free only now, after the batch that read it retired
+    // [release-on-retirement].
     __syncthreads();
-    const int prefetch = g + STAGES;  // the prologue filled through g = STAGES-1
+    const int prefetch = g + STAGES - 1;
     if (prefetch < KEY_BLOCKS) {
       const int slot = prefetch % STAGES;
-      load_frame<LayoutK>(frame(sk, slot), qkv_view, 1, prefetch * BKK, head, tid);
-      load_frame<LayoutV>(frame(sv, slot), qkv_view, 2, prefetch * BKK, head, tid);
+      load_frame<LayoutK>(sk + slot * TILE_ELEMS, qkv_view, 1, prefetch * BKK, head, tid);
+      load_frame<LayoutV>(sv + slot * TILE_ELEMS, qkv_view, 2, prefetch * BKK, head, tid);
     }
     tile::cp_async_commit_group();
   }
