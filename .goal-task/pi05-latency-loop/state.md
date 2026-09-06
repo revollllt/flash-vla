@@ -131,7 +131,9 @@ free = 2.39 us/layer = 0.43 ms ceiling), which also retires the megakernel's
 continuity argument for this kernel. What replaced it is larger: the
 DownResidual dependency chain, 10.5 us/layer on 0.54 GFLOP with 0.25 us of
 stream, i.e. ~1.89 ms of decoder time whose cost is round trips and joins.
-todo#10 owns it.
+todo#10 owns it. Lane D1 then priced the megakernel in full and closed it at
+0.76 ms against a 1 ms entry condition, which also prices todo#8:
+`.agents/notes/rejected/architecture/2026-09-07-expert-megakernel-pricing.md`.
 
 ## Reachability of the 14.5 ms target (recorded 2026-09-03, superseded above)
 
