@@ -134,11 +134,23 @@ class VLA:
         return g
 
     def sample_inputs(self, shape: Mapping[str, int], seed: int, device) -> dict[str, torch.Tensor]:
-        """Seeded random inputs at `shape`, drawn in `INPUTS` order from one generator."""
+        """Seeded random inputs at `shape`, drawn in `INPUTS` order from one generator.
+
+        Inputs a host slot consumes (`Input.buffer is None`) are returned in
+        pinned host memory, as deployment delivers them: a device-resident copy
+        would force a device synchronization inside `forward`, and every host
+        hiccup during that wait would read as chunk latency. Values are drawn
+        on `device` first so a dump stays comparable across this choice.
+        """
         generator = torch.Generator(device=device).manual_seed(seed)
-        return {inp.name: torch.randn(inp.dims(shape), generator=generator, device=device,
-                                      dtype=inp.dtype)
-                for inp in self.INPUTS}
+        out = {}
+        for inp in self.INPUTS:
+            tensor = torch.randn(inp.dims(shape), generator=generator, device=device,
+                                 dtype=inp.dtype)
+            if inp.buffer is None and tensor.device.type == "cuda":
+                tensor = tensor.cpu().pin_memory()
+            out[inp.name] = tensor
+        return out
 
     def stage(self, buffers: Mapping[str, torch.Tensor], **inputs: Any) -> None:
         """Copy the device inputs into their buffers; host-consumed inputs are skipped."""
