@@ -79,15 +79,16 @@ def _run_in_engine_checks(target: str, candidate: str, checks: list[dict[str, An
             # Folded into every in-engine comparison; read from the shallow one.
             continue
         depth = _depth(check.get("config"))
-        threshold_key = check.get("threshold", "shallow_cosine")
+        threshold_key = check.get("threshold", "shallow")
         report = in_engine.run(target, candidate, seed=seed, threshold=threshold_key, **depth)
         gated = check["mode"] == "gate" and check.get("threshold") is not None
         passed = report["replay_identical"] and report["finite"] and (
-            not gated or report["min_cosine"] > report["threshold"])
+            not gated or report["within_tolerance"])
         results.append({"check": name, "mode": check["mode"],
                         "config": {k: (v if v is not None else "full") for k, v in depth.items()},
                         "min_cosine": report["min_cosine"],
-                        "threshold": report["threshold"] if gated else None,
+                        "max_rel_rms": report["max_rel_rms"],
+                        "tolerance": report["tolerance"] if gated else None,
                         "threshold_key": threshold_key if gated else None,
                         "replay_identical": report["replay_identical"],
                         "finite": report["finite"], "status": "passed" if passed else "failed",
@@ -307,8 +308,8 @@ def summary(record: dict[str, Any]) -> str:
              f"reference: {record['reference']['plan']}  mode: {record.get('mode')}",
              f"acceptance: {record['acceptance_version']}  evidence: {record.get('evidence_path')}"]
     for c in record["checks"]:
-        extra = (f" min_cos={c['min_cosine']:.7f} thr={c.get('threshold')}"
-                 if "min_cosine" in c else "")
+        extra = (f" min_cos={c['min_cosine']:.7f} max_rel_rms={c['max_rel_rms']:.2e} "
+                 f"tol={c.get('tolerance')}" if "min_cosine" in c else "")
         lines.append(f"  [{c['mode']:6s}] {c['check']:22s} {c['status']}{extra}")
     if record.get("latency"):
         rule = record["latency"]["rule"]

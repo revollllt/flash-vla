@@ -94,14 +94,16 @@ from flash_vla.models.pi05.weights import fold
 
 DEFAULT_PROMPT = "pick up the plate and put it in the sink"
 
-#: Thresholds come from the acceptance registry, keyed by precision policy.
-#: Layer 0 carries no accumulated error, so it is held tightly; by layer 17 the
-#: input has been through 45 bfloat16 layers and drift is expected on random
-#: weights; a single layer losing more than the step is a bug in that layer.
-_TOL = tolerances("bf16")
-LAYER0_COSINE = _TOL["layer0_cosine"]
-DEEPEST_COSINE = _TOL["deepest_cosine"]
-MAX_COSINE_STEP = _TOL["max_cosine_step"]
+# Thresholds come from the acceptance registry, read for the precision policy
+# the runner reports. Layer 0 carries no accumulated error, so it is held
+# tightly; by layer 17 the input has been through 45 bfloat16 layers and drift
+# is expected on random weights; a single layer losing more than the step is a
+# bug in that layer. Each depth gates on both `rel_rms_max` and `cosine_min`.
+
+
+def _within(metrics: dict, pair: dict) -> bool:
+    return bool(metrics["cosine_similarity"] > pair["cosine_min"]
+                and metrics["rel_rms"] < pair["rel_rms_max"])
 
 
 def _to_pair_layout(x: torch.Tensor) -> torch.Tensor:
@@ -204,33 +206,39 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
     report["padded_rows_finite"] = bool(torch.isfinite(padded.float()).all().item())
     report["per_layer"] = per_layer
 
+    tol = tolerances(engine.identity.precision)
+    worst_of = lambda l: (l["k"] if l["k"]["cosine_similarity"] <= l["v"]["cosine_similarity"]  # noqa: E731
+                          else l["v"])
     cosines = [min(l["k"]["cosine_similarity"], l["v"]["cosine_similarity"]) for l in per_layer]
+    rel_rms = [max(l["k"]["rel_rms"], l["v"]["rel_rms"]) for l in per_layer]
     steps = [cosines[i] - cosines[i + 1] for i in range(len(cosines) - 1)]
     report["cosine"] = {
         "layer0": cosines[0],
         "deepest": cosines[-1],
         "worst_step": max(steps) if steps else 0.0,
     }
+    report["rel_rms"] = {"layer0": rel_rms[0], "deepest": rel_rms[-1]}
     report["worst"] = {
         "max_abs": max(max(l["k"]["max_abs"], l["v"]["max_abs"]) for l in per_layer),
         "min_cosine": min(cosines),
+        "max_rel_rms": max(rel_rms),
     }
-    report["thresholds"] = {"layer0": LAYER0_COSINE, "deepest": DEEPEST_COSINE,
-                            "step": MAX_COSINE_STEP}
+    report["tolerance"] = {"layer0": dict(tol["layer0"]), "deepest": dict(tol["deepest"]),
+                           "step": tol["max_cosine_step"]}
     report["passed"] = bool(
         report["padded_rows_finite"]
-        and cosines[0] > LAYER0_COSINE
-        and cosines[-1] > DEEPEST_COSINE
-        and (not steps or max(steps) < MAX_COSINE_STEP))
+        and _within(worst_of(per_layer[0]), tol["layer0"])
+        and _within(worst_of(per_layer[-1]), tol["deepest"])
+        and (not steps or max(steps) < tol["max_cosine_step"]))
     print(json.dumps(report, indent=2))
     return report
 
 
 CHUNK = 50
 
-#: One step on random weights is a direct reading of the wiring, so it is held
-#: tightly. Ten steps is the chaotic regime and is reported, not gated.
-STEP1_COSINE = tolerances("bf16")["shallow_cosine"]
+# One step on random weights is a direct reading of the wiring, so it is held
+# to the registry's shallow pair. Ten steps is the chaotic regime and is
+# reported, not gated.
 
 
 def _transplant(engine, reference_cache, seq_len: int) -> None:
@@ -305,13 +313,13 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
         "checkpoint": checkpoint or "random",
         "metrics": error_metrics(reference, output),
     }
+    shallow = tolerances(engine.identity.precision)["shallow"]
     report["gated"] = steps == 1 and not full
-    report["threshold"] = STEP1_COSINE if report["gated"] else None
+    report["tolerance"] = dict(shallow) if report["gated"] else None
     report["passed"] = bool(
         engine_n_valid == n_valid
         and torch.isfinite(output).all().item()
-        and (not report["gated"]
-             or report["metrics"]["cosine_similarity"] > STEP1_COSINE))
+        and (not report["gated"] or _within(report["metrics"], shallow)))
     print(json.dumps(report, indent=2))
     return report
 

@@ -40,7 +40,7 @@ The user picks the mode per task; the contract records it.
 3. **Reference** — the torch oracle, per `references/reference-tiers.md`. The
    ABI-mirror tier is mandatory; the per-stage decomposition tier is required
    when the fusion region spans two or more pipeline stages.
-4. **Parity** — per `references/parity.md`: one shared five-metric module,
+4. **Parity** — per `references/parity.md`: one shared six-metric module,
    tolerances split into gates vs reports.
 5. **The loop** — per `references/loop.md`: workspace under
    `artifacts/ktasks/<task>/` (never committed), one candidate at a time,

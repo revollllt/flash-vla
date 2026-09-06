@@ -8,10 +8,11 @@ import json
 import torch
 
 from eval.baselines import openpi
+from eval.acceptance import tolerances
 from eval.metrics import error_metrics
 
 
-def run(checkpoint: str, seed: int = 0, device: str = "cuda") -> dict[str, float]:
+def run(checkpoint: str, seed: int = 0, device: str = "cuda") -> dict[str, object]:
     """Run both implementations with identical synthetic inputs and noise."""
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
@@ -40,9 +41,17 @@ def run(checkpoint: str, seed: int = 0, device: str = "cuda") -> dict[str, float
     output = engine.forward(images=images, state=state, noise=noise).clone()
     torch.cuda.synchronize()
 
-    metrics = {"identity": engine.identity.as_dict(), **error_metrics(reference, output)}
-    print(json.dumps(metrics, indent=2))
-    return metrics
+    # A full forward on the checkpoint against the official implementation:
+    # the registry's full-depth tolerance of the runner's precision policy.
+    tolerance = tolerances(engine.identity.precision)["deepest"]
+    metrics = error_metrics(reference, output)
+    report = {"identity": engine.identity.as_dict(), **metrics,
+              "threshold_key": "deepest", "tolerance": dict(tolerance),
+              "passed": bool(torch.isfinite(output).all().item()
+                             and metrics["cosine_similarity"] > tolerance["cosine_min"]
+                             and metrics["rel_rms"] < tolerance["rel_rms_max"])}
+    print(json.dumps(report, indent=2))
+    return report
 
 
 def main(argv=None) -> int:
@@ -53,8 +62,7 @@ def main(argv=None) -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args(argv)
-    run(args.checkpoint, seed=args.seed, device=args.device)
-    return 0
+    return 0 if run(args.checkpoint, seed=args.seed, device=args.device)["passed"] else 1
 
 
 if __name__ == "__main__":

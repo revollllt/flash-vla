@@ -37,7 +37,8 @@ LATENCY_METRICS = ("chunk_latency", "device_latency", "host_time", "segment_late
 #: Every latency metric reports all three.
 STATISTICS = ("min", "median", "p99")
 #: The correctness metrics of `eval/metrics.py`.
-CORRECTNESS_METRICS = ("max_abs", "mean_abs", "rms_error", "p99_abs", "cosine_similarity")
+CORRECTNESS_METRICS = ("max_abs", "mean_abs", "rms_error", "rel_rms", "p99_abs",
+                       "cosine_similarity")
 
 #: The interpreter the official-baseline scripts run under: the OpenPI
 #: environment, which carries the reference implementation. Override with
@@ -110,17 +111,29 @@ DEFAULTS: dict[str, Any] = {
         "metrics": CORRECTNESS_METRICS,
         # Keyed by precision policy: a tolerance is a property of the rounding,
         # not of the model. bf16 values are the ones every shipped gate uses.
+        # Two gates per depth: `rel_rms_max` (root-mean-square error over the
+        # reference's root-mean-square, scale-free and not dominated by one
+        # channel) and `cosine_min` (direction). Both must hold. The numbers
+        # are calibrated, not chosen: `eval/calibrate.py` reads the natural
+        # dispersion between the two promoted routes of each Target (bf16
+        # reduction order is the only difference) and the gate sits at ten
+        # times the worst of it; CALIBRATION_SOURCE names the run.
         "tolerances": {
             "bf16": {
                 # Single step, single layer, against the in-engine reference
                 # route: nothing has accumulated, so a wrong layout, mask, fold
                 # or wiring shows at full size.
-                "shallow_cosine": 0.999,
-                # Layer 0 against the official baseline.
-                "layer0_cosine": 0.9999,
+                # Worst shallow dispersion: Pi0 rel_rms 6.6e-3, cosine 0.999978.
+                "shallow": {"rel_rms_max": 6.6e-2, "cosine_min": 0.99978},
+                # Layer 0 against the official baseline: one layer, nothing
+                # accumulated, so the shallow pair applies until the baseline
+                # tier has calibration reports of its own.
+                "layer0": {"rel_rms_max": 6.6e-2, "cosine_min": 0.99978},
                 # Full depth against the official baseline on random weights:
                 # rounding drift through every bf16 layer is expected.
-                "deepest_cosine": 0.99,
+                # Worst single-pass full-depth dispersion: Pi0.5 prefix cache
+                # rel_rms 3.4e-2, cosine 0.99943.
+                "deepest": {"rel_rms_max": 3.4e-1, "cosine_min": 0.9943},
                 # A single layer losing more than this between consecutive
                 # layers is a bug in that layer, not accumulation.
                 "max_cosine_step": 0.005,
@@ -133,17 +146,17 @@ DEFAULTS: dict[str, Any] = {
             {"check": "replay_determinism", "mode": "gate"},
             {"check": "finiteness", "mode": "gate"},
             {"check": "in_engine_shallow", "oracle": "in_engine_reference",
-             "config": {"steps": 1, "layers": 1}, "threshold": "shallow_cosine",
+             "config": {"steps": 1, "layers": 1}, "threshold": "shallow",
              "mode": "gate"},
             {"check": "in_engine_deep", "oracle": "in_engine_reference",
-             "config": {"steps": 1, "layers": "full"}, "threshold": "shallow_cosine",
+             "config": {"steps": 1, "layers": "full"}, "threshold": "shallow",
              "mode": "report"},
             {"check": "in_engine_multistep", "oracle": "in_engine_reference",
              "config": {"steps": "full", "layers": "full"}, "mode": "report"},
             {"check": "baseline_layer0", "oracle": "official_baseline",
-             "threshold": "layer0_cosine", "mode": "gate", "requires": "baseline_adapter"},
+             "threshold": "layer0", "mode": "gate", "requires": "baseline_adapter"},
             {"check": "baseline_depth", "oracle": "official_baseline",
-             "threshold": "deepest_cosine", "step": "max_cosine_step", "mode": "report",
+             "threshold": "deepest", "step": "max_cosine_step", "mode": "report",
              "requires": "baseline_adapter"},
         ),
     },
@@ -179,8 +192,15 @@ TARGETS: dict[str, dict[str, Any]] = {
 }
 
 
-def tolerances(precision: str = "bf16") -> Mapping[str, float]:
-    """The correctness tolerances for one precision policy."""
+#: The run whose reports calibrated the tolerances above (`eval/calibrate.py`).
+CALIBRATION_SOURCE = ("job 599011 (ACD1-50, tree e7cd680): eval.correctness shipped vs "
+                      "reference on both Targets, seeds 0 and 1 at 1 step x 1 layer, "
+                      "seed 0 at 1 x 18; factor 10")
+
+
+def tolerances(precision: str = "bf16") -> Mapping[str, Any]:
+    """The correctness tolerances for one precision policy: per depth key a
+    `{"rel_rms_max", "cosine_min"}` pair, plus `max_cosine_step`."""
     try:
         return dict(DEFAULTS["correctness"]["tolerances"][precision])
     except KeyError:
@@ -217,5 +237,5 @@ def for_target(name: str) -> dict[str, Any]:
     return merged
 
 
-__all__ = ["CORRECTNESS_METRICS", "DEFAULTS", "LATENCY_METRICS", "OPENPI_PYTHON", "STATISTICS",
+__all__ = ["CALIBRATION_SOURCE", "CORRECTNESS_METRICS", "DEFAULTS", "LATENCY_METRICS", "OPENPI_PYTHON", "STATISTICS",
            "TARGETS", "for_target", "tolerances"]

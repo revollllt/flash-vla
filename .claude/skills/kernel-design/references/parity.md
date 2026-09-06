@@ -2,11 +2,13 @@
 
 ## One metrics module
 
-Five metrics, one implementation: `max_abs`, `mean_abs`, `rms_error`,
-`p99_abs`, `cosine_similarity`. They live in one shared module under the
-correctness suite (`eval/metrics.py`; the first task that needs it
-creates it by lifting the implementation the existing scripts duplicate).
-Parity scripts import it, never re-declare it.
+Six metrics, one implementation, computed in float64: `max_abs`, `mean_abs`,
+`rms_error`, `rel_rms`, `p99_abs`, `cosine_similarity`. They live in one
+shared module (`eval/metrics.py`); parity scripts import it, never
+re-declare it. Two of them gate, and both must hold: `rel_rms` (RMS error
+over the reference's RMS, scale-free, no single channel dominates) and
+`cosine_similarity` (direction). Float64 because the float32 cosine of a
+million-element tensor with itself reads 0.99994.
 
 ## Inputs
 
@@ -22,6 +24,12 @@ Parity scripts import it, never re-declare it.
 - **Tight where nothing accumulated.** The single-step / single-layer /
   layer-0 comparison is the structural gate: a wrong layout, mask, rotation,
   or weight fold shows up there at full size.
+- **Calibrated, not typed.** A tolerance pair is ten times the natural
+  dispersion between the Target's two promoted routes at that depth
+  (`eval/calibrate.py` over `eval.correctness` reports); the registry
+  (`eval/acceptance.py`) records the run its numbers came from. A kernel
+  task reads the pair for its depth key and precision policy; it does not
+  invent a number.
 - **Loose but smooth at depth.** Rounding drift compounds per layer, so the
   criterion at depth is a floor plus a maximum per-layer step — a step change
   between consecutive layers is a real bug at that layer, which one aggregate

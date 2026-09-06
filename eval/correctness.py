@@ -64,7 +64,7 @@ def _compare(name: str, reference: torch.Tensor, candidate: torch.Tensor,
 
 def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
         layers: int | None = 1, seed: int = 0, isolate: bool = False,
-        threshold: str = "shallow_cosine", **overrides) -> dict[str, Any]:
+        threshold: str = "shallow", **overrides) -> dict[str, Any]:
     """Compare `plan` against the Target's reference plan, stage by stage.
 
     `steps` / `layers` of `None` mean the Target's full default depth.
@@ -132,9 +132,12 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
     torch.cuda.synchronize()
     output = _compare("output", ref_out, second, None, active_layers)
 
-    cosines = [output["metrics"]["cosine_similarity"]] + [
-        entry["metrics"]["cosine_similarity"]
-        for stage in stages.values() for entry in stage.values()]
+    compared = [output["metrics"]] + [
+        entry["metrics"] for stage in stages.values() for entry in stage.values()]
+    min_cosine = min(m["cosine_similarity"] for m in compared)
+    max_rel_rms = max(m["rel_rms"] for m in compared)
+    tolerance = tol[threshold]
+    within = bool(min_cosine > tolerance["cosine_min"] and max_rel_rms < tolerance["rel_rms_max"])
     shallow = steps == 1 and layers == 1
     report = {
         "identity": {"reference": reference.identity.as_dict(),
@@ -145,15 +148,16 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
         "output": output,
         "replay_identical": replay_identical,
         "finite": finite,
-        "min_cosine": min(cosines),
-        "threshold": tol[threshold],
+        "min_cosine": min_cosine,
+        "max_rel_rms": max_rel_rms,
+        "tolerance": dict(tolerance),
         "threshold_key": threshold,
+        "within_tolerance": within,
         "mode": "gate" if shallow else "report",
         "checks": [c["check"] for c in DEFAULTS["correctness"]["checks"]
                    if c.get("oracle") in (None, "in_engine_reference")],
     }
-    report["passed"] = bool(replay_identical and finite
-                            and (not shallow or min(cosines) > tol[threshold]))
+    report["passed"] = bool(replay_identical and finite and (not shallow or within))
     return report
 
 
