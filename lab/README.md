@@ -10,6 +10,7 @@ import the deployment path.
 | `plans/` | candidate call-site plans for A/B runs, passed as `--plan lab/plans/<name>.json` |
 | `pi05/` | experiment and per-kernel checks of the Pi0.5 Target: `kernels.py` (AdaRMSNorm kernels vs torch), `enc_attn.py` (the fused CUDA encoder attention vs the torch chain), `attention_block.py`, `ffn_taskloop.py`, `ffn_full_chain_pdl.py`, `xfs_producer.py`, `xfs_real_chain.py` |
 | `sbatch/` | the Slurm wrappers of those scripts; submit from the repository root (`sbatch lab/sbatch/<name>.sh`) |
+| `stage_dump.py` | dump a Target's declared stage outputs on one plan, and compare two dumps bit for bit (`python -m lab.stage_dump`); `sbatch/bit_identity.sh` runs it from two trees on one node, the proof a promotion PR gives when a kernel moves without a numerical change |
 
 A candidate that is promoted ships its kernel and its check into the
 deployment path in the same change; its trial script stays here as the record
