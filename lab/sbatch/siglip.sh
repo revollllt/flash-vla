@@ -54,8 +54,11 @@ if [[ -n "${BASELINES:-}" ]]; then
 fi
 
 echo "== T2 parity: ${BACKEND} wrappers against their ABI mirrors"
+# Reported, not gating the job: every candidate below has its own
+# `eval.correctness` gate, so a partial parity failure must not cost the
+# timing evidence of the candidates that are correct.
 "${PYTHON}" -u -m lab.siglip.parity --backend "${BACKEND}" \
-  | tee "${WS}/runs/parity_${BACKEND}_${TAG}.json"
+  | tee "${WS}/runs/parity_${BACKEND}_${TAG}.json" || true
 
 for target in h100/pi05 h100/pi0; do
  prefix="${target#h100/}"
@@ -64,7 +67,8 @@ for target in h100/pi05 h100/pi0; do
   [[ -f "${plan}" ]] || { echo "[job] no plan ${plan}; skipping"; continue; }
 
   echo "== in-engine correctness ${target} ${plan}: 1 step, 1 layer (GATE)"
-  "${PYTHON}" -u -m eval.correctness --target "${target}" --plan "${plan}" --steps 1 --layers 1
+  "${PYTHON}" -u -m eval.correctness --target "${target}" --plan "${plan}" --steps 1 --layers 1 \
+    || { echo "[job] GATE FAILED for ${plan}; skipping its timing"; continue; }
   echo "== in-engine correctness ${target}: 1 step, full depth (report)"
   "${PYTHON}" -u -m eval.correctness --target "${target}" --plan "${plan}" --steps 1 --layers 0 || true
 

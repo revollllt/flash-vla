@@ -311,6 +311,14 @@ void siglip_attn_kernel(__grid_constant__ const siglip_attn::Params params) {
   float inv[2];
   CUTE_UNROLL
   for (int r = 0; r < 2; ++r) {
+    // The row sum, like the row max, is spread across the four lanes of the
+    // quad that share a row: each lane holds two of every eight columns, so a
+    // lane's own l_run is a quarter of the denominator. Reducing the max but
+    // not the sum leaves the output scaled by about four -- close enough in
+    // direction to keep cosine near 1 and far enough in magnitude to fail
+    // rel_rms, which is what the two gates together are for.
+    l_run[r] += __shfl_xor_sync(0xffffffffu, l_run[r], 1);
+    l_run[r] += __shfl_xor_sync(0xffffffffu, l_run[r], 2);
     // Every key is attended, so the row sum is never zero; the guard is for a
     // degenerate shape rather than for real data.
     inv[r] = (l_run[r] > 0.f) ? __frcp_rn(l_run[r]) : 0.f;
