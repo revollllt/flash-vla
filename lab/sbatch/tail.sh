@@ -66,6 +66,14 @@ for step in ${TAIL_STEPS}; do
         "${PYTHON}" -u -m lab.pi05.tail_experiments --target h100/pi05 "${plan_args[@]}" \
             --reps "${TAIL_REPS}" --legs "${TAIL_LEGS}" --out "${OUT}/experiments.json"
         ;;
+    probe)
+        echo "== step probe: where inside one forward the host blocks, both Targets"
+        for t in h100/pi05 h100/pi0; do
+            "${PYTHON}" -u -m lab.pi05.tail_probe --target "${t}" --plan shipped \
+                --reps "${TAIL_PROBE_REPS:-400}" \
+                --out "${OUT}/probe_${t//\//_}.json"
+        done
+        ;;
     gate)
         echo "== the promotion gate, shipped against reference, baseline tier included"
         "${PYTHON}" -u -m eval.gate --target h100/pi05 --baseline --reps "${TAIL_REPS}" \
