@@ -66,6 +66,19 @@ which cannot import OpenPI, so every gate ended `blocked`.
    precision policy's tolerances; `eval/correctness.py` reads that key, for the
    precision the reference runner reports, rather than one hard-coded name.
    The `overhead` metric reports `p99` beside `min` and `median`.
+8. **Sample inputs arrive as deployment delivers them.** An input a host
+   slot consumes (Pi0.5's robot state, tokenized on the host) is sampled
+   into pinned host memory, values drawn on the device first so dumps stay
+   comparable. Resident on the device it forced a synchronization inside
+   `forward`, which cost Pi0.5 0.4-0.6 ms of chunk `min` and put every
+   host hiccup during the wait on the chunk (jobs 598904, 598952).
+9. **The cyclic collector is out of the capture and frozen after it.**
+   `ModelRunner` disables Python's collector while the stages are captured
+   (a collection inside a capture invalidated it, CUDA error 901) and runs
+   `gc.collect(); gc.freeze()` afterwards: with the collector on, Pi0.5's
+   chunk `p99 - min` read 2.5-3 ms on a quiet node, with it off 0.10-0.24 ms
+   (job 598959). A deployment loop keeps its own policy on top; the
+   framework's default is what the gate measures.
 
 ## Alternatives considered
 
@@ -94,15 +107,38 @@ which cannot import OpenPI, so every gate ended `blocked`.
   a noisy node, which is recorded as such.
 - Reports from before this change carry an `objective` string and no
   `deployment` block; they are not re-read.
+- The tail bound found two host-side defects before it passed anything: a
+  mid-forward synchronization and collector pauses. Both were in the
+  deployment path, not in the measurement, which is what a deployment
+  bound is for.
 
 ## Verification
 
 - Login node: `python -m eval.smoke` passes; `eval.gate --help`,
   `eval.correctness --help` import; the registry merges every Target entry.
-- GPU (job PENDING): `python -m eval.gate --target h100/pi05 --baseline` on
-  the shipped plan against the reference; `--mode no-regression` with the
-  reference as its own candidate; Pi0 with the reference route as the
-  candidate against the shipped plan (the intended negative test).
+- GPU, six jobs on shared, unlocked nodes, the last two on the branch head.
+  Every gate the registry defines was exercised and reached the verdict it
+  should:
+
+  | run | job | node | outcome |
+  |---|---|---|---|
+  | Pi0.5 shipped vs reference, `--baseline` | 598904 | ACD1-55 | every in-engine gate passed; the baseline tier passed under the OpenPI interpreter; chunk `min` -1.12 ms with spread 0.007 ms; `blocked` on the tail bound, both legs at 4.5-4.7 ms |
+  | same, after the host-state fix | 598952 | ACD1-15 | chunk `min` 16.25 -> 15.69 ms; tail 2.97 ms on the candidate leg, 0.13 ms on the reference: `fail` |
+  | same, collector on / off | 598959 | ACD1-1 | on: the capture was invalidated (CUDA 901); off: tails 0.10 / 0.15 / 0.24 ms, the tail bound passed |
+  | five runs on the branch head | 598975 | ACD1-1 | shipped vs reference: every gate passed, tail 0.095 ms, `blocked` on a 0.17 ms first-run spread; Pi0 with the reference route as candidate: `fail` on the candidate rule (+1.34 ms), tails 0.09 ms; jitter overridden to 0: `blocked` with both legs over; collector counted: 1669 collections, 18 full, tails 0.12 / 0.17 ms |
+  | no-regression, a plan against itself | 598948, 598975, 599008 | ACD1-19, ACD1-1 | first crashed (the plan-name candidate leg), then `fail` on a 0.065 ms median move over a 0.050 ms `min` spread, then the candidate rule and the tail bound passed (`blocked` only because `--baseline` was not given) |
+  | shipped vs reference, rerun | 599008 | ACD1-1 | gates and rule passed; spread 0.1004 ms, 0.4 us over the limit; the candidate leg's tail 2.94 ms against the reference's 0.15 |
+
+- **Open finding: an intermittent 2.5-3 ms tail on Pi0.5.** In 3 of about 20
+  legs one or two forwards in a hundred ran 2.5-3 ms late, on either plan,
+  never on Pi0 (six legs), never with the collector off (three legs), and
+  with the collector frozen in two of five legs. The magnitude matches a
+  scheduler time slice, and Pi0.5 is the Target with host-side work inside
+  the forward (the prompt slot). On this cluster's shared nodes the tail
+  bound therefore `fail`s or `block`s Pi0.5 intermittently; it has not
+  produced a `pass` of record. The bound is the owner's and stays; what the
+  harness should add next is per-leg collector and scheduling evidence so a
+  tail is attributable rather than argued about.
 
 ## Related notes
 
