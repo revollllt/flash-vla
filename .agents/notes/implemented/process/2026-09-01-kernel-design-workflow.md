@@ -50,7 +50,9 @@ several skills and rules.
   the set: the idiom's difficulty is entirely in machinery a sketch omits, so a
   short version of it has no reference value; see the
   [megakernel reference templates note](2026-09-05-megakernel-reference-templates.md). An `ncu-report` skill owns report
-  interpretation (capture stays with `gpu-profiler-analysis`).
+  interpretation (capture stays with `gpu-profiler-analysis`); its current
+  shape is recorded in the
+  [ncu-report skill template note](2026-09-06-ncu-report-skill-template.md).
 - Templates are toolkit-only and de-projectized, so they stay portable
   experience rather than a second copy of the kernels; each declares the PTX
   instructions it exists to demonstrate and `scripts/check_templates.py`
