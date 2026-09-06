@@ -33,7 +33,7 @@ import statistics
 import torch
 
 from eval.metrics import error_metrics
-from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.taskloop import (
+from flash_vla.hardware.nvidia.h100.gemma_expert.backends.cuda.taskloop import (
     COUNTER_ARRIVE,
     FFNTaskloop,
     N_COUNTERS,

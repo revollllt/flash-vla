@@ -23,47 +23,24 @@ which TileLang treats as part of the compile cache key.
 """
 from __future__ import annotations
 
-import tilelang
 import tilelang.language as T
 
-FAST_MATH = {tilelang.PassConfigKey.TL_ENABLE_FAST_MATH: True}
-NO_WARP_SPEC = {tilelang.PassConfigKey.TL_ENABLE_FAST_MATH: True,
-                tilelang.PassConfigKey.TL_DISABLE_WARP_SPECIALIZED: True}
+# FAST_MATH / NO_WARP_SPEC are re-exported: `autotune.rewrap` reads them
+# from this module when it re-wraps a raw builder.
+from flash_vla.hardware.nvidia.tilelang.jit import (  # noqa: F401
+    FAST_MATH,
+    NO_WARP_SPEC,
+    KernelSet,
+)
 
-RAW_KERNELS: dict[str, tuple] = {}
-
-
-def variant(builder, name: str, *, warp_spec: bool = True, infer_output: bool = False):
-    """JIT-compile `builder` under `name` and record it for the autotuner.
-
-    `infer_output=False` passes `out_idx=None`: every tensor in the signature is
-    a parameter and the kernel writes its result through one of them.
-    `infer_output=True` leaves TileLang's default inference on, which is what the
-    two builders that end in `return C` need.
-
-    The raw builder is kept in `RAW_KERNELS` because `.compile(pass_configs=...)`
-    is rejected as unhashable and a compiled kernel does not expose its builder,
-    so the autotuner has no other way to re-wrap it with different flags. For the
-    same reason -- TileLang's kernel objects define equality but not a hash --
-    the name is stamped onto the object as `tl_name`, which is what the wrapper
-    compile cache keys on.
-    """
-    out_idx = "default" if infer_output else None
-    pass_configs = FAST_MATH if warp_spec else NO_WARP_SPEC
-    RAW_KERNELS[name] = (builder, out_idx)
-    if infer_output:
-        jitted = tilelang.jit(builder, pass_configs=pass_configs)
-    else:
-        jitted = tilelang.jit(builder, out_idx=out_idx, pass_configs=pass_configs)
-    jitted.tl_name = name
-    return jitted
-
-
-def kernel(builder=None, *, warp_spec: bool = True, infer_output: bool = False):
-    """Decorator form of `variant` for kernels that have only one variant."""
-    def decorate(fn):
-        return variant(fn, fn.__name__, warp_spec=warp_spec, infer_output=infer_output)
-    return decorate(builder) if builder is not None else decorate
+#: This module's own JIT namespace. Per module rather than shared: the
+#: two Targets and the component packages declare kernels under the same
+#: names with bodies that have diverged, and one registry would hand the
+#: autotuner whichever module imported last.
+_KERNELS = KernelSet()
+RAW_KERNELS = _KERNELS.RAW_KERNELS
+variant = _KERNELS.variant
+kernel = _KERNELS.kernel
 
 
 GELU_C0 = 1.5957691216057308
@@ -290,46 +267,16 @@ def tl_matmul_bias_silu(A, B, Bias, BLOCK_M: int, BLOCK_N: int, BLOCK_K: int, NU
 # ---------------------------------------------------------------------------
 # Normalization
 #
-# All three accumulate squares over K in chunks rather than in one whole-row
-# fragment, which would spill the register file at the block sizes used here.
+# `tl_rms_factor` is the action expert's and lives in the shared component
+# package (`gemma_expert`), which owns the expert chain on this device; it is
+# re-exported here so this Target's wrappers and its lab scripts keep one
+# import. The two below accumulate squares over K in chunks rather than in one
+# whole-row fragment, which would spill the register file at the block sizes
+# used here.
 # ---------------------------------------------------------------------------
-@kernel
-def tl_rms_factor(A, F, BLOCK_M: int, BLOCK_K: int, THREADS: int,
-                  TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH: bool):
-    """F[m] = rsqrt(mean_k(A[m, k]^2) + 1e-6), the decoder's RMSNorm scale factor.
-
-    Emits the factor, not the normalized tensor: the consuming GEMM applies it,
-    which is how the upstream decoder splits the work.
-    """
-    M, K = T.const("M, K")
-    dtype = T.bfloat16
-    accum_dtype = T.float32
-    A: T.Tensor((M, K), dtype)
-    F: T.Tensor((M,), dtype)
-
-    with T.Kernel(T.ceildiv(M, BLOCK_M), threads=THREADS) as bx:
-        # Release the programmatic launch dependency at entry: the PDL qkv
-        # consumer performs the mandatory grid-dependency wait before it reads
-        # F, so this early signal only exposes scheduling overlap; it does not
-        # provide memory visibility.
-        if TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH:
-            thread_id = T.get_thread_binding()
-            if thread_id == 0:
-                T.evaluate(T.call_extern(
-                    "void", "cudaTriggerProgrammaticLaunchCompletion"))
-        A_local = T.alloc_fragment((BLOCK_M, BLOCK_K), dtype)
-        A_pow_local = T.alloc_fragment((BLOCK_M, BLOCK_K), accum_dtype)
-        A_powsum = T.alloc_fragment((BLOCK_M,), accum_dtype)
-        T.clear(A_pow_local)
-        for k in T.Serial(T.ceildiv(K, BLOCK_K)):
-            T.copy(A[bx * BLOCK_M, k * BLOCK_K], A_local)
-            for i, j in T.Parallel(BLOCK_M, BLOCK_K):
-                x = A_local[i, j].astype(accum_dtype)
-                A_pow_local[i, j] += x * x
-        T.reduce_sum(A_pow_local, A_powsum, dim=1)
-        for i in T.Parallel(BLOCK_M):
-            A_powsum[i] = T.rsqrt(A_powsum[i] / K + 1e-6)
-        T.copy(A_powsum, F[bx * BLOCK_M])
+from .....gemma_expert.backends.tilelang.kernels.rms import (  # noqa: E402,F401
+    tl_rms_factor,
+)
 
 
 @kernel

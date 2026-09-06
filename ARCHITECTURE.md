@@ -54,6 +54,8 @@ models/<model>/                       -> nothing hardware-specific
 hardware/<vendor>/<device>/<model>/   -> models/ + runtime/ + its own backends/
                                          + the device's component packages
 hardware/<vendor>/<device>/<component>/ -> models/ + runtime/ + hardware/<vendor>/cuda/tile/
+                                         + hardware/<vendor>/tilelang/
+hardware/<vendor>/tilelang/           -> nothing of this repository's
 eval/, benchmarks/                    -> ModelRunner + the Target registry
                                          (benchmarks/targets.py)
 
@@ -66,7 +68,10 @@ The deployment path never imports lab/.
 A component package (`hardware/<vendor>/<device>/<component>/`, one per model
 component the device's Targets share: `siglip`, `gemma_backbone`,
 `gemma_expert`) holds the kernels and the backend factories of that component
-on that device, written once. A Target registers the package's backends under
+on that device, written once. Two vendor-level libraries sit below both
+packages and Targets and are specific to neither a model nor a device:
+`hardware/<vendor>/cuda/tile/` for the CUDA tile primitives and
+`hardware/<vendor>/tilelang/` for the TileLang JIT conventions. A Target registers the package's backends under
 names of its own and keeps every routing decision; two Targets sharing a
 component share its kernels and diverge only in their plans.
 

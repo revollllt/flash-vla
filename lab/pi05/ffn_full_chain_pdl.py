@@ -6,7 +6,7 @@ import statistics
 
 import torch
 
-from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.taskloop import (
+from flash_vla.hardware.nvidia.h100.gemma_expert.backends.cuda.taskloop import (
     COUNTER_ARRIVE, DOWN_RESIDUAL_SPLIT, FFNTaskloop, N_COUNTERS, build_table,
 )
 from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang import wrappers

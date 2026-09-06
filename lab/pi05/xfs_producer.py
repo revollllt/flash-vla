@@ -12,7 +12,7 @@ import statistics
 import torch
 
 from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang import wrappers
-from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels.xfs import (
+from flash_vla.hardware.nvidia.h100.gemma_expert.backends.tilelang.kernels.xfs import (
     tl_rms_xfs_kmajor,
 )
 

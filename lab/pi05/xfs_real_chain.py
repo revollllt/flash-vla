@@ -15,7 +15,7 @@ import statistics
 
 import torch
 
-from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.taskloop import (
+from flash_vla.hardware.nvidia.h100.gemma_expert.backends.cuda.taskloop import (
     COUNTER_ARRIVE,
     DOWN_RESIDUAL_SPLIT,
     FFNTaskloop,
@@ -24,10 +24,8 @@ from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.taskloop import (
     build_table,
 )
 from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang import wrappers
-from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels import (
-    adarms,
-    xfs as xfs_kernels,
-)
+from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels import adarms
+from flash_vla.hardware.nvidia.h100.gemma_expert.backends.tilelang.kernels import xfs as xfs_kernels
 from .xfs_producer import out_proj_residual_rms_xfs_reference
 from eval.metrics import error_metrics
 

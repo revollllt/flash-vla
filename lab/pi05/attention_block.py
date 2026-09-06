@@ -29,9 +29,9 @@ import time
 import torch
 
 from eval.metrics import error_metrics
-from flash_vla.hardware.nvidia.h100.pi05.backends.cuda import attn_block_reference as blockref
-from flash_vla.hardware.nvidia.h100.pi05.backends.cuda import attn_reference as taskref
-from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.attn_taskloop import (
+from flash_vla.hardware.nvidia.h100.gemma_expert.backends.cuda import attn_block_reference as blockref
+from flash_vla.hardware.nvidia.h100.gemma_expert.backends.cuda import attn_reference as taskref
+from flash_vla.hardware.nvidia.h100.gemma_expert.backends.cuda.attn_taskloop import (
     CM, KEYS, KEYS_PAD, M, MODES, N_CTAS, PREFIX_LEN, WATCHDOG_SITES,
     STANDALONE_DEFAULT_OPS, STANDALONE_OP_GROUPS, AttnTaskloop, Workspace, build_table, launch_standalone,
     prefill_values,
@@ -57,7 +57,7 @@ def make_inputs(seed: int, device: str, alias_out: bool = True) -> dict:
 
 
 def _kernel_args(t: dict) -> dict:
-    from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.attn_taskloop import QKV_WEIGHT_TRANSPOSED
+    from flash_vla.hardware.nvidia.h100.gemma_expert.backends.cuda.attn_taskloop import QKV_WEIGHT_TRANSPOSED
     args = {k: t[k] for k in TENSOR_ARGS}
     if QKV_WEIGHT_TRANSPOSED:
         args["w_qkv"] = t["w_qkv_t"]
@@ -307,7 +307,7 @@ def run_timeline(kt: AttnTaskloop, ws: Workspace, seed: int, device: str, reps: 
     latest end relative to the kernel's earliest stamp. Warm, in a loop, so the
     numbers describe the schedule rather than the first cold launch.
     """
-    from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.attn_taskloop import TASK_SLOTS
+    from flash_vla.hardware.nvidia.h100.gemma_expert.backends.cuda.attn_taskloop import TASK_SLOTS
     t = make_inputs(seed, device, alias_out=True)
     tl_buf = torch.zeros((N_CTAS, TASK_SLOTS, 5), dtype=torch.int64, device=device)
     fused = FusedBlock(kt, ws, "full", timeline=tl_buf).to(device)
@@ -360,7 +360,7 @@ def run_timeline_standalone(kt: AttnTaskloop, ws: Workspace, seed: int, device: 
     """Per-task stamps of the standalone split kernels (qkv op 0, attention
     op 2, o_proj op 4): dependency-free, so `dep+first` is pure first-frame
     latency and `mainloop` the stage cadence with nothing else on the machine."""
-    from flash_vla.hardware.nvidia.h100.pi05.backends.cuda.attn_taskloop import TASK_SLOTS
+    from flash_vla.hardware.nvidia.h100.gemma_expert.backends.cuda.attn_taskloop import TASK_SLOTS
     t = make_inputs(seed, device, alias_out=True)
     kinds = {0: ("qkv", 0), 2: ("attn", 1), 4: ("oproj", 2)}
     bufs = {op: torch.zeros((N_CTAS, TASK_SLOTS, 5), dtype=torch.int64, device=device) for op in kinds}
