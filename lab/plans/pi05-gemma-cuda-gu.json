@@ -1,0 +1,9 @@
+{
+  "llm_backbone_attention": "gemma-cuda",
+  "llm_backbone_norm_gated_ffn": "gemma-cuda",
+  "action_expert_norm_qkv_rope": "cuda-pdl",
+  "action_expert_attention": "cuda-pdl",
+  "action_expert_out_proj_residual": "cuda-pdl",
+  "action_expert_norm_gated_ffn": "cuda-pdl",
+  "action_expert_ffn_down_residual": "cuda-pdl"
+}

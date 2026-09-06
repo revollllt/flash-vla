@@ -8,6 +8,8 @@ the row count from the tensors it is handed, so one build serves both.
 Call sites a plan can route here:
 
     llm_backbone_attention          the fused MQA prefix attention kernel
+    llm_backbone_norm_gated_ffn     an RMSNorm launch and one persistent
+                                    warp-specialized dual-GEMM
     llm_backbone_out_proj_residual  cuBLAS `addmm_`
     llm_backbone_ffn_down_residual  cuBLAS `addmm_`
 
@@ -34,6 +36,7 @@ import os
 import torch
 
 from . import enc_attn as _enc
+from . import gated_ffn as _gu
 
 
 class _AttnState:
@@ -73,6 +76,22 @@ def llm_backbone_attention(state: _AttnState, Q, K, V, scale, mask, out):
     return out
 
 
+def llm_backbone_norm_gated_ffn(state: "_GatedFfnState", x, gate_w, up_w, out, x_norm):
+    """out = gelu_tanh(x_norm @ gate_w) * (x_norm @ up_w), with x_norm materialized.
+
+    Two launches: the RMSNorm, then the persistent dual-GEMM. `x` and `x_norm`
+    are (rows, 2048), the weights (2048, 16384), `out` (rows, 16384) written in
+    full. `x_norm` is the graph's own buffer and the op spec declares it an
+    auxiliary output, so it is written rather than kept in registers -- and it
+    has to be, because the projection must see the bf16-rounded activation.
+    """
+    rows = x.shape[0]
+    _gu.rms_norm(x, x_norm[:rows], verbose=state.verbose)
+    _gu.gated_ffn(x_norm[:rows], gate_w, up_w, out[:rows],
+                  sm_count=state.sm_count, verbose=state.verbose)
+    return out
+
+
 def llm_backbone_out_proj_residual(x, weight, out):
     """out += attn @ weight, in place: cuBLAS, fp32 accumulation, bf16 residual.
 
@@ -103,9 +122,32 @@ def llm_backbone_ffn_down_residual(x, weight, out):
     return out
 
 
+class _GatedFfnState:
+    """The gated-FFN library handle and the grid it launches, built once per table.
+
+    The SM count is read on the first call, not at construction: `eval.smoke`
+    builds every Target's op table on a login node with no GPU, so a backend
+    that touches the device while a plan is merely being declared cannot be
+    checked there.
+    """
+
+    def __init__(self) -> None:
+        self.verbose = bool(os.environ.get("FLASH_VLA_BUILD_VERBOSE"))
+        self._sm_count: int | None = None
+
+    @property
+    def sm_count(self) -> int:
+        """The persistent kernel's grid: one CTA per SM, which its 224 KB pool forces anyway."""
+        if self._sm_count is None:
+            self._sm_count = torch.cuda.get_device_properties(
+                torch.cuda.current_device()).multi_processor_count
+        return self._sm_count
+
+
 #: The call sites this backend implements.
 NAMES = frozenset({
     "llm_backbone_attention",
+    "llm_backbone_norm_gated_ffn",
     "llm_backbone_out_proj_residual",
     "llm_backbone_ffn_down_residual",
 })
@@ -127,6 +169,11 @@ def make_wrappers(scratch, selected_names=None) -> dict:
         table["llm_backbone_attention"] = (
             lambda Q, K, V, scale, mask, out:
             llm_backbone_attention(state, Q, K, V, scale, mask, out))
+    if "llm_backbone_norm_gated_ffn" in names:
+        gu_state = _GatedFfnState()
+        table["llm_backbone_norm_gated_ffn"] = (
+            lambda x, gate_w, up_w, out, x_norm:
+            llm_backbone_norm_gated_ffn(gu_state, x, gate_w, up_w, out, x_norm))
     if "llm_backbone_out_proj_residual" in names:
         table["llm_backbone_out_proj_residual"] = llm_backbone_out_proj_residual
     if "llm_backbone_ffn_down_residual" in names:

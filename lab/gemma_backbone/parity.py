@@ -37,6 +37,7 @@ from eval.acceptance import tolerances
 from eval.metrics import error_metrics
 from flash_vla.hardware.nvidia.h100.gemma_backbone.backends.cuda import (
     enc_attn_reference,
+    gated_ffn_reference,
     residual_gemm_reference,
 )
 
@@ -45,6 +46,7 @@ SEGMENT = "llm_backbone"
 #: kernel key -> the call site it implements.
 KERNELS = {
     "attention": "llm_backbone_attention",
+    "norm_gated_ffn": "llm_backbone_norm_gated_ffn",
     "out_proj_residual": "llm_backbone_out_proj_residual",
     "ffn_down_residual": "llm_backbone_ffn_down_residual",
 }
@@ -65,6 +67,23 @@ def _check_attention(engine, call_args) -> dict:
     return report
 
 
+def _check_gated_ffn(call_args) -> dict:
+    x, gate_w, up_w, out, x_norm = call_args
+    rows = x.shape[0]
+    expected = torch.empty_like(out[:rows])
+    expected_norm = torch.empty_like(x_norm[:rows])
+    gated_ffn_reference.norm_gated_ffn_reference(x, gate_w, up_w, expected, expected_norm)
+    got, got_norm = out[:rows].clone(), x_norm[:rows].clone()
+    report = {"metrics": error_metrics(expected, got),
+              "finite": bool(torch.isfinite(got).all())}
+    # The normalized activation is an auxiliary output with no consumer, but the
+    # projection must see the bf16-rounded values, so it is checked separately
+    # and expected to be bit-identical: both sides round the same way.
+    report["x_norm"] = error_metrics(expected_norm, got_norm)
+    report["x_norm_bit_identical"] = bool(torch.equal(expected_norm, got_norm))
+    return report
+
+
 def _run_site(engine, call_site: str, invocation) -> dict:
     """Invoke one recorded call, with the residual sites re-run from a clean copy."""
     args, kwargs = invocation
@@ -73,6 +92,10 @@ def _run_site(engine, call_site: str, invocation) -> dict:
         fn(*args, **kwargs)
         torch.cuda.synchronize()
         return _check_attention(engine, args)
+    if call_site == "llm_backbone_norm_gated_ffn":
+        fn(*args, **kwargs)
+        torch.cuda.synchronize()
+        return _check_gated_ffn(args)
 
     # In-place residual: snapshot the residual, run the kernel, then run the
     # mirror from the same snapshot into a separate buffer.
