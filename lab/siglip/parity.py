@@ -26,11 +26,14 @@ import torch
 from eval.acceptance import tolerances
 from eval.metrics import error_metrics
 from flash_vla.hardware.nvidia.h100.siglip import geometry
-from flash_vla.hardware.nvidia.h100.siglip.backends import cublas
+from flash_vla.hardware.nvidia.h100.siglip.backends import cublas, cuda
 
 #: Every (call site -> candidate wrapper, reference mirror) pair this script knows.
 IMPLEMENTATIONS = {
     "siglip-cublas": (cublas.wrappers.ALL_WRAPPERS, cublas.norm_gemm_reference.REFERENCES),
+    "siglip-cuda": (cuda.wrappers.ALL_WRAPPERS,
+                    {**cuda.norm_gemm_reference.REFERENCES,
+                     **cuda.attention_reference.REFERENCES}),
 }
 
 
@@ -49,6 +52,11 @@ def _inputs(site: str, views: int, generator, device, dtype):
         weight, bias, width = randn(geometry.DIM, geometry.QKV_DIM), randn(geometry.QKV_DIM), geometry.QKV_DIM
     elif site == "vision_encoder_norm_ffn_up":
         weight, bias, width = randn(geometry.DIM, geometry.FFN), randn(geometry.FFN), geometry.FFN
+    elif site == "vision_encoder_attention":
+        # The attention op takes the packed projection and nothing else.
+        qkv = randn(views, geometry.TOKENS, geometry.QKV_DIM)
+        out = torch.zeros((views, geometry.TOKENS, geometry.DIM), device=device, dtype=dtype)
+        return (qkv,), out
     else:
         raise KeyError(f"no input builder for {site}")
     out = torch.zeros((views, geometry.TOKENS, width), device=device, dtype=dtype)

@@ -3,11 +3,15 @@
 # correctness gate and the same-node A/B/A, for both Targets in one job.
 #
 #   cd <worktree> && BASELINES=1 sbatch -J laneB-j0 lab/sbatch/siglip.sh
-#   cd <worktree> && CAND=siglip-cuda sbatch -J laneB-j1 lab/sbatch/siglip.sh
+#   cd <worktree> && CAND="siglip-ln siglip-attn siglip-cuda" BACKEND=siglip-cuda \
+#       sbatch -J laneB-j1 lab/sbatch/siglip.sh
 #
-# CAND names the candidate plans as lab/plans/{pi05,pi0}-${CAND}.json. Baselines
-# run first and only when asked: a candidate's number is never read before the
-# baseline it is compared against exists (kernel-design, step 2).
+# CAND is a space-separated list naming candidate plans as
+# lab/plans/{pi05,pi0}-<cand>.json; each gets its own correctness gate and its
+# own same-node A/B/A, so a combined route never stands in for the evidence of
+# the parts. BACKEND is the parity target (default: the first candidate).
+# Baselines run first and only when asked: a candidate's number is never read
+# before the baseline it is compared against exists (kernel-design, step 2).
 #SBATCH --job-name=laneB-siglip
 #SBATCH --partition=acd_u
 #SBATCH --gres=gpu:1
@@ -22,7 +26,7 @@ export PALIGEMMA_TOKENIZER="${PALIGEMMA_TOKENIZER:-/data/user/jzou521/models/ope
 export FLASH_VLA_BUILD_VERBOSE="${FLASH_VLA_BUILD_VERBOSE:-1}"
 
 CAND="${CAND:-siglip-cublas}"
-BACKEND="${BACKEND:-${CAND}}"
+BACKEND="${BACKEND:-${CAND%% *}}"
 REPS="${REPS:-100}"
 WS="${WS:-${REPO_DIR}/artifacts/ktasks/siglip}"
 TAG="${SLURM_JOB_ID:-local}"
@@ -54,9 +58,10 @@ echo "== T2 parity: ${BACKEND} wrappers against their ABI mirrors"
   | tee "${WS}/runs/parity_${BACKEND}_${TAG}.json"
 
 for target in h100/pi05 h100/pi0; do
-  prefix="${target#h100/}"
-  plan="lab/plans/${prefix}-${CAND}.json"
-  [[ -f "${plan}" ]] || { echo "[job] no plan ${plan}; skipping ${target}"; continue; }
+ prefix="${target#h100/}"
+ for cand in ${CAND}; do
+  plan="lab/plans/${prefix}-${cand}.json"
+  [[ -f "${plan}" ]] || { echo "[job] no plan ${plan}; skipping"; continue; }
 
   echo "== in-engine correctness ${target} ${plan}: 1 step, 1 layer (GATE)"
   "${PYTHON}" -u -m eval.correctness --target "${target}" --plan "${plan}" --steps 1 --layers 1
@@ -67,10 +72,11 @@ for target in h100/pi05 h100/pi0; do
   "${PYTHON}" -u -m benchmarks kernels --target "${target}" --plan "${plan}" \
     --segment vision_encoder --timer cupti --csv "${WS}/benchmark.csv"
 
-  echo "== A/B/A ${target}: reference / ${CAND} / reference, ${REPS} reps, same process"
+  echo "== A/B/A ${target}: reference / ${cand} / reference, ${REPS} reps, same process"
   "${PYTHON}" -u -m benchmarks latency --target "${target}" --reps "${REPS}" \
     --plan reference --plan "${plan}" --plan reference \
-    --out "${WS}/runs/aba_${prefix}_${CAND}_${TAG}.json"
+    --out "${WS}/runs/aba_${prefix}_${cand}_${TAG}.json"
+ done
 done
 
 echo "[job] finished $(date)"

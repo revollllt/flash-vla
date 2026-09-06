@@ -14,6 +14,9 @@ prefix names no Target fails the smoke check.
 |---|---|
 | `pi0-siglip-cublas.json` | Pi0's two pre-norm vision projections on the shared cuBLASLt form |
 | `pi05-siglip-cublas.json` | the same route on Pi0.5, where its TileLang backend already reaches it (the A/B control) |
+| `pi0-siglip-attn.json` / `pi05-siglip-attn.json` | the fused vision attention kernel alone |
+| `pi0-siglip-ln.json` / `pi05-siglip-ln.json` | the hand-written vision LayerNorm ahead of the two cuBLASLt projections |
+| `pi0-siglip-cuda.json` / `pi05-siglip-cuda.json` | both, the combined vision route |
 | `pi05-attn-cuda.json` | CUDA encoder attention + CUDA decoder attention pair |
 | `pi05-ffn-cuda.json` | CUDA encoder attention + CUDA FFN pair |
 | `pi05-ffn-cuda-fused-producer.json` | plus the fused out-projection producer |
