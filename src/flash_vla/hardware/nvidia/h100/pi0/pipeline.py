@@ -82,14 +82,14 @@ def build(g: Graph, shape: Mapping[str, int]) -> None:
         g.op("vision_encoder_norm_qkv", x=vx,
              norm_w=g.w("vision_pre_attn_norm_w")[i], norm_b=g.w("vision_pre_attn_norm_b")[i],
              qkv_w=g.w("vision_attn_qkv_w")[i], qkv_b=g.w("vision_attn_qkv_b")[i],
-             out=vqkv, x_norm=vnorm)
+             out=vqkv)
         g.op("vision_encoder_attention", qkv=vqkv, out=vattn)
         g.op("vision_encoder_out_proj_residual", x=vattn,
              weight=g.w("vision_attn_o_w")[i], bias=g.w("vision_attn_o_b")[i], res=vx, out=vx)
         g.op("vision_encoder_norm_ffn_up", x=vx,
              norm_w=g.w("vision_pre_ffn_norm_w")[i], norm_b=g.w("vision_pre_ffn_norm_b")[i],
              weight=g.w("vision_ffn_up_w")[i], bias=g.w("vision_ffn_up_b")[i],
-             out=vhidden, x_norm=vnorm)
+             out=vhidden)
         g.op("vision_encoder_ffn_down_residual", x=vhidden,
              weight=g.w("vision_ffn_down_w")[i], bias=g.w("vision_ffn_down_b")[i],
              res=vx, out=vx)

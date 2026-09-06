@@ -1,9 +1,14 @@
 # Candidate plans
 
-Call-site plans tried during optimization of the H100 / Pi0.5 Target, kept
-for A/B runs. None of them is a deployment configuration: the shipped plan and
-the reference plan live on the Target (`hardware/nvidia/h100/pi05/target.py`).
+Call-site plans tried during optimization of the H100 Targets, kept for A/B
+runs. None of them is a deployment configuration: the shipped plan and the
+reference plan live on the Target (`hardware/nvidia/h100/<model>/target.py`).
 Pass one to any harness as `--plan lab/plans/<name>.json`.
+
+A file is named `<target>-<name>.json`, where `<target>` is the Target's short
+alias (`pi05`, `pi0`; `benchmarks/targets.py`): `python -m eval.smoke` reads
+the Target from that prefix to check that the plan binds, so a plan whose
+prefix names no Target fails the smoke check.
 
 | file | route |
 |---|---|

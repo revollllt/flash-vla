@@ -273,6 +273,12 @@ def _vision_layer_norm(x, norm_w, norm_b, out):
     return out
 
 
+def _vision_norm_workspace(scratch, x2):
+    """The normalized activation the two pre-norm GEMMs consume: workspace of this
+    backend, allocated once through the runner's allocator, not a graph buffer."""
+    return scratch("vision_norm", tuple(x2.shape), x2.dtype, x2.device)
+
+
 def vision_encoder_patch_embed(images, patch_w, patch_b, pos_emb, out):
     """Patchify, project, add bias and the positional embedding (upstream conv2d_embed_n256_1152_res).
 
@@ -289,12 +295,12 @@ def vision_encoder_patch_embed(images, patch_w, patch_b, pos_emb, out):
     return out
 
 
-def vision_encoder_norm_qkv(x, norm_w, norm_b, qkv_w, qkv_b, out, x_norm):
+def vision_encoder_norm_qkv(x, norm_w, norm_b, qkv_w, qkv_b, out, *, scratch=fresh_scratch):
     """LayerNorm then the packed QKV projection (upstream layer_norm_QKV_matmul_n256_1152_3456_bias)."""
     M = x.shape[0] * VISION_TOKENS
     hidden = qkv_w.shape[1]
-    x2, x_norm2 = x.view(M, VISION_DIM), x_norm.view(M, VISION_DIM)
-    _vision_layer_norm(x2, norm_w, norm_b, x_norm2)
+    x2 = x.view(M, VISION_DIM)
+    x_norm2 = _vision_layer_norm(x2, norm_w, norm_b, _vision_norm_workspace(scratch, x2))
     _compiled(kernels.tl_matmul_bias_nows, M=M, N=hidden, K=VISION_DIM,
               **_VIS_QKV)(x_norm2, qkv_w, qkv_b, out.view(M, hidden))
     return out
@@ -312,11 +318,11 @@ def vision_encoder_out_proj_residual(x, weight, bias, res, out):
     return out
 
 
-def vision_encoder_norm_ffn_up(x, norm_w, norm_b, weight, bias, out, x_norm):
+def vision_encoder_norm_ffn_up(x, norm_w, norm_b, weight, bias, out, *, scratch=fresh_scratch):
     """LayerNorm then the GELU feed-forward expansion (upstream layer_norm_matmul_..._bias_gelu)."""
     M = x.shape[0] * VISION_TOKENS
-    x2, x_norm2 = x.view(M, VISION_DIM), x_norm.view(M, VISION_DIM)
-    _vision_layer_norm(x2, norm_w, norm_b, x_norm2)
+    x2 = x.view(M, VISION_DIM)
+    x_norm2 = _vision_layer_norm(x2, norm_w, norm_b, _vision_norm_workspace(scratch, x2))
     _compiled(kernels.tl_matmul_bias_gelu, M=M, N=VISION_FFN, K=VISION_DIM,
               **_VIS_FFN_UP)(x_norm2, weight, bias, out.view(M, VISION_FFN))
     return out
@@ -453,7 +459,8 @@ ALL_WRAPPERS = {**VISION_WRAPPERS, **ENCODER_WRAPPERS, **DECODER_WRAPPERS}
 NAMES = frozenset(ALL_WRAPPERS)
 
 #: Wrappers that request workspace and take the runner's allocator.
-_NEEDS_SCRATCH = ("action_expert_attention", "llm_backbone_norm_qkv_rope")
+_NEEDS_SCRATCH = ("action_expert_attention", "llm_backbone_norm_qkv_rope",
+                  "vision_encoder_norm_qkv", "vision_encoder_norm_ffn_up")
 
 #: Pi0's two extension ops beyond the standard vocabulary: the state token's
 #: projection and the second action MLP, both plain bias GEMMs.

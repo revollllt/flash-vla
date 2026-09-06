@@ -52,13 +52,23 @@ against the original implementation.
 runtime/                              -> nothing model-, backend- or Target-specific
 models/<model>/                       -> nothing hardware-specific
 hardware/<vendor>/<device>/<model>/   -> models/ + runtime/ + its own backends/
+                                         + the device's component packages
+hardware/<vendor>/<device>/<component>/ -> models/ + runtime/ + hardware/<vendor>/cuda/tile/
 eval/, benchmarks/                    -> ModelRunner + the Target registry
                                          (benchmarks/targets.py)
 
 src/ never imports eval/, benchmarks/ or lab/.
 No Target imports another Target's kernels.
+A component package imports no Target.
 The deployment path never imports lab/.
 ```
+
+A component package (`hardware/<vendor>/<device>/<component>/`, one per model
+component the device's Targets share: `siglip`, `gemma_backbone`,
+`gemma_expert`) holds the kernels and the backend factories of that component
+on that device, written once. A Target registers the package's backends under
+names of its own and keeps every routing decision; two Targets sharing a
+component share its kernels and diverge only in their plans.
 
 ## The runtime interface
 
@@ -100,6 +110,11 @@ weight schema and loader), the shipped plan, the reference plan and the backend
 registry; one `pipeline.py` whose `build` writes the graph; its `backends/`;
 a factory entry in `benchmarks/targets.py`; and an acceptance entry in
 `eval/acceptance.py`. There is no engine, buffer plan or cost table to write.
+A backend in the registry is any object satisfying the registry contract
+(`runtime/registry.py`): the Target's own `backends/` module, or the
+`make_wrappers(scratch, selected_names)` factory of a device component
+package. Either way the Target owns the routing, the plans and the route
+constraints; the package owns the kernels.
 
 ## Deployment configuration
 

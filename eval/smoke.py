@@ -7,8 +7,9 @@ the right argument count, that every output and every weight reference is
 declared, that the canonical stage outputs exist with the exposed shape their
 declaration implies, that the graph's derived costs are non-zero per stage,
 that the shipped and reference plans and every candidate plan under
-`lab/plans/` route every call site, and -- for Pi0.5 -- that the binding
-rules accept exactly the route combinations they accepted before.
+`lab/plans/` route every call site (a candidate's Target is read from its
+file-name prefix, `lab/plans/README.md`), and that each Target's binding
+rules accept exactly the route combinations the oracle here expects of them.
 
 Every check that can falsify a kernel needs a GPU and lives elsewhere; this
 is the cheapest thing that catches a graph that cannot run.
@@ -19,21 +20,14 @@ import argparse
 import itertools
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping
 
-from benchmarks.targets import TARGETS, declare
+from benchmarks.targets import TARGETS, declare, resolve
 from flash_vla.runtime.graph import BufRef, WeightRef
 from flash_vla.runtime.vla import STAGE_OUTPUTS
 
 REPO = Path(__file__).resolve().parent.parent
 SHAPE_KEYS = ("num_views", "chunk", "steps", "layers", "prompt_len")
-
-#: Pi0.5's five plan-selectable action-expert call sites and the backends a
-#: route may name; the accepted set is fixed by the CUDA backend's constraints.
-_PI05_SITES = ("action_expert_norm_qkv_rope", "action_expert_attention",
-               "action_expert_out_proj_residual", "action_expert_norm_gated_ffn",
-               "action_expert_ffn_down_residual")
-_PI05_BACKENDS = ("tilelang", "cuda", "cuda-pdl")
 
 
 def _check(results: list[dict[str, Any]], name: str, ok: bool, detail: Any = None) -> None:
@@ -80,9 +74,16 @@ def check_target(target: str) -> list[dict[str, Any]]:
 
 
 def check_lab_plans() -> list[dict[str, Any]]:
+    """Every `lab/plans/<target>-<name>.json` binds on the Target its prefix names."""
     results: list[dict[str, Any]] = []
     for path in sorted((REPO / "lab" / "plans").glob("*.json")):
-        target = "h100/" + path.stem.split("-")[0]
+        prefix = path.stem.split("-")[0]
+        try:
+            target = resolve("h100/" + prefix)
+        except KeyError:
+            _check(results, f"lab plan {path.name}", False,
+                   f"prefix {prefix!r} names no Target (lab/plans/README.md)")
+            continue
         try:
             runner = declare(target, str(path))
             ok = set(runner.identity.plan) == set(runner.graph.call_sites)
@@ -93,36 +94,87 @@ def check_lab_plans() -> list[dict[str, Any]]:
     return results
 
 
-def check_pi05_routes() -> list[dict[str, Any]]:
-    """Every 3^5 route of the five action-expert sites: accepted iff the constraints allow."""
-    from flash_vla.hardware.nvidia.h100.pi05 import TARGET
+# --- route oracles ----------------------------------------------------------
+# Per Target, the hand-written expectation of which route combinations bind.
+# Written independently of the backends' `ROUTE_CONSTRAINTS` on purpose: a
+# constraint that drifts from the documented buffer contract is caught by
+# disagreeing with the prose rule below. A Target whose backends declare any
+# constraint must have an oracle here; a backend without constraints needs
+# none (every combination binds).
 
-    accepted, rejected = [], []
-    call_sites = declare("h100/pi05").graph.call_sites
-    for combo in itertools.product(_PI05_BACKENDS, repeat=len(_PI05_SITES)):
-        plan = dict(zip(_PI05_SITES, combo))
+def _pi05_routes(plan: Mapping[str, str]) -> bool:
+    """The CUDA backend's contracts: the decoder attention pair moves together,
+    the FFN pair moves together, and the fused out-projection needs the FFN
+    pair on its own backend. Every other call site routes freely."""
+    cuda = {"cuda", "cuda-pdl"}
+    qkv = plan.get("action_expert_norm_qkv_rope")
+    attn = plan.get("action_expert_attention")
+    oproj = plan.get("action_expert_out_proj_residual")
+    gate = plan.get("action_expert_norm_gated_ffn")
+    down = plan.get("action_expert_ffn_down_residual")
+    pair_attn = (qkv == attn) or (qkv not in cuda and attn not in cuda)
+    pair_ffn = (gate == down) or (gate not in cuda and down not in cuda)
+    oproj_ok = oproj not in cuda or (gate == oproj and down == oproj)
+    return pair_attn and pair_ffn and oproj_ok
+
+
+_ROUTE_ORACLES: dict[str, Callable[[Mapping[str, str]], bool]] = {
+    "hardware/nvidia/h100/pi05": _pi05_routes,
+    "hardware/nvidia/h100/pi0": lambda plan: True,
+}
+
+
+def check_routes(target: str) -> list[dict[str, Any]]:
+    """Every route combination over the constrained call sites, and every
+    plan-selectable call site alone on each backend that provides it:
+    accepted iff the Target's oracle says so, and every rejection is named."""
+    target = resolve(target)
+    runner = declare(target)
+    registry = runner.target.registry
+    provided = registry.provided()
+    call_sites = list(runner.graph.call_sites)
+    constrained = set()
+    for declared in registry.constraints().values():
+        for constraint in declared:
+            constrained |= set(constraint.members)
+    selectable = [s for s in call_sites
+                  if sum(s in names for names in provided.values()) > 1]
+    oracle = _ROUTE_ORACLES.get(target)
+    if constrained and oracle is None:
+        return [{"check": f"{target} route combinations", "passed": False,
+                 "detail": "backends declare route constraints but eval/smoke.py has no "
+                           "route oracle for this Target"}]
+    oracle = oracle or (lambda plan: True)
+
+    def bind(plan: dict[str, str]):
         try:
-            TARGET.registry.resolve(plan, call_sites)
-            accepted.append(combo)
+            registry.resolve(plan, call_sites)
+            return True, None
         except ValueError as exc:
-            rejected.append((combo, str(exc)))
+            return False, str(exc)
 
-    def expected(combo) -> bool:
-        qkv, attn, oproj, gate, down = combo
-        cuda = {"cuda", "cuda-pdl"}
-        # The attention pair moves together; the FFN pair moves together; the
-        # fused out-projection needs the FFN pair on its own backend.
-        pair_attn = (qkv == attn) or (qkv not in cuda and attn not in cuda)
-        pair_ffn = (gate == down) or (gate not in cuda and down not in cuda)
-        oproj_ok = oproj not in cuda or (gate == oproj and down == oproj)
-        return pair_attn and pair_ffn and oproj_ok
-
-    mismatches = [c for c in itertools.product(_PI05_BACKENDS, repeat=5)
-                  if (c in accepted) != expected(c)]
-    named = all("requires" in msg for _, msg in rejected)
-    return [{"check": "pi05 route combinations", "passed": not mismatches and named,
-             "detail": {"accepted": len(accepted), "rejected": len(rejected),
-                        "mismatches": mismatches[:5]}}]
+    trials: list[tuple[dict[str, str], bool, str | None]] = []
+    cluster = [s for s in selectable if s in constrained]
+    choices = [sorted(b for b, names in provided.items() if s in names) for s in cluster]
+    for combo in itertools.product(*choices):
+        plan = dict(zip(cluster, combo))
+        ok, message = bind(plan)
+        trials.append((plan, ok, message))
+    for site in selectable:
+        if site in cluster:
+            continue
+        for backend, names in provided.items():
+            if site in names:
+                plan = {site: backend}
+                ok, message = bind(plan)
+                trials.append((plan, ok, message))
+    mismatches = [plan for plan, ok, _ in trials if ok != oracle(plan)]
+    rejected = [(plan, message) for plan, ok, message in trials if not ok]
+    named = all(message is not None and "requires" in message for _, message in rejected)
+    return [{"check": f"{target} route combinations", "passed": not mismatches and named,
+             "detail": {"backends": sorted(provided), "cluster": cluster,
+                        "trials": len(trials), "accepted": len(trials) - len(rejected),
+                        "rejected": len(rejected), "mismatches": mismatches[:5]}}]
 
 
 def main(argv=None) -> int:
@@ -133,7 +185,8 @@ def main(argv=None) -> int:
     for target in TARGETS:
         report[target] = check_target(target)
     report["lab/plans"] = check_lab_plans()
-    report["pi05 routes"] = check_pi05_routes()
+    for target in TARGETS:
+        report[f"{target} routes"] = check_routes(target)
     failed = [(k, r["check"], r["detail"]) for k, rows in report.items()
               for r in rows if not r["passed"]]
     if args.json:

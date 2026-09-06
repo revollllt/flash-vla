@@ -168,6 +168,11 @@ DEFAULTS: dict[str, Any] = {
 #: Per-Target entries: budget, the official-baseline scripts and their
 #: interpreter, and overrides with reasons. Nothing that the model spec or the
 #: runner already holds is restated here.
+#:
+#: `budget` is counted per kernel-design task (one optimization lane on this
+#: Target: `candidates` built, `non_improving` in a row, GPU `jobs`), not per
+#: Target: every task on the Target starts with it, and a task's contract may
+#: narrow it, never widen it.
 TARGETS: dict[str, dict[str, Any]] = {
     "hardware/nvidia/h100/pi05": {
         "budget": {"candidates": 6, "non_improving": 3, "jobs": 12},
