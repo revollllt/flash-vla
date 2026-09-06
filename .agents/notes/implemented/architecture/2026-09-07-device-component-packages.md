@@ -103,12 +103,16 @@ checked on one.
   each backend; Pi0 its three fused sites on each backend);
   `python -c "import flash_vla"`; `grep -rn "lab/" src eval benchmarks` is
   empty.
-- GPU, bit identity of the `x_norm` removal: `lab/sbatch/bit_identity.sh`
-  dumps every declared stage output of both Targets on both plans from the
-  tree before this change (fccdf94) and from this tree on one node with one
-  seed and compares them with `torch.equal`; `python -m eval.correctness
-  --steps 1 --layers 1` on both Targets in the same job. Job id and node are
-  recorded below once the job has run.
+- GPU, bit identity of the `x_norm` removal (job 599719, ACD1-30, shared
+  node): `lab/sbatch/bit_identity.sh` dumped every declared stage output of
+  both Targets on both plans from the tree before this change (fccdf94) and
+  from this tree (a02bc64) with seed 0 and compared them with `torch.equal`:
+  all four Target x plan pairs bit-identical, second forward included.
+  `python -m eval.correctness --steps 1 --layers 1` in the same job: Pi0.5
+  shipped vs reference min cosine 0.9999994, max rel_rms 1.06e-3; Pi0
+  0.9999810 and 6.18e-3; both replay-identical and finite, the same numbers
+  the tolerance calibration read (job 599011). Evidence:
+  `artifacts/bit_identity/599719/` on this machine.
 
 ## Related notes
 
