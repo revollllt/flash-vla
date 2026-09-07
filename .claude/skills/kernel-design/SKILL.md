@@ -50,14 +50,37 @@ The user picks the mode per task; the contract records it.
    `backends/`, its check into `eval/` (a shipped kernel) or `lab/` (a candidate), a built-in benchmark
    case, the Agent Note, and the evidence summary copied out of the workspace.
 
+## Profiling — two levels, two default tools
+
+Profiling here asks one of two questions, and each has its own default tool.
+
+- **Pipeline / stream level** — which stage, launch or gap holds the time,
+  whether streams overlap, what the graph timeline looks like: the torch
+  profiler and `nsys`, captured through `gpu-profiler-analysis`. This is
+  the localization that decides which kernel gets a task, and the Profile
+  step the loop returns to after Deploy (`ARCHITECTURE.md`).
+- **Kernel level** — why this kernel is slow, answered by a hardware-counter
+  fact (a stall reason, a pipe utilization, a sector ratio): `ncu`, with
+  `ncu-report` running the pass end to end — the capture plan and
+  collection on an ncu-capable node, the six analysis dimensions, the
+  diagnosis playbook, and a `REPORT.md` under `artifacts/profile/<run>/`
+  that names one bottleneck and ranks the next moves. The symptom it names
+  is the wiki's index.
+
+Inside the candidate loop the question is the second one, so the loop's
+profile is an ncu pass. A timeline cannot say why a kernel is slow, and an
+ncu report cannot say where in the pipeline the time went; neither
+substitutes for the other. A bottleneck asserted without the metric values
+behind it is a hypothesis; the report is what turns it into a finding.
+
 ## Handoffs — this skill sequences, others own
 
 | Need | Go to |
 |---|---|
 | a machine number, a floor, "is this target reachable" | `hardware-unit-test` — the measured table under the hardware axis; the ceiling cites tags, the roofline cites `spec.py`, neither is a target |
 | per-kernel timing, comparing two implementations | `benchmark-kernel` |
-| capturing a trace or an NCU report | `gpu-profiler-analysis` |
-| reading an NCU report -> naming the bottleneck | `ncu-report` |
+| why a candidate is slow — the kernel-level profile: an ncu pass, capture plan through `REPORT.md`, read into a named bottleneck | `ncu-report` |
+| where the pipeline's time goes — the stream-level profile: stage / launch / graph timeline with the torch profiler or `nsys`; also the capture runner behind an ncu pass | `gpu-profiler-analysis` |
 | choosing the next optimization move | `references/wiki/README.md` — symptom-indexed |
 | how a sm90 mechanism is actually spelled | `references/templates/README.md` — compilable skeletons |
 

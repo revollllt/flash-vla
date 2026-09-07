@@ -10,7 +10,9 @@ docs/draft.md        first plan draft — REQUIRED before any code exists
 docs/plan.md         the executable plan (human mode: signed before candidate 1)
 candidates.jsonl     the ledger
 benchmark.csv        tabular results, one row per measurement
-profile/             NCU / nsys artifacts and their summaries
+profile/             each candidate's ncu REPORT.md, or a pointer to its
+                     artifacts/profile/<run>/ run directory; a torch / nsys
+                     timeline only for a stream-level question (gaps, overlap)
 runs/                build products, job logs
 ```
 
@@ -38,8 +40,15 @@ value of the ledger.
 - Baselines are measured before candidate 1, on the exact production shape.
 - `benchmark-kernel` owns method. Compare plans same-process A/B/A; with
   unpinned clocks read `min`, not `median`.
-- Capture profiles via `gpu-profiler-analysis`; interpret them via
-  `ncu-report`; pick the responding move via `wiki/README.md`.
+- Profiling has two levels. Kernel level — why this candidate is slow — is
+  `ncu` first: `ncu-report` runs the pass (capture on an ncu-capable node,
+  the six dimensions, the playbook, `REPORT.md`) and names the symptom;
+  `wiki/README.md` maps the symptom to the move. Pipeline / stream level —
+  which stage, launch, gap or overlap — is the torch profiler and `nsys`
+  first, through `gpu-profiler-analysis`; it localizes before a task exists
+  and is the Profile step after Deploy, and it does not replace an ncu
+  report inside the loop. A bottleneck without metric values behind it is a
+  hypothesis, not a finding.
 - Never edit kernel source while a compile or profile job is in flight.
 
 ## Stop conditions

@@ -53,6 +53,11 @@ several skills and rules.
   interpretation (capture stays with `gpu-profiler-analysis`); its current
   shape is recorded in the
   [ncu-report skill template note](2026-09-06-ncu-report-skill-template.md).
+  Profiling is two-level by default: pipeline / stream questions (which
+  stage, launch, gap or overlap) go to the torch profiler and nsys through
+  `gpu-profiler-analysis`; kernel questions (why this kernel is slow) go to
+  Nsight Compute read through `ncu-report`, and that is the profile the
+  candidate loop runs.
 - Templates are toolkit-only and de-projectized, so they stay portable
   experience rather than a second copy of the kernels; each declares the PTX
   instructions it exists to demonstrate and `scripts/check_templates.py`
