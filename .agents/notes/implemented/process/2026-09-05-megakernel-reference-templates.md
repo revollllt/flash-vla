@@ -17,7 +17,9 @@ published numbers. The load-policy vocabulary from learn-cuda (`L1::no_allocate`
 ## Decision
 
 - Four templates, one per reference, under
-  `.claude/skills/kernel-design/references/templates/`: `42_hazy_llama_megakernel.cu`,
+  `.claude/skills/kernel-wiki/artifacts/kernels/sm90-templates/variants/`
+  (moved there from `kernel-design/references/templates/` per the
+  [references evidence-discipline note](2026-09-07-kernel-design-references-evidence-discipline.md)): `42_hazy_llama_megakernel.cu`,
   `43_mpk_task_graph_runtime.cu`, `44_megamoe_sm90.cu`,
   `45_flag_barrier_megakernel.cu`. Each is the whole machine of its reference
   written against `sm90_common.cuh` (no ThunderKittens, no Mirage runtime, no
@@ -92,7 +94,7 @@ published numbers. The load-policy vocabulary from learn-cuda (`L1::no_allocate`
 
 ## Verification
 
-- `python3 .claude/skills/kernel-design/scripts/check_templates.py` passes 23/23
+- `python3 .claude/skills/kernel-wiki/scripts/check_templates.py` passes 23/23
   on the login node (`cuda/13.1`, `gcc/13.3`), the four new templates among
   them.
 - GPU runs via `sbatch/kernel_template.sh` on `acd_u` H100 SXM5 nodes (clocks

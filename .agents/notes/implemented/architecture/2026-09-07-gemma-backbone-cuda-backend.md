@@ -84,7 +84,7 @@ The segment is also the campaign's second-largest headroom
   **+6.61**. In the pipeline the 25 MB hidden buffer this reads was written by
   the gated FFN one kernel earlier and is L2-resident; the TileLang body
   carries `SWIZZLE=8` to rasterize for that reuse and cuBLAS chooses its own
-  order. This extends [measure in the graph](../../../.claude/skills/kernel-design/references/wiki/measure-in-the-graph.md),
+  order. This extends [measure in the graph](../../../.claude/skills/kernel-wiki/wiki/patterns/isolated-timer-overstates-fusion.md),
   which warns about magnitude. Every route decision in this lane after that
   point was made by subtracting `benchmarks profile` on both plans in one job.
 - **`benchmarks kernels` could not run a Pi0 segment at all** until the fix

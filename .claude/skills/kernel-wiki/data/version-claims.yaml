@@ -1,0 +1,75 @@
+## Version-claims registry — central side of the DEC-1 hybrid registry.
+##
+## Schema: data/schemas.yaml :: version-claims-registry.
+##
+## Each claim entry has:
+##   id:                       (string, prefix vs-)
+##   tool:                     (one of triton/cutlass/cuda/ptx/cute-dsl/cutile/tilelang/tilus/jax-pallas)
+##   claim_valid_for:          (semver range, e.g. ">=3.6")
+##   last_verified_release:    (must match a release name in data/tool-versions.yaml)
+##   last_verified_at:         (ISO date)
+##   applies_to:               (list of file paths or YAML JSON-pointers)
+##   source_ids:               (list; each must resolve to a sources/**/*.md frontmatter id)
+##   dev_branch_sha:           (required when claim_valid_for contains "dev")
+##   notes:                    (optional)
+##
+## Wiki/reference pages and parsed YAML scalars in scope cite an entry by id
+## via their `version_sensitive: <id>` pointer. The validator (task5) enforces
+## that every per-page pointer resolves here AND every entry's `applies_to`
+## paths exist + carry the matching pointer.
+
+claims:
+  - id: vs-triton-3.6-blackwell-tcgen05
+    tool: triton
+    claim_valid_for: ">=3.6"
+    last_verified_release: "3.7.1"
+    last_verified_at: 2026-08-18
+    applies_to:
+      - wiki/languages/triton-blackwell.md
+    source_ids:
+      - doc-triton-3.6-blackwell
+      - pr-vllm-34597
+      - pr-sglang-22079
+      - pr-sglang-21019
+    notes: |
+      Tracks the claim that Triton 3.6 contains Blackwell TMEM, tcgen05,
+      warp-specialization, scaled-MMA, and initial multi-CTA infrastructure.
+      The official release notes establish compiler capability. Retained
+      downstream anchors pr-vllm-34597 and pr-sglang-22079 demonstrate real
+      tl.dot kernels on SM100 paths; pr-sglang-21019 demonstrates an SM100
+      Triton memory-rearrangement kernel but not MMA lowering. These sources
+      do not prove a particular instruction form or performance for every
+      tl.dot shape. The 3.7.0 and 3.7.1 release records were checked on
+      2026-08-18 for continuity; the capability provenance remains the 3.6
+      release where these features were introduced.
+
+  - id: vs-tilelang-0.1-pdl-attribute
+    tool: tilelang
+    claim_valid_for: ">=0.1,<0.2"
+    last_verified_release: "0.1.x"
+    last_verified_at: 2026-09-06
+    applies_to:
+      - wiki/techniques/producer-fusion-pdl.md
+    source_ids:
+      - note-2026-09-06-optimization-campaign-plan
+    notes: |
+      TileLang 0.1.x drives the PDL launch attribute from the presence of
+      `pdl_sync` in the kernel body, rejects `__ldg` in such kernels, and
+      silently drops `__restrict__` from their parameters. Re-verify on the
+      next TileLang release before relying on any of the three.
+
+  - id: vs-cuda-13-ptxas-c7518
+    tool: cuda
+    claim_valid_for: ">=13.0,<14"
+    last_verified_release: "13.1"
+    last_verified_at: 2026-09-06
+    applies_to:
+      - wiki/patterns/serialized-wgmma.md
+      - wiki/techniques/wgmma-rs-fragment-parity.md
+    source_ids:
+      - note-2026-09-06-optimization-campaign-plan
+    notes: |
+      The C7518 serialization diagnostic and the WG.DP wait ptxas inserts
+      for refilled RS fragments were observed with CUDA 13.0 and 13.1
+      toolchains on this cluster. A later ptxas may prove the safety itself;
+      the fix stays correct either way.

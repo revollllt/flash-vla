@@ -29,7 +29,7 @@ reachable only by grep.
 ## Decision
 
 - **Every template declares a grade**, `// CHECK-GRADE: structural |
-  reference`, and `check_templates.py` enforces it in both directions. A
+  reference`, and `check_templates.py` (now `kernel-wiki/scripts/check_templates.py`, the templates being a derived bundle of that skill) enforces it in both directions. A
   `reference` template must carry `main`, a `STATUS` block and the nvcc build
   line that reproduces it. A `structural` template must say so in its header
   and must NOT carry a `STATUS` block — a template quoting numbers no harness
@@ -42,25 +42,25 @@ reachable only by grep.
   exists, so a reader knows what they are entitled to believe.
 - `STATUS` is the one spelling of a template's evidence block; template 40's
   `MEASURED` heading was renamed to it, content unchanged.
-- **`scripts/check_wiki.py` checks the wiki against the rules its own README
-  states**: front matter (the five keys, in order, from a closed vocabulary,
-  `id` equal to the file stem), the sections each entry type requires, a
-  symptom row for every entry, every relative link resolving, and every
-  bracketed citation resolving — machine-constant tags through
-  `hardware-unit-test`, entry ids to live entries — across the templates as
-  well as the wiki. It also fails the project residue the wiki forbids: job
-  ids, project paths, `flash_vla`, "our kernel".
+- **The wiki is checked mechanically.** This decision first shipped as
+  `check_wiki.py` over the five-key front matter; since the
+  [references evidence-discipline note](2026-09-07-kernel-design-references-evidence-discipline.md)
+  the wiki is the `kernel-wiki` skill and its checker is that skill's
+  `validate.py` (KernelWiki's validator plus this repo's rules: `measured`
+  confidence needs benchmark evidence, `note-*` sources resolve to Agent
+  Notes, bracketed machine-constant tags resolve through
+  `hardware-unit-test`, symptoms come from a controlled list, cross-references
+  and relative links resolve). The templates' half of the check,
+  bracketed citations in their headers, is the same validator, since the
+  templates are the wiki's `sm90-templates` bundle.
 - Tag resolution **imports `constants.py` rather than reading its YAML**, so
   `hardware-unit-test` stays the sole authority on the tag namespace. A
   missing sibling skill degrades to a printed note, not a failure: the wiki is
   portable and may travel without it, and a checker that refuses to run is
-  worse than one that says what it skipped.
-- Citations are harvested from **prose only** — front matter stripped (a
-  `tags:` list is a taxonomy, not a citation), fenced blocks stripped (a format
-  example is not a claim), markdown link syntax handled as links, and in a
-  template only comment lines read, so an array subscript is never mistaken for
-  a citation. Classification is by shape: dotted tokens are machine tags,
-  kebab tokens are entry ids, everything else is prose.
+  worse than one that says what it skipped. Both checkers keep this rule.
+- Citations are harvested from **prose only** — fenced blocks stripped, and in
+  a template only comment lines read. Classification is by shape: dotted
+  tokens are machine tags, prefixed kebab tokens are page ids.
 
 ## Alternatives considered
 
@@ -105,16 +105,10 @@ reachable only by grep.
 
 ## Verification
 
-- `python3 .claude/skills/kernel-design/scripts/check_wiki.py` — 25/25 entries
-  pass, 0 corpus-wide failures, 20 tag citations and 6 entry citations
-  resolved. Negative-tested on a throwaway copy of the tree, one fault at a
-  time: an undeclared front-matter key, an `id` not matching the stem, an
-  invalid `confidence`, a renamed `## Move`, an injected job id / project path
-  / "our kernel", an entry deleted from the routing table, a dead relative
-  link, a citation to a non-existent entry, and a machine tag resolving to no
-  constant. Each fails the run; the two legitimate links and every real tag in
-  the same runs continued to pass.
-- `python3 .claude/skills/kernel-design/scripts/check_templates.py` — 23/23
+- The wiki checks now run as `kernel-wiki/scripts/validate.py`; its
+  verification is recorded in the references evidence-discipline note.
+  the validator resolves every tag and page id the templates cite.
+- `python3 .claude/skills/kernel-wiki/scripts/check_templates.py` — 23/23
   pass (5 reference, 18 structural) on the login node, `cuda/13.1`,
   `gcc/13.3`. Grade enforcement negative-tested against the real files: no
   grade, an unknown grade, a structural file carrying a `STATUS` block, and a

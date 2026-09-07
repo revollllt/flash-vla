@@ -1,6 +1,7 @@
 ---
 name: kernel-design
-description: The end-to-end workflow for writing or optimizing a GPU kernel in this repo — a one-screen task contract, a dimension-annotated torch reference, a parity harness, then a candidate loop (implement -> validate -> benchmark -> profile) with recorded evidence and an explicit promotion rule. Two modes, auto (agent-driven, one contract receipt, then autonomous to a stop condition) and human (plan signed off before code, human steers between candidates). Use when asked to write a new kernel, port an op to CUDA or TileLang, fuse ops across a boundary, tune a fixed-shape kernel, or run an optimization pass on an existing kernel.
+description: The end-to-end workflow for writing or optimizing a GPU kernel in this repo — a one-screen task contract, a dimension-annotated torch reference, a parity harness, then a candidate loop (implement -> validate -> benchmark -> profile) with recorded evidence and an explicit promotion rule. Two modes, auto (agent-driven, one contract receipt, then autonomous to a stop condition) and human (plan signed off before code, human steers between candidates). Use when asked to write a new kernel, port an op to CUDA or TileLang, fuse ops across a boundary, tune a fixed-shape kernel, or run an optimization pass on an existing kernel. Do NOT use for a pipeline- or stream-level profile (torch profiler and nsys through gpu-profiler-analysis), a machine constant (hardware-unit-test), a timing claim on its own (benchmark-kernel), or a knowledge question about an sm90 mechanism or symptom (kernel-wiki).
+argument-hint: "[auto|human] <op or fusion region> | --candidate <plan> | --profile <run>"
 ---
 
 # Kernel Design — a contract, a reference, then an evidence loop
@@ -9,9 +10,10 @@ This repo ships fixed-workload targets: one device, one model revision, one
 shape profile (`ARCHITECTURE.md`). A kernel tuned to those exact shapes
 routinely beats a general-purpose library kernel on them, and the fusions this
 pipeline wants have no library form at all — so kernels are written here, in a
-loop built for iteration speed with evidence discipline. Evidence lives
-project-side — in each task's workspace and the Agent Notes; skills, this one
-included, carry only the distilled experience.
+loop built for iteration speed with evidence discipline. This skill is the
+flow only, after kernel-design-agents: the mechanisms, the diagnoses and the
+compilable sm90 templates are the `kernel-wiki` skill; evidence lives
+project-side, in each task's workspace and the Agent Notes.
 
 ## Two modes, one backbone
 
@@ -50,30 +52,12 @@ The user picks the mode per task; the contract records it.
    `backends/`, its check into `eval/` (a shipped kernel) or `lab/` (a candidate), a built-in benchmark
    case, the Agent Note, and the evidence summary copied out of the workspace.
 
-## Profiling — two levels, two default tools
-
-Profiling here asks one of two questions, and each has its own default tool.
-
-- **Pipeline / stream level** — which stage, launch or gap holds the time,
-  whether streams overlap, what the graph timeline looks like: the torch
-  profiler and `nsys`, captured through `gpu-profiler-analysis`. This is
-  the localization that decides which kernel gets a task, and the Profile
-  step the loop returns to after Deploy (`ARCHITECTURE.md`).
-- **Kernel level** — why this kernel is slow, answered by a hardware-counter
-  fact (a stall reason, a pipe utilization, a sector ratio): `ncu`, with
-  `ncu-report` running the pass end to end — the capture plan and
-  collection on an ncu-capable node, the six analysis dimensions, the
-  diagnosis playbook, and a `REPORT.md` under `artifacts/profile/<run>/`
-  that names one bottleneck and ranks the next moves. The symptom it names
-  is the wiki's index.
-
-Inside the candidate loop the question is the second one, so the loop's
-profile is an ncu pass. A timeline cannot say why a kernel is slow, and an
-ncu report cannot say where in the pipeline the time went; neither
-substitutes for the other. A bottleneck asserted without the metric values
-behind it is a hypothesis; the report is what turns it into a finding.
-
 ## Handoffs — this skill sequences, others own
+
+Profiling is two-level, and the rule is stated once in
+`references/loop.md`: pipeline and stream questions go to the torch
+profiler and `nsys`, kernel questions to `ncu`; the loop's profile is an ncu
+pass whose symptom is the wiki's index.
 
 | Need | Go to |
 |---|---|
@@ -81,8 +65,8 @@ behind it is a hypothesis; the report is what turns it into a finding.
 | per-kernel timing, comparing two implementations | `benchmark-kernel` |
 | why a candidate is slow — the kernel-level profile: an ncu pass, capture plan through `REPORT.md`, read into a named bottleneck | `ncu-report` |
 | where the pipeline's time goes — the stream-level profile: stage / launch / graph timeline with the torch profiler or `nsys`; also the capture runner behind an ncu pass | `gpu-profiler-analysis` |
-| choosing the next optimization move | `references/wiki/README.md` — symptom-indexed |
-| how a sm90 mechanism is actually spelled | `references/templates/README.md` — compilable skeletons |
+| choosing the next optimization move, or what a mechanism costs and how it fails | `kernel-wiki` — `scripts/query.py --symptom <s>` from the report's stall reason, then the pattern page's candidate techniques |
+| how a sm90 mechanism is actually spelled | `kernel-wiki` — the sm90 templates bundle (`artifacts/kernels/sm90-templates/variants`, `queries/by-template.md`); compilable, graded skeletons |
 
 ## Files
 
@@ -92,5 +76,3 @@ behind it is a hypothesis; the report is what turns it into a finding.
 | `references/reference-tiers.md` | writing the torch reference |
 | `references/parity.md` | writing or judging a parity harness |
 | `references/loop.md` | running the candidate loop; the promotion checklist |
-| `references/wiki/README.md` | picking the next optimization move |
-| `references/templates/README.md` | writing the kernel: TMA rings, warp roles, wgmma batches, epilogues |

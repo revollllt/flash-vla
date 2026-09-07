@@ -94,7 +94,7 @@ form, so the model could not apply them.
 - `python .claude/skills/hardware-unit-test/scripts/constants.py` run from
   anywhere under the repository finds the moved table; from outside, only a
   standalone copy's own table.
-- `check_wiki.py` treats a missing table as a skipped tag resolution, not an
+- `kernel-wiki/scripts/validate.py` treats a missing table as a skipped tag resolution, not an
   abort.
 - Reports from form "1" are not comparable to form "2"; the version string
   changed.
@@ -102,7 +102,7 @@ form, so the model could not apply them.
 ## Verification
 
 - Login node: `constants.py --validate` on the moved table passes;
-  `check_wiki.py` and `check_templates.py` pass; the three columns computed
+  `validate.py` and `check_templates.py` pass; the three columns computed
   on the declared graphs of both Targets without a device, with the declared
   Pi0.5 ceiling attached to `action_expert_norm_gated_ffn`.
 - GPU, job 598949 (ACD1-1), the first form: `eval.gate` printed the new floor

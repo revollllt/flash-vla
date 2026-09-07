@@ -245,7 +245,7 @@ TMA K/V ring + online softmax，唯一与 vision/backbone attention 同形的 CU
 - promotion 清单：parity 门过；基线配置下的 benchmark 证据；接入 op 表且
   `python -m eval.gate --candidate <plan>` 为 `pass`（blocked 只能重跑）；生产 kernel 加
   `benchmarks/kernels.py` 内置 case；note 更新并把证据摘要抄出工作区。
-- wiki（`references/wiki/README.md`，按"你看到 → 读"索引）条目：bulk-store-publish、
+- wiki（`the `kernel-wiki` skill (`scripts/query.py --symptom`)`，按"你看到 → 读"索引）条目：bulk-store-publish、
   c7518-wgmma-serialization、cluster-barrier-placement、cold-burst-ceiling、
   epilogue-staging-short-k、ext-deepgemm-sm90、ext-fa3-pingpong、ext-flashmla-sm90、
   ext-mpk-megakernel、fusion-economics、layout-production-budget、measure-in-the-graph、
@@ -253,14 +253,14 @@ TMA K/V ring + online softmax，唯一与 vision/backbone attention 同形的 CU
   prefetch-across-dependency、price-the-direction、producer-fusion-pdl、reduction-own-task-kind、
   release-on-retirement、scale-on-register-fragment、serial-epilogue-owner、stacked-floors、
   tma-3d-box-row-major、wgmma-tile-n-floor。
-- 模板（`references/templates/README.md`）：阶梯 01 tma_mbarrier_ring / 02 warp_specialization /
+- 模板（`kernel-wiki/artifacts/kernels/sm90-templates/variants/README.md`）：阶梯 01 tma_mbarrier_ring / 02 warp_specialization /
   03 wgmma_mainloop / 04 epilogue_persistent；原型 10 persistent_ws_gemm、11 fp8_two_level_accum、
   12 attention_online_softmax、13 mla_decode_split_kv、14 grouped_moe_gemm；胶水 30
   rmsnorm_residual、31 swiglu_fp8_quant、32 rope_layouts、33 softmax_rowwise；融合终局 40
   megakernel_interpreter、41 moe_align_finalize、42 hazy_llama_megakernel、43
   mpk_task_graph_runtime、44 megamoe_sm90、45 flag_barrier_megakernel。跑一个：
   `sbatch --export=ALL,TEMPLATE=<file>,RUN_ARGS="..." sbatch/kernel_template.sh`。
-  检查器：`scripts/check_templates.py`（需 venv python）、`scripts/check_wiki.py`。
+  检查器：`scripts/check_templates.py`（需 venv python）、`kernel-wiki/scripts/validate.py`。
 - benchmark-kernel：`python -m benchmarks kernels --target h100/pi05 --plan <plan> --segment <seg>
   --site <site> --timer cupti|cudagraph|events`；默认 cudagraph（48 次内循环成一图，40 次重复）；
   权重循环读取（冷）；一个计时声明必须写明 timer、plan、case、shape、median/std/min、
@@ -559,7 +559,7 @@ note `implemented/architecture/2026-09-xx-gemma-backbone-cuda-backend.md`。
 ## 验证
 
 登录节点（每条 lane 的每个 PR）：`python -m eval.smoke`；`python -c "import flash_vla"`；
-`.venv/bin/python .claude/skills/kernel-design/scripts/check_wiki.py`（新增 wiki 条目时）与
+`.venv/bin/python .claude/skills/kernel-wiki/scripts/validate.py`（新增 wiki 条目时）与
 `check_templates.py`（新增模板时）；`grep -rn "lab/" src eval benchmarks` 为空；组件包不
 import Target（`grep -rn "h100/pi0\b\|h100/pi05" src/flash_vla/hardware/nvidia/h100/<component>`
 为空）。

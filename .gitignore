@@ -26,3 +26,7 @@ instruction.md
 
 # external checkout, not a submodule of this project
 third_party/sglang/
+
+# kernel-wiki carries SHA-pinned upstream bundles; they are content, not
+# build output.
+!.claude/skills/kernel-wiki/artifacts/

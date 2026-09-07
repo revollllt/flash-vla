@@ -1,0 +1,150 @@
+## Provenance of a derived bundle: this repository's own files, whose
+## methods come from the sources named in derived_from. Re-pin after
+## editing with scripts/pin_artifacts.py; validate.py checks the digests.
+origin_url: https://github.com/revollllt/flash-vla
+upstream_repo: revollllt/flash-vla
+license: MIT for these files; each derives its method from the source named in derived_from
+  under that source's licence (Marlin, humming, FlashInfer, MPK Apache-2.0; DeepGEMM,
+  FlashMLA, HazyResearch MIT; CUTLASS BSD-3; learn-cuda no licence file at the revision
+  read, distilled not excerpted)
+retrieved_at: '2026-09-07'
+asset_mode: derived
+derived_from:
+- doc-ptx-isa-sm90
+- doc-cutlass-hopper
+- blog-deepgemm
+- blog-flashmla
+- doc-flash-attention-3
+- blog-marlin
+- blog-humming
+- blog-flashinfer-glue-kernels
+- blog-hazyresearch-megakernels
+- doc-mirage-mpk
+- blog-learn-cuda-megakernel
+generated_by: scripts/pin_artifacts.py
+notes: 'The sm90 template library: twenty-three compilable, graded templates over
+
+  three shared headers, distilled from the sources above and written for
+
+  H100 (sm_90a). scripts/check_templates.py compiles each and asserts the
+
+  PTX its header declares; a `reference` template also runs, checks itself
+
+  and carries a STATUS block. Wiki pages excerpt these files by name and
+
+  cite STATUS blocks as performance_claims; validate.py checks that every
+
+  excerpt appears verbatim in the named file and that every bracketed
+
+  citation in a header resolves. Re-pin after any edit.
+
+  '
+files:
+- local_path: 01_tma_mbarrier_ring.cu
+  role: derived-source
+  mode: derived
+  sha256: c34efa9e81f34f3f83b26382604b75e566fc2ec579087a7cf47bdfd9e1e312f7
+- local_path: 02_warp_specialization.cu
+  role: derived-source
+  mode: derived
+  sha256: 03370ab6b458b5e70cae675d7cdcc273907e9bfdf823323664e26ffe4c87f7c9
+- local_path: 03_wgmma_mainloop.cu
+  role: derived-source
+  mode: derived
+  sha256: 352bdd4a03b11bc0635a2beefc6b3c194e255fb03c64418135852d89a24a99fd
+- local_path: 04_epilogue_persistent.cu
+  role: derived-source
+  mode: derived
+  sha256: 1ba1d91d79d1236bc5baec464452ed918fa7c3e5c37de5ba05a612f736e78706
+- local_path: 10_persistent_ws_gemm.cu
+  role: derived-source
+  mode: derived
+  sha256: a0ba4e005c18c870fae8c4b66590f6fa53966bfbf454c83e7279ce889609a2de
+- local_path: 11_fp8_two_level_accum.cu
+  role: derived-source
+  mode: derived
+  sha256: 835c218268b87061112e9c57963e785e416d8bb3d0a85c5d99b09a0b7ec1a3b4
+- local_path: 12_attention_online_softmax.cu
+  role: derived-source
+  mode: derived
+  sha256: 86e813717605ca90b0f88051b6e1ba7bafb7ce8dd3fc98fbca70305a0d355b5c
+- local_path: 13_mla_decode_split_kv.cu
+  role: derived-source
+  mode: derived
+  sha256: 871d4ab01227a184fccc936efac83fd3bbde4d03204c1e9fb761d60719189606
+- local_path: 14_grouped_moe_gemm.cu
+  role: derived-source
+  mode: derived
+  sha256: ceb4fbfc15b1231d1109b466baf83f1fda855036e0322140535b9e7c794e8047
+- local_path: 20_marlin_w4a16.cu
+  role: derived-source
+  mode: derived
+  sha256: e1678a6fe3a152a0e0795ac790f6034e1f08b7a5113794caf477622573d663b7
+- local_path: 21_fp4_block_scaled_gemm.cu
+  role: derived-source
+  mode: derived
+  sha256: c9f3b9100572bc7c0046184a7d2992a606bf58cbfb7ec6808104344786c407a0
+- local_path: 22_w4a8_gemm.cu
+  role: derived-source
+  mode: derived
+  sha256: 4d87d0a2263d72f96e5b10ab39282636476519a55e25c1d72baa80a74f1ce9bc
+- local_path: 23_offline_weight_repack.cu
+  role: derived-source
+  mode: derived
+  sha256: 67ddcc5e861376ac3357e1e21f1cca463b64299d8a722b1a6c6b217c5b3f205b
+- local_path: 30_rmsnorm_residual.cu
+  role: derived-source
+  mode: derived
+  sha256: 2f37795556c3dda15983c780b2c68fb4cec4cf3eaf566e797c4d6d8212e49833
+- local_path: 31_swiglu_fp8_quant.cu
+  role: derived-source
+  mode: derived
+  sha256: ba670b4f73a9edc56236f52cd3efab60b45b6e2bdec07180d852e8e7a859c684
+- local_path: 32_rope_layouts.cu
+  role: derived-source
+  mode: derived
+  sha256: d13c91c2681edacdbce2e6e3c968f625efddbc604cbd0a97da2cba37db8e2053
+- local_path: 33_softmax_rowwise.cu
+  role: derived-source
+  mode: derived
+  sha256: 022eb1f6276b013d4b0ff6c4012293e06d1e9036cf33d9ece51a7ecc4b9fa0ac
+- local_path: 40_megakernel_interpreter.cu
+  role: derived-source
+  mode: derived
+  sha256: 3595640cf3538a2b3c74f676ca446165e13da8e3d16dca93e35fa008fa78e7ae
+- local_path: 41_moe_align_finalize.cu
+  role: derived-source
+  mode: derived
+  sha256: eb32d2fd8d137dcf1b582a04ce1a14d73b903fa891436f11ef6c3799a1e21881
+- local_path: 42_hazy_llama_megakernel.cu
+  role: derived-source
+  mode: derived
+  sha256: 915318d2ae94030bcb9f1e4eaccdde0769d381b53a6361d861283c48ef1f5811
+- local_path: 43_mpk_task_graph_runtime.cu
+  role: derived-source
+  mode: derived
+  sha256: c216261ed4ad2643319014010fa0d058d08615a364525df4a2a7c0f0a372b528
+- local_path: 44_megamoe_sm90.cu
+  role: derived-source
+  mode: derived
+  sha256: fc234705da5e0f8bb7781cb5a2b02251f0a8f492ce158f5ef21747fd0e7614cd
+- local_path: 45_flag_barrier_megakernel.cu
+  role: derived-source
+  mode: derived
+  sha256: 6e1169a6b0489e964d45e8d3bb3b1b05ec4240dfb0fd2a41b4c7ffab22876253
+- local_path: README.md
+  role: approach-notes
+  mode: derived
+  sha256: 800492164a684f63fa7d108416b2131a1795b54f3c23e23cbe73ea91faf33527
+- local_path: elementwise_sm90.cuh
+  role: derived-source
+  mode: derived
+  sha256: fd5be8c35c261d5693bf211e39f0b093e8fa80f75b56bfd4cf55f068b9d0bf4f
+- local_path: quant_sm90.cuh
+  role: derived-source
+  mode: derived
+  sha256: 6c967b72d01bd146121dbdaaabba9af85dc5131f3b9050c0e3c77c87420fdf6c
+- local_path: sm90_common.cuh
+  role: derived-source
+  mode: derived
+  sha256: 57c98e1a663dfb627ec8ef763f1d48866942088eaf66643d407f18109be9a6ae

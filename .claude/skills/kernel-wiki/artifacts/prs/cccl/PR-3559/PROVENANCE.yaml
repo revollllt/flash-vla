@@ -1,0 +1,44 @@
+origin_url: https://github.com/NVIDIA/cccl/pull/3559
+upstream_repo: NVIDIA/cccl
+upstream_sha: 25523da2
+license: inherits-from-upstream
+retrieved_at: '2026-05-23'
+asset_mode: verbatim
+size_cap_truncated: false
+generated_by: scripts/fetch_pr_diff.py
+source_pr_id: pr-cccl-3559
+files:
+- local_path: diff.patch
+  role: pr-diff
+  mode: upstream-patch
+  sha256: 468d826a12d57150db0258d5461b0e7a46ea190c78a6c9f82884e291baff1715
+- local_path: key-files/cub/cub/device/device_scan.cuh
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cub/cub/device/device_scan.cuh
+  sha256: ab5215dbb379c73357cbf33a2ca6f95ab24f0e84719102c3d29f359f96d244d7
+- local_path: key-files/cub/cub/device/dispatch/dispatch_scan.cuh
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cub/cub/device/dispatch/dispatch_scan.cuh
+  sha256: ce2575dca4e395379757b330cd1b0762f86b65d4c90b38984f714e7a17c3c9ea
+- local_path: key-files/cub/cub/device/dispatch/tuning/tuning_scan.cuh
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cub/cub/device/dispatch/tuning/tuning_scan.cuh
+  sha256: 4bac447023fd22b5fd4289c8234bd22047032febc3bab98a5c4bb2eb496d0752
+- local_path: key-files/thrust/testing/scan.cu
+  role: upstream-file
+  mode: verbatim
+  upstream_path: thrust/testing/scan.cu
+  sha256: d56cc96f3f90223826208fd96a55a8432e0c1950eb058a802fb6112fac75c538
+- local_path: key-files/thrust/thrust/system/cuda/detail/async/inclusive_scan.h
+  role: upstream-file
+  mode: verbatim
+  upstream_path: thrust/thrust/system/cuda/detail/async/inclusive_scan.h
+  sha256: c7b01281fba119d6a82ed29144f48002a87fd22f34849fc073bca97e9093c0a4
+- local_path: key-files/thrust/thrust/system/cuda/detail/scan.h
+  role: upstream-file
+  mode: verbatim
+  upstream_path: thrust/thrust/system/cuda/detail/scan.h
+  sha256: 67a26b403b2c100fe4818c92125ecae5ade53611722bfc2514a77f8d3beaffd0

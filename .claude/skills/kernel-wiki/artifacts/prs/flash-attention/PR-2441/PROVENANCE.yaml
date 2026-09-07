@@ -1,0 +1,59 @@
+origin_url: https://github.com/Dao-AILab/flash-attention/pull/2441
+upstream_repo: Dao-AILab/flash-attention
+upstream_sha: f219c89c
+license: inherits-from-upstream
+retrieved_at: '2026-05-23'
+asset_mode: verbatim
+size_cap_truncated: false
+generated_by: scripts/fetch_pr_diff.py
+source_pr_id: pr-flash-attention-2441
+files:
+- local_path: diff.patch
+  role: pr-diff
+  mode: upstream-patch
+  sha256: 4525d7f9af76740692474ffc0266fe9cf72f894ce753fd9d18b70771c96b6810
+- local_path: key-files/flash_attn/cute/cute_dsl_utils.py
+  role: upstream-file
+  mode: verbatim
+  upstream_path: flash_attn/cute/cute_dsl_utils.py
+  sha256: 9976bbf8d27046083bdfe2629b096e8f558b9921732ce9c6f3997b2cd3679424
+- local_path: key-files/flash_attn/cute/flash_fwd_mla_sm100.py
+  role: upstream-file
+  mode: verbatim
+  upstream_path: flash_attn/cute/flash_fwd_mla_sm100.py
+  sha256: f6512b25d901463cf62433b745e87ead30443f295ce313c03e363c886ece296e
+- local_path: key-files/flash_attn/cute/interface.py
+  role: upstream-file
+  mode: verbatim
+  upstream_path: flash_attn/cute/interface.py
+  sha256: b5508696185cc904d34381e507ea798316e3860f03e2cf1e9e17ca2327087a8b
+- local_path: key-files/flash_attn/cute/mask.py
+  role: upstream-file
+  mode: verbatim
+  upstream_path: flash_attn/cute/mask.py
+  sha256: 73a42150f0fc02b861243b412265b7944eb8000c12e566da7429a35b82bc6d61
+- local_path: key-files/flash_attn/cute/named_barrier.py
+  role: upstream-file
+  mode: verbatim
+  upstream_path: flash_attn/cute/named_barrier.py
+  sha256: e9e2680224af6ba8260e36aae4bb2fdcf589b75bd0d07050df7c4c59e1c716dd
+- local_path: key-files/flash_attn/cute/softmax.py
+  role: upstream-file
+  mode: verbatim
+  upstream_path: flash_attn/cute/softmax.py
+  sha256: 8541614a857f9f05464f023df3de493cc3876cb15956c0a3265f74aac330a007
+- local_path: key-files/flash_attn/cute/testing.py
+  role: upstream-file
+  mode: verbatim
+  upstream_path: flash_attn/cute/testing.py
+  sha256: 2292b589dc04d2a6822c65aab3a588faed8c7a307f54e1348500519ae130796f
+- local_path: key-files/flash_attn/cute/tile_scheduler.py
+  role: upstream-file
+  mode: verbatim
+  upstream_path: flash_attn/cute/tile_scheduler.py
+  sha256: d30487cdbec42b021b7da539a50972b6b229d10ae0ca4a802570ff9ea000ffe9
+- local_path: key-files/flash_attn/cute/topk_gather_kv.py
+  role: upstream-file
+  mode: verbatim
+  upstream_path: flash_attn/cute/topk_gather_kv.py
+  sha256: 58b10c0f75f789b80a163e976c4addd643665fc3b1498249da6e962fec673afb

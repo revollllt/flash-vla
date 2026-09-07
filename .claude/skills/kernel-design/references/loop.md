@@ -43,13 +43,30 @@ value of the ledger.
 - Profiling has two levels. Kernel level — why this candidate is slow — is
   `ncu` first: `ncu-report` runs the pass (capture on an ncu-capable node,
   the six dimensions, the playbook, `REPORT.md`) and names the symptom;
-  `wiki/README.md` maps the symptom to the move. Pipeline / stream level —
+  `kernel-wiki` maps the symptom to the move (below). Pipeline / stream level —
   which stage, launch, gap or overlap — is the torch profiler and `nsys`
   first, through `gpu-profiler-analysis`; it localizes before a task exists
   and is the Profile step after Deploy, and it does not replace an ncu
   report inside the loop. A bottleneck without metric values behind it is a
   hypothesis, not a finding.
 - Never edit kernel source while a compile or profile job is in flight.
+
+## The knowledge step, and what the ledger must say
+
+The knowledge step is a query, not a reading list: `kernel-wiki`'s Path 1
+(`query.py --symptom <stall reason or rule from REPORT.md>`), then the
+pattern page's candidate techniques, then the template the technique names
+(`queries/by-template.md` is the inverse map). How an answer cites pages,
+constants and numbers is that skill's Output Pattern; the ledger line adds
+what this loop owns:
+
+- `thesis` names the page id it acts on (`technique-...`, `pattern-...`),
+  and says so when that page's `confidence` is `inferred` or `experimental`;
+- a quoted number cites a `hardware-unit-test` tag, a `STATUS` block or a
+  `performance_claims` record, never a bare figure, and a `source-reported`
+  number is re-measured before it prices anything;
+- a result carries gpu, dtype, shape, metric, value and source, so promotion
+  can copy it into a page as a `performance_claims` row.
 
 ## Stop conditions
 

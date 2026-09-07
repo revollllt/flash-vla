@@ -172,7 +172,8 @@ when every call site is within the registry's headroom of its ceiling.
 
 | skill | owns |
 |---|---|
-| `kernel-design` | the entry point for kernel work: contract, reference, parity, candidate loop, promotion; the sm90 wiki and templates |
+| `kernel-design` | the entry point for kernel work: contract, reference, parity, candidate loop, promotion |
+| `kernel-wiki` | the queryable sm90 knowledge base built on KernelWiki: symptom-indexed patterns, techniques, hardware and kernel pages with sources, confidence and reproducibility, and the compile-checked sm90 templates bundle |
 | `benchmark-kernel` | per-kernel timing and the amortized in-graph regime |
 | `hardware-unit-test` | the measured constants under every ceiling, and their probes |
 | `gpu-profiler-analysis` | Torch, Nsight Systems and Nsight Compute capture |

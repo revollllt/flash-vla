@@ -26,7 +26,7 @@ Most under-performing kernels are slow for exactly one reason that ncu names in 
 | Latency numbers | `benchmark-kernel` | ncu replays serialize and perturb; on a 10–30 µs kernel the distortion is most of the number. NCU explains *why*, CUPTI says *how fast*. |
 | Machine ceilings | `hardware-unit-test` | NCU's speed-of-light is the datasheet frame; the reachable ceiling on this machine is a tagged measured constant (`scripts/constants.py --tag <t>`). |
 | Trace / timeline capture (nsys, torch) | `gpu-profiler-analysis` | Its runner also drives `ncu` (`--backend ncu`) and records the manifest; this skill decides *what* to capture and reads the result. |
-| Next optimization move | `kernel-design` (`references/wiki/README.md`) | The wiki is symptom-indexed; this skill produces the symptom. |
+| Next optimization move | `kernel-wiki` (`scripts/query.py --symptom <s>`) | The wiki is symptom-indexed in this skill's stall-reason vocabulary; this skill produces the symptom. |
 
 ---
 

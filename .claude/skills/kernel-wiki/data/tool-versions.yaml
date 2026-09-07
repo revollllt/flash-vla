@@ -1,0 +1,242 @@
+## Selected tool releases of record for the version-sensitive registry.
+## KernelWiki's snapshot (2026-08-18) plus the entries this repository's
+## claims cite. Schema: data/schemas.yaml :: tool-versions-snapshot.
+
+tools:
+- tool: triton
+  upstream_checked_at: '2026-08-18'
+  releases:
+  - name: 3.7.1
+    released_at: '2026-06-18'
+    channel: stable
+    release_notes_url: https://github.com/triton-lang/triton/releases/tag/v3.7.1
+    evidence_source_ids:
+    - doc-triton-3.6-blackwell
+    notes: 'Current stable release at the 2026-08-18 audit cutoff. GitHub''s
+
+      published_at timestamp is 2026-06-18T14:38:51Z. The Blackwell
+
+      capability boundary remains anchored to the 3.6 introduction notes;
+
+      3.7.1 was reviewed for continuity, not as a new provenance source.
+
+      '
+  - name: 3.7.0
+    released_at: '2026-05-07'
+    channel: stable
+    release_notes_url: https://github.com/triton-lang/triton/releases/tag/v3.7.0
+    evidence_source_ids:
+    - doc-triton-3.6-blackwell
+    notes: 'GitHub''s published_at timestamp is 2026-05-07T22:19:06Z. Retained as
+
+      a release-of-record between the 3.6 introduction and current 3.7.1.
+
+      '
+  - name: 3.6.0
+    released_at: '2026-01-21'
+    channel: stable
+    release_notes_url: https://github.com/triton-lang/triton/releases/tag/v3.6.0
+    evidence_source_ids:
+    - doc-triton-3.6-blackwell
+    - pr-sglang-22079
+    - pr-sglang-21019
+    notes: 'First Triton release with native Blackwell tcgen05 + TMEM lowering
+
+      infrastructure. Strongest user-visible Blackwell paths: descriptor/TMA
+
+      warp-specialized matmul, Gluon multi-CTA / 2CTA, tl.dot_scaled / block
+
+      scaled. See data/triton-3.6-evidence.md for the per-pathway breakdown.
+
+      '
+  - name: 3.5.1
+    released_at: '2025-11-12'
+    channel: stable
+    release_notes_url: https://github.com/triton-lang/triton/releases/tag/v3.5.1
+    notes: 'Last 3.5.x patch before the 3.6 Blackwell story. Pages with
+
+      version_sensitive claims valid for ">=3.5,<3.6" should pin to this
+
+      release.
+
+      '
+- tool: cutlass
+  upstream_checked_at: '2026-08-18'
+  releases:
+  - name: 4.7.0
+    released_at: '2026-08-13'
+    channel: stable
+    release_notes_url: https://github.com/NVIDIA/cutlass/releases/tag/v4.7.0
+    evidence_source_ids:
+    - doc-cutlass-changelog-sm100
+    notes: 'Current stable release at the 2026-08-18 audit cutoff. The date is
+
+      GitHub''s published_at date; CUTLASS''s checked-in changelog labels the
+
+      release 2026-08-04.
+
+      '
+  - name: 4.6.2
+    released_at: '2026-08-08'
+    channel: stable
+    release_notes_url: https://github.com/NVIDIA/cutlass/releases/tag/v4.6.2
+    evidence_source_ids:
+    - doc-cutlass-changelog-sm100
+    notes: GitHub published_at date from the audited release-list receipt.
+  - name: 4.6.1
+    released_at: '2026-07-15'
+    channel: stable
+    release_notes_url: https://github.com/NVIDIA/cutlass/releases/tag/v4.6.1
+    evidence_source_ids:
+    - doc-cutlass-changelog-sm100
+    notes: GitHub published_at date from the audited release-list receipt.
+  - name: 4.6.0
+    released_at: '2026-07-13'
+    channel: stable
+    release_notes_url: https://github.com/NVIDIA/cutlass/releases/tag/v4.6.0
+    evidence_source_ids:
+    - doc-cutlass-changelog-sm100
+    notes: 'First 4.6 minor release. The date is GitHub''s published_at date;
+
+      CUTLASS''s checked-in changelog labels the release 2026-07-01.
+
+      '
+  - name: 4.5.0
+    released_at: '2026-05-13'
+    channel: stable
+    release_notes_url: https://github.com/NVIDIA/cutlass/releases/tag/v4.5.0
+    evidence_source_ids:
+    - doc-cutlass-changelog-sm100
+    notes: 'The date is GitHub''s published_at date; CUTLASS''s checked-in
+
+      changelog labels the release 2026-05-01.
+
+      '
+  - name: 4.4.2
+    released_at: '2026-03-17'
+    channel: stable
+    release_notes_url: https://github.com/NVIDIA/cutlass/releases/tag/v4.4.2
+    evidence_source_ids:
+    - doc-cutlass-changelog-sm100
+    notes: 'The date is GitHub''s published_at date; CUTLASS''s checked-in
+
+      changelog labels the release 2026-03-13.
+
+      '
+  - name: 4.4.0
+    released_at: '2026-02-26'
+    channel: stable
+    release_notes_url: https://github.com/NVIDIA/cutlass/releases/tag/v4.4.0
+    evidence_source_ids:
+    - doc-cutlass-changelog-sm100
+    notes: 'The date is GitHub''s published_at date; CUTLASS''s checked-in
+
+      changelog labels the release 2026-02-14.
+
+      '
+  - name: 4.3.0
+    released_at: '2025-11-24'
+    channel: stable
+    release_notes_url: https://github.com/NVIDIA/cutlass/releases/tag/v4.3.0
+    evidence_source_ids:
+    - doc-cutlass-changelog-sm100
+    notes: 'The date is GitHub''s published_at date; CUTLASS''s checked-in
+
+      changelog labels the release 2025-11-21.
+
+      '
+  - name: 3.8.0
+    released_at: '2025-02-21'
+    channel: stable
+    release_notes_url: https://github.com/NVIDIA/cutlass/releases/tag/v3.8.0
+    evidence_source_ids:
+    - doc-cutlass-changelog-sm100
+    notes: 'First CUTLASS release with Blackwell support. The date is GitHub''s
+
+      published_at date; CUTLASS''s checked-in changelog labels the release
+
+      2025-01-25.
+
+      '
+- tool: cuda
+  upstream_checked_at: '2026-08-18'
+  releases:
+  - name: 13.3 Update 1
+    released_at: '2026-06-29'
+    channel: stable
+    release_notes_url: https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/
+    evidence_source_ids:
+    - doc-cuda-13
+    notes: 'Current stable toolkit update at the 2026-08-18 audit cutoff. NVIDIA''s
+
+      Nsight Compute 2026.2.1 history identifies 2026-06-29 as the CUDA
+
+      Toolkit 13.3 Update 1 release date.
+
+      '
+  - name: '13.3'
+    released_at: '2026-05-26'
+    channel: stable
+    release_notes_url: https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/
+    evidence_source_ids:
+    - doc-cuda-13
+    - doc-cutile-python-dsl
+    notes: 'Base 13.3 release. NVIDIA''s announcement is dated 2026-05-26. CUDA
+
+      Tile C++, CompileIQ, and CUDA Python 1.0 are release highlights.
+
+      '
+  - name: '13.2'
+    released_at: '2026-03-09'
+    channel: stable
+    release_notes_url: https://developer.nvidia.com/blog/cuda-13-2-introduces-enhanced-cuda-tile-support-and-new-python-features/
+    evidence_source_ids:
+    - doc-cutile-python-dsl
+    notes: 'NVIDIA''s release announcement is dated 2026-03-09. It expanded CUDA
+
+      Tile support and corresponds to cuTile Python 1.2-era features.
+
+      '
+  - name: '13.1'
+    released_at: '2025-12-04'
+    channel: stable
+    release_notes_url: https://developer.nvidia.com/blog/nvidia-cuda-13-1-powers-next-gen-gpu-programming-with-nvidia-cuda-tile-and-performance-gains/
+    evidence_source_ids:
+    - doc-cuda-13
+    - doc-cutile-python-dsl
+    notes: 'Introduced cuTile Python DSL (see sources/docs/cutile-python-dsl.md).
+
+      NVIDIA''s announcement is dated 2025-12-04.
+
+      '
+  - name: '13.0'
+    released_at: '2025-08-04'
+    channel: stable
+    release_notes_url: https://developer.nvidia.com/blog/whats-new-and-important-in-cuda-toolkit-13-0/
+    evidence_source_ids:
+    - doc-cuda-13
+    notes: 'NVIDIA''s CUDA 13.0 announcement is dated 2025-08-04.
+
+      '
+  - name: '12.8'
+    released_at: '2025-01-23'
+    channel: stable
+    release_notes_url: https://docs.nvidia.com/cuda/archive/12.8.0/cuda-toolkit-release-notes/index.html
+    evidence_source_ids:
+    - doc-cuda-13
+    - pr-pytorch-150705
+    notes: 'First CUDA toolkit with full Blackwell/sm100 support. Required for
+
+      PyTorch''s vec128 vectorized loads (pr-pytorch-150705). NVIDIA''s
+
+      developer-tools archive lists 2025-01-23.
+
+      '
+- tool: tilelang
+  upstream_checked_at: '2026-09-06'
+  releases:
+  - name: 0.1.x
+    released_at: '2026-09-06'
+    channel: stable
+    notes: The TileLang line pinned by this repository's build; the exact patch level
+      is in the repository's environment file.

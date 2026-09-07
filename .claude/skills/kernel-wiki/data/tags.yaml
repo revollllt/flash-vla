@@ -1,0 +1,215 @@
+## Controlled Vocabulary — Tags
+## All tags used in source and wiki frontmatter must appear here.
+## The validator (scripts/validate.py) rejects unknown tags.
+
+architectures:
+  - blackwell
+  - hopper
+  - ampere
+  - ada
+  - turing
+  - sm75
+  - sm100
+  - sm100a
+  - sm100f
+  - sm103
+  - sm103a
+  - sm103f
+  - sm110
+  - sm110a
+  - sm110f
+  - sm120a
+  - sm120f
+  - sm121
+  - sm121a
+  - sm121f
+  - sm90
+  - sm90a
+  - sm120
+  - sm80
+  - sm86
+  - sm87
+  - sm88
+  - sm89
+
+hardware_features:
+  - tcgen05
+  - tmem
+  - tma
+  - clc
+  - 2sm-cooperative
+  - pdl
+  - gdc
+  - nvfp4
+  - fp8
+  - fp6
+  - fp4
+  - block-scale
+  - wgmma
+  - cluster
+  - mbarrier
+  - ldmatrix
+  - stmatrix
+  - dsmem
+  - cp-async-bulk
+  - mma-sync
+  - setmaxnreg
+  - cache-hint
+  - griddepcontrol
+
+techniques:
+  - warp-specialization
+  - persistent-kernel
+  - swizzling
+  - pipeline-stages
+  - double-buffering
+  - register-reuse
+  - shared-memory-optimization
+  - tma-multicast
+  - epilogue-fusion
+  - tile-scheduling
+  - communication-overlap
+  - software-exp
+  - ping-pong-scheduling
+  - conditional-rescaling
+  - loop-unrolling
+  - vectorized-loads
+  - cache-policy
+  - register-budgeting
+  - per-k-specialization
+  - data-reuse
+  - kernel-fusion
+  - chunk-parallelism
+  - fine-grained-quantization
+  - cuda-core-promotion
+  - jit-compilation
+  - top-k-selection
+  - parallel-scan
+  - stream-k
+  - task-loop
+  - split-k
+  - megakernel
+  - measurement
+  - ablation
+  - fusion-pricing
+  - bulk-store
+  - proxy-fence
+  - register-fragments
+  - barrier-placement
+  - weight-streaming
+  - epilogue-staging
+  - frame-level-dependency
+  - static-scheduling
+  - flag-barrier
+  - layout-production
+  - pdl-placement
+  - producer-fusion
+  - online-softmax
+  - tma-box-geometry
+
+kernel_types:
+  - gemm
+  - attention
+  - moe
+  - sparse-attention
+  - gemv
+  - grouped-gemm
+  - gated-delta-net
+  - fused-kernel
+  - decode
+  - prefill
+  - quantization
+  - flash-attention
+  - mla
+  - linear-attention
+  - gated-dual-gemm
+  - batched-gemv
+  - topk
+  - scan
+  - reduction
+  - sort
+
+languages:
+  - cuda-cpp
+  - cute-dsl
+  - triton
+  - tilelang
+  - cutile
+  - ptx
+  - python
+  - jax-pallas
+
+confidence:
+  - verified
+  - source-reported
+  - inferred
+  - experimental
+  - measured
+
+reproducibility:
+  - concept
+  - pseudocode
+  - snippet
+  - runnable
+  - benchmarked
+
+source_categories:
+  - official-doc
+  - upstream-code
+  - paper
+  - benchmark-blog
+  - contest-report
+  - community-note
+
+evidence_types:
+  - official-doc
+  - upstream-code
+  - paper
+  - benchmark
+  - reproduction
+  - inference
+
+## Symptoms are the vocabulary of `symptoms:` on pattern pages. The first
+## group is KernelWiki's; the second is spelled after the Nsight Compute sm90
+## stall reasons and rule names the ncu-report skill emits, so a report and
+## the by-problem index share one language.
+symptoms:
+  - low-sm-utilization
+  - tail-effect
+  - load-imbalance
+  - memory-bound
+  - low-compute-utilization
+  - high-memory-throughput
+  - compute-bound
+  - low-tensor-core-utilization
+  - pipeline-stalls
+  - register-pressure
+  - low-occupancy
+  - register-spilling
+  - wave-quantization
+  - stall-gmma
+  - stall-long-scoreboard
+  - stall-barrier
+  - stall-membar
+  - stall-mio-throttle
+  - stall-lg-throttle
+  - stall-no-instruction
+  - no-eligible-warp
+  - smem-bandwidth-bound
+  - latency-bound
+  - launch-bound
+  - epilogue-bound
+  - dram-burst-ramp
+  - weight-stream-below-floor
+  - serialized-wgmma
+  - tile-sweep-flat
+  - tile-widening-regression
+  - fusion-regression
+  - pdl-chain-regression
+  - layout-production-cost
+  - isolated-vs-in-graph-mismatch
+  - measurement-artifact
+  - heavy-tail-timing
+  - null-ablation
+  - one-sided-gradient
+  - stacked-floors

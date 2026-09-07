@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build one kernel-design template on a GPU node and run its built-in harness.
+# Build one sm90 template (kernel-wiki bundle) on a GPU node and run its built-in harness.
 #
 #   sbatch --export=ALL,TEMPLATE=45_flag_barrier_megakernel.cu \
 #          [,DEFINES="-DFOO=1"][,RUN_ARGS="quick"][,RUN_SEQ="a=1;b=2"][,RUN_TIMEOUT=300] \
@@ -34,7 +34,7 @@ if [[ -n "${_DRV}" && "${_DRV%%.*}" -ge 580 ]]; then
     export LD_LIBRARY_PATH
 fi
 
-TPL_DIR="${REPO_DIR}/.claude/skills/kernel-design/references/templates"
+TPL_DIR="${REPO_DIR}/.claude/skills/kernel-wiki/artifacts/kernels/sm90-templates/variants"
 OUT_DIR="${REPO_DIR}/artifacts/ktasks/templates/runs"
 mkdir -p "${OUT_DIR}"
 : "${TEMPLATE:?set TEMPLATE=<file.cu>}"

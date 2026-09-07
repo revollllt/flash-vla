@@ -1,0 +1,99 @@
+origin_url: https://github.com/NVIDIA/TensorRT-LLM/pull/13340
+upstream_repo: NVIDIA/TensorRT-LLM
+upstream_sha: 897c4bff
+license: inherits-from-upstream
+retrieved_at: '2026-05-23'
+asset_mode: verbatim
+size_cap_truncated: false
+generated_by: scripts/fetch_pr_diff.py
+source_pr_id: pr-TensorRT-LLM-13340
+files:
+- local_path: diff.patch
+  role: pr-diff
+  mode: upstream-patch
+  sha256: 7bec6612c63b3d02a20324118b8a47df64439fa8639408a30bc78c5f888583a5
+- local_path: key-files/cpp/include/tensorrt_llm/batch_manager/kvCacheManager.h
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/include/tensorrt_llm/batch_manager/kvCacheManager.h
+  sha256: dd4707f8166cf47b22095aceb1a96644a92cbaef3985dc9e17ef0e93f3eb833a
+- local_path: key-files/cpp/include/tensorrt_llm/executor/dataTransceiverState.h
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/include/tensorrt_llm/executor/dataTransceiverState.h
+  sha256: 036a83f6013d9eb5fc8adff6155efa968b41bc8375e0db35473054b28db8e7da
+- local_path: key-files/cpp/tensorrt_llm/batch_manager/cacheTransceiver.cpp
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/tensorrt_llm/batch_manager/cacheTransceiver.cpp
+  sha256: 22ffac7c632341c421394d0e1c04d87fe33bcb04ab8f4158afbc7182df54c31d
+- local_path: key-files/cpp/tensorrt_llm/batch_manager/kvCacheManager.cpp
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/tensorrt_llm/batch_manager/kvCacheManager.cpp
+  sha256: 0a8bac09bcad0aeec841110c22ab01ebb79f00db04fb00ff573b99880fbbabc8
+- local_path: key-files/cpp/tensorrt_llm/executor/cache_transmission/cacheSplitConcat.cu
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/tensorrt_llm/executor/cache_transmission/cacheSplitConcat.cu
+  sha256: a87070cbd96206db955bde32dd413de43d5433408291cd4caaf474d7148b7960
+- local_path: key-files/cpp/tensorrt_llm/executor/serialization.cpp
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/tensorrt_llm/executor/serialization.cpp
+  sha256: 2fd8db322930fe9d61851b8ac211daae47ec41bbe3fbd49e8b11307feee4bde3
+- local_path: key-files/cpp/tensorrt_llm/kernels/fusedCatFp4.cu
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/tensorrt_llm/kernels/fusedCatFp4.cu
+  sha256: 567dcac6fdc3a9a55ab9b951912931faa9110e91f3040f76d548dd90aa0d5b19
+- local_path: key-files/cpp/tensorrt_llm/kernels/fusedCatFp4.h
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/tensorrt_llm/kernels/fusedCatFp4.h
+  sha256: 5d2c6600b8d8244dcab014ca15d966f730ba5fcbe721a04ed4804462ec619938
+- local_path: key-files/cpp/tensorrt_llm/kernels/indexerKCacheGather.cu
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/tensorrt_llm/kernels/indexerKCacheGather.cu
+  sha256: 6ce99cbf1dfcfac413008de5510b3f941e3c129b18b6f0096a18c91fed71415d
+- local_path: key-files/cpp/tensorrt_llm/kernels/indexerKCacheScatter.cu
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/tensorrt_llm/kernels/indexerKCacheScatter.cu
+  sha256: 3f87a141ce9a97c3bd6a1e49aba61012a7bacbb4f77a35b66f89cbaef706b82f
+- local_path: key-files/cpp/tensorrt_llm/nanobind/batch_manager/kvCacheManager.cpp
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/tensorrt_llm/nanobind/batch_manager/kvCacheManager.cpp
+  sha256: 2f9abcc09685c3d65bd3995183c44417647b50cabece946813ec09954fab34b7
+- local_path: key-files/cpp/tensorrt_llm/thop/IndexerKCacheGatherOp.cpp
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/tensorrt_llm/thop/IndexerKCacheGatherOp.cpp
+  sha256: 939f4db6847640775885c2afcf56395c046aa93807262515c3fdc25beb522b55
+- local_path: key-files/cpp/tensorrt_llm/thop/IndexerKCacheScatterOp.cpp
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/tensorrt_llm/thop/IndexerKCacheScatterOp.cpp
+  sha256: 201d3c0109908e681f5f8a2f3c36c4e5335e93e3c26b4812acb28e8d94a78fb6
+- local_path: key-files/cpp/tensorrt_llm/thop/fusedCatFp4Op.cpp
+  role: upstream-file
+  mode: verbatim
+  upstream_path: cpp/tensorrt_llm/thop/fusedCatFp4Op.cpp
+  sha256: 8f8ede9706e2645dba71a68cc3fb7cd67254139e250f88843bdf8b7e657ef3fd
+- local_path: key-files/tensorrt_llm/_torch/attention_backend/sparse/dsa.py
+  role: upstream-file
+  mode: verbatim
+  upstream_path: tensorrt_llm/_torch/attention_backend/sparse/dsa.py
+  sha256: 9295e2ba86572175baf688adc143ccf5d644353365d3e88be9f298ff3b1aace6
+- local_path: key-files/tensorrt_llm/_torch/custom_ops/cpp_custom_ops.py
+  role: upstream-file
+  mode: verbatim
+  upstream_path: tensorrt_llm/_torch/custom_ops/cpp_custom_ops.py
+  sha256: ff87fe87910a002ad2356a14be5f678d1b0f1b7cb18fbdb3c8a959fe565b2702
+- local_path: key-files/tensorrt_llm/_torch/modules/attention.py
+  role: upstream-file
+  mode: verbatim
+  upstream_path: tensorrt_llm/_torch/modules/attention.py
+  sha256: a102d5fa6d775ed92e1c1f80a8327b1e67e856dcd9b249c359836081b0720339

@@ -20,12 +20,17 @@ several skills and rules.
   KDA-style: one contract ack from the human, then autonomous to a stop
   condition. Human mode signs the plan before code and steers between
   candidates. Method adapted from mit-han-lab/kernel-design-agents and its
-  MIT-licensed KernelWiki; no content is copied, because that base is
-  Blackwell-first and its sm100 instruction vocabulary has no sm90
-  counterpart.
-- Companion knowledge in two layers: a symptom-indexed sm90 wiki under
-  `kernel-design/references/wiki/` says which move to make, and
-  `kernel-design/references/templates/` says how it is spelled. The templates
+  MIT-licensed KernelWiki. The wiki's organization was adapted first and,
+  once the sm90 corpus was large enough for its gaps to cost something,
+  KernelWiki's evidence layer and its Hopper-relevant content were taken
+  whole; the Blackwell pages stay as the port-forward appendix.
+- Companion knowledge in two layers: the `kernel-wiki` skill, a
+  symptom-indexed sm90 knowledge base built on KernelWiki's structure,
+  tooling and content (MIT; see the
+  [references evidence-discipline note](2026-09-07-kernel-design-references-evidence-discipline.md)),
+  says which move to make, and the sm90 templates bundle inside it
+  (`kernel-wiki/artifacts/kernels/sm90-templates/variants/`) says how it is
+  spelled; `kernel-design` is the flow only. The templates
   are two tiers: a mechanism ladder (TMA/mbarrier ring, warp-role split, wgmma
   batch, bulk-store epilogue) and kernel archetypes distilled from the pinned
   `third_party/` sources -- persistent warp-specialized GEMM with cluster
@@ -98,14 +103,14 @@ several skills and rules.
 
 The `ncu-report` capture+interpret walkthrough ran end-to-end on this
 cluster (sbatch on an ncu-capable node; per-line hotspots resolved), and
-its query tool parses existing reports on the login node. Skill and wiki
-texts grep clean of experiment-record residue.
+its query tool parses existing reports on the login node. The wiki's
+validator (`kernel-wiki/scripts/validate.py`) passes on the full corpus.
 
-`python3 .claude/skills/kernel-design/scripts/check_templates.py` passes 23/23
+`python3 .claude/skills/kernel-wiki/scripts/check_templates.py` passes 23/23
 on the login node with `cuda/13.1` and `gcc/13.3` (`-arch=sm_90a -ptx`, no GPU).
 The checker was negative-tested both ways: an unsatisfiable assertion and a
-deliberate compile error each fail it. `check_wiki.py` passes 25/25 entries with
-no corpus-wide failure. Two
+deliberate compile error each fail it. `kernel-wiki/scripts/validate.py` resolves
+every bracketed tag and page id the templates cite. Two
 claims are carried by compile-time assertions inside the templates rather than
 by prose: that GEMM 1's accumulator and GEMM 2's A operand share a thread
 mapping (template 12), and that the archetype shared-memory pools fit the
