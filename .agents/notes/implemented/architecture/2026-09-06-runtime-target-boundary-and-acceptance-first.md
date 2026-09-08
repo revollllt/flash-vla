@@ -47,10 +47,10 @@ that decide whether a new VLA model or device can be brought up quickly:
    The internal Pi0.5 random fixture and the OpenPI-produced random fixture use
    distinct namespaces because they are different tensors even at one seed.
    `engine_revision` is the full HEAD of a clean checkout; dirty source remains
-   unresolved instead of claiming its parent commit, and qualification blocks
-   before correctness when it is unresolved. Official-baseline JSON identities
-   are retained in gate evidence and a workload mismatch blocks the verdict.
-   Each Target owns the
+   unresolved instead of claiming its parent commit. Formal Campaign ingestion
+   rejects unresolved revisions; the benchmark gate does not add a separate
+   pre-commit gate. Official-baseline JSON identities are retained in gate
+   evidence and a workload mismatch blocks the verdict. Each Target owns the
    ordered shape axes its declaration smoke checks, so adding a different model
    does not freeze it to the Pi/Gemma schema.
 2. **Acceptance as one registry.** `eval/acceptance.py` holds framework

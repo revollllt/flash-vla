@@ -9,11 +9,11 @@ from eval import gate
 from flash_vla.runtime.identity import Identity
 
 
-def declared(model_revision='fixture/seed-0', engine_revision='engine'):
+def declared(model_revision='fixture/seed-0'):
     return SimpleNamespace(identity=Identity(
         target='hardware/nvidia/h100/pi05', hardware='h100-sxm5-80gb', model='pi05',
         model_revision=model_revision, shape={'chunk': 50, 'steps': 10},
-        plan={'site': 'backend'}, precision='bf16', engine_revision=engine_revision))
+        plan={'site': 'backend'}, precision='bf16', engine_revision='engine'))
 
 
 class EarlyExitTests(unittest.TestCase):
@@ -71,13 +71,3 @@ class EarlyExitTests(unittest.TestCase):
         self.assertEqual(result[0]['status'], 'mismatched')
         self.assertEqual(result[0]['scripts'][0]['identities'], [baseline, baseline])
         self.assertEqual(invoke.call_args.args[0][-2:], ['--seed', '0'])
-
-    def test_unresolved_engine_revision_blocks_before_correctness(self):
-        with patch.object(gate, 'declare', return_value=declared(engine_revision=None)), \
-             patch.object(gate, '_registry_version', return_value='test'), \
-             patch.object(gate, '_finish', side_effect=lambda record, out: record), \
-             patch.object(gate, '_run_in_engine_checks') as checks:
-            result = gate.run('h100/pi05')
-        self.assertEqual(result['verdict'], 'blocked')
-        self.assertIn('engine revision is unresolved', result['reason'])
-        checks.assert_not_called()

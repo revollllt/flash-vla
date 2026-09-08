@@ -302,10 +302,6 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
         "budget": spec["budget"], "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "checks": [], "latency": None, "deployment": None, "floor": None, "verdict": None,
     }
-    if declared_identity.engine_revision is None:
-        record["verdict"] = "blocked"
-        record["reason"] = "engine revision is unresolved; commit the source before qualification"
-        return _finish(record, out_dir)
     if spec["budget"] is None:
         record["verdict"] = "blocked"
         record["reason"] = f"no acceptance entry with a budget for {target}"
