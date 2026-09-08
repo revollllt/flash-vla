@@ -64,10 +64,10 @@ def _physical_actions(actions: torch.Tensor, fixture: dict[str, torch.Tensor]) -
 
 
 def run(plan: str = "reference", oracle: Path = DEFAULT_ORACLE,
-        seed: int = 42) -> dict[str, object]:
+        seed: int = 42, layers: int = 36, steps: int = 10) -> dict[str, object]:
     expected = load_file(oracle / "official-eager.safetensors")
     fixture = load_file(oracle / "fixture.safetensors")
-    engine = build("h100/lingbot_vla", plan, seed=seed)
+    engine = build("h100/lingbot_vla", plan, seed=seed, layers=layers, steps=steps)
     inputs = engine.sample_inputs(seed)
     engine.stage(**inputs)
     for step in engine.program:
@@ -112,9 +112,11 @@ def main(argv=None) -> int:
     parser.add_argument("--plan", default="reference")
     parser.add_argument("--oracle", type=Path, default=DEFAULT_ORACLE)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--layers", type=int, default=36)
+    parser.add_argument("--steps", type=int, default=10)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
-    report = run(args.plan, args.oracle, args.seed)
+    report = run(args.plan, args.oracle, args.seed, args.layers, args.steps)
     text = json.dumps(report, indent=2) + "\n"
     print(text, end="")
     if args.out:

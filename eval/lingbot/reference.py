@@ -90,7 +90,8 @@ def _preprocess(server, seed: int) -> tuple[
 
 
 @torch.no_grad()
-def _stage_outputs(core, inputs: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+def _stage_outputs(core, inputs: dict[str, torch.Tensor], layers: int,
+                   steps: int) -> dict[str, torch.Tensor]:
     from lingbotvla.models.vla.pi0.utils import make_att_2d_masks
 
     image_embeddings = core.qwenvl_with_expert.embed_image(inputs["pixel_values"])
@@ -113,8 +114,8 @@ def _stage_outputs(core, inputs: dict[str, torch.Tensor]) -> dict[str, torch.Ten
         use_cache=True,
         fill_kv_cache=True,
     )
-    prefix_k = torch.stack([cache[layer]["key_states"][0] for layer in range(36)])
-    prefix_v = torch.stack([cache[layer]["value_states"][0] for layer in range(36)])
+    prefix_k = torch.stack([cache[layer]["key_states"][0] for layer in range(layers)])
+    prefix_v = torch.stack([cache[layer]["value_states"][0] for layer in range(layers)])
     timestep = torch.ones(1, dtype=torch.bfloat16, device="cuda")
     velocity = core.predict_velocity(
         inputs["state"], prefix_masks, cache, inputs["noise"], timestep
@@ -122,7 +123,7 @@ def _stage_outputs(core, inputs: dict[str, torch.Tensor]) -> dict[str, torch.Ten
     actions = core.sample_actions(
         inputs["pixel_values"], inputs["image_masks"], inputs["language_tokens"],
         inputs["language_masks"], inputs["state"], noise=inputs["noise"].clone(),
-        num_steps=10,
+        num_steps=steps,
     )
     return {
         "vision_embeddings": image_embeddings,
@@ -134,12 +135,13 @@ def _stage_outputs(core, inputs: dict[str, torch.Tensor]) -> dict[str, torch.Ten
 
 
 @torch.no_grad()
-def _latency(core, inputs: dict[str, torch.Tensor], warmup: int, reps: int) -> list[float]:
+def _latency(core, inputs: dict[str, torch.Tensor], warmup: int, reps: int,
+             steps: int) -> list[float]:
     def call():
         return core.sample_actions(
             inputs["pixel_values"], inputs["image_masks"], inputs["language_tokens"],
             inputs["language_masks"], inputs["state"], noise=inputs["noise"].clone(),
-            num_steps=10,
+            num_steps=steps,
         )
 
     for _ in range(warmup):
@@ -180,13 +182,15 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     )
     server.reset("robotwin")
     inputs, fixture, prepared = _preprocess(server, args.seed)
-    outputs = _stage_outputs(server.vla.model, inputs)
+    core = server.vla.model
+    core.qwenvl_with_expert.qwenvl.config.num_hidden_layers = args.layers
+    outputs = _stage_outputs(core, inputs, args.layers, args.steps)
     inverse = dict(prepared)
     inverse["actions"] = outputs["actions"][0].float().cpu()
     inverse["state"] = prepared["state"].float().cpu()
     physical = server.vla.feature_transform.unapply(inverse)
     outputs["physical_actions"] = physical["action"].contiguous()
-    samples = _latency(server.vla.model, inputs, args.warmup, args.reps)
+    samples = _latency(core, inputs, args.warmup, args.reps, args.steps)
 
     args.output.mkdir(parents=True, exist_ok=True)
     save_file(fixture, args.output / "fixture.safetensors")
@@ -213,6 +217,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             "language_slots": int(inputs["language_tokens"].shape[1]),
             "valid_language_tokens": int(inputs["language_masks"].sum().item()),
             "prefix_length": 264,
+            "layers": args.layers,
+            "denoise_steps": args.steps,
             "state": list(inputs["state"].shape),
             "noise": list(inputs["noise"].shape),
         },
@@ -261,6 +267,8 @@ def main(argv=None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--mode", choices=("eager", "compile"), default="eager")
     parser.add_argument("--seed", type=int, default=FIXTURE_SEED)
+    parser.add_argument("--layers", type=int, default=36)
+    parser.add_argument("--steps", type=int, default=10)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--reps", type=int, default=1)
     args = parser.parse_args(argv)
