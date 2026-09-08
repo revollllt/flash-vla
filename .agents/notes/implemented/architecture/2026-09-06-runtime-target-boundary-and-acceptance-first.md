@@ -220,16 +220,15 @@ random weights and inputs before and after each step.
 - [acceptance is deployability](2026-09-06-acceptance-is-deployability.md):
   the registry's latency side after the objective was withdrawn; amends
   Decision §2–§4 and §6 above.
+- [evidence-first Target onboarding](../process/2026-09-09-target-onboarding-protocol.md):
+  implements the previously open model-integration sequence without changing
+  the runtime/Target boundary.
 
 ## Open items
 
 Owned here because they are Target-level, and because the documentation tree
 that used to carry them is gone. Each is a real gap, not a wish.
 
-- **A `target-onboarding` skill.** The sequence for bringing up a new Target is
-  fixed but unwritten: model contract, graph, reference backend, factory entry,
-  acceptance entry, then the precision gate against the original
-  implementation.
 - **CI.** There is no automated check on any change. `python -m eval.smoke` is
   the only gate that runs without a GPU, and every other gate needs one, so
   what CI could run and where it would run are still under discussion.

@@ -177,6 +177,7 @@ when every call site is within the registry's headroom of its ceiling.
 
 | skill | owns |
 |---|---|
+| `target-onboarding` | unfamiliar-model integration from frozen upstream/oracle through compatibility, correctness, baselines, floor/profile, and Campaign handoff |
 | `kernel-design` | the entry point for kernel work: contract, reference, parity, candidate loop, promotion |
 | `kernel-wiki` | the queryable sm90 knowledge base built on KernelWiki: symptom-indexed patterns, techniques, hardware and kernel pages with sources, confidence and reproducibility, and the compile-checked sm90 templates bundle |
 | `benchmark-kernel` | per-kernel timing and the amortized in-graph regime |
@@ -184,10 +185,10 @@ when every call site is within the registry's headroom of its ceiling.
 | `gpu-profiler-analysis` | Torch, Nsight Systems and Nsight Compute capture |
 | `ncu-report` | reading a Nsight Compute report into a named bottleneck |
 
-A skill for bringing up a new Target is not written yet; the sequence is the
-"What a Target is" section above. Skills carry portable experience only;
-evidence (job ids, measurements, rejected candidates) lives in Agent Notes,
-where a rejection ranks with an acceptance: it stops the next agent from
+The `target-onboarding` skill sequences the "What a Target is" implementation
+without moving model semantics into runtime. Skills carry portable experience
+only; evidence (job ids, measurements, rejected candidates) lives in Agent
+Notes, where a rejection ranks with an acceptance: it stops the next agent from
 repeating an expensive, invalid experiment.
 
 ## Evaluation

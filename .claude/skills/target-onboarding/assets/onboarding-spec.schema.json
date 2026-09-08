@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "flash-vla/target-onboarding/v1",
+  "title": "flash-vla Target onboarding specification",
+  "type": "object",
+  "required": [
+    "version",
+    "target",
+    "upstream",
+    "checkpoint",
+    "model_revision",
+    "hardware",
+    "precision",
+    "shape_profile",
+    "performance_objective",
+    "correctness_requirements",
+    "benchmark_protocol",
+    "deployment_bound",
+    "optimization_budget",
+    "assumptions"
+  ],
+  "properties": {
+    "version": {"const": 1},
+    "target": {"type": "string", "minLength": 1},
+    "upstream": {
+      "type": "object",
+      "required": ["repository", "commit"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "commit": {"type": "string", "minLength": 1}
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "required": ["id", "source"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1}
+      }
+    },
+    "model_revision": {"type": "string", "minLength": 1},
+    "hardware": {
+      "type": "object",
+      "required": ["name", "deployment"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "deployment": {"type": "string", "minLength": 1}
+      }
+    },
+    "precision": {"type": "string", "minLength": 1},
+    "shape_profile": {"type": "object", "minProperties": 1},
+    "performance_objective": {
+      "type": "object",
+      "required": ["metric", "direction", "unit"],
+      "properties": {
+        "metric": {"type": "string", "minLength": 1},
+        "direction": {"type": "string", "minLength": 1},
+        "unit": {"type": "string", "minLength": 1}
+      }
+    },
+    "correctness_requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "benchmark_protocol": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {"id": {"type": "string", "minLength": 1}}
+    },
+    "deployment_bound": {
+      "type": "object",
+      "required": ["metric", "comparator", "value", "unit"],
+      "properties": {
+        "metric": {"type": "string", "minLength": 1},
+        "comparator": {"type": "string", "minLength": 1},
+        "value": {"type": "number"},
+        "unit": {"type": "string", "minLength": 1}
+      }
+    },
+    "optimization_budget": {
+      "type": "object",
+      "required": ["candidates", "non_improving", "jobs"],
+      "properties": {
+        "candidates": {"type": "integer", "minimum": 1},
+        "non_improving": {"type": "integer", "minimum": 1},
+        "jobs": {"type": "integer", "minimum": 1}
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}
