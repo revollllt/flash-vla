@@ -103,7 +103,8 @@ component share its kernels and diverge only in their plans.
 - Every report carries an `Identity`. A workload match requires hardware,
   model, immutable model revision, the complete shape profile and precision
   policy to match. Plan and engine revision remain recorded candidate
-  variables and do not change the workload.
+  variables and do not change the workload. Checkpoint producers pass the
+  model revision explicitly; dirty source has no resolved engine revision.
 - The floor model is guidance, never an objective. Its ceiling divides only by
   tagged measured constants of the hardware axis's `measured/` table, its
   roofline only by the axis's `spec.py` peaks, and the registry's stop
@@ -111,7 +112,8 @@ component share its kernels and diverge only in their plans.
 
 ## What a Target is
 
-One `target.py` holding the model contract (configuration, shape numbers,
+One `target.py` holding the model contract (configuration, ordered shape axes
+and shape numbers,
 weight schema and loader), the shipped plan, the reference plan and the backend
 registry; one `pipeline.py` whose `build` writes the graph; its `backends/`;
 a factory entry in `benchmarks/targets.py`; and an acceptance entry in

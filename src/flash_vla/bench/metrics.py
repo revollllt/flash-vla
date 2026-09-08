@@ -106,6 +106,7 @@ class KernelResult:
     samples: list[float]
     flops: Optional[int] = None
     bytes: Optional[int] = None
+    identity: dict[str, Any] | None = None
     median_ms: float = field(init=False)
     min_ms: float = field(init=False)
     mean_ms: float = field(init=False)
@@ -165,7 +166,7 @@ def write_csv(path: str, results: Iterable[KernelResult]) -> None:
         w = csv.DictWriter(
             f,
             fieldnames=["label", "median_ms", "min_ms", "mean_ms", "std_ms", "p99_ms",
-                        "tflops", "tb_per_sec", "num_samples"],
+                        "tflops", "tb_per_sec", "num_samples", "identity"],
         )
         if new_file:
             w.writeheader()
@@ -180,6 +181,8 @@ def write_csv(path: str, results: Iterable[KernelResult]) -> None:
                 "tflops": r.tflops,
                 "tb_per_sec": r.tb_per_sec,
                 "num_samples": len(r.samples),
+                "identity": (json.dumps(r.identity, sort_keys=True, separators=(",", ":"))
+                             if r.identity is not None else ""),
             })
 
 

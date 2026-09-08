@@ -1,6 +1,11 @@
 """Hardware-independent Pi0 constants and checkpoint schema."""
 
-MODEL_REVISION = "openpi@15a9616a00943ada6c20a0f158e3adb39df2ccac:pi0-libero"
+RANDOM_CHECKPOINT_REVISION = "flash-vla/pi0-random-checkpoint/v1"
+
+
+def random_checkpoint_revision(seed: int) -> str:
+    """Immutable project ID for the deterministic synthetic checkpoint fixture."""
+    return f"{RANDOM_CHECKPOINT_REVISION}/seed-{seed}"
 
 IMAGE_SIZE = 224
 IMAGE_CHANNELS = 3

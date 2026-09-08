@@ -350,9 +350,15 @@ def run(target: str, plans: list[str | None], seed: int = 0, trace_dir: str | No
     plans = [plan or "shipped" for plan in plans]
     leg_options = list(leg_options or [{}] * len(plans))
     legs = []
+    reference_identity: Identity | None = None
     for index, (plan, options) in enumerate(zip(plans, leg_options)):
         print(f"== leg {index}: {target} plan={plan} options={options}", flush=True)
         engine = build(target, plan, seed=seed, **{**overrides, **options})
+        if reference_identity is None:
+            reference_identity = engine.identity
+        elif not reference_identity.same_workload(engine.identity):
+            raise ValueError(f"leg {index} is not the same workload as leg 0; "
+                             "profile legs may differ in plan only")
         inputs = engine.sample_inputs(seed)
         engine.forward(**inputs)
         torch.cuda.synchronize()
@@ -369,11 +375,6 @@ def run(target: str, plans: list[str | None], seed: int = 0, trace_dir: str | No
                      "contract": check_contract(engine.graph_contract, names)})
         del engine
         torch.cuda.empty_cache()
-    reference = Identity.from_dict(legs[0]["identity"])
-    for leg in legs[1:]:
-        if not reference.same_workload(Identity.from_dict(leg["identity"])):
-            raise ValueError(f"leg {leg['leg']} is not the same workload as leg 0; "
-                             "profile legs may differ in plan only")
     report = {"identity": legs[0]["identity"], "env": _env(), "sm_count": sm_count,
               "config": {"seed": seed, "plans": plans, "trace_dir": trace_dir},
               "legs": legs, "deltas": _deltas(legs) if len(legs) > 1 else None}

@@ -89,7 +89,7 @@ class ModelRunner:
     """
 
     def __init__(self, target: VLA, checkpoint: Mapping[str, torch.Tensor] | None = None, *,
-                 plan: Any = "shipped", device: str = "cuda", capture: bool = True,
+                 model_revision: str, plan: Any = "shipped", device: str = "cuda", capture: bool = True,
                  warmup: int = 3, **config: Any) -> None:
         self.target = target
         self.config = target.configure(**config)
@@ -98,7 +98,7 @@ class ModelRunner:
         self.plan: dict[str, str] = target.select_plan(plan)
         routes = target.registry.resolve(self.plan, self.graph.call_sites)
         self.identity = Identity(target=target.name, hardware=target.hardware,
-                                 model=target.model, model_revision=target.model_revision,
+                                 model=target.model, model_revision=model_revision,
                                  shape=self.shape, plan=routes,
                                  precision=target.precision)
         self.program: tuple[Step, ...] = tuple(self.graph.program)

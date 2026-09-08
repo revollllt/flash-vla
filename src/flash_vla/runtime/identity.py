@@ -24,14 +24,18 @@ IDENTITY_SCHEMA_VERSION = 2
 
 
 def git_revision(start: Path | str | None = None) -> str | None:
-    """The short HEAD revision of the checkout containing `start`, if any."""
+    """The full HEAD revision of a clean checkout containing `start`, if any."""
     root = Path(start or __file__).resolve()
     try:
-        out = subprocess.run(["git", "-C", str(root.parent), "rev-parse", "--short", "HEAD"],
+        status = subprocess.run(["git", "-C", str(root.parent), "status", "--porcelain"],
+                                capture_output=True, text=True, timeout=5)
+        if status.returncode != 0 or status.stdout:
+            return None
+        out = subprocess.run(["git", "-C", str(root.parent), "rev-parse", "HEAD"],
                              capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.SubprocessError):
         return None
-    return out.stdout.strip() or None
+    return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else None
 
 
 @dataclass(frozen=True)
@@ -50,7 +54,11 @@ class Identity:
         if self.precision not in PRECISION_POLICIES:
             raise ValueError(f"unknown precision policy {self.precision!r}; "
                              f"defined: {PRECISION_POLICIES}")
-        if self.model_revision in {"latest", "main", "current", "unknown"}:
+        if self.model_revision is not None and (self.model_revision != self.model_revision.strip()
+                                                or not self.model_revision
+                                                or self.model_revision in {
+                                                    "latest", "main", "current", "unknown"
+                                                }):
             raise ValueError(f"model_revision must be immutable, got {self.model_revision!r}")
 
     @property
@@ -73,7 +81,8 @@ class Identity:
         if version not in (1, IDENTITY_SCHEMA_VERSION):
             raise ValueError(f"unsupported Identity schema version {version!r}")
         return cls(target=value["target"], hardware=value["hardware"], model=value["model"],
-                   model_revision=value.get("model_revision"), shape=value["shape"],
+                   model_revision=(None if version == 1 else value["model_revision"]),
+                   shape=value["shape"],
                    plan=value["plan"], precision=value.get("precision", "bf16"),
                    engine_revision=(value.get("revision") if version == 1
                                     else value.get("engine_revision")))

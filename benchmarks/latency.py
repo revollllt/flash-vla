@@ -300,9 +300,15 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         plans = [plans[0]] * 3
     selector = device_selector() if attribution else None
     legs = []
+    reference_identity: Identity | None = None
     for index, plan in enumerate(plans):
         print(f"== leg {index}: {target} plan={plan}", flush=True)
         engine = build(target, plan, seed=seed, **overrides)
+        if reference_identity is None:
+            reference_identity = engine.identity
+        elif not reference_identity.same_workload(engine.identity):
+            raise ValueError(f"leg {index} is not the same workload as leg 0; "
+                             "legs of one run may differ in plan only")
         inputs = engine.sample_inputs(seed)
         collector = Attribution(device_index=selector) if attribution else None
         if collector is None:
@@ -321,13 +327,6 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
             print(attribution_summary(evidence), flush=True)
         del engine
         torch.cuda.empty_cache()
-
-    for leg in legs[1:]:
-        reference = Identity.from_dict(legs[0]["identity"])
-        candidate = Identity.from_dict(leg["identity"])
-        if not reference.same_workload(candidate):
-            raise ValueError(f"leg {leg['leg']} is not the same workload as leg 0; "
-                             "legs of one run may differ in plan only")
 
     report = {
         "identity": legs[0]["identity"],

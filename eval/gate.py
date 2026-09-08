@@ -248,7 +248,7 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
     reference = reference or "shipped"
     spec = acceptance.for_target(target)
     mode = mode or spec["latency"]["candidate_rule"]["default_mode"]
-    identity = declare(target, candidate).identity.as_dict()
+    identity = declare(target, candidate, seed=seed).identity.as_dict()
     record: dict[str, Any] = {
         "identity": identity, "target": target,
         "candidate": {"plan": candidate}, "reference": {"plan": reference},

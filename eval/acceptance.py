@@ -51,9 +51,15 @@ OPENPI_PYTHON = os.environ.get(
 #: adapter loads real weights (Pi0.5's builds random ones), so its script needs
 #: a path; override with `OPENPI_PI0_CHECKPOINT`. The script reports the tier
 #: as unavailable when the path does not exist, and the gate records it so.
-OPENPI_PI0_CHECKPOINT = os.environ.get(
-    "OPENPI_PI0_CHECKPOINT",
+DEFAULT_OPENPI_PI0_CHECKPOINT = (
     "/data/user/jzou521/models/openpi/openpi-assets/checkpoints/pi0_libero_pytorch")
+OPENPI_PI0_CHECKPOINT = os.environ.get("OPENPI_PI0_CHECKPOINT",
+                                       DEFAULT_OPENPI_PI0_CHECKPOINT)
+#: Project-defined immutable ID for the registered checkpoint. A path override
+#: needs its own explicit ID; the filename alone is not checkpoint identity.
+OPENPI_PI0_MODEL_REVISION = os.environ.get("OPENPI_PI0_MODEL_REVISION")
+if OPENPI_PI0_MODEL_REVISION is None and OPENPI_PI0_CHECKPOINT == DEFAULT_OPENPI_PI0_CHECKPOINT:
+    OPENPI_PI0_MODEL_REVISION = "flash-vla/openpi-pi0-libero-pytorch/v1"
 
 DEFAULTS: dict[str, Any] = {
     "latency": {

@@ -29,15 +29,18 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
           declare: bool = False):
     from flash_vla.hardware.nvidia.h100.pi05 import TARGET
     from flash_vla.models.pi05.spec import MAX_TOKEN_LEN
+    from flash_vla.models.pi05.spec import random_checkpoint_revision
     from flash_vla.models.pi05.tokenize import Pi05Tokenizer
     from flash_vla.models.pi05.weights import fold, random_checkpoint
 
     config = dict(num_views=num_views, chunk_size=chunk_size, steps=steps, layers=layers,
                   prompt_len=prompt_len or MAX_TOKEN_LEN, prompt=prompt)
+    model_revision = random_checkpoint_revision(seed)
     if declare:
-        return ModelRunner(TARGET, None, plan=plan, device=device, capture=False, **config)
+        return ModelRunner(TARGET, None, model_revision=model_revision, plan=plan,
+                           device=device, capture=False, **config)
     checkpoint = fold(random_checkpoint(seed=seed, device=device), steps=steps)
-    return ModelRunner(TARGET, checkpoint, plan=plan, device=device,
+    return ModelRunner(TARGET, checkpoint, model_revision=model_revision, plan=plan, device=device,
                        tokenizer=Pi05Tokenizer(tokenizer_path), **config)
 
 
@@ -46,14 +49,18 @@ def _pi0(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_size
          declare: bool = False):
     from flash_vla.hardware.nvidia.h100.pi0 import TARGET
     from flash_vla.models.pi0 import random_checkpoint
+    from flash_vla.models.pi0.spec import random_checkpoint_revision
 
     config = dict(num_views=num_views, chunk_size=chunk_size, steps=steps, layers=layers)
+    model_revision = random_checkpoint_revision(seed)
     if declare:
-        return ModelRunner(TARGET, None, plan=plan, device=device, capture=False,
+        return ModelRunner(TARGET, None, model_revision=model_revision, plan=plan,
+                           device=device, capture=False,
                            prompt_len=prompt_len, **config)
     checkpoint = random_checkpoint(num_views=num_views, chunk_size=chunk_size,
                                    prompt_len=prompt_len, seed=seed, device=device)
-    return ModelRunner(TARGET, checkpoint, plan=plan, device=device, **config)
+    return ModelRunner(TARGET, checkpoint, model_revision=model_revision, plan=plan,
+                       device=device, **config)
 
 
 #: Target name -> factory. Short aliases resolve through `resolve`.

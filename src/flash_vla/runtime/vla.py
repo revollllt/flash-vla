@@ -71,8 +71,9 @@ class VLA:
     name: str
     hardware: str
     model: str
-    model_revision: str
     precision: str = "bf16"
+    #: Ordered graph-static axes returned by `shape`; each Target owns this schema.
+    shape_axes: tuple[str, ...]
     #: The forward inputs, in the order `sample_inputs` draws them.
     INPUTS: tuple[Input, ...] = ()
     #: The buffer `forward` returns.

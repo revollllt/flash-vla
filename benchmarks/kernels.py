@@ -145,7 +145,8 @@ def run(target: str, plan: str | None = None, seed: int = 0, only_segments: list
                 samples = bench_gpu_time(
                     invoke, input_args=(0,), enable_cupti=(timer == "cupti"),
                     repeat_time_ms=repeat_time_ms, dry_run_time_ms=dry_run_time_ms)
-            results.append(KernelResult(label=label, samples=samples, flops=flops, bytes=nbytes))
+            results.append(KernelResult(label=label, samples=samples, flops=flops, bytes=nbytes,
+                                        identity=engine.identity.as_dict()))
             print(results[-1].perf_line(), flush=True)
     del engine
     torch.cuda.empty_cache()

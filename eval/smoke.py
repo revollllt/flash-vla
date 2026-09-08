@@ -27,36 +27,6 @@ from flash_vla.runtime.graph import BufRef, WeightRef
 from flash_vla.runtime.vla import STAGE_OUTPUTS
 
 REPO = Path(__file__).resolve().parent.parent
-SHAPE_KEYS = (
-    "batch",
-    "num_views",
-    "image_height",
-    "image_width",
-    "image_channels",
-    "visual_tokens_per_view",
-    "visual_tokens",
-    "vision_dim",
-    "vision_ffn_dim",
-    "vision_heads",
-    "vision_head_dim",
-    "vision_layers",
-    "prompt_len",
-    "prefix_len",
-    "chunk",
-    "expert_tokens",
-    "state_dim",
-    "action_dim",
-    "steps",
-    "layers",
-    "encoder_dim",
-    "encoder_ffn_dim",
-    "query_heads",
-    "kv_heads",
-    "head_dim",
-    "qkv_width",
-    "expert_dim",
-    "expert_ffn_dim",
-)
 
 
 def _check(results: list[dict[str, Any]], name: str, ok: bool, detail: Any = None) -> None:
@@ -67,7 +37,8 @@ def check_target(target: str) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     runner = declare(target)
     graph = runner.graph
-    _check(results, "identity.shape keys", tuple(runner.identity.shape) == SHAPE_KEYS,
+    _check(results, "identity.shape keys",
+           tuple(runner.identity.shape) == runner.target.shape_axes,
            tuple(runner.identity.shape))
     _check(results, "stages non-empty",
            all(graph.nodes_of(s) for s in graph.segment_names), graph.segment_names)

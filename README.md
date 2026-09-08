@@ -54,15 +54,19 @@ Measured on an H100 SXM5, driver 610.43.02, python 3.12, torch 2.13.0.
 ```python
 from flash_vla import ModelRunner
 from flash_vla.hardware.nvidia.h100.pi0 import TARGET
-from flash_vla.models.pi0 import random_checkpoint
+from flash_vla.models.pi0 import random_checkpoint, random_checkpoint_revision
 
-runner = ModelRunner(TARGET, random_checkpoint(), num_views=3, chunk_size=50)
+runner = ModelRunner(TARGET, random_checkpoint(),
+                     model_revision=random_checkpoint_revision(0),
+                     num_views=3, chunk_size=50)
 actions = runner.forward(images=images, state=state, noise=noise)
 ```
 
 `random_checkpoint()` fabricates weights so the pipeline can be run and timed
 without a trained model. For real weights, pass a dict matching
-`flash_vla.models.pi0.spec.weight_shapes()`.
+`flash_vla.models.pi0.spec.weight_shapes()` and its immutable checkpoint ID as
+`model_revision`. Benchmark factories derive a project-defined revision from
+their deterministic random-fixture version and seed.
 
 ## Benchmarks and checks
 
@@ -109,7 +113,10 @@ There are no latency numbers in this file. Every one lives in a report produced
 by `python -m benchmarks latency`, stamped with the identity it was measured
 under — hardware, immutable model revision, complete shape profile, precision
 policy, resolved plan and engine revision. Workload comparison ignores the
-last two and rejects any mismatch in the Target axes. `eval/acceptance.py` is
+last two and rejects any mismatch in the Target axes. The checkpoint producer
+supplies `model_revision`; deterministic benchmark fixtures derive it from
+their fixture version and seed. `engine_revision` is the full commit of a clean
+checkout and is unresolved for dirty source. `eval/acceptance.py` is
 the registry of what gates: the correctness checks and their tolerances, the
 latency statistics and repetition policy, each Target's budget. `python -m
 eval.gate` turns a run into one verdict.

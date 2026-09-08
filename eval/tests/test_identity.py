@@ -1,7 +1,13 @@
 import copy
+import csv
+import json
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
-from flash_vla.runtime.identity import IDENTITY_SCHEMA_VERSION, Identity
+from flash_vla.bench import KernelResult, write_csv
+from flash_vla.runtime.identity import IDENTITY_SCHEMA_VERSION, Identity, git_revision
 
 
 def identity(**overrides):
@@ -65,6 +71,14 @@ class IdentitySerializationTests(unittest.TestCase):
         self.assertEqual(legacy.engine_revision, "aaaaaaa")
         self.assertFalse(legacy.same_workload(legacy))
 
+    def test_v1_ignores_fields_that_only_exist_in_v2(self):
+        payload = identity().as_dict()
+        payload.pop("schema_version")
+        payload["revision"] = payload.pop("engine_revision")
+        legacy = Identity.from_dict(payload)
+        self.assertIsNone(legacy.model_revision)
+        self.assertFalse(legacy.same_workload(legacy))
+
     def test_unknown_schema_version_is_rejected(self):
         payload = identity().as_dict()
         payload["schema_version"] = 3
@@ -72,9 +86,51 @@ class IdentitySerializationTests(unittest.TestCase):
             Identity.from_dict(payload)
 
     def test_mutable_model_revision_labels_are_rejected(self):
-        for value in ("latest", "main", "current", "unknown"):
+        for value in ("", " ", " latest ", "latest", "main", "current", "unknown"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 identity(model_revision=value)
+
+
+class ProducerIdentityTests(unittest.TestCase):
+    def test_random_checkpoint_seed_changes_model_revision(self):
+        from benchmarks.targets import declare
+
+        for target in ("h100/pi0", "h100/pi05"):
+            with self.subTest(target=target):
+                first = declare(target, seed=0).identity
+                repeat = declare(target, "reference", seed=0).identity
+                other = declare(target, seed=1).identity
+                self.assertTrue(first.same_workload(repeat))
+                self.assertFalse(first.same_workload(other))
+
+    def test_kernel_csv_carries_complete_identity(self):
+        expected = identity().as_dict()
+        result = KernelResult("site", [1.0], identity=expected)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "kernels.csv"
+            write_csv(str(path), [result])
+            with path.open(newline="") as handle:
+                row = next(csv.DictReader(handle))
+        self.assertEqual(json.loads(row["identity"]), expected)
+
+
+class EngineRevisionTests(unittest.TestCase):
+    def test_dirty_checkout_has_no_engine_revision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            source = repo / "source.py"
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            source.write_text("value = 1\n")
+            subprocess.run(["git", "-C", str(repo), "add", "source.py"], check=True)
+            subprocess.run([
+                "git", "-C", str(repo), "-c", "user.name=Test",
+                "-c", "user.email=test@example.com", "commit", "-qm", "baseline",
+            ], check=True)
+            head = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                                  check=True, capture_output=True, text=True).stdout.strip()
+            self.assertEqual(git_revision(source), head)
+            source.write_text("value = 2\n")
+            self.assertIsNone(git_revision(source))
 
 
 if __name__ == "__main__":

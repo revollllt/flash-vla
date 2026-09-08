@@ -2,9 +2,11 @@
 
     from flash_vla import ModelRunner
     from flash_vla.hardware.nvidia.h100.pi0 import TARGET
-    from flash_vla.models.pi0 import random_checkpoint
+    from flash_vla.models.pi0 import random_checkpoint, random_checkpoint_revision
 
-    runner = ModelRunner(TARGET, random_checkpoint(), num_views=3, chunk_size=50)
+    runner = ModelRunner(TARGET, random_checkpoint(),
+                         model_revision=random_checkpoint_revision(0),
+                         num_views=3, chunk_size=50)
     actions = runner.forward(images=images, state=state, noise=noise)
 
 A Target declares its computation graph against the framework's op vocabulary

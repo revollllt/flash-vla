@@ -29,7 +29,6 @@ from flash_vla.models.pi0.spec import (
     IMAGE_CHANNELS,
     IMAGE_SIZE,
     KV_HEADS,
-    MODEL_REVISION,
     QKV_WIDTH,
     STATE_DIM,
     VISION_DIM,
@@ -64,8 +63,15 @@ class Pi0(VLA):
     name = "hardware/nvidia/h100/pi0"
     hardware = "h100-sxm5-80gb"
     model = "pi0"
-    model_revision = MODEL_REVISION
     precision = "bf16"
+    shape_axes = (
+        "batch", "num_views", "image_height", "image_width", "image_channels",
+        "visual_tokens_per_view", "visual_tokens", "vision_dim", "vision_ffn_dim",
+        "vision_heads", "vision_head_dim", "vision_layers", "prompt_len", "prefix_len",
+        "chunk", "expert_tokens", "state_dim", "action_dim", "steps", "layers",
+        "encoder_dim", "encoder_ffn_dim", "query_heads", "kv_heads", "head_dim",
+        "qkv_width", "expert_dim", "expert_ffn_dim",
+    )
 
     INPUTS = (
         Input("images", lambda s: (s["num_views"], IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS),

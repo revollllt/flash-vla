@@ -40,8 +40,14 @@ that decide whether a new VLA model or device can be brought up quickly:
    immutable `model_revision` from the flash-vla `engine_revision` and makes
    workload comparison ignore plan and engine revision. A v1 report remains
    readable, but its missing model revision makes it fail closed for lineage.
-   The Pi0 and Pi0.5 Targets use the frozen upstream OpenPI revision
-   `15a9616a00943ada6c20a0f158e3adb39df2ccac`, with distinct model labels.
+   `ModelRunner` requires the checkpoint producer to provide that revision:
+   the benchmark factories use a project-defined random-fixture version plus
+   seed, the registered Pi0 checkpoint has its own project-defined ID, and an
+   overridden real checkpoint without an explicit revision is unavailable.
+   `engine_revision` is the full HEAD of a clean checkout; dirty source remains
+   unresolved instead of claiming its parent commit. Each Target owns the
+   ordered shape axes its declaration smoke checks, so adding a different model
+   does not freeze it to the Pi/Gemma schema.
 2. **Acceptance as one registry.** `eval/acceptance.py` holds framework
    defaults (metrics, statistics, repetition policy, unlocked clocks,
    same-process A/B/A deltas, the candidate rule, the ordered correctness
@@ -157,10 +163,11 @@ that decide whether a new VLA model or device can be brought up quickly:
 ## Verification
 
 Identity V2 is covered by pure-CPU tests for the seven workload comparisons,
-v1 reading with fail-closed comparison, v2 serialization and reserved mutable
-revision labels. Declaration smoke checks both Pi Targets' complete shape
-profiles and plan binding. The phase GPU evidence is recorded with the PR-1
-milestone after both Target smoke runs.
+v1 reading with fail-closed comparison, v2 serialization, empty or reserved
+mutable revision labels, deterministic fixture revision separation, clean and
+dirty engine revisions, and kernel CSV identity. Declaration smoke checks each
+Pi Target's own complete shape axes and plan binding. The phase GPU evidence is
+recorded with the PR-1 milestone after both Target smoke runs.
 
 All on H100 SXM5 (`acd_u`, clocks unlocked), against the same seeded
 random weights and inputs before and after each step.
