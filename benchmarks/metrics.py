@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import statistics
 import sys
+from importlib import metadata
 from typing import Any, Callable
 
 import torch
@@ -78,14 +79,17 @@ def diff_stats(ref: torch.Tensor, got: torch.Tensor) -> dict[str, Any]:
 
 def env_block() -> dict[str, Any]:
     """GPU / toolchain versions, for stamping result files."""
-    import tilelang
+    try:
+        tilelang_version = metadata.version("tilelang")
+    except metadata.PackageNotFoundError:
+        tilelang_version = "unavailable"
 
     return {
         "gpu": torch.cuda.get_device_name(0),
         "python": sys.executable,
         "torch": torch.__version__,
         "torch_cuda": torch.version.cuda,
-        "tilelang": getattr(tilelang, "__version__", None),
+        "tilelang": tilelang_version,
     }
 
 
