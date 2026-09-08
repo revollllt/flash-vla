@@ -247,7 +247,10 @@ def make_wrappers(scratch, selected_names=None):
         visual = module.qwenvl.visual
         if state.vision_metadata is None:
             grid = torch.tensor([[1, 16, 16]] * VIEWS, device=pixel_values.device)
-            state.vision_metadata = visual.preprcess_grid_thw(grid)
+            rotary, window, cu_window, cu_full = visual.preprcess_grid_thw(grid)
+            state.vision_metadata = (
+                rotary, window.to(pixel_values.device), cu_window, cu_full,
+            )
         rotary, window, cu_window, cu_full = state.vision_metadata
         embeds = visual(
             pixel_values,
