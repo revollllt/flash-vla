@@ -78,8 +78,8 @@ def run(plan: str = "reference", oracle: Path = DEFAULT_ORACLE,
 
     actual = {
         "vision_embeddings": engine.buffers["vision_embeddings"].detach().cpu(),
-        "prefix_k": engine.buffers["prefix_k"].detach().cpu(),
-        "prefix_v": engine.buffers["prefix_v"].detach().cpu(),
+        "prefix_k": engine.buffers["prefix_k"][:layers].detach().cpu(),
+        "prefix_v": engine.buffers["prefix_v"][:layers].detach().cpu(),
         "velocity_step_0": engine.buffers["velocity_step_0"].detach().cpu(),
         "actions": engine.buffers["actions"].detach().cpu(),
     }
