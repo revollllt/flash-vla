@@ -60,8 +60,11 @@ class Registry:
     def resolve(self, plan: Mapping[str, str] | None,
                 call_sites: Iterable[str]) -> dict[str, str]:
         """The backend of every call site under `plan`, validated."""
-        routes = binding.resolve(plan, self.default, call_sites)
-        binding.check_backends_provide(routes, self.provided())
+        provided = self.provided()
+        binding.check_backends_provide(plan or {}, provided)
+        routes = binding.resolve(plan, self.default, call_sites,
+                                 known_call_sites=set().union(*provided.values()))
+        binding.check_backends_provide(routes, provided)
         binding.validate(routes, self.constraints())
         return routes
 

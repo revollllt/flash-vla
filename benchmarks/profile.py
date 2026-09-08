@@ -32,9 +32,9 @@ leg. The runner contains no model, stage or kernel names.
 Under a dependent-launch chain a kernel's recorded duration includes the time
 it spent launched early and waiting on its predecessor, so attributed
 durations overlap and their sum exceeds the segment's wall time; the report
-carries the replay's event-timed wall beside the attributed total, and the
-difference is the overlap the chain recovers. Shares are of the attributed
-total.
+reports interval sums, unions and makespans from the same capture. Separate
+unprofiled wall measurements are diagnostic comparisons, not an overlap
+subtraction. Shares are of the duration sum, not critical-path latency.
 """
 from __future__ import annotations
 
@@ -55,6 +55,7 @@ from flash_vla.runtime.engine import segments
 from .latency import _env, parse_options
 from .metrics import require_cuda
 from .targets import PLAN_NAMES, build, resolve
+from .timeline import intervals, occurrences, region_occurrences
 
 ANNOTATION = "callsite:"
 MARKER_BEGIN = "flash_vla_profile_begin_kernel"
@@ -148,6 +149,8 @@ def eager_sequence(engine, segment: str,
     events = _trace_events(prof, trace_path)
     annotations = [e for e in events if e.get("cat") == "user_annotation"
                    and str(e.get("name", "")).startswith(ANNOTATION)]
+    for invocation_id, annotation in enumerate(sorted(annotations, key=lambda e: e["ts"])):
+        annotation["invocation_id"] = invocation_id
     # A launch reaches the GPU through the runtime API (torch, cuBLAS, the CUDA
     # extensions) or the driver API (TileLang's compiled host stubs); both
     # carry the correlation id the kernel event refers back to.
@@ -171,17 +174,17 @@ def eager_sequence(engine, segment: str,
         if ext is not None and e.get("cat") in ("user_annotation", "cpu_op"):
             by_external.setdefault(ext, e)
 
-    def owner(launch: dict) -> str | None:
+    def owner(launch: dict) -> dict | None:
         ts = launch.get("ts", 0.0)
         best = None
         for a in by_tid.get(launch.get("tid"), ()):
             if a["ts"] <= ts <= a["ts"] + a.get("dur", 0.0):
                 if best is None or a.get("dur", 0.0) < best.get("dur", 0.0):
                     best = a
-        return best["name"][len(ANNOTATION):] if best else None
+        return best
 
     sequence = []
-    bracket: str | None = None          # the call site whose markers we are inside
+    brackets: dict[Any, dict | None] = {}
     markers_seen = 0
     disagreements = 0
     for e in _gpu_events(events):
@@ -192,20 +195,24 @@ def eager_sequence(engine, segment: str,
         if launch is None:
             launch = by_external.get(args.get("External id"))
             via = "external" if launch is not None else None
-        site = owner(launch) if launch else None
+        annotation = owner(launch) if launch else None
+        stream = args.get("stream")
+        bracket = brackets.get(stream)
         if name.startswith(MARKER_BEGIN):
-            bracket = site
+            brackets[stream] = annotation
             markers_seen += 1
             continue
         if name.startswith(MARKER_END):
-            bracket = None
+            brackets[stream] = None
             markers_seen += 1
             continue
-        if site is None and bracket is not None:
-            site, via = bracket, "bracket"
-        elif site is not None and bracket is not None and site != bracket:
+        if annotation is None and bracket is not None:
+            annotation, via = bracket, "bracket"
+        elif annotation is not None and bracket is not None and annotation != bracket:
             disagreements += 1
-        sequence.append({"call_site": site, "name": name, "cat": e.get("cat"),
+        sequence.append({"call_site": annotation["name"][len(ANNOTATION):] if annotation else None,
+                         "invocation_id": annotation["invocation_id"] if annotation else None,
+                         "stream": stream, "name": name, "cat": e.get("cat"),
                          "launch_seen": launch is not None, "via": via})
     sequence_cats = {"trace_categories": dict(cats),
                      "launch_seen": sum(1 for s in sequence if s["launch_seen"]),
@@ -227,7 +234,10 @@ def replay_sequence(engine, segment: str, trace_path: Path | None = None) -> lis
         grid = (e.get("args") or {}).get("grid")
         ctas = int(grid[0]) * int(grid[1]) * int(grid[2]) if grid else None
         out.append({"name": e.get("name"), "cat": e.get("cat"),
-                    "dur_us": float(e.get("dur", 0.0)), "ctas": ctas})
+                    "dur_us": float(e.get("dur", 0.0)), "ctas": ctas,
+                    "start_us": e["ts"], "end_us": e["ts"] + e.get("dur", 0.0),
+                    "stream": (e.get("args") or {}).get("stream"),
+                    "graph_node_id": (e.get("args") or {}).get("graph node id")})
     return out
 
 
@@ -248,7 +258,11 @@ def attribute(engine, segment: str, sm_count: int, trace_path: Path | None = Non
     same_length = len(eager) == len(replay)
     mismatches = [{"position": i, "eager": a["name"], "replay": b["name"]}
                   for i, (a, b) in enumerate(zip(eager, replay)) if not _same_launch(a, b)]
-    valid = same_length and not mismatches
+    single_stream = len({e["stream"] for e in eager}) <= 1 and len({e["stream"] for e in replay}) <= 1
+    valid = same_length and not mismatches and single_stream and not eager_info["bracket_disagreements"]
+    for index, event in enumerate(replay):
+        event["call_site"] = eager[index]["call_site"] if valid else None
+        event["invocation_id"] = eager[index]["invocation_id"] if valid else None
     per_site: dict[str, dict[str, Any]] = {}
     unattributed = {"launches": 0, "dur_us": 0.0, "names": set()}
     if valid:
@@ -268,7 +282,12 @@ def attribute(engine, segment: str, sm_count: int, trace_path: Path | None = Non
                 row["ctas"].append(b["ctas"])
             if is_copy(b["name"] or ""):
                 row["copy_us"] += b["dur_us"]
-    for row in per_site.values():
+    if not valid:
+        unattributed = {"launches": len(replay), "dur_us": sum(e["dur_us"] for e in replay),
+                        "names": {e["name"] for e in replay}}
+    for site, row in per_site.items():
+        row.update(intervals([e for e in replay if e["call_site"] == site]))
+        row["occurrences"] = occurrences([e for e in replay if e["call_site"] == site])
         row["names"] = sorted(row["names"])
         ctas = row.pop("ctas")
         row["ctas_min"] = min(ctas) if ctas else None
@@ -279,7 +298,12 @@ def attribute(engine, segment: str, sm_count: int, trace_path: Path | None = Non
         row["share"] = row["dur_us"] / total if total else 0.0
     return {"valid": valid, "launches": len(replay), "eager_launches": len(eager),
             "mismatched_positions": mismatches[:10], "eager_trace": eager_info,
-            "total_us": total, "wall_us": wall_us, "overlap_us": total - wall_us,
+            "total_us": total, "wall_us": wall_us,
+            "unprofiled_region_wall_us": wall_us, **intervals(replay),
+            "events": replay, "occurrences": occurrences(replay),
+            "mapping": "single_stream_positional" if valid else "unattributed",
+            "regions": [{"call_sites": sorted(group), **region_occurrences(replay, group)}
+                        for group in engine.atomic_groups],
             "copy_us": sum(b["dur_us"] for b in replay if is_copy(b["name"] or "")),
             "call_sites": dict(sorted(per_site.items(), key=lambda kv: -kv[1]["dur_us"])),
             "unattributed": unattributed,
@@ -376,7 +400,8 @@ def render(report: dict[str, Any], top: int = 12) -> str:
                 f"  ATTRIBUTION INVALID (eager {rep['eager_launches']} vs replay "
                 f"{rep['launches']} launches, first mismatches {rep['mismatched_positions']})")
             lines.append(f"  -- {seg}: wall {rep['wall_us'] / 1e3:.3f} ms, attributed "
-                         f"{rep['total_us'] / 1e3:.3f} ms (overlap {rep['overlap_us'] / 1e3:.3f} ms), "
+                         f"{rep['total_us'] / 1e3:.3f} ms, trace union "
+                         f"{rep['interval_union_us'] / 1e3:.3f} ms, "
                          f"{rep['launches']} launches, copies {rep['copy_us'] / 1e3:.3f} ms{status}")
             for site, row in list(rep["call_sites"].items())[:top]:
                 lines.append(f"     {row['dur_us'] / 1e3:8.3f} ms {row['share'] * 100:5.1f}%  "
