@@ -180,12 +180,15 @@ def check_routes(target: str) -> list[dict[str, Any]]:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--json", action="store_true", help="print the full result list")
+    parser.add_argument("--target", help="check one registered Target")
     args = parser.parse_args(argv)
+    targets = (resolve(args.target),) if args.target else tuple(TARGETS)
     report: dict[str, list[dict[str, Any]]] = {}
-    for target in TARGETS:
+    for target in targets:
         report[target] = check_target(target)
-    report["lab/plans"] = check_lab_plans()
-    for target in TARGETS:
+    if not args.target:
+        report["lab/plans"] = check_lab_plans()
+    for target in targets:
         report[f"{target} routes"] = check_routes(target)
     failed = [(k, r["check"], r["detail"]) for k, rows in report.items()
               for r in rows if not r["passed"]]
