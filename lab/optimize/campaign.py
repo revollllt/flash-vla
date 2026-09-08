@@ -88,11 +88,18 @@ def rebuild(directory):
     if not records:
         raise ValueError('campaign has no iter-000 baseline')
     incumbent = 'iter-000'
-    failed = []
+    legacy_history = records[0][1]['measurement']['evidence'].get('legacy_history', {})
+    failed = [dict(iteration=None, candidate_id=item['record'].get('id'),
+                   mechanism=item['record'].get('thesis'), verdict='legacy_rejected',
+                   evidence_level=item['evidence_level'], source=item['source'])
+              for item in legacy_history.get('rejected', [])]
     active = None
     cost = {'cpu_seconds': 0.0, 'gpu_seconds': 0.0, 'jobs': []}
     candidates = 0
     non_improving = 0
+    imported_reanchor_required = records[0][1]['measurement']['evidence'].get(
+        'continuation', {}).get('reanchor_required', False)
+    has_reanchor = False
     for expected, (path, record) in enumerate(records):
         _validate_record(metadata, record, expected, incumbent)
         run_cost = record.get('cost', {})
@@ -102,6 +109,7 @@ def rebuild(directory):
         verdict = record.get('verdict')
         label = f'iter-{expected:03d}'
         if expected:
+            has_reanchor |= record.get('kind') == 'reanchor'
             candidates += record.get('kind') == 'performance'
             if verdict == 'accepted':
                 incumbent = label
@@ -119,6 +127,7 @@ def rebuild(directory):
     budget = metadata['budget']
     used = dict(candidates=candidates, non_improving=non_improving, jobs=len(cost['jobs']))
     remaining = {key: max(0, budget[key] - used[key]) for key in budget}
+    reanchor_required = imported_reanchor_required and not has_reanchor
     segment, next_action = 'candidate_selection', 'start the next candidate from the incumbent'
     campaign_status = 'BASELINED' if len(records) == 1 else 'ACTIVE'
     if active:
@@ -138,12 +147,18 @@ def rebuild(directory):
     elif any(value == 0 for value in remaining.values()):
         next_action = 'campaign budget exhausted'
         campaign_status = 'COMPLETED'
+    if reanchor_required and active is None:
+        next_action = 'record a fresh incumbent re-anchor before starting a candidate'
+        campaign_status = 'PAUSED'
     state = dict(version=1, campaign_id=metadata['id'], status=campaign_status,
                  target=metadata['target'], objective=metadata['objective'],
                  protocol=metadata['protocol'], fixture=metadata['fixture'],
                  baseline='iter-000', current_incumbent=incumbent,
                  current_measurement_segment=segment, failed_hypotheses=failed,
+                 legacy_import={key: len(legacy_history.get(key, [])) for key in
+                                ('accepted', 'rejected', 'unclassified', 'experiment_evidence')},
                  budget=dict(limit=budget, used=used, remaining=remaining), cost=cost,
+                 reanchor_required=reanchor_required,
                  next_action=next_action, iterations=len(records))
     store.write(directory / 'state.json', state)
     return state
@@ -177,6 +192,8 @@ def start(root, spec, directory):
         if spec.get('protocol') != metadata['protocol'] or spec.get('fixture') != metadata['fixture']:
             raise ValueError('candidate protocol or fixture does not match campaign')
         state = rebuild(directory)
+        if state['reanchor_required']:
+            raise RuntimeError('campaign requires an incumbent re-anchor before a new candidate')
         if state['current_measurement_segment'] != 'candidate_selection':
             raise RuntimeError('campaign already has an active candidate')
         if any(value == 0 for value in state['budget']['remaining'].values()):
@@ -196,6 +213,63 @@ def start(root, spec, directory):
         store.write(run_dir / 'evidence.json', record)
         rebuild(directory)
         return record
+
+
+def reanchor(directory, evidence):
+    """Record a fresh incumbent measurement without claiming a code improvement."""
+    directory = Path(directory).resolve()
+    with (directory / 'campaign.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        metadata = store.read(directory / 'campaign.json')
+        state = rebuild(directory)
+        if state['current_measurement_segment'] != 'candidate_selection':
+            raise RuntimeError('campaign already has an active candidate')
+        identity = evidence['identity']
+        if not same_target(metadata['target'], identity):
+            raise ValueError('re-anchor TargetKey does not match campaign')
+        if not identity.get('engine_revision'):
+            raise ValueError('re-anchor needs a resolved engine revision')
+        objective = evidence['objective']
+        if objective.get('name') != metadata['objective'] or objective.get('unit') != 'ms':
+            raise ValueError('re-anchor objective does not match campaign')
+        segment = evidence['measurement_segment']
+        if segment.get('benchmark_protocol') != metadata['protocol']:
+            raise ValueError('re-anchor protocol does not match campaign')
+        records = [record for _, record in _records(directory)]
+        previous = records[-1]['measurement']
+        previous_segment = (previous['evidence']['measurement_segment'] if len(records) == 1
+                            else previous['measurement_segment'])
+        if segment.get('id') not in (previous_segment['id'], previous_segment['id'] + 1):
+            raise ValueError('re-anchor segment must continue or advance the current segment')
+        iteration = state['iterations']
+        value = float(objective['value'])
+        measurement = dict(identity=identity, validity='valid', measurement_segment=segment,
+                           measurement_context=evidence['measurement_context'],
+                           candidate_ms=value, parent_incumbent_ms=value,
+                           segment_anchor_ms=value, reanchor=True, evidence=evidence)
+        record = dict(iteration=iteration, timestamp=evidence['measurement_context']['timestamp'],
+                      candidate_id='incumbent-reanchor', parent_incumbent=state['current_incumbent'],
+                      campaign_id=metadata['id'], campaign_identity=identity,
+                      id=f'reanchor-{iteration:03d}', target=identity['target'], kind='reanchor',
+                      spec=dict(protocol=metadata['protocol'], fixture=metadata['fixture'], stages={}),
+                      hypothesis=dict(mechanism='incumbent re-anchor', alternative='environment drift',
+                                      falsifier='fresh incumbent agrees within the acceptance policy',
+                                      cheapest_probe='one incumbent A/A measurement',
+                                      affected_call_sites=[], max_recoverable_ms=0.0,
+                                      promotion_bar_ms=0.0),
+                      change=dict(summary='fresh incumbent re-anchor', scope=[],
+                                  engine_revision=identity['engine_revision']),
+                      correctness=evidence.get('correctness', {'status': 'not_run'}),
+                      measurement=measurement,
+                      qualification={'status': 'not_applicable', 'gate_verdict': None},
+                      diagnostics=evidence.get('diagnostics', {}),
+                      cost=evidence.get('cost', {'cpu_seconds': 0.0, 'gpu_seconds': 0.0,
+                                                 'jobs': []}),
+                      stages={}, status='terminal', validity='valid', conclusion='reanchor',
+                      promotion='not_requested', verdict='accepted')
+        path = directory / 'runs' / f'iter-{iteration:03d}-incumbent-reanchor/evidence.json'
+        store.write(path, record)
+        return rebuild(directory)
 
 
 def finalize(directory, iteration, verdict, correctness, measurement, qualification,

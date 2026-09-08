@@ -27,6 +27,14 @@ trace to the repository's Matplotlib renderer for canonical `progress.svg`.
 Use `--png` and `--html` for optional previews; the static HTML formats the
 same plot points and does not calculate a second attribution result.
 
+The registered Pi0/Pi0.5 history can be imported with
+`campaign-migrate-legacy CAMPAIGN --root REPOSITORY`; the output directory name
+selects `pi0` or `pi05`. Imported v1 evidence remains verbatim under
+`raw_measurement`, is labeled `legacy_import`, and pauses the campaign. Supply
+a fresh normalized incumbent measurement with `campaign-reanchor CAMPAIGN
+--result REPORT` before allocating another candidate. A re-anchor updates the
+measured incumbent but is never labeled as a code promotion.
+
 Use `python -m lab.optimize preflight SPEC.json` before reserving a GPU, then
 `start SPEC.json --out RUN`. Run declared stages with `run RUN --until check`
 or `--until measure` inside the existing Slurm allocation. Experiment fields

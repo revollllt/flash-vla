@@ -12,7 +12,8 @@ def main(argv=None):
     parser.add_argument('command', choices=('preflight', 'start', 'run', 'reconcile', 'context', 'related',
                                             'campaign-create', 'campaign-status', 'campaign-resume',
                                             'campaign-validate', 'campaign-finalize',
-                                            'campaign-render'))
+                                            'campaign-render', 'campaign-reanchor',
+                                            'campaign-migrate-legacy'))
     parser.add_argument('path', type=Path, help='spec JSON for preflight/start; run directory otherwise')
     parser.add_argument('--root', type=Path, default=Path.cwd())
     parser.add_argument('--out', type=Path)
@@ -55,6 +56,14 @@ def main(argv=None):
             output_png=(args.path / 'progress.png' if args.png else None))
         if args.html:
             render.render_html(metadata, points, args.path / 'progress.html')
+    elif args.command == 'campaign-reanchor':
+        if args.result is None:
+            parser.error('campaign-reanchor requires --result')
+        result = campaign.reanchor(args.path, store.read(args.result))
+    elif args.command == 'campaign-migrate-legacy':
+        from . import migrate
+
+        result = migrate.pi_campaign(args.root, args.path)
     elif args.command in ('preflight', 'start'):
         from . import preflight
 

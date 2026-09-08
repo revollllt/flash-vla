@@ -30,6 +30,7 @@ class PlotPoint:
     delta_parent_pct: float | None
     delta_baseline_pct: float | None
     summary: str
+    reanchor: bool = False
 
 
 def from_trace(value):
@@ -42,7 +43,7 @@ def from_trace(value):
                         baseline_ms=item['segment_baseline_latency_ms'],
                         delta_parent_pct=item['delta_vs_parent_pct'],
                         delta_baseline_pct=item['delta_vs_baseline_pct'],
-                        summary=item['change_summary'])
+                        summary=item['change_summary'], reanchor=item.get('reanchor', False))
               for item in value['iterations']]
     return plot_metadata, points
 
@@ -80,9 +81,9 @@ def render_optimization_progress(*, metadata: PlotMetadata, points: Sequence[Plo
         at_right_edge = point.iteration == points[-1].iteration
         offset = (-6, 8) if at_right_edge else (6, -28)
         alignment = 'right' if at_right_edge else 'left'
-        if segment_changed:
-            label = f'segment {point.segment} re-anchor\n{point.baseline_ms:.3f} ms'
-            if point.verdict == 'accepted':
+        if segment_changed or point.reanchor:
+            label = f'segment {point.segment} re-anchor\n{point.incumbent_ms:.3f} ms'
+            if point.verdict == 'accepted' and not point.reanchor:
                 parent_delta = ('n/a' if point.delta_parent_pct is None
                                 else f'{point.delta_parent_pct:+.2f}%')
                 baseline_delta = ('n/a' if point.delta_baseline_pct is None

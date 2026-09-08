@@ -135,7 +135,9 @@ def normalize(directory):
             segment_baseline_latency_ms=segment_anchor,
             delta_vs_parent_pct=delta_parent, delta_vs_baseline_pct=delta_baseline,
             qualification=record['qualification'], verdict=verdict,
-            promotion=('promoted' if verdict == 'accepted' else 'not_promoted'),
+            reanchor=measurement.get('reanchor', False),
+            promotion=('reanchor' if measurement.get('reanchor') else
+                       'promoted' if verdict == 'accepted' else 'not_promoted'),
             diagnostic_artifacts=record['diagnostics'], experiment_cost=record['cost'])
         entries.append(entry)
     return dict(schema_version=1, campaign_id=metadata['id'], metadata=trace_metadata,
