@@ -3,29 +3,59 @@ import argparse
 import json
 from pathlib import Path
 
-from . import context, preflight, runner, store
+from . import campaign, context, runner, store
 from .schema import validate
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('preflight', 'start', 'run', 'reconcile', 'context', 'related'))
+    parser.add_argument('command', choices=('preflight', 'start', 'run', 'reconcile', 'context', 'related',
+                                            'campaign-create', 'campaign-status', 'campaign-resume',
+                                            'campaign-validate', 'campaign-finalize'))
     parser.add_argument('path', type=Path, help='spec JSON for preflight/start; run directory otherwise')
     parser.add_argument('--root', type=Path, default=Path.cwd())
     parser.add_argument('--out', type=Path)
     parser.add_argument('--until', choices=('preflight', 'probe', 'check', 'measure', 'qualify'), default='measure')
     parser.add_argument('--recovered-seconds', type=float)
+    parser.add_argument('--campaign', type=Path)
+    parser.add_argument('--baseline-evidence', type=Path)
+    parser.add_argument('--objective')
+    parser.add_argument('--protocol')
+    parser.add_argument('--fixture')
+    parser.add_argument('--iteration', type=int)
+    parser.add_argument('--result', type=Path)
     args = parser.parse_args(argv)
-    if args.command in ('preflight', 'start'):
+    if args.command == 'campaign-create':
+        required = (args.baseline_evidence, args.objective, args.protocol, args.fixture)
+        if any(value is None for value in required):
+            parser.error('campaign-create requires --baseline-evidence, --objective, --protocol and --fixture')
+        result = campaign.create(args.path, store.read(args.baseline_evidence), args.objective,
+                                 args.protocol, args.fixture)
+    elif args.command in ('campaign-status', 'campaign-validate'):
+        result = campaign.rebuild(args.path)
+    elif args.command == 'campaign-resume':
+        result = campaign.resume(args.path, args.until, args.recovered_seconds)
+    elif args.command == 'campaign-finalize':
+        if args.iteration is None or args.result is None:
+            parser.error('campaign-finalize requires --iteration and --result')
+        outcome = store.read(args.result)
+        result = campaign.finalize(args.path, args.iteration, outcome['verdict'],
+                                   outcome['correctness'], outcome['measurement'],
+                                   outcome['qualification'], outcome.get('diagnostics'))
+    elif args.command in ('preflight', 'start'):
+        from . import preflight
+
         spec = store.read(args.path)
         policy, budget = validate(spec)
         if args.command == 'start':
-            if args.out is None:
+            if args.out is None and args.campaign is None:
                 parser.error('start requires --out')
             resolved = preflight.inspect(spec)
-            result = runner.start(args.root, spec, args.out)
+            result = (campaign.start(args.root, spec, args.campaign) if args.campaign
+                      else runner.start(args.root, spec, args.out))
             result['preflight'] = resolved
-            store.write(args.out / 'evidence.json', result)
+            output = Path(result['directory'])
+            store.write(output / 'evidence.json', result)
         else:
             result = preflight.inspect(spec)
     elif args.command == 'run':

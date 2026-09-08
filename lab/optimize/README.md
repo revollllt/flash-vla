@@ -4,6 +4,23 @@ This controller is for the existing H100 Pi0/Pi0.5 tools. Acceptance remains
 owned by `eval/acceptance.py`; `eval.gate` remains the qualification verdict.
 The owner requested no new hashes, frozen contracts, baselines or gates.
 
+A long-running campaign adds lineage around these same experiments. Create one
+from an existing baseline report with `campaign-create CAMPAIGN
+--baseline-evidence REPORT --objective NAME --protocol NAME --fixture NAME`,
+then allocate candidates with `start SPEC --campaign CAMPAIGN`. The spec must
+declare the baseline's Identity v2, protocol and fixture. `campaign-status` and
+`campaign-validate` rebuild `state.json`; `campaign-resume` continues a clean
+stage or requires explicit reconciliation for an interrupted one. Record a
+terminal result with `campaign-finalize CAMPAIGN --iteration N --result
+RESULT.json`; verdict, correctness, measurement and qualification stay in that
+iteration's evidence.
+
+Only `campaign.json` and `runs/iter-*/evidence.json` are campaign facts.
+`state.json` is a disposable view. The campaign identity is created once and
+has no update operation. Accepted evidence advances the incumbent only after
+correctness, valid measurement, qualification and gate results all pass;
+other verdicts stay in the lineage without changing it.
+
 Use `python -m lab.optimize preflight SPEC.json` before reserving a GPU, then
 `start SPEC.json --out RUN`. Run declared stages with `run RUN --until check`
 or `--until measure` inside the existing Slurm allocation. Experiment fields

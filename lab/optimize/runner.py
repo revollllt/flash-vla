@@ -11,7 +11,7 @@ from . import scheduler, store, promotion
 from .schema import STAGES, validate
 
 
-def start(root, spec, directory):
+def start(root, spec, directory, metadata=None):
     policy, budget = validate(spec)
     directory = Path(directory).resolve()
     directory.parent.mkdir(parents=True, exist_ok=True)
@@ -25,6 +25,8 @@ def start(root, spec, directory):
                       conclusion='inconclusive', promotion='not_requested', stages={},
                       cost={'cpu_seconds': 0.0, 'gpu_seconds': 0.0, 'jobs': []},
                       budget=budget, acceptance=policy)
+        if metadata:
+            record.update(metadata)
         store.write(directory / 'evidence.json', record)
         record['source'] = store.capture(root, spec['inputs'], directory / 'inputs')
         record['status'] = 'ready'
