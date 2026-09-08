@@ -201,7 +201,7 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
         seg_groups = []
         for group in groups:
             members = [r for r in rows if r["call_site"] in group]
-            if not members:
+            if len(members) < 2:
                 continue
             diagnostic = next((g for g in profiled["regions"] if set(g["call_sites"]) == set(group)), None)
             for row in members:
