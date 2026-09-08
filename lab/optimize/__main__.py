@@ -11,7 +11,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('preflight', 'start', 'run', 'reconcile', 'context', 'related',
                                             'campaign-create', 'campaign-status', 'campaign-resume',
-                                            'campaign-validate', 'campaign-finalize'))
+                                            'campaign-validate', 'campaign-finalize',
+                                            'campaign-render'))
     parser.add_argument('path', type=Path, help='spec JSON for preflight/start; run directory otherwise')
     parser.add_argument('--root', type=Path, default=Path.cwd())
     parser.add_argument('--out', type=Path)
@@ -24,6 +25,8 @@ def main(argv=None):
     parser.add_argument('--fixture')
     parser.add_argument('--iteration', type=int)
     parser.add_argument('--result', type=Path)
+    parser.add_argument('--png', action='store_true')
+    parser.add_argument('--html', action='store_true')
     args = parser.parse_args(argv)
     if args.command == 'campaign-create':
         required = (args.baseline_evidence, args.objective, args.protocol, args.fixture)
@@ -42,6 +45,16 @@ def main(argv=None):
         result = campaign.finalize(args.path, args.iteration, outcome['verdict'],
                                    outcome['correctness'], outcome['measurement'],
                                    outcome['qualification'], outcome.get('diagnostics'))
+    elif args.command == 'campaign-render':
+        from . import render, trace
+
+        result = trace.materialize(args.path)
+        metadata, points = render.from_trace(result)
+        render.render_optimization_progress(
+            metadata=metadata, points=points, output_svg=args.path / 'progress.svg',
+            output_png=(args.path / 'progress.png' if args.png else None))
+        if args.html:
+            render.render_html(metadata, points, args.path / 'progress.html')
     elif args.command in ('preflight', 'start'):
         from . import preflight
 

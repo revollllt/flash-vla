@@ -12,15 +12,15 @@ VERDICTS = ('accepted', 'no_benefit', 'correctness_failed', 'invalid', 'blocked'
 TERMINAL = set(VERDICTS)
 
 
-def _target(identity):
+def target_key(identity):
     if identity.get('schema_version') != 2 or not identity.get('model_revision'):
         raise ValueError('campaign evidence needs Identity v2 with a resolved model revision')
     return {key: identity[key] for key in
             ('target', 'hardware', 'model', 'model_revision', 'shape', 'precision')}
 
 
-def _same_target(target, identity):
-    return target == _target(identity)
+def same_target(target, identity):
+    return target == target_key(identity)
 
 
 def _records(directory):
@@ -31,7 +31,7 @@ def _records(directory):
 def create(directory, baseline_evidence, objective, protocol, fixture):
     directory = Path(directory).resolve()
     identity = baseline_evidence['identity']
-    target = _target(identity)
+    target = target_key(identity)
     if directory.exists():
         raise FileExistsError(directory)
     metadata = dict(version=1, id=directory.name, created=time.time(),
@@ -41,6 +41,7 @@ def create(directory, baseline_evidence, objective, protocol, fixture):
     if metadata['budget'] is None:
         raise ValueError(f'no acceptance budget for {target["target"]}')
     baseline = dict(iteration=0, candidate_id='baseline', parent_incumbent=None,
+                    timestamp=metadata['created'],
                     hypothesis=None,
                     change=dict(summary='campaign baseline', scope=[],
                                 engine_revision=identity.get('engine_revision')),
@@ -62,12 +63,14 @@ def _validate_record(metadata, record, expected_iteration, incumbent):
     if expected_iteration == 0:
         if record.get('parent_incumbent') is not None or record.get('verdict') != 'accepted':
             raise ValueError('iter-000 must be the accepted baseline')
+        if not same_target(metadata['target'], record['measurement']['evidence']['identity']):
+            raise ValueError('iter-000 measurement has a different TargetKey')
         return
     if record.get('parent_incumbent') != incumbent:
         raise ValueError(f'iter-{expected_iteration:03d} parent is not the allocation incumbent')
     if record.get('verdict') not in TERMINAL | {None}:
         raise ValueError(f'unknown verdict {record.get("verdict")!r}')
-    if not _same_target(metadata['target'], record['campaign_identity']):
+    if not same_target(metadata['target'], record['campaign_identity']):
         raise ValueError(f'iter-{expected_iteration:03d} has a different TargetKey')
     if record['spec'].get('protocol') != metadata['protocol']:
         raise ValueError(f'iter-{expected_iteration:03d} has a different protocol')
@@ -163,11 +166,13 @@ def start(root, spec, directory):
     if not spec.get('change', {}).get('summary'):
         raise ValueError('campaign candidate needs change.summary')
     declared = spec['identity']
-    _target(declared)
+    target_key(declared)
+    if not declared.get('engine_revision'):
+        raise ValueError('campaign candidate needs a resolved engine revision')
     with (directory / 'campaign.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         metadata = store.read(directory / 'campaign.json')
-        if not _same_target(metadata['target'], declared):
+        if not same_target(metadata['target'], declared):
             raise ValueError('candidate TargetKey does not match campaign')
         if spec.get('protocol') != metadata['protocol'] or spec.get('fixture') != metadata['fixture']:
             raise ValueError('candidate protocol or fixture does not match campaign')
@@ -180,6 +185,7 @@ def start(root, spec, directory):
         label = f'iter-{iteration:03d}'
         run_dir = directory / 'runs' / f'{label}-{spec["id"]}'
         metadata_fields = dict(iteration=iteration, candidate_id=spec['id'],
+                               timestamp=time.time(),
                                parent_incumbent=state['current_incumbent'],
                                campaign_id=metadata['id'], campaign_identity=spec['identity'],
                                hypothesis=spec['hypothesis'],

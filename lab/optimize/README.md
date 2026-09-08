@@ -21,6 +21,12 @@ has no update operation. Accepted evidence advances the incumbent only after
 correctness, valid measurement, qualification and gate results all pass;
 other verdicts stay in the lineage without changing it.
 
+`campaign-render CAMPAIGN` normalizes ledger evidence once into
+`optimization_trace.json`, writes `progress.md`, and sends only that normalized
+trace to the repository's Matplotlib renderer for canonical `progress.svg`.
+Use `--png` and `--html` for optional previews; the static HTML formats the
+same plot points and does not calculate a second attribution result.
+
 Use `python -m lab.optimize preflight SPEC.json` before reserving a GPU, then
 `start SPEC.json --out RUN`. Run declared stages with `run RUN --until check`
 or `--until measure` inside the existing Slurm allocation. Experiment fields

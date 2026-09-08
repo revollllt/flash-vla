@@ -25,6 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 pi05 = ["sentencepiece", "numpy", "safetensors"]
+optimize = ["matplotlib>=3.8"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
