@@ -136,7 +136,7 @@ def _stage_outputs(core, inputs: dict[str, torch.Tensor], layers: int,
 
 @torch.no_grad()
 def _latency(core, inputs: dict[str, torch.Tensor], warmup: int, reps: int,
-             steps: int) -> list[float]:
+             steps: int, soak_s: float, timer: str) -> list[float]:
     def call():
         return core.sample_actions(
             inputs["pixel_values"], inputs["image_masks"], inputs["language_tokens"],
@@ -144,18 +144,27 @@ def _latency(core, inputs: dict[str, torch.Tensor], warmup: int, reps: int,
             num_steps=steps,
         )
 
+    deadline = time.perf_counter() + soak_s
+    while time.perf_counter() < deadline:
+        call()
     for _ in range(warmup):
         call()
     torch.cuda.synchronize()
     samples = []
     for _ in range(reps):
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        start.record()
-        call()
-        end.record()
-        torch.cuda.synchronize()
-        samples.append(start.elapsed_time(end))
+        if timer == "event":
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            start.record()
+            call()
+            end.record()
+            torch.cuda.synchronize()
+            samples.append(start.elapsed_time(end))
+        else:
+            start = time.perf_counter()
+            call()
+            torch.cuda.synchronize()
+            samples.append((time.perf_counter() - start) * 1e3)
     return samples
 
 
@@ -190,13 +199,16 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     inverse["state"] = prepared["state"].float().cpu()
     physical = server.vla.feature_transform.unapply(inverse)
     outputs["physical_actions"] = physical["action"].contiguous()
-    samples = _latency(core, inputs, args.warmup, args.reps, args.steps)
+    samples = _latency(
+        core, inputs, args.warmup, args.reps, args.steps, args.soak_s, args.timer,
+    )
 
     args.output.mkdir(parents=True, exist_ok=True)
     save_file(fixture, args.output / "fixture.safetensors")
     save_file({key: value.detach().cpu().contiguous() for key, value in outputs.items()},
               args.output / f"official-{args.mode}.safetensors")
     processor = server.processor.image_processor
+    ordered_samples = sorted(samples)
     metadata = {
         "version": 1,
         "mode": args.mode,
@@ -234,8 +246,11 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             "samples": samples,
             "min": min(samples),
             "median": statistics.median(samples),
+            "p99": ordered_samples[round(0.99 * (len(ordered_samples) - 1))],
             "reps": args.reps,
             "warmup": args.warmup,
+            "soak_s": args.soak_s,
+            "timer": args.timer,
         },
         "environment": {
             "python": platform.python_version(),
@@ -271,6 +286,8 @@ def main(argv=None) -> int:
     parser.add_argument("--steps", type=int, default=10)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--reps", type=int, default=1)
+    parser.add_argument("--soak-s", type=float, default=0.0)
+    parser.add_argument("--timer", choices=("event", "wall"), default="event")
     args = parser.parse_args(argv)
     print(json.dumps(run(args), indent=2))
     return 0
