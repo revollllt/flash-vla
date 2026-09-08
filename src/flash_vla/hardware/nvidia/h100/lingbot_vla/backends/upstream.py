@@ -199,7 +199,7 @@ def _build_policy(weight_values, layers: int):
     upstream, checkpoint, qwen_path = _upstream_paths()
     if str(upstream) not in sys.path:
         sys.path.insert(0, str(upstream))
-    from deploy.lingbot_vla_policy import LingbotVlaInferencePolicy, merge_qwen_config
+    from deploy.lingbot_vla_policy import LingBotVlaInferencePolicy, merge_qwen_config
 
     config = PreTrainedConfig.from_pretrained(checkpoint)
     with (checkpoint / "lingbotvla_cli.yaml").open() as source:
@@ -214,7 +214,7 @@ def _build_policy(weight_values, layers: int):
         config.vocab_size = training["model"]["vocab_size"]
     config.use_cache = True
 
-    policy = LingbotVlaInferencePolicy(config, tokenizer_path=str(qwen_path))
+    policy = LingBotVlaInferencePolicy(config, tokenizer_path=str(qwen_path))
     state = dict(zip(WEIGHT_NAMES, weight_values))
     policy.load_state_dict(state, strict=True, assign=True)
     device = weight_values[0].device
