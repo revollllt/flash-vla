@@ -14,6 +14,7 @@ from pathlib import Path
 import platform
 import statistics
 import subprocess
+import sys
 import time
 
 import numpy as np
@@ -168,6 +169,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     if checkpoint.stat().st_size != 16_789_932_052:
         raise RuntimeError(f"checkpoint has unexpected size: {checkpoint.stat().st_size}")
     os.chdir(upstream)
+    sys.path.insert(0, str(upstream))
     os.environ["QWEN25_PATH"] = str(args.qwen.resolve())
     from deploy.lingbot_vla_policy import LingbotVLAServer
 
