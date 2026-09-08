@@ -17,9 +17,9 @@ Per call site of every stage, at the Target's shapes:
 
 and, per site, `pct_of_ceiling` and `within_ceiling`: measured at most
 (1 + headroom_pct / 100) times the ceiling, the registry's stop condition
-(`eval/acceptance.py`, `stop.headroom_pct`). A stage where every site is
-within its ceiling has no kernel-level work left to find; the distance from
-ceiling to roofline belongs to the machine, not to the kernel.
+(`eval/acceptance.py`, `stop.headroom_pct`). These comparisons are guidance, not proof that no kernel-level opportunity
+remains. Overlapping atomic groups have no supported additive latency model
+and cannot trigger automatic stopping.
 
 Validity is checked, not assumed: a site's ceiling above its attributed time
 by more than the table's noise floor (`machine.noise_floor_pct`), a stage's
@@ -27,7 +27,7 @@ ceiling sum above its measured minimum, or a roofline above its ceiling is a
 model error and marks the report invalid. Call sites of one atomic group (a
 dependent-launch chain) are judged on the group's sums: under such a chain a
 kernel's recorded duration overlaps its neighbours' (`benchmarks.profile`),
-so only the chain's total is a measurement. Under-one-wave launches (grid
+so their summed durations are not the chain latency. Under-one-wave launches (grid
 below the CTA knee) are counted and reported; their derating
 (`ld.ctas.dev.knee`) is carried as information, not applied.
 
@@ -57,7 +57,7 @@ from .profile import attribute
 from .targets import PLAN_NAMES, build, resolve
 
 #: The model form; bump when a column or a term changes.
-FORM_VERSION = "2"
+FORM_VERSION = "3"
 REPO = Path(__file__).resolve().parent.parent
 #: hardware axis of the identity -> the package holding `spec.py` and `measured/`.
 HARDWARE = {"h100-sxm5-80gb": "flash_vla.hardware.nvidia.h100"}
@@ -196,28 +196,25 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
             row["valid"] = row["roofline_us"] <= row["ceiling_us"] and (
                 site is None or row["group"] is not None
                 or tolerance * row["ceiling_us"] <= site["dur_us"])
-        # A dependent-launch chain is judged on its sums: its members' recorded
-        # durations overlap, so a member's own number is not a measurement.
+        # No calibrated joint boundary model exists for overlapping atomic groups.
+        # Keep their occurrence timings diagnostic and prevent automatic stopping.
         seg_groups = []
         for group in groups:
             members = [r for r in rows if r["call_site"] in group]
             if not members:
                 continue
-            g_ceiling = sum(r["ceiling_us"] for r in members)
-            attributed_members = [r for r in members if r["measured_us"] is not None]
-            g_measured = (sum(r["measured_us"] for r in attributed_members)
-                          if attributed_members else None)
-            g_within = g_measured is not None and g_ceiling > 0 and g_measured <= limit * g_ceiling
-            g_valid = g_measured is None or tolerance * g_ceiling <= g_measured
-            for r in members:
-                r["within_ceiling"], r["valid"] = g_within, g_valid and r["valid"]
-            seg_groups.append({"call_sites": sorted(group), "ceiling_us": g_ceiling,
-                               "measured_us": g_measured,
-                               "unattributed_members": sorted(r["call_site"] for r in members
-                                                              if r["measured_us"] is None),
-                               "pct_of_ceiling": (g_measured / g_ceiling * 100
-                                                  if g_measured is not None and g_ceiling else None),
-                               "within_ceiling": g_within, "valid": g_valid})
+            diagnostic = next((g for g in profiled["regions"] if set(g["call_sites"]) == set(group)), None)
+            for row in members:
+                row["within_ceiling"] = False
+                row["pct_of_ceiling"] = None
+            seg_groups.append({"call_sites": sorted(group), "ceiling_us": None,
+                               "measured_us": None, "pct_of_ceiling": None,
+                               "within_ceiling": False, "valid": False,
+                               "model_status": "unsupported_overlapping_group",
+                               "diagnostic_occurrences": diagnostic})
+        if seg_groups:
+            seg_valid = False
+            within_all = False
         for row in rows:
             seg_valid &= row["valid"]
             within_all &= row["within_ceiling"]
@@ -259,8 +256,8 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
         "note": ("guidance, not an objective: roofline is the datasheet, ceiling is what the "
                  "machine delivered for the geometry, measured is the attributed in-graph time; "
                  "a ceiling above a measured time by more than the noise floor, or a roofline "
-                 "above a ceiling, invalidates the report; a dependent-launch chain is judged on "
-                 "its sums; under-one-wave derating is reported, not applied"),
+                 "above a ceiling, invalidates the report; an overlapping dependent-launch chain has "
+                 "no supported joint ceiling model; under-one-wave derating is reported, not applied"),
     }
     del engine
     torch.cuda.empty_cache()

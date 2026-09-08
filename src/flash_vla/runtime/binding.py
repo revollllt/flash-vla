@@ -36,9 +36,16 @@ class RouteConstraint:
 
 
 def resolve(plan: Mapping[str, str] | None, default: str,
-            call_sites: Iterable[str]) -> dict[str, str]:
-    """The backend of every call site under `plan`, `default` where unnamed."""
+            call_sites: Iterable[str], *,
+            known_call_sites: Iterable[str] | None = None) -> dict[str, str]:
+    """Resolve routes, rejecting unknown call sites before backend construction."""
     plan = dict(plan or {})
+    call_sites = tuple(call_sites)
+    known = set(call_sites if known_call_sites is None else known_call_sites)
+    unknown = plan.keys() - known
+    if unknown:
+        raise KeyError(f"plan names unknown call sites {sorted(unknown)}; "
+                       f"known: {sorted(known)}")
     return {name: plan.get(name, default) for name in call_sites}
 
 

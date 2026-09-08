@@ -8,7 +8,9 @@ A script, not a service. It reads the Target's entry of the acceptance
 registry (`eval/acceptance.py`), runs the in-engine correctness checks and the
 same-process A/B/A latency run through the generic harnesses, applies the
 deployment bound and the candidate rule, computes the floor model as context,
-and writes one evidence record. Harnesses only report; this is the one
+and writes one evidence record. Required correctness failures stop before
+performance work; floor profiling is opt-in. The performance control defaults
+to shipped while the numerical oracle remains reference. Harnesses only report; this is the one
 consumer that produces a verdict.
 
 Verdicts, in the order they are decided:
@@ -38,9 +40,9 @@ passing it. Latency never overrides a correctness gate.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -55,8 +57,13 @@ from eval import correctness as in_engine
 REPO = Path(__file__).resolve().parent.parent
 
 
-def _registry_version() -> str:
-    return hashlib.sha1((REPO / "eval" / "acceptance.py").read_bytes()).hexdigest()[:12]
+def _registry_version() -> str | None:
+    # Allocated nodes may expose this checkout without the git executable.
+    # Full effective acceptance values remain present in every report.
+    if shutil.which("git") is None:
+        return None
+    return subprocess.run(["git", "log", "-1", "--format=%H", "--", "eval/acceptance.py"],
+                          cwd=REPO, text=True, capture_output=True, check=True).stdout.strip()
 
 
 def _depth(config: dict[str, Any] | None) -> dict[str, int | None]:
@@ -94,6 +101,8 @@ def _run_in_engine_checks(target: str, candidate: str, checks: list[dict[str, An
                         "replay_identical": report["replay_identical"],
                         "finite": report["finite"], "status": "passed" if passed else "failed",
                         "report": report})
+        if check["mode"] == "gate" and not passed:
+            break
     # The two folded gates, read from the first (shallowest) comparison.
     if results:
         first = results[0]
@@ -124,6 +133,9 @@ def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
     if not python or not Path(python).exists():
         return [{"check": c["check"], "mode": c["mode"], "status": "unavailable",
                  "reason": f"baseline interpreter not found: {python}"} for c in baseline_checks]
+    if not scripts:
+        return [{"check": c["check"], "mode": c["mode"], "status": "unavailable",
+                 "reason": "no official adapter scripts registered"} for c in baseline_checks]
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(p for p in (str(REPO), str(REPO / "src"),
                                                     env.get("PYTHONPATH", "")) if p)
@@ -226,18 +238,23 @@ def _deployment_verdict(report: dict[str, Any], dep: dict[str, Any]) -> dict[str
     return out
 
 
-def run(target: str, candidate: str = "shipped", reference: str = "reference",
+def run(target: str, candidate: str = "shipped", reference: str = "shipped",
         mode: str | None = None, reps: int | None = None, seed: int = 0,
-        baseline: bool = False, out_dir: str | None = None) -> dict[str, Any]:
-    """Run every check for one candidate plan and write the evidence record."""
+        baseline: bool = False, out_dir: str | None = None,
+        include_floor: bool = False) -> dict[str, Any]:
+    """Qualify against the existing incumbent; stop before timing on failed evidence."""
     target = resolve(target)
     candidate = candidate or "shipped"
-    reference = reference or "reference"
+    reference = reference or "shipped"
     spec = acceptance.for_target(target)
     mode = mode or spec["latency"]["candidate_rule"]["default_mode"]
     record: dict[str, Any] = {
         "target": target, "candidate": {"plan": candidate}, "reference": {"plan": reference},
-        "mode": mode, "acceptance_version": _registry_version(),
+        "mode": mode, "acceptance_version": _registry_version(), "acceptance": spec,
+        "numerical_oracle": {"plan": "reference"}, "performance_incumbent": {"plan": reference},
+        "correctness_coverage": {"candidate_to_in_engine_reference": "not_run",
+                                 "candidate_to_official": "not_run",
+                                 "official_adapter": "not_run"},
         "budget": spec["budget"], "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "checks": [], "latency": None, "deployment": None, "floor": None, "verdict": None,
     }
@@ -248,10 +265,22 @@ def run(target: str, candidate: str = "shipped", reference: str = "reference",
 
     checks = list(spec["correctness"]["checks"])
     record["checks"] += _run_in_engine_checks(target, candidate, checks, seed)
+    record["correctness_coverage"]["candidate_to_in_engine_reference"] = "executed"
+    failed = [c["check"] for c in record["checks"] if c["mode"] == "gate" and c["status"] == "failed"]
+    if failed:
+        record["verdict"], record["reason"] = "fail", f"gates failed: {failed}"
+        return _finish(record, out_dir)
     baseline_scripts = tuple(spec["scripts"].get("official_baseline", ()))
     if "baseline_adapter" in spec["capabilities"]:
         record["checks"] += _run_baseline_checks(baseline_scripts, checks, baseline,
                                                  spec["baseline_python"])
+        record["correctness_coverage"]["official_adapter"] = "requested" if baseline else "not_run"
+    failed = [c["check"] for c in record["checks"] if c["mode"] == "gate" and c["status"] == "failed"]
+    blocked = [c["check"] for c in record["checks"] if c["mode"] == "gate" and c["status"] in ("not_run", "unavailable")]
+    if failed or blocked:
+        record["verdict"] = "fail" if failed else "blocked"
+        record["reason"] = f"required correctness evidence: failed={failed}, unavailable={blocked}"
+        return _finish(record, out_dir)
 
     lat = spec["latency"]
     plans = [reference, candidate, reference]
@@ -260,10 +289,8 @@ def run(target: str, candidate: str = "shipped", reference: str = "reference",
     record["latency"] = {"report": latency_report,
                          "rule": _latency_verdict(latency_report, lat, mode)}
     record["deployment"] = _deployment_verdict(latency_report, spec["deployment"])
-    try:
+    if include_floor:
         record["floor"] = floor_model.run(target, candidate, seed=seed)
-    except Exception as exc:  # the floor is context, never a gate
-        record["floor"] = {"error": f"{type(exc).__name__}: {exc}"}
 
     gates = [c for c in record["checks"] if c["mode"] == "gate"]
     failed = [c["check"] for c in gates if c["status"] == "failed"]
@@ -338,18 +365,20 @@ def main(argv=None) -> int:
     parser.add_argument("--target", required=True)
     parser.add_argument("--candidate", default="shipped",
                         help="candidate plan: shipped, reference, JSON or a lab/plans/*.json path")
-    parser.add_argument("--reference", default="reference",
-                        help="reference plan (default: the Target's reference route)")
+    parser.add_argument("--incumbent", "--reference", dest="reference", default="shipped",
+                        help="performance control (default: shipped); numerical oracle stays reference")
     parser.add_argument("--mode", choices=["improve", "no-regression"], default=None,
                         help="candidate rule (default: the registry's default mode)")
     parser.add_argument("--reps", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--baseline", action="store_true", help="also run the baseline-tier scripts")
+    parser.add_argument("--floor", action="store_true", help="also collect the optional diagnostic floor")
     parser.add_argument("--out-dir", default=None)
     args = parser.parse_args(argv)
     mode = args.mode.replace("-", "_") if args.mode else None
     record = run(args.target, args.candidate, reference=args.reference, mode=mode,
-                 reps=args.reps, seed=args.seed, baseline=args.baseline, out_dir=args.out_dir)
+                 reps=args.reps, seed=args.seed, baseline=args.baseline, out_dir=args.out_dir,
+                 include_floor=args.floor)
     print(summary(record))
     return {"pass": 0, "fail": 1, "blocked": 2}[record["verdict"]]
 
