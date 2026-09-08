@@ -48,6 +48,7 @@ from typing import Any, Callable
 import torch
 
 from eval.acceptance import DEFAULTS
+from flash_vla.runtime.identity import Identity
 from flash_vla.runtime.engine import host_slots, segments
 
 from .attribution import Attribution, LoopTrace
@@ -322,10 +323,9 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         torch.cuda.empty_cache()
 
     for leg in legs[1:]:
-        a, b = legs[0]["identity"], leg["identity"]
-        same_workload = all(a[k] == b[k] for k in ("target", "hardware", "model", "shape",
-                                                   "precision"))
-        if not same_workload:
+        reference = Identity.from_dict(legs[0]["identity"])
+        candidate = Identity.from_dict(leg["identity"])
+        if not reference.same_workload(candidate):
             raise ValueError(f"leg {leg['leg']} is not the same workload as leg 0; "
                              "legs of one run may differ in plan only")
 

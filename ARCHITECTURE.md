@@ -87,7 +87,7 @@ component share its kernels and diverge only in their plans.
 | `runtime/binding.py` | route constraints and their validation against a plan |
 | `runtime/engine.py` | the `Engine` protocol every harness is written against |
 | `runtime/cuda/` | `StaticArena` (fixed addresses), `Program` (warmup, freeze, capture, replay) |
-| `runtime/identity.py` | `Identity`: the axes, shape numbers, plan and revision on every report |
+| `runtime/identity.py` | `Identity`: Target axes, plan, engine revision, and report-schema compatibility |
 | `runtime/cost.py` | `Cost`, `Invocation`, `Ceiling`, `SegmentCosts`: the minimal traffic and math a floor divides, and a call site's declared measured ceiling |
 
 ## Invariants
@@ -100,9 +100,10 @@ component share its kernels and diverge only in their plans.
   return values are ignored.
 - Buffers, their padding and their alias views are declared data, not a
   consequence of running the graph.
-- Every report carries an `Identity`. Two numbers are comparable only when
-  target, hardware, model, shape profile and precision policy match and the
-  plan is stated.
+- Every report carries an `Identity`. A workload match requires hardware,
+  model, immutable model revision, the complete shape profile and precision
+  policy to match. Plan and engine revision remain recorded candidate
+  variables and do not change the workload.
 - The floor model is guidance, never an objective. Its ceiling divides only by
   tagged measured constants of the hardware axis's `measured/` table, its
   roofline only by the axis's `spec.py` peaks, and the registry's stop

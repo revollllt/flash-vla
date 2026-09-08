@@ -34,10 +34,16 @@ out of the model contract.
 
 # --- Shared backbone (identical to Pi0) ------------------------------------
 
+MODEL_REVISION = "openpi@15a9616a00943ada6c20a0f158e3adb39df2ccac:pi05"
+
+IMAGE_SIZE = 224
+IMAGE_CHANNELS = 3
 VISION_LAYERS = 27
 VISION_DIM = 1152
 VISION_FFN = 4304
 VISION_TOKENS = 256  # 224 / 14 == 16 patches per side
+VISION_HEADS = 16
+VISION_HEAD_DIM = 72
 
 ENCODER_LAYERS = 18
 ENCODER_DIM = 2048
@@ -45,6 +51,7 @@ ENCODER_FFN = 16384
 
 HEAD_DIM = 256
 DECODER_HEADS = 8
+KV_HEADS = 1
 ROPE_THETA = 10000
 
 # Multiprojection QKV width shared by both Gemma experts:
@@ -56,6 +63,7 @@ QKV_WIDTH = 2560
 DECODER_DIM = 1024
 DECODER_FFN = 4096
 ACTION_DIM = 32
+STATE_DIM = 32
 
 # --- Pi0.5-specific ---------------------------------------------------------
 

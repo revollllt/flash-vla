@@ -98,7 +98,8 @@ class ModelRunner:
         self.plan: dict[str, str] = target.select_plan(plan)
         routes = target.registry.resolve(self.plan, self.graph.call_sites)
         self.identity = Identity(target=target.name, hardware=target.hardware,
-                                 model=target.model, shape=self.shape, plan=routes,
+                                 model=target.model, model_revision=target.model_revision,
+                                 shape=self.shape, plan=routes,
                                  precision=target.precision)
         self.program: tuple[Step, ...] = tuple(self.graph.program)
         self.stage_outputs = {stage: tuple(outputs)

@@ -27,7 +27,36 @@ from flash_vla.runtime.graph import BufRef, WeightRef
 from flash_vla.runtime.vla import STAGE_OUTPUTS
 
 REPO = Path(__file__).resolve().parent.parent
-SHAPE_KEYS = ("num_views", "chunk", "steps", "layers", "prompt_len")
+SHAPE_KEYS = (
+    "batch",
+    "num_views",
+    "image_height",
+    "image_width",
+    "image_channels",
+    "visual_tokens_per_view",
+    "visual_tokens",
+    "vision_dim",
+    "vision_ffn_dim",
+    "vision_heads",
+    "vision_head_dim",
+    "vision_layers",
+    "prompt_len",
+    "prefix_len",
+    "chunk",
+    "expert_tokens",
+    "state_dim",
+    "action_dim",
+    "steps",
+    "layers",
+    "encoder_dim",
+    "encoder_ffn_dim",
+    "query_heads",
+    "kv_heads",
+    "head_dim",
+    "qkv_width",
+    "expert_dim",
+    "expert_ffn_dim",
+)
 
 
 def _check(results: list[dict[str, Any]], name: str, ok: bool, detail: Any = None) -> None:

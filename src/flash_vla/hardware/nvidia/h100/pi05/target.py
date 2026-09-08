@@ -18,7 +18,30 @@ from typing import Any, Mapping
 
 import torch
 
-from flash_vla.models.pi05.spec import ENCODER_LAYERS, MAX_TOKEN_LEN, runtime_shapes
+from flash_vla.models.pi05.spec import (
+    ACTION_DIM,
+    DECODER_DIM,
+    DECODER_FFN,
+    DECODER_HEADS,
+    ENCODER_DIM,
+    ENCODER_FFN,
+    ENCODER_LAYERS,
+    HEAD_DIM,
+    IMAGE_CHANNELS,
+    IMAGE_SIZE,
+    KV_HEADS,
+    MAX_TOKEN_LEN,
+    MODEL_REVISION,
+    QKV_WIDTH,
+    STATE_DIM,
+    VISION_DIM,
+    VISION_FFN,
+    VISION_HEAD_DIM,
+    VISION_HEADS,
+    VISION_LAYERS,
+    VISION_TOKENS,
+    runtime_shapes,
+)
 from flash_vla.runtime import VLA, Input
 from flash_vla.runtime.cost import Ceiling
 from flash_vla.runtime.graph import Graph
@@ -48,13 +71,15 @@ class Pi05(VLA):
     name = "hardware/nvidia/h100/pi05"
     hardware = "h100-sxm5-80gb"
     model = "pi05"
+    model_revision = MODEL_REVISION
     precision = "bf16"
 
     INPUTS = (
-        Input("images", lambda s: (s["num_views"], 224, 224, 3), torch.bfloat16, "images"),
+        Input("images", lambda s: (s["num_views"], IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS),
+              torch.bfloat16, "images"),
         # The state is tokenized on the host into the prompt buffers.
-        Input("state", lambda s: (32,), torch.float32, None),
-        Input("noise", lambda s: (s["chunk"], 32), torch.bfloat16, "actions"),
+        Input("state", lambda s: (STATE_DIM,), torch.float32, None),
+        Input("noise", lambda s: (s["chunk"], ACTION_DIM), torch.bfloat16, "actions"),
     )
 
     registry = REGISTRY
@@ -82,8 +107,37 @@ class Pi05(VLA):
         return Pi05Config(**config)
 
     def shape(self, config: Pi05Config, checkpoint=None) -> dict[str, int]:
-        return {"num_views": config.num_views, "chunk": config.chunk_size,
-                "steps": config.steps, "layers": config.layers, "prompt_len": config.prompt_len}
+        visual_tokens = config.num_views * VISION_TOKENS
+        return {
+            "batch": 1,
+            "num_views": config.num_views,
+            "image_height": IMAGE_SIZE,
+            "image_width": IMAGE_SIZE,
+            "image_channels": IMAGE_CHANNELS,
+            "visual_tokens_per_view": VISION_TOKENS,
+            "visual_tokens": visual_tokens,
+            "vision_dim": VISION_DIM,
+            "vision_ffn_dim": VISION_FFN,
+            "vision_heads": VISION_HEADS,
+            "vision_head_dim": VISION_HEAD_DIM,
+            "vision_layers": VISION_LAYERS,
+            "prompt_len": config.prompt_len,
+            "prefix_len": visual_tokens + config.prompt_len,
+            "chunk": config.chunk_size,
+            "expert_tokens": config.chunk_size,
+            "state_dim": STATE_DIM,
+            "action_dim": ACTION_DIM,
+            "steps": config.steps,
+            "layers": config.layers,
+            "encoder_dim": ENCODER_DIM,
+            "encoder_ffn_dim": ENCODER_FFN,
+            "query_heads": DECODER_HEADS,
+            "kv_heads": KV_HEADS,
+            "head_dim": HEAD_DIM,
+            "qkv_width": QKV_WIDTH,
+            "expert_dim": DECODER_DIM,
+            "expert_ffn_dim": DECODER_FFN,
+        }
 
     def weight_shapes(self, shape: Mapping[str, int]) -> Mapping[str, tuple[int, ...]]:
         return runtime_shapes(shape["steps"])

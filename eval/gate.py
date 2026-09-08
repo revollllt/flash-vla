@@ -50,7 +50,7 @@ from typing import Any
 
 from benchmarks import floor as floor_model
 from benchmarks import latency
-from benchmarks.targets import resolve
+from benchmarks.targets import declare, resolve
 from eval import acceptance
 from eval import correctness as in_engine
 
@@ -248,8 +248,10 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
     reference = reference or "shipped"
     spec = acceptance.for_target(target)
     mode = mode or spec["latency"]["candidate_rule"]["default_mode"]
+    identity = declare(target, candidate).identity.as_dict()
     record: dict[str, Any] = {
-        "target": target, "candidate": {"plan": candidate}, "reference": {"plan": reference},
+        "identity": identity, "target": target,
+        "candidate": {"plan": candidate}, "reference": {"plan": reference},
         "mode": mode, "acceptance_version": _registry_version(), "acceptance": spec,
         "numerical_oracle": {"plan": "reference"}, "performance_incumbent": {"plan": reference},
         "correctness_coverage": {"candidate_to_in_engine_reference": "not_run",

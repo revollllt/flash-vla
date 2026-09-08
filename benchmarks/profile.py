@@ -50,6 +50,7 @@ from typing import Any, Callable
 import torch
 from torch.profiler import ProfilerActivity, profile, record_function
 
+from flash_vla.runtime.identity import Identity
 from flash_vla.runtime.engine import segments
 
 from .latency import _env, parse_options
@@ -368,6 +369,11 @@ def run(target: str, plans: list[str | None], seed: int = 0, trace_dir: str | No
                      "contract": check_contract(engine.graph_contract, names)})
         del engine
         torch.cuda.empty_cache()
+    reference = Identity.from_dict(legs[0]["identity"])
+    for leg in legs[1:]:
+        if not reference.same_workload(Identity.from_dict(leg["identity"])):
+            raise ValueError(f"leg {leg['leg']} is not the same workload as leg 0; "
+                             "profile legs may differ in plan only")
     report = {"identity": legs[0]["identity"], "env": _env(), "sm_count": sm_count,
               "config": {"seed": seed, "plans": plans, "trace_dir": trace_dir},
               "legs": legs, "deltas": _deltas(legs) if len(legs) > 1 else None}

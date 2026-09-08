@@ -107,8 +107,9 @@ invariants.
 
 There are no latency numbers in this file. Every one lives in a report produced
 by `python -m benchmarks latency`, stamped with the identity it was measured
-under — hardware, model, shape profile, precision policy and the resolved plan
-— and two numbers are comparable only when those match. `eval/acceptance.py` is
+under — hardware, immutable model revision, complete shape profile, precision
+policy, resolved plan and engine revision. Workload comparison ignores the
+last two and rejects any mismatch in the Target axes. `eval/acceptance.py` is
 the registry of what gates: the correctness checks and their tolerances, the
 latency statistics and repetition policy, each Target's budget. `python -m
 eval.gate` turns a run into one verdict.

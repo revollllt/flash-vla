@@ -10,12 +10,12 @@ here knows a model, a backend or a device.
 from __future__ import annotations
 
 from .graph import BufRef, Graph, WeightRef
-from .identity import PRECISION_POLICIES, Identity, git_revision
+from .identity import IDENTITY_SCHEMA_VERSION, PRECISION_POLICIES, Identity, git_revision
 from .ops import OpSpec, Vocabulary
 from .registry import Registry
 from .runner import ModelRunner, Scratch
 from .vla import DTYPES, STAGES, STAGE_OUTPUTS, VLA, Input
 
-__all__ = ["BufRef", "DTYPES", "Graph", "Identity", "Input", "ModelRunner", "OpSpec",
-           "PRECISION_POLICIES", "Registry", "STAGES", "STAGE_OUTPUTS", "Scratch", "VLA",
-           "Vocabulary", "WeightRef", "git_revision"]
+__all__ = ["BufRef", "DTYPES", "Graph", "IDENTITY_SCHEMA_VERSION", "Identity", "Input",
+           "ModelRunner", "OpSpec", "PRECISION_POLICIES", "Registry", "STAGES",
+           "STAGE_OUTPUTS", "Scratch", "VLA", "Vocabulary", "WeightRef", "git_revision"]

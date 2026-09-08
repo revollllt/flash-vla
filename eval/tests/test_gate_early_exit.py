@@ -19,6 +19,9 @@ class EarlyExitTests(unittest.TestCase):
     def test_correctness_failure_stops_before_timing(self):
         result = self.run_with_checks([dict(check='shallow', mode='gate', status='failed')], [])
         self.assertEqual(result['verdict'], 'fail')
+        self.assertEqual(result['identity']['schema_version'], 2)
+        self.assertIn('model_revision', result['identity'])
+        self.assertIn('engine_revision', result['identity'])
         self.assertEqual(result['performance_incumbent']['plan'], 'shipped')
         self.assertEqual(result['numerical_oracle']['plan'], 'reference')
         self.assertEqual(result['correctness_coverage']['candidate_to_official'], 'not_run')
