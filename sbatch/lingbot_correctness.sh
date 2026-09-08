@@ -28,7 +28,8 @@ QWEN="${ROOT}/artifacts/upstreams/qwen2.5-vl-3b-instruct"
 OUTPUT="${ROOT}/artifacts/onboarding/lingbot-vla-4b-h100-bf16/correctness"
 mkdir -p "${OUTPUT}"
 
-"${PYTHON}" -u -m eval.smoke --json > "${OUTPUT}/declaration-smoke.json"
+/data/user/jzou521/.conda/envs/fouroversix/bin/python -u -m eval.smoke --json \
+  > "${OUTPUT}/declaration-smoke.json"
 
 for case in shallow full-single-step; do
   if [[ "${case}" == "shallow" ]]; then
