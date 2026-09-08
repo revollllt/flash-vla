@@ -104,7 +104,9 @@ component share its kernels and diverge only in their plans.
   model, immutable model revision, the complete shape profile and precision
   policy to match. Plan and engine revision remain recorded candidate
   variables and do not change the workload. Checkpoint producers pass the
-  model revision explicitly; dirty source has no resolved engine revision.
+  model revision explicitly; dirty source has no resolved engine revision and
+  cannot enter qualification. Official-baseline identities remain in gate
+  evidence, and a workload mismatch blocks the verdict.
 - The floor model is guidance, never an objective. Its ceiling divides only by
   tagged measured constants of the hardware axis's `measured/` table, its
   roofline only by the axis's `spec.py` peaks, and the registry's stop

@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from flash_vla.bench import KernelResult, write_csv
 from flash_vla.runtime.identity import IDENTITY_SCHEMA_VERSION, Identity, git_revision
@@ -94,6 +95,7 @@ class IdentitySerializationTests(unittest.TestCase):
 class ProducerIdentityTests(unittest.TestCase):
     def test_random_checkpoint_seed_changes_model_revision(self):
         from benchmarks.targets import declare
+        from eval.pi05.reference import _checkpoint_revision
 
         for target in ("h100/pi0", "h100/pi05"):
             with self.subTest(target=target):
@@ -102,6 +104,8 @@ class ProducerIdentityTests(unittest.TestCase):
                 other = declare(target, seed=1).identity
                 self.assertTrue(first.same_workload(repeat))
                 self.assertFalse(first.same_workload(other))
+        self.assertNotEqual(declare("h100/pi05", seed=0).identity.model_revision,
+                            _checkpoint_revision(None, None, 0))
 
     def test_kernel_csv_carries_complete_identity(self):
         expected = identity().as_dict()
@@ -112,6 +116,26 @@ class ProducerIdentityTests(unittest.TestCase):
             with path.open(newline="") as handle:
                 row = next(csv.DictReader(handle))
         self.assertEqual(json.loads(row["identity"]), expected)
+
+    def test_kernel_csv_rejects_legacy_header_before_append(self):
+        result = KernelResult("site", [1.0], identity=identity().as_dict())
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "kernels.csv"
+            path.write_text("label,median_ms,min_ms,mean_ms,std_ms,p99_ms,"
+                            "tflops,tb_per_sec,num_samples\n")
+            with self.assertRaisesRegex(ValueError, "CSV schema mismatch"):
+                write_csv(str(path), [result])
+
+    def test_pi0_checkpoint_override_requires_its_own_revision(self):
+        from eval.pi0 import reference
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "model.safetensors"
+            checkpoint.touch()
+            with patch.object(reference, "run") as run:
+                status = reference.main(["--checkpoint", str(checkpoint)])
+        self.assertEqual(status, reference.UNAVAILABLE)
+        run.assert_not_called()
 
 
 class EngineRevisionTests(unittest.TestCase):

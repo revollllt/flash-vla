@@ -44,8 +44,13 @@ that decide whether a new VLA model or device can be brought up quickly:
    the benchmark factories use a project-defined random-fixture version plus
    seed, the registered Pi0 checkpoint has its own project-defined ID, and an
    overridden real checkpoint without an explicit revision is unavailable.
+   The internal Pi0.5 random fixture and the OpenPI-produced random fixture use
+   distinct namespaces because they are different tensors even at one seed.
    `engine_revision` is the full HEAD of a clean checkout; dirty source remains
-   unresolved instead of claiming its parent commit. Each Target owns the
+   unresolved instead of claiming its parent commit, and qualification blocks
+   before correctness when it is unresolved. Official-baseline JSON identities
+   are retained in gate evidence and a workload mismatch blocks the verdict.
+   Each Target owns the
    ordered shape axes its declaration smoke checks, so adding a different model
    does not freeze it to the Pi/Gemma schema.
 2. **Acceptance as one registry.** `eval/acceptance.py` holds framework
@@ -165,7 +170,9 @@ that decide whether a new VLA model or device can be brought up quickly:
 Identity V2 is covered by pure-CPU tests for the seven workload comparisons,
 v1 reading with fail-closed comparison, v2 serialization, empty or reserved
 mutable revision labels, deterministic fixture revision separation, clean and
-dirty engine revisions, and kernel CSV identity. Declaration smoke checks each
+dirty engine revisions, baseline mismatch rejection, and kernel CSV identity.
+The kernel CSV writer rejects an older header instead of silently appending a
+misaligned row. Declaration smoke checks each
 Pi Target's own complete shape axes and plan binding. The phase GPU evidence is
 recorded with the PR-1 milestone after both Target smoke runs.
 

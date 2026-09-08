@@ -88,11 +88,12 @@ from benchmarks.targets import PLAN_NAMES
 from eval.acceptance import tolerances
 from eval.baselines import openpi05
 from eval.metrics import error_metrics
-from flash_vla.models.pi05.spec import HEAD_DIM, VISION_TOKENS, random_checkpoint_revision
+from flash_vla.models.pi05.spec import HEAD_DIM, VISION_TOKENS
 from flash_vla.models.pi05.tokenize import Pi05Tokenizer
 from flash_vla.models.pi05.weights import fold
 
 DEFAULT_PROMPT = "pick up the plate and put it in the sink"
+OPENPI_RANDOM_CHECKPOINT_REVISION = "flash-vla/openpi-pi05-random-checkpoint/v1"
 
 # Thresholds come from the acceptance registry, read for the precision policy
 # the runner reports. Layer 0 carries no accumulated error, so it is held
@@ -123,7 +124,7 @@ def _cache_layers(past_key_values) -> list[tuple[torch.Tensor, torch.Tensor]]:
 def _checkpoint_revision(checkpoint: str | None, model_revision: str | None,
                          seed: int) -> str:
     if checkpoint is None:
-        return random_checkpoint_revision(seed)
+        return f"{OPENPI_RANDOM_CHECKPOINT_REVISION}/seed-{seed}"
     if not model_revision:
         raise ValueError("a real checkpoint needs an immutable model_revision")
     return model_revision

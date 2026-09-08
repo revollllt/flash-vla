@@ -35,7 +35,8 @@ for a refactor or a correctness fix: nothing may regress beyond the spread.
 Baseline-tier scripts (official implementation adapters) run under the
 interpreter the registry names for the Target when `--baseline` is given;
 otherwise they are recorded as not run, which blocks the verdict rather than
-passing it. Latency never overrides a correctness gate.
+passing it. Their report identities are retained, and a different workload
+blocks the verdict. Latency never overrides a correctness gate.
 """
 from __future__ import annotations
 
@@ -53,6 +54,7 @@ from benchmarks import latency
 from benchmarks.targets import declare, resolve
 from eval import acceptance
 from eval import correctness as in_engine
+from flash_vla.runtime.identity import Identity
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -113,12 +115,32 @@ def _run_in_engine_checks(target: str, candidate: str, checks: list[dict[str, An
     return results
 
 
+def _json_reports(text: str) -> list[dict[str, Any]]:
+    """Decode the concatenated JSON objects emitted by one baseline adapter."""
+    decoder = json.JSONDecoder()
+    reports = []
+    index = 0
+    while index < len(text):
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index == len(text):
+            break
+        report, index = decoder.raw_decode(text, index)
+        if not isinstance(report, dict):
+            raise ValueError("baseline report must be a JSON object")
+        reports.append(report)
+    return reports
+
+
 def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
-                         run: bool, python: str | None) -> list[dict[str, Any]]:
+                         run: bool, python: str | None, expected: Identity,
+                         seed: int) -> list[dict[str, Any]]:
     """The official-baseline tier: the Target's scripts as subprocesses, or not run.
 
     Each script runs once under the registry's interpreter; a baseline check
-    passes when every script passed, is unavailable when the interpreter is
+    passes when every script passed with the expected workload Identity, is
+    mismatched when an adapter used a different checkpoint/shape/precision,
+    and is unavailable when the interpreter is
     missing, a script could not import its adapter, or a script reported
     itself unavailable (`baseline unavailable:` on stderr, a missing
     checkpoint), and fails otherwise. The scripts own their own gate/report
@@ -141,15 +163,34 @@ def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
                                                     env.get("PYTHONPATH", "")) if p)
     runs = []
     for script in scripts:
-        proc = subprocess.run([python, "-m", script], capture_output=True, text=True,
+        proc = subprocess.run([python, "-m", script, "--seed", str(seed)],
+                              capture_output=True, text=True,
                               cwd=REPO, env=env)
         status = "passed" if proc.returncode == 0 else "failed"
         if "ModuleNotFoundError" in proc.stderr or "baseline unavailable:" in proc.stderr:
             status = "unavailable"
-        runs.append({"script": script, "python": python, "status": status,
-                     "returncode": proc.returncode, "stderr_tail": proc.stderr[-2000:]})
+        result = {"script": script, "python": python, "status": status,
+                  "returncode": proc.returncode, "stderr_tail": proc.stderr[-2000:]}
+        if proc.stdout.strip():
+            try:
+                identities = [report["identity"] for report in _json_reports(proc.stdout)]
+                parsed = [Identity.from_dict(value) for value in identities]
+            except (KeyError, TypeError, ValueError) as error:
+                result["identity_error"] = str(error)
+                if status == "passed":
+                    result["status"] = "failed"
+            else:
+                result["identities"] = identities
+                if status == "passed" and (not parsed or not all(
+                        expected.same_workload(value) for value in parsed)):
+                    result["status"] = "mismatched"
+        elif status == "passed":
+            result["status"] = "failed"
+            result["identity_error"] = "baseline adapter emitted no JSON report"
+        runs.append(result)
     statuses = {r["status"] for r in runs}
-    overall = ("unavailable" if "unavailable" in statuses
+    overall = ("mismatched" if "mismatched" in statuses
+               else "unavailable" if "unavailable" in statuses
                else "failed" if "failed" in statuses else "passed")
     return [{"check": c["check"], "mode": c["mode"], "status": overall, "scripts": runs}
             for c in baseline_checks]
@@ -248,7 +289,8 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
     reference = reference or "shipped"
     spec = acceptance.for_target(target)
     mode = mode or spec["latency"]["candidate_rule"]["default_mode"]
-    identity = declare(target, candidate, seed=seed).identity.as_dict()
+    declared_identity = declare(target, candidate, seed=seed).identity
+    identity = declared_identity.as_dict()
     record: dict[str, Any] = {
         "identity": identity, "target": target,
         "candidate": {"plan": candidate}, "reference": {"plan": reference},
@@ -260,6 +302,10 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
         "budget": spec["budget"], "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "checks": [], "latency": None, "deployment": None, "floor": None, "verdict": None,
     }
+    if declared_identity.engine_revision is None:
+        record["verdict"] = "blocked"
+        record["reason"] = "engine revision is unresolved; commit the source before qualification"
+        return _finish(record, out_dir)
     if spec["budget"] is None:
         record["verdict"] = "blocked"
         record["reason"] = f"no acceptance entry with a budget for {target}"
@@ -275,13 +321,15 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
     baseline_scripts = tuple(spec["scripts"].get("official_baseline", ()))
     if "baseline_adapter" in spec["capabilities"]:
         record["checks"] += _run_baseline_checks(baseline_scripts, checks, baseline,
-                                                 spec["baseline_python"])
+                                                 spec["baseline_python"], declared_identity,
+                                                 seed)
         record["correctness_coverage"]["official_adapter"] = "requested" if baseline else "not_run"
     failed = [c["check"] for c in record["checks"] if c["mode"] == "gate" and c["status"] == "failed"]
-    blocked = [c["check"] for c in record["checks"] if c["mode"] == "gate" and c["status"] in ("not_run", "unavailable")]
+    blocked = [c["check"] for c in record["checks"] if c["mode"] == "gate"
+               and c["status"] in ("not_run", "unavailable", "mismatched")]
     if failed or blocked:
         record["verdict"] = "fail" if failed else "blocked"
-        record["reason"] = f"required correctness evidence: failed={failed}, unavailable={blocked}"
+        record["reason"] = f"required correctness evidence: failed={failed}, blocked={blocked}"
         return _finish(record, out_dir)
 
     lat = spec["latency"]
@@ -296,7 +344,8 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
 
     gates = [c for c in record["checks"] if c["mode"] == "gate"]
     failed = [c["check"] for c in gates if c["status"] == "failed"]
-    blocked = [c["check"] for c in gates if c["status"] in ("not_run", "unavailable")]
+    blocked = [c["check"] for c in gates
+               if c["status"] in ("not_run", "unavailable", "mismatched")]
     rule = record["latency"]["rule"]
     dep = record["deployment"]
     if failed:

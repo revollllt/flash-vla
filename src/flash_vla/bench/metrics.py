@@ -161,13 +161,17 @@ def write_csv(path: str, results: Iterable[KernelResult]) -> None:
     rows = list(results)
     if not rows:
         return
-    new_file = not __import__("os").path.exists(path)
+    fieldnames = ["label", "median_ms", "min_ms", "mean_ms", "std_ms", "p99_ms",
+                  "tflops", "tb_per_sec", "num_samples", "identity"]
+    os = __import__("os")
+    new_file = not os.path.exists(path) or os.path.getsize(path) == 0
+    if not new_file:
+        with open(path, newline="") as existing:
+            header = next(csv.reader(existing), [])
+        if header != fieldnames:
+            raise ValueError(f"CSV schema mismatch in {path}: {header!r} != {fieldnames!r}")
     with open(path, "w" if new_file else "a", newline="") as f:
-        w = csv.DictWriter(
-            f,
-            fieldnames=["label", "median_ms", "min_ms", "mean_ms", "std_ms", "p99_ms",
-                        "tflops", "tb_per_sec", "num_samples", "identity"],
-        )
+        w = csv.DictWriter(f, fieldnames=fieldnames)
         if new_file:
             w.writeheader()
         for r in rows:

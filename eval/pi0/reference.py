@@ -2,7 +2,8 @@
 
     python -m eval.pi0.reference                       # the registry's checkpoint, reference route
     python -m eval.pi0.reference --plan shipped
-    OPENPI_PI0_CHECKPOINT=/path/to/pi0 python -m eval.pi0.reference
+    OPENPI_PI0_CHECKPOINT=/path/to/pi0 \
+    OPENPI_PI0_MODEL_REVISION=immutable-id python -m eval.pi0.reference
 
 The official-baseline tier of the acceptance registry: the Target's reference
 route, built from the OpenPI checkpoint's weights, against OpenPI's own
@@ -81,12 +82,12 @@ def run(checkpoint: str, *, model_revision: str, seed: int = 0, device: str = "c
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--checkpoint", default=OPENPI_PI0_CHECKPOINT,
+        "--checkpoint", default=None,
         help="OpenPI model.safetensors or its directory (default: the registry's "
              "OPENPI_PI0_CHECKPOINT)"
     )
     parser.add_argument(
-        "--model-revision", default=OPENPI_PI0_MODEL_REVISION,
+        "--model-revision", default=None,
         help="immutable checkpoint ID (default: registered ID for the default checkpoint)"
     )
     parser.add_argument("--plan", default="reference",
@@ -94,18 +95,20 @@ def main(argv=None) -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args(argv)
-    checkpoint = Path(args.checkpoint)
+    checkpoint = Path(args.checkpoint or OPENPI_PI0_CHECKPOINT)
     if checkpoint.is_dir():
         checkpoint = checkpoint / "model.safetensors"
     if not checkpoint.is_file():
         print(f"baseline unavailable: OpenPI checkpoint not found at {checkpoint} "
               "(set OPENPI_PI0_CHECKPOINT)", file=sys.stderr)
         return UNAVAILABLE
-    if not args.model_revision:
+    model_revision = (args.model_revision if args.checkpoint is not None
+                      else args.model_revision or OPENPI_PI0_MODEL_REVISION)
+    if not model_revision:
         print("baseline unavailable: an overridden OpenPI checkpoint needs "
               "OPENPI_PI0_MODEL_REVISION or --model-revision", file=sys.stderr)
         return UNAVAILABLE
-    report = run(str(checkpoint), model_revision=args.model_revision, seed=args.seed,
+    report = run(str(checkpoint), model_revision=model_revision, seed=args.seed,
                  device=args.device, plan=args.plan)
     return 0 if report["passed"] else 1
 

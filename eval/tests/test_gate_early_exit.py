@@ -1,12 +1,26 @@
+import json
+import subprocess
+import sys
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
+
 from eval import gate
+from flash_vla.runtime.identity import Identity
+
+
+def declared(model_revision='fixture/seed-0', engine_revision='engine'):
+    return SimpleNamespace(identity=Identity(
+        target='hardware/nvidia/h100/pi05', hardware='h100-sxm5-80gb', model='pi05',
+        model_revision=model_revision, shape={'chunk': 50, 'steps': 10},
+        plan={'site': 'backend'}, precision='bf16', engine_revision=engine_revision))
 
 
 class EarlyExitTests(unittest.TestCase):
     def run_with_checks(self, checks, baseline_checks):
         with patch.object(gate, '_run_in_engine_checks', return_value=checks), \
              patch.object(gate, '_run_baseline_checks', return_value=baseline_checks), \
+             patch.object(gate, 'declare', return_value=declared()), \
              patch.object(gate, '_registry_version', return_value='test'), \
              patch.object(gate, '_finish', side_effect=lambda record, out: record), \
              patch.object(gate.latency, 'run') as measure, \
@@ -41,6 +55,29 @@ class EarlyExitTests(unittest.TestCase):
         self.assertEqual(run.call_count, 1)
 
     def test_missing_adapter_is_unavailable(self):
-        import sys
         checks = [dict(check='official', mode='gate', oracle='official_baseline')]
-        self.assertEqual(gate._run_baseline_checks((), checks, True, sys.executable)[0]['status'], 'unavailable')
+        result = gate._run_baseline_checks((), checks, True, sys.executable,
+                                           declared().identity, 0)
+        self.assertEqual(result[0]['status'], 'unavailable')
+
+    def test_baseline_identity_mismatch_is_preserved_and_rejected(self):
+        checks = [dict(check='official', mode='gate', oracle='official_baseline')]
+        baseline = declared(model_revision='fixture/seed-1').identity.as_dict()
+        stdout = json.dumps({'identity': baseline}) + '\n' + json.dumps({'identity': baseline})
+        proc = subprocess.CompletedProcess([], 0, stdout=stdout, stderr='')
+        with patch.object(gate.subprocess, 'run', return_value=proc) as invoke:
+            result = gate._run_baseline_checks(('adapter',), checks, True, sys.executable,
+                                               declared().identity, 0)
+        self.assertEqual(result[0]['status'], 'mismatched')
+        self.assertEqual(result[0]['scripts'][0]['identities'], [baseline, baseline])
+        self.assertEqual(invoke.call_args.args[0][-2:], ['--seed', '0'])
+
+    def test_unresolved_engine_revision_blocks_before_correctness(self):
+        with patch.object(gate, 'declare', return_value=declared(engine_revision=None)), \
+             patch.object(gate, '_registry_version', return_value='test'), \
+             patch.object(gate, '_finish', side_effect=lambda record, out: record), \
+             patch.object(gate, '_run_in_engine_checks') as checks:
+            result = gate.run('h100/pi05')
+        self.assertEqual(result['verdict'], 'blocked')
+        self.assertIn('engine revision is unresolved', result['reason'])
+        checks.assert_not_called()
