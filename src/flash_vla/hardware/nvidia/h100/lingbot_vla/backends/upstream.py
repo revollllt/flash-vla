@@ -230,6 +230,7 @@ class _State:
     def __init__(self) -> None:
         self.core = None
         self.vision_metadata = None
+        self.action_constants = None
 
     def ensure(self, weights, layers: int):
         if self.core is None:
@@ -302,8 +303,13 @@ def make_wrappers(scratch, selected_names=None):
             }
             for layer in range(layers)
         }
-        dt = torch.tensor(-1.0 / steps, dtype=noise.dtype, device=noise.device)
-        time = torch.tensor(1.0, dtype=noise.dtype, device=noise.device)
+        if state.action_constants is None:
+            state.action_constants = (
+                torch.tensor(-1.0 / steps, dtype=noise.dtype, device=noise.device),
+                torch.tensor(1.0, dtype=noise.dtype, device=noise.device),
+            )
+        dt, initial_time = state.action_constants
+        time = initial_time.clone()
         current = noise.clone()
         for step in range(steps):
             velocity = core.predict_velocity(
