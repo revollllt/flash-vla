@@ -24,7 +24,6 @@ from typing import Any, Callable, Mapping
 
 from benchmarks.targets import TARGETS, declare, resolve
 from flash_vla.runtime.graph import BufRef, WeightRef
-from flash_vla.runtime.vla import STAGE_OUTPUTS
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -50,7 +49,7 @@ def check_target(target: str) -> list[dict[str, Any]]:
                   or (isinstance(r, WeightRef) and r.name not in graph.weight_shapes)]
     _check(results, "references declared", not undeclared, undeclared[:5])
     outputs_ok = True
-    for stage, outputs in STAGE_OUTPUTS.items():
+    for stage, outputs in runner.stage_outputs.items():
         for buffer, axis in outputs:
             spec = graph.buffers.get(buffer)
             if spec is None:
@@ -119,6 +118,7 @@ def _pi05_routes(plan: Mapping[str, str]) -> bool:
 
 
 _ROUTE_ORACLES: dict[str, Callable[[Mapping[str, str]], bool]] = {
+    "hardware/nvidia/h100/lingbot_vla": lambda plan: len(set(plan.values())) <= 1,
     "hardware/nvidia/h100/pi05": _pi05_routes,
     "hardware/nvidia/h100/pi0": lambda plan: True,
 }

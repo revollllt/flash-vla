@@ -188,6 +188,19 @@ DEFAULTS: dict[str, Any] = {
 #: Target: every task on the Target starts with it, and a task's contract may
 #: narrow it, never widen it.
 TARGETS: dict[str, dict[str, Any]] = {
+    "hardware/nvidia/h100/lingbot_vla": {
+        "budget": {"candidates": 6, "non_improving": 3, "jobs": 12},
+        "scripts": {
+            "in_engine_reference": "eval.correctness",
+            "official_baseline": ("eval.lingbot.parity",),
+        },
+        "baseline_python": (
+            "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/"
+            "lingbot-official-4eb34b7/bin/python"
+        ),
+        "capabilities": ("baseline_adapter",),
+        "overrides": {},
+    },
     "hardware/nvidia/h100/pi05": {
         "budget": {"candidates": 6, "non_improving": 3, "jobs": 12},
         "scripts": {

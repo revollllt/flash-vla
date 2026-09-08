@@ -16,6 +16,7 @@ JSON file (the candidate plans of the optimization workspace, `lab/plans/`).
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Callable
 
 from flash_vla.runtime import ModelRunner
@@ -63,13 +64,39 @@ def _pi0(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_size
                        device=device, **config)
 
 
+def _lingbot(plan: Any = "shipped", *, seed: int = 42, steps: int = 10, layers: int = 36,
+             device: str = "cuda", declare: bool = False,
+             checkpoint: str = (
+                 "/data/user/jzou521/models/"
+                 "lingbot-vla-4b-posttrain-robotwin-fb71a2c"
+             ),
+             fixture: str = (
+                 "/data/user/jzou521/codes/cuda/flash-vla/artifacts/onboarding/"
+                 "lingbot-vla-4b-h100-bf16/official/fixture.safetensors"
+             )):
+    from flash_vla.hardware.nvidia.h100.lingbot_vla import TARGET
+    from flash_vla.models.lingbot import MODEL_REVISION, load_checkpoint
+
+    config = dict(steps=steps, layers=layers)
+    if declare:
+        return ModelRunner(TARGET, None, model_revision=MODEL_REVISION, plan=plan,
+                           device="cpu", capture=False, **config)
+    os.environ["LINGBOT_CHECKPOINT"] = checkpoint
+    os.environ["LINGBOT_FIXTURE"] = fixture
+    return ModelRunner(TARGET, load_checkpoint(checkpoint), model_revision=MODEL_REVISION,
+                       plan=plan, device=device, **config)
+
+
 #: Target name -> factory. Short aliases resolve through `resolve`.
 TARGETS: dict[str, Callable[..., Any]] = {
+    "hardware/nvidia/h100/lingbot_vla": _lingbot,
     "hardware/nvidia/h100/pi05": _pi05,
     "hardware/nvidia/h100/pi0": _pi0,
 }
 _ALIASES = {"h100/pi05": "hardware/nvidia/h100/pi05", "pi05": "hardware/nvidia/h100/pi05",
-            "h100/pi0": "hardware/nvidia/h100/pi0", "pi0": "hardware/nvidia/h100/pi0"}
+            "h100/pi0": "hardware/nvidia/h100/pi0", "pi0": "hardware/nvidia/h100/pi0",
+            "h100/lingbot_vla": "hardware/nvidia/h100/lingbot_vla",
+            "lingbot_vla": "hardware/nvidia/h100/lingbot_vla"}
 
 #: The two plan names every Target understands.
 PLAN_NAMES = ("shipped", "reference")
