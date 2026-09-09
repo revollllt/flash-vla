@@ -1,26 +1,25 @@
 # Acceptance contract
 
-The onboarding handoff is complete only when the derived state reports
-`READY_FOR_OPTIMIZATION` and the evidence supports every item below. This is a
-sequencing contract for integration, not a new deployment gate; the existing
-acceptance registry remains authoritative for deployability.
+READY_FOR_OPTIMIZATION requires all ordered v2 stage evidence and a verified
+Campaign/publication handoff. Existing acceptance policies own deployability;
+this workflow does not introduce another deployment gate.
 
-- [ ] upstream repository and immutable commit are frozen
-- [ ] checkpoint and model revision are frozen
-- [ ] official oracle outputs exist
-- [ ] compatibility report answers all nine required questions
-- [ ] model package exists
-- [ ] Target and pipeline exist
-- [ ] benchmark target is registered
-- [ ] acceptance policy is registered
-- [ ] official baseline adapter exists
-- [ ] declaration smoke passes
-- [ ] the complete correctness ladder passes
-- [ ] all four baseline tiers are recorded
-- [ ] call-site floor and profile evidence exist
-- [ ] a persistent Campaign is created
+- Target architecture revision, inference signature and complete shape are explicit.
+- Initial weights carry checkpoint ID and immutable provenance outside Target identity.
+- ExecutionVariant and reference repository/commit are independently recorded.
+- The model contract reproduces the Target signature.
+- The observed checkpoint contract matches that signature before official-reference work.
+- Official oracle outputs and the computation compatibility inventory exist.
+- Target, loaders, registration and the full correctness ladder pass.
+- All four baseline tiers and call-site floor/profile evidence are retained.
+- The canonical Registry supplies the actual Campaign and registered budget.
+- An activated segment binds the initial weights, reference, correctness and uninstrumented anchor.
+- Published trace, snapshot, summaries, SVG and index retain that segment and lineage.
 
-The human is not required to write implementation code. The agent may ask for
-a deployment-affecting choice only when neither the request nor official
-deployment configuration resolves it; that uncertainty stays visible in the
-spec until resolved.
+New checkpoint, fixture, environment or rebaselined reference changes retain a
+compatible Campaign and require context validation before handoff. A re-anchor
+consumes no optimization iteration and supplies no cross-context speedup.
+A fresh clone seeds published history and must establish a newer validated anchor.
+
+Legacy v1 evidence cannot establish these v2 conditions; its completed state is
+LEGACY_REVALIDATION_REQUIRED. Do not infer architecture identity from its checkpoint.

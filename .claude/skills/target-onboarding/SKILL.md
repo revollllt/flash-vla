@@ -28,6 +28,12 @@ the official oracle and compatibility report exist.
 4. Follow [the workflow](references/workflow.md) in its fixed order. Record a
    failed or blocked attempt before correcting it; the next attempt is appended.
 
+The v2 spec separates the Target's architecture revision/signature and shape
+from initial checkpoint provenance, ExecutionVariant and reference repository/commit.
+A compatible fine-tuned checkpoint reuses the existing Target and Campaign.
+Its new correctness and latency anchor belong to a new measurement segment.
+Legacy v1 records remain readable but require explicit v2 revalidation.
+
 ## Boundary rules
 
 - Model schema, weights, tokenization/processing, graph composition, fixed
@@ -52,5 +58,8 @@ the official oracle and compatibility report exist.
 
 The workflow is ready for autonomous optimization only when
 `python -m lab.onboarding validate <workspace>` reports
-`READY_FOR_OPTIMIZATION`. At that point the recorded Campaign, not this skill,
-owns candidate selection and optimization evidence.
+`READY_FOR_OPTIMIZATION`. Readiness requires a real canonical Campaign, a validated anchor for the initial
+checkpoint, and matching published trace/snapshot/context summary and discovery.
+Use the handoff command in the workflow; a textual Campaign path is insufficient.
+Publication failures are recoverable without rerunning experiments. At readiness,
+the Campaign owns candidate selection and optimization evidence.

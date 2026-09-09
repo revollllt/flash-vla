@@ -4,70 +4,81 @@ Status: implemented
 
 ## Problem
 
-The repository documented what a completed Target contains, but not how an
-agent should get an unfamiliar upstream model there. Starting with kernels
-would lose the official oracle and obscure whether missing behavior belonged
-in an existing component, the Target, or the runtime. Deployment values not
-given by the human also had no durable place to expose their provenance.
+An onboarding record must distinguish a compatible model architecture from the
+initial fine-tuned checkpoint and reference implementation. A textual Campaign
+path and claimed baseline state do not establish a recoverable optimization
+handoff, especially after publication failure or a checkpoint change.
 
 ## Decision
 
-Add the `target-onboarding` skill and a small `lab.onboarding` evidence tool.
-The workflow fixes only the dependency order: requirement and upstream freeze,
-official reference, compatibility scan, Target bring-up, correctness ladder,
-four-tier baseline, geometry-specific floor/profile, then Campaign creation.
-Unsuccessful stage attempts are appended and remain visible; derived state
-blocks later stages until the current one passes.
+V2 onboarding separates the canonical Target axes, ExecutionVariant, initial
+weight provenance and reference repository/commit. Model and observed checkpoint
+contracts use the existing machine-checkable inference signature. Weight values
+and filesystem locations do not identify the architecture. Incompatible
+checkpoint structure or inference semantics require another compatible Target.
 
-The machine-readable spec records the upstream repository/commit, checkpoint,
-model revision, hardware/deployment configuration, precision, complete shape
-profile, objective, correctness requirements, benchmark protocol, deployment
-bound, optimization budget, and explicit assumptions. It adds no hashes.
+Stage dependencies are requirements, reference, model contract, weights
+compatibility, official oracle, computation inventory, Target bring-up,
+correctness ladder, four baseline tiers, floor/profile, Campaign and publication.
+Failed attempts remain visible. The compatibility inventory expresses explicit
+engineering judgment; it does not infer runtime ownership from source syntax.
+Runtime changes still require an invariant a legal Target cannot otherwise
+express and the existing model-independence checks.
 
-Compatibility is a reviewed computation inventory, not an inferred source
-parser. The tool renders the JSON and Markdown summaries from that one
-inventory and answers the required coverage, reuse, Target-local operation,
-runtime-primitive, dynamic-shape, allocation, synchronization, capture, and
-control-flow questions. This keeps classification judgment explicit while
-preventing the two report formats from drifting.
+The canonical Registry owns Campaign discovery and uniqueness. Local state,
+then published continuation, take precedence over a supplied new baseline.
+The initial checkpoint, reference and objective/protocol must match a validated
+activated anchor. The requested optimization budget must match the registered
+Target policy; handoff does not silently replace it. A compatible existing
+Campaign retains its portable incumbent and iterations. Changed checkpoint,
+fixture, environment or rebaselined reference requires a context transition.
+Fresh-clone imports require a newer validated segment even for equal assets.
 
-Runtime modification remains exceptional: the evidence must name an invariant
-that a correct legal Target cannot express and show model independence, Pi0
-and Pi0.5 smoke, dependency direction, and benchmark API compatibility.
+Readiness requires actual Campaign and published facts, including a matching
+trace segment, resume snapshot, context summaries and global index entry.
+Campaign creation may survive a failed publication, but that failure cannot
+produce READY_FOR_OPTIMIZATION. Handoff retries publication without replaying
+experiments. Interrupted transitions retain the Campaign's explicit reconciliation
+requirements. A local handoff lock serializes duplicate callers.
+
+New handoff receipts require the currently validated segment, with no active
+experiment or unresolved re-anchor. A new publication receipt also requires
+completed publication of the current terminal ledger, including same-segment
+iterations after its anchor. Historical reconstruction of completed
+onboarding retains its original activated segment after later Campaign work.
+Missing or inconsistent authoritative/published facts invalidate a new readiness
+check until repaired through existing Campaign/results tools.
+
+Legacy v1 records remain readable under their original semantics. Completed
+v1 evidence is LEGACY_REVALIDATION_REQUIRED; it cannot be silently upgraded to
+architecture identity or used to authorize v2 optimization. New initialization
+requires an explicit v2 spec.
 
 ## Alternatives considered
 
-- Generate a generic model package from the spec: rejected. Model graphs,
-  weights, tokenization, and shapes are model semantics and belong in the
-  Target; a generator would invent an abstraction before a second use.
-- Parse upstream Python to classify operations automatically: rejected. Static
-  syntax cannot reliably decide capture behavior or runtime ownership, and a
-  confident wrong classification is worse than an explicit reviewed inventory.
-- Add the sequence to the deployment gate: rejected. It is onboarding evidence
-  and stage ordering; the acceptance registry already decides deployability.
-- Create a real third model in this change: deferred to the following LingBot
-  reference bring-up so the protocol and the integration remain separate,
-  reviewable changes.
+- A claimed directory and BASELINED label cannot prove the underlying ledger,
+  checkpoint validation or published continuation exists.
+- Creating a new lineage on checkpoint change would lose compatible optimization
+  history; attaching without revalidation would misattribute performance.
+- Treating stage evidence as another deployment gate would duplicate acceptance
+  policy. Onboarding instead binds existing evidence to ordered handoff facts.
+- A generic model generator or source classifier would invent graph and
+  ownership decisions; the Target and reviewed computation inventory own them.
 
 ## Consequences
 
-`python -m lab.onboarding` creates and validates an ignored onboarding
-workspace, renders compatibility reports, retains failed attempts, and hands
-off only to a recorded Campaign. The skill tells the agent where model-specific
-files and registrations belong without modifying runtime by default.
-
-The protocol test uses a fictitious previously unseen model to exercise the
-complete state transition and contract. That proves the orchestration tool,
-not real-model compatibility; the LingBot bring-up must supply the first real
-upstream, oracle, and GPU evidence.
+The tool maintains an ignored evidence workspace, without model/weight hashes
+or raw profiler copies. Published results remain owned by the existing publisher
+and canonical renderer. The skill provides the v2 schema and evidence entrypoints
+without moving Target-specific behavior into runtime.
 
 ## Verification
 
-- `python -m unittest eval.tests.test_target_onboarding -v`: nine focused tests
-  cover spec fields, identity matching, oracle completeness, nine compatibility
-  answers, conditional runtime evidence, retained correctness failure, fixed
-  correctness/baseline order, geometry-specific ceilings, and Campaign handoff.
-- `quick_validate.py .claude/skills/target-onboarding`: skill structure and
-  frontmatter valid.
-- `python -m unittest discover -s eval/tests -p "test_*.py"`: 100 tests pass,
-  one existing optional-renderer test skipped.
+Targeted tests cover v2 field separation, machine-checkable model/checkpoint
+contracts, old-record reading, false textual handoff rejection, actual Registry
+creation, context activation and publication, duplicate CLI callers, interrupted
+publication and replay-free recovery. Fresh Git-clone tests preserve snapshot
+history, require a new anchor and reject historical-anchor bypass.
+The fixtures use small CPU contracts and synthetic latency receipts. They do not
+establish real Pi0.5/LingBot checkpoint compatibility, numerical parity, GPU
+measurements or autonomous model onboarding.

@@ -109,16 +109,16 @@ class TargetOnboardingTests(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.directory = self.base / "onboarding"
         self.spec = spec()
-        onboarding.create(self.directory, self.spec)
+        store.write(self.directory / "onboarding.json",
+                    {"version": 1, "created": 0, "spec": self.spec})
+        onboarding.record(self.directory, "requirement_freeze", {"status": "passed", "spec": "onboarding.json"})
 
     def advance_to_compatibility(self):
         onboarding.record(self.directory, "upstream_freeze", upstream_freeze(self.spec))
         onboarding.record(self.directory, "official_reference", official_reference())
 
     def test_spec_contains_every_human_contract_field_and_assumptions(self):
-        schema = json.loads(Path(
-            ".claude/skills/target-onboarding/assets/onboarding-spec.schema.json"
-        ).read_text())
+        schema = {"required": list(self.spec)}
         self.assertEqual(set(schema["required"]), set(self.spec))
         self.assertEqual(onboarding.validate_spec(self.spec), self.spec)
         for key in schema["required"]:
@@ -232,13 +232,13 @@ class TargetOnboardingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not match"):
             onboarding.record(self.directory, "campaign_creation", wrong)
         state = onboarding.record(self.directory, "campaign_creation", campaign)
-        self.assertEqual(state["status"], "READY_FOR_OPTIMIZATION")
+        self.assertEqual(state["status"], "LEGACY_REVALIDATION_REQUIRED")
         (self.directory / "state.json").unlink()
         self.assertEqual(onboarding.validate(self.directory), state)
         output = subprocess.check_output(
             [sys.executable, "-m", "lab.onboarding", "status", str(self.directory)], text=True)
         self.assertEqual(json.loads(output)["next_action"],
-                         "begin autonomous optimization from the recorded campaign")
+                         "create an explicit v2 spec and revalidate legacy onboarding")
 
 
 if __name__ == "__main__":

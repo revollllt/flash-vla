@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 from pathlib import Path
 import time
 
-from lab.optimize import store
+from lab.optimize import store, campaign, measurement, transition
+from lab.optimize.registry import CampaignRegistry, key_digest
+from flash_vla.runtime.identity import ExecutionVariant, inference_signature
 
 
-STAGES = (
+LEGACY_STAGES = (
     "requirement_freeze",
     "upstream_freeze",
     "official_reference",
@@ -20,6 +23,17 @@ STAGES = (
     "floor_profile",
     "campaign_creation",
 )
+
+STAGES = (
+    "requirement_freeze", "reference_freeze", "model_contract", "weights_compatibility",
+    "official_reference", "compatibility_scan", "target_bring_up",
+    "correctness_ladder", "baseline_ladder", "floor_profile", "campaign_creation", "publication",
+)
+
+
+def _stages(spec):
+    return STAGES if spec["version"] == 2 else LEGACY_STAGES
+
 
 COMPATIBILITY_CATEGORIES = (
     "existing runtime op",
@@ -128,20 +142,39 @@ def _check_result(value, name, *, unavailable=False):
 
 def validate_spec(spec):
     """Validate the immutable requirement record without inventing model semantics."""
-    if spec.get("version") != 1:
-        raise ValueError("onboarding spec version must be 1")
-    for key in ("target", "model_revision", "precision"):
-        _text(spec.get(key), key)
-    upstream = _mapping(spec.get("upstream"), "upstream")
-    _text(upstream.get("repository"), "upstream.repository")
-    _text(upstream.get("commit"), "upstream.commit")
-    checkpoint = _mapping(spec.get("checkpoint"), "checkpoint")
-    _text(checkpoint.get("id"), "checkpoint.id")
-    _text(checkpoint.get("source"), "checkpoint.source")
-    hardware = _mapping(spec.get("hardware"), "hardware")
-    _text(hardware.get("name"), "hardware.name")
-    _text(hardware.get("deployment"), "hardware.deployment")
-    _mapping(spec.get("shape_profile"), "shape_profile")
+    if spec.get("version") == 1:
+        for key in ("target", "model_revision", "precision"):
+            _text(spec.get(key), key)
+        upstream = _mapping(spec.get("upstream"), "upstream")
+        _text(upstream.get("repository"), "upstream.repository")
+        _text(upstream.get("commit"), "upstream.commit")
+        checkpoint = _mapping(spec.get("checkpoint"), "checkpoint")
+        _text(checkpoint.get("id"), "checkpoint.id")
+        _text(checkpoint.get("source"), "checkpoint.source")
+        hardware = _mapping(spec.get("hardware"), "hardware")
+        _text(hardware.get("name"), "hardware.name")
+        _text(hardware.get("deployment"), "hardware.deployment")
+        _mapping(spec.get("shape_profile"), "shape_profile")
+    elif spec.get("version") == 2:
+        target = _mapping(spec.get("target"), "target")
+        for key in ("target", "hardware", "model", "model_revision", "inference_signature"):
+            _text(target.get(key), "target." + key)
+        _mapping(target.get("shape"), "target.shape")
+        if campaign.target_key(dict(schema_version=3, **target)) != target:
+            raise ValueError("Target contains checkpoint or implementation provenance")
+        weights = _mapping(spec.get("initial_weights"), "initial_weights")
+        for key in ("checkpoint_id", "checkpoint_digest"):
+            _text(weights.get(key), "initial_weights." + key)
+        variant = _mapping(spec.get("execution_variant"), "execution_variant")
+        ExecutionVariant.from_dict(variant)
+        reference = _mapping(spec.get("reference"), "reference")
+        for key in ("repository", "commit"):
+            _text(reference.get(key), "reference." + key)
+        _text(spec.get("deployment"), "deployment")
+        if set(spec) & {"checkpoint", "model_revision", "precision", "upstream", "hardware", "shape_profile"}:
+            raise ValueError("v2 separates Target architecture, initial_weights, variant and reference")
+    else:
+        raise ValueError("onboarding spec version must be 1 or 2")
     objective = _mapping(spec.get("performance_objective"), "performance_objective")
     for key in ("metric", "direction", "unit"):
         _text(objective.get(key), f"performance_objective.{key}")
@@ -166,9 +199,9 @@ def validate_spec(spec):
     return spec
 
 
-def _latest_attempts(directory):
+def _latest_attempts(directory, stages):
     result = {}
-    for stage in STAGES:
+    for stage in stages:
         paths = sorted((Path(directory) / "stages" / stage).glob("attempt-*.json"))
         if paths:
             result[stage] = store.read(paths[-1])
@@ -179,11 +212,12 @@ def rebuild(directory):
     directory = Path(directory).resolve()
     metadata = store.read(directory / "onboarding.json")
     validate_spec(metadata["spec"])
-    attempts = _latest_attempts(directory)
+    stages = _stages(metadata["spec"])
+    attempts = _latest_attempts(directory, stages)
     completed = []
-    current = STAGES[0]
+    current = stages[0]
     status = "ACTIVE"
-    for stage in STAGES:
+    for stage in stages:
         evidence = attempts.get(stage)
         if evidence is None:
             current = stage
@@ -192,21 +226,26 @@ def rebuild(directory):
             current = stage
             status = "BLOCKED"
             break
+        if metadata["spec"]["version"] == 2:
+            _validate_stage(stage, evidence, metadata["spec"])
         completed.append(stage)
     else:
         current = None
-        status = "READY_FOR_OPTIMIZATION"
+        status = ("READY_FOR_OPTIMIZATION" if metadata["spec"]["version"] == 2
+                  else "LEGACY_REVALIDATION_REQUIRED")
     state = {
         "version": 1,
         "target": metadata["spec"]["target"],
         "status": status,
         "completed_stages": completed,
         "current_stage": current,
-        "next_action": ("begin autonomous optimization from the recorded campaign"
+        "next_action": ("create an explicit v2 spec and revalidate legacy onboarding"
+                        if status == "LEGACY_REVALIDATION_REQUIRED" else
+                        "begin autonomous optimization from the recorded campaign"
                         if current is None else
                         f"record {current}" if status == "ACTIVE" else f"retry {current}"),
         "attempts": {stage: len(list((directory / "stages" / stage).glob("attempt-*.json")))
-                     for stage in STAGES},
+                     for stage in stages},
     }
     store.write(directory / "state.json", state)
     return state
@@ -217,6 +256,8 @@ def create(directory, spec):
     if directory.exists():
         raise FileExistsError(directory)
     validate_spec(spec)
+    if spec["version"] != 2:
+        raise ValueError("new onboarding requires v2; legacy evidence remains readable")
     store.write(directory / "onboarding.json",
                 {"version": 1, "created": time.time(), "spec": spec})
     return record(directory, "requirement_freeze",
@@ -271,7 +312,7 @@ def build_compatibility_report(spec, inventory):
     existing_vocabulary = counts["existing runtime op"]
     return {
         "version": 1,
-        "target": spec["target"],
+        "target": spec["target"]["target"] if spec["version"] == 2 else spec["target"],
         "summary": {"total": len(inventory), "by_category": counts,
                     "existing_runtime_vocabulary_count": existing_vocabulary,
                     "existing_runtime_vocabulary_fraction": existing_vocabulary / len(inventory)},
@@ -385,7 +426,7 @@ def _validate_floor_profile(evidence):
     _text(evidence.get("profile"), "floor_profile.profile")
 
 
-def _validate_campaign_creation(evidence, spec):
+def _validate_legacy_campaign(evidence, spec):
     for key in ("directory", "objective", "protocol", "fixture", "state"):
         _text(evidence.get(key), f"campaign_creation.{key}")
     if evidence["objective"] != spec["performance_objective"]["metric"]:
@@ -396,7 +437,76 @@ def _validate_campaign_creation(evidence, spec):
         raise ValueError("a new Target campaign must start BASELINED")
 
 
-def _validate_stage(stage, evidence, spec):
+
+def _campaign_key(spec):
+    return campaign.campaign_key(
+        dict(schema_version=3, **spec["target"], execution_variant=spec["execution_variant"]),
+        objective=spec["performance_objective"]["metric"], protocol=spec["benchmark_protocol"]["id"])
+
+
+def _initial_context(spec, context):
+    measurement.context(context)
+    for key in ("checkpoint_id", "checkpoint_digest"):
+        if context["weights"][key] != spec["initial_weights"][key]:
+            raise ValueError("Campaign checkpoint differs from initial_weights")
+    for key in ("repository", "commit"):
+        if context["reference_provenance"].get(key) != spec["reference"][key]:
+            raise ValueError("anchor reference provenance differs from onboarding reference")
+
+
+def _validate_handoff(evidence, spec, *, published=False, current=False):
+    root = Path(evidence["repository"]).resolve()
+    key = _campaign_key(spec)
+    location = CampaignRegistry(root).find(key)
+    if location is None or location != Path(evidence["directory"]).resolve():
+        raise ValueError("handoff requires the actual canonical Campaign")
+    metadata = store.read(location / "campaign.json")
+    if metadata["id"] != evidence["campaign_id"]:
+        raise ValueError("handoff lineage differs from Campaign")
+    if current:
+        state = store.read(location / "state.json")
+        if (state["reanchor_required"] or state["current_stage"] not in ("candidate_selection", "publication")
+                or evidence["segment"] != state["current_measurement_segment"]):
+            raise ValueError("new handoff requires the current validated anchor and no active experiment")
+    baseline = campaign._records(location)[0][1]["measurement"]["evidence"]
+    segments = transition.segments(location, baseline)
+    number = evidence["segment"]
+    if type(number) is not int or not 0 <= number < len(segments):
+        raise ValueError("handoff segment is not a registered anchor")
+    segment = segments[number]
+    _initial_context(spec, segment["measurement"]["measurement_context"])
+    measurement.latency(segment["measurement"], expected_identity=segment["measurement"]["identity"],
+                        expected_context=segment["measurement"]["measurement_context"],
+                        protocol=spec["benchmark_protocol"]["id"],
+                        objective=spec["performance_objective"]["metric"])
+    measurement.correctness(segment["measurement"]["correctness"], segment["measurement"]["identity"],
+                            segment["measurement"]["measurement_context"])
+    if published:
+        if current and state["publication_required"]:
+            raise ValueError("Campaign publication is pending; publish before recording readiness")
+        from lab.results import schema
+        from lab.optimize import trace
+
+        destination = root / "results/targets" / key_digest(key)
+        summary = schema.check_views(destination)
+        value = store.read(destination / "trace.json")
+        current_trace = trace.normalize(location)
+        if current and value != schema.compact_trace(current_trace):
+            raise ValueError("current Campaign publication is pending; published history is stale")
+        if summary["campaign_key"] != key or summary["lineage_id"] != metadata["id"]:
+            raise ValueError("published baseline belongs to another Campaign")
+        if value["segments"][evidence["segment"]] != current_trace["segments"][evidence["segment"]]:
+            raise ValueError("published handoff segment differs from the validated anchor")
+        index = store.read(root / "results/index.json")
+        expected = dict(campaign_key=key, lineage_id=metadata["id"],
+                        summary=(destination / "summary.json").relative_to(root / "results").as_posix())
+        matches = [entry for entry in index["campaigns"]
+                   if entry["summary"] == expected["summary"]]
+        if index["schema_version"] != 1 or matches != [expected]:
+            raise ValueError("published Campaign discovery entry is missing or inconsistent")
+
+
+def _validate_stage(stage, evidence, spec, *, new=False):
     if evidence.get("status") not in ("passed", "failed", "blocked"):
         raise ValueError(f"{stage}.status must be passed, failed or blocked")
     if evidence["status"] != "passed":
@@ -407,6 +517,18 @@ def _validate_stage(stage, evidence, spec):
             raise ValueError("requirement_freeze must cite onboarding.json")
     elif stage == "upstream_freeze":
         _validate_upstream_freeze(spec, evidence)
+    elif stage == "reference_freeze":
+        for key in ("repository", "commit"):
+            if evidence.get(key) != spec["reference"][key]:
+                raise ValueError("reference provenance does not match onboarding spec")
+    elif stage in ("model_contract", "weights_compatibility"):
+        contract = _mapping(evidence.get("contract"), stage + ".contract")
+        if inference_signature(**contract) != spec["target"]["inference_signature"]:
+            raise ValueError("inference signature mismatch; resolve a compatible Target/model revision")
+        if stage == "weights_compatibility":
+            for key in ("checkpoint_id", "checkpoint_digest"):
+                if evidence["weights"].get(key) != spec["initial_weights"][key]:
+                    raise ValueError("compatibility checked different initial weights")
     elif stage == "official_reference":
         _validate_official_reference(evidence)
     elif stage == "compatibility_scan":
@@ -423,19 +545,22 @@ def _validate_stage(stage, evidence, spec):
                          unavailable={"upstream official optimized/compile"})
     elif stage == "floor_profile":
         _validate_floor_profile(evidence)
-    elif stage == "campaign_creation":
-        _validate_campaign_creation(evidence, spec)
+    elif stage in ("campaign_creation", "publication"):
+        if spec["version"] == 1:
+            _validate_legacy_campaign(evidence, spec)
+        else:
+            _validate_handoff(evidence, spec, published=stage == "publication", current=new)
 
 
 def record(directory, stage, evidence):
     directory = Path(directory).resolve()
-    if stage not in STAGES:
-        raise ValueError(f"unknown onboarding stage {stage!r}")
     metadata = store.read(directory / "onboarding.json")
+    if stage not in _stages(metadata["spec"]):
+        raise ValueError(f"unknown onboarding stage {stage!r}")
     state = rebuild(directory)
     if state["current_stage"] != stage:
         raise RuntimeError(f"next onboarding stage is {state['current_stage']}, not {stage}")
-    _validate_stage(stage, evidence, metadata["spec"])
+    _validate_stage(stage, evidence, metadata["spec"], new=True)
     stage_dir = directory / "stages" / stage
     attempt = len(list(stage_dir.glob("attempt-*.json"))) + 1
     value = dict(evidence, stage=stage, attempt=attempt, timestamp=time.time())
@@ -447,24 +572,88 @@ def validate(directory):
     directory = Path(directory).resolve()
     metadata = store.read(directory / "onboarding.json")
     spec = validate_spec(metadata["spec"])
-    for stage, evidence in _latest_attempts(directory).items():
+    for stage, evidence in _latest_attempts(directory, _stages(spec)).items():
         _validate_stage(stage, evidence, spec)
     return rebuild(directory)
+
+
+
+def handoff(directory, root, baseline, *, inputs=(), transition_request=None):
+    """Create/restore the actual lineage and publish before readiness; never rerun a failed job."""
+    directory, root = Path(directory).resolve(), Path(root).resolve()
+    with (directory / "handoff.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = validate(directory)
+        if state["status"] == "READY_FOR_OPTIMIZATION":
+            return state
+        if state["current_stage"] not in ("campaign_creation", "publication"):
+            raise RuntimeError("complete onboarding evidence before Campaign handoff")
+        spec = store.read(directory / "onboarding.json")["spec"]
+        if spec["version"] != 2:
+            raise ValueError("handoff requires an explicit v2 onboarding spec")
+        key = _campaign_key(spec)
+        from eval import acceptance
+
+        if spec["optimization_budget"] != acceptance.for_target(spec["target"]["target"])["budget"]:
+            raise ValueError("onboarding budget differs from the registered Target budget")
+        if spec["performance_objective"]["direction"] != "minimize" or spec["performance_objective"]["unit"] != "ms":
+            raise ValueError("Campaign latency objective requires minimize and ms")
+        if campaign.campaign_key(baseline["identity"], objective=key["objective"],
+                                 protocol=key["benchmark_protocol"]) != key:
+            raise ValueError("baseline workload differs from onboarding Target/variant")
+        _initial_context(spec, baseline["measurement_context"])
+        location = CampaignRegistry(root, require_portable_source=True).open_or_seed(
+            key, baseline=baseline, inputs=inputs)
+        current = campaign.configure_publication(location, root)
+        expected = measurement.context(baseline["measurement_context"])
+        active = measurement.context(current["measurement_context"])
+        reference_changed = any(active.reference_provenance.get(key) != spec["reference"][key]
+                                for key in ("repository", "commit"))
+        if current["reanchor_required"] or active.segment_key != expected.segment_key or reference_changed:
+            if transition_request is None:
+                raise ValueError("existing Campaign needs context validation and re-anchor; supply a transition request")
+            requested = measurement.context(transition_request["measurement_context"])
+            if requested.segment_key != expected.segment_key:
+                raise ValueError("transition request differs from onboarding checkpoint/fixture/environment")
+            _initial_context(spec, transition_request["measurement_context"])
+            if current["pending_transition"]:
+                raise RuntimeError("resume or reconcile the pending Campaign transition before handoff")
+            current = campaign.transition_context(root, location, transition_request)
+        if current["current_stage"] not in ("candidate_selection", "publication"):
+            raise RuntimeError("finish the active Campaign work before onboarding handoff")
+        receipt = dict(status="passed", repository=str(root), directory=str(location),
+                       campaign_id=current["campaign_id"], segment=current["current_measurement_segment"])
+        if state["current_stage"] == "campaign_creation":
+            record(directory, "campaign_creation", receipt)
+        from lab.results.publish import publish
+
+        # Republishing is recoverable and never executes an experiment.
+        publish(root, location)
+        campaign.rebuild(location)
+        return record(directory, "publication", receipt)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("init", "record", "compatibility-report",
-                                            "status", "validate"))
+                                            "status", "validate", "handoff"))
     parser.add_argument("directory", type=Path)
     parser.add_argument("input", nargs="?", type=Path,
                         help="spec, stage evidence, or compatibility inventory JSON")
-    parser.add_argument("--stage", choices=STAGES)
+    parser.add_argument("--stage", choices=tuple(dict.fromkeys((*STAGES, *LEGACY_STAGES))))
+    parser.add_argument("--root", type=Path, default=Path.cwd())
+    parser.add_argument("--source-input", action="append", default=[])
+    parser.add_argument("--transition-request", type=Path)
     args = parser.parse_args(argv)
     if args.command == "init":
         if args.input is None:
             parser.error("init requires a spec JSON")
         result = create(args.directory, store.read(args.input))
+    elif args.command == "handoff":
+        if args.input is None:
+            parser.error("handoff requires normalized baseline evidence")
+        result = handoff(args.directory, args.root, store.read(args.input), inputs=args.source_input,
+                         transition_request=(store.read(args.transition_request) if args.transition_request else None))
     elif args.command == "record":
         if args.stage is None or args.input is None:
             parser.error("record requires --stage and an evidence JSON")

@@ -1,123 +1,71 @@
 # Workflow
 
-Use one evidence JSON per command. The authoritative workspace is append-only
-stage evidence plus `onboarding.json`; `state.json` is derived and may be
-rebuilt with `python -m lab.onboarding validate <workspace>`.
+The authoritative workspace is onboarding.json plus append-only stage receipts.
+state.json is derived. New work uses the v2 spec; preserve old v1 evidence without
+interpreting its checkpoint-based revision as architecture identity.
 
-## 1. Requirement freeze
+## Requirement, reference and compatibility
 
-`init` validates and records the machine-readable spec. Resolve user input into:
+Initialize with python -m lab.onboarding init WORKSPACE SPEC.json. The spec
+records the Target, initial_weights, execution_variant, reference, deployment,
+objective, correctness requirements, protocol, deployment bound, registered
+optimization budget and evidence-backed assumptions.
 
-- upstream repository and immutable commit;
-- checkpoint ID/source and model revision;
-- hardware and deployment configuration;
-- precision and complete fixed shape profile;
-- performance objective, correctness requirements, benchmark protocol, and
-  deployment bound;
-- optimization budget;
-- explicit assumptions for values derived from official deployment config.
+The initial stages are requirement_freeze, reference_freeze, model_contract and
+weights_compatibility. The first is recorded by init; record the others with
+python -m lab.onboarding record WORKSPACE --stage STAGE EVIDENCE.json.
+The model contract and observed checkpoint contract must reproduce the Target's
+inference signature. A mismatch stops that Target's onboarding.
 
-Do not proceed while a deployment-affecting value is unknown. Ask the human
-only when official source and repository evidence cannot resolve it.
+## Official reference and computation inventory
 
-## 2. Upstream freeze
+Before optimized code exists, establish upstream loading, tokenizer, processor,
+fixtures, seed/noise, reference outputs and environment. Run upstream eager and
+its official optimized route when available; retain a concrete unavailability
+reason otherwise. The required checks are in evidence-contract.md.
 
-Record the repository, commit, checkpoint ID, and model revision. They must
-equal the spec. Preserve the upstream environment at the official-reference
-stage rather than copying it into flash-vla.
+At compatibility_scan, inventory upstream computations and run
+python -m lab.onboarding compatibility-report WORKSPACE INVENTORY.json.
+Classify existing runtime ops/components, Target-local composition/ops, new
+reusable components, genuine runtime primitives, host work, capture blockers
+and unsupported work. Record dynamic shape, allocation, synchronization,
+capture and control-flow risks. Review the nine derived coverage/reuse answers.
 
-## 3. Official reference
+## Bring-up and correctness
 
-Before optimized code exists, load the upstream and checkpoint; freeze the
-tokenizer, processor, correctness fixture, performance fixture, seed/noise,
-reference outputs, and environment. Run upstream eager. Run the official
-optimized/compile route when available; otherwise record `unavailable` and the
-concrete reason. Without saved reference outputs, stop.
+target_bring_up covers model schema, loaders/processors, Target, pipeline,
+plans, backend and registrations. Runtime changes require an invariant a legal
+Target cannot express and the five boundary checks in evidence-contract.md.
 
-## 4. Compatibility scan
+correctness_ladder retains this order: declaration smoke, op/component parity,
+stage parity, shallow model, full layers, single denoise step, full denoise
+loop, official end-to-end parity. A failure prevents performance attribution.
 
-Inventory every upstream computation using only these classifications:
+## Baselines and profile
 
-```text
-existing runtime op
-existing shared component
-Target-local composition
-Target-local op
-new reusable component
-genuine runtime primitive
-host work
-capture blocker
-unsupported
-```
+baseline_ladder records upstream eager, upstream official optimized/compile
+(or explicit unavailability), Flash-VLA reference plan and initial shipped plan.
+Use the same fixture and protocol and consistently exclude setup/compilation.
 
-Each item has `name`, `category`, source `evidence`, proposed `action`, and any
-observed risks from: `dynamic shape`, `post-freeze allocation`, `host/device
-sync`, `graph capture blocker`, `data-dependent control flow`.
+floor_profile records actual call-site geometry, minimal bytes/FLOPs, measured
+ceilings for those geometries, recoverable latency and the diagnostic profile.
+These observations guide later optimization; profiler timing is not a latency claim.
 
-```bash
-python -m lab.onboarding compatibility-report artifacts/onboarding/<target> inventory.json
-```
+## Campaign handoff
 
-This writes both `compatibility-report.json` and `compatibility-report.md` and
-records the stage. Review the nine derived answers before implementation.
+Run python -m lab.onboarding handoff WORKSPACE BASELINE.json --root REPOSITORY
+--source-input PATH. Repeat --source-input for the committed portable source set.
+BASELINE.json is normalized validated anchor evidence, with correctness and full
+MeasurementContext including the declared reference provenance.
 
-## 5. Target bring-up
+The command restores local or published Campaign history before considering a
+new baseline. New contexts use --transition-request REQUEST.json and the
+Campaign's compatibility, rebuild/retune, correctness and re-anchor operations.
+Fresh-clone imports always require a new anchor; lineage and iteration IDs persist.
 
-Add only the model-specific files needed under:
-
-```text
-src/flash_vla/models/<model>/
-src/flash_vla/hardware/nvidia/<hardware>/<model>/
-```
-
-Implement the model schema, weight loader, tokenizer/processor contract,
-`target.py`, `pipeline.py`, reference and shipped plans, registry entry, and
-backend. Register the benchmark target, acceptance policy, official baseline
-adapter, and smoke. Keep the initial shipped plan conservative; aggressive
-optimization belongs to the Campaign.
-
-If runtime changes were required, identify the existing invariant that could
-not express the legal Target and record all five runtime checks from the
-evidence contract.
-
-## 6. Correctness ladder
-
-Run and record exactly in this order:
-
-```text
-declaration smoke
-op/component parity
-stage parity
-shallow model
-full layers
-single denoise step
-full denoise loop
-official end-to-end parity
-```
-
-Stop at the first failure. Do not profile or interpret latency while numerical
-behavior is unresolved.
-
-## 7. Baseline ladder
-
-On the same frozen performance fixture and protocol record:
-
-1. upstream eager;
-2. upstream official optimized/compile, or explicit unavailability;
-3. flash-vla reference plan;
-4. flash-vla initial shipped plan.
-
-Exclude setup and compilation according to the frozen protocol consistently.
-
-## 8. Floor/profile
-
-For each real call site record geometry, minimal bytes, FLOPs, a ceiling
-measured for that geometry with evidence, and recoverable latency. Record the
-profile artifact used to attribute the gap. A new geometry requires a new
-ceiling measurement.
-
-## 9. Campaign creation
-
-Create the persistent Campaign with the spec's objective, protocol, fixture,
-and registered Target budget. Record its directory and initial state. Validate
-the onboarding workspace, then hand candidate work to `lab.optimize`.
+Campaign creation and publication are distinct durable stages. A failed publish
+leaves readiness pending; retry handoff to publish without repeating experiments.
+An interrupted transition requires campaign-resume/reconciliation first.
+python -m lab.onboarding validate WORKSPACE reports READY_FOR_OPTIMIZATION only
+after the actual handoff facts and published discovery agree. Continue candidate
+work through lab.optimize and its recorded execution checkout.

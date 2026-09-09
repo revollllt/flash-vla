@@ -6,6 +6,24 @@ Use `python -m lab.onboarding record <workspace> --stage <stage> <evidence.json>
 Every evidence object has `status: passed`. To retain an unsuccessful attempt,
 use `failed` or `blocked` plus `reason`; correct it in a later appended attempt.
 
+## Identity and checkpoint compatibility
+
+reference_freeze records repository and commit matching spec.reference.
+model_contract records a contract with architecture, parameter_shapes,
+weight_layout, io_contract and control_flow; the existing inference_signature
+function must reproduce spec.target.inference_signature.
+
+weights_compatibility records the observed checkpoint contract in the same
+format, plus weights.checkpoint_id and weights.checkpoint_digest matching
+initial_weights. Derive this from the checkpoint's actual schema and inference
+configuration, including alias/layout/control-flow semantics. Copying the
+expected contract is not compatibility evidence. Weight values and source
+locations never enter the architecture signature.
+
+These metadata receipts do not replace the subsequent numerical correctness
+ladder. Retain source/probe evidence for the observed contract; incompatible
+weights require a compatible Target/model revision.
+
 ## Official reference checks
 
 `checks` contains all names below. A passed check is
@@ -78,7 +96,27 @@ Each `ladder` item has `name`, `status`, and `evidence`, in the exact order in
 
 The stage also has a non-empty `profile` evidence pointer.
 
-## Campaign creation
+## Campaign creation and publication
 
-Record non-empty `directory`, `objective`, `protocol`, `fixture`, and `state`.
-The Campaign ledger remains authoritative for later optimization.
+Use lab.onboarding handoff with a normalized baseline produced by the existing
+report converter, the results repository and declared committed source inputs.
+The command records repository, canonical directory, campaign_id and segment
+from the actual ledger. Manual passed receipts must satisfy the same checks.
+
+The anchor must bind the initial checkpoint, fixed objective/protocol and the
+declared reference provenance. Publication evidence additionally requires
+consistent Target/context summaries, trace and resume snapshot, the canonical
+SVG, and the matching global discovery entry.
+
+An existing local or published Campaign is reused. If its active checkpoint,
+fixture, environment or reference differs, supply a Campaign transition request
+for the requested context; inherited source and recipes remain Campaign-owned.
+Fresh-clone imports always require a new validated segment.
+An interrupted or failed transition uses explicit Campaign reconciliation,
+not a silent onboarding rerun. A publication-only failure can retry handoff.
+
+New handoff receipts require the currently validated segment with no active
+experiment or unresolved re-anchor. A new publication receipt requires all
+current terminal history to be published before readiness. Historical validation of completed onboarding
+retains its original handoff segment after later Campaign work. Missing or
+inconsistent publication requires existing results repair/publish commands.
