@@ -1,0 +1,67 @@
+name: Published results integrity
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/results.yml"
+      - "lab/**"
+      - "eval/**"
+      - "benchmarks/**"
+      - "src/flash_vla/runtime/**"
+      - "src/flash_vla/models/**"
+      - "src/flash_vla/hardware/**"
+      - "results/**"
+      - "pyproject.toml"
+  push:
+    paths:
+      - ".github/workflows/results.yml"
+      - "lab/**"
+      - "eval/**"
+      - "benchmarks/**"
+      - "src/flash_vla/runtime/**"
+      - "src/flash_vla/models/**"
+      - "src/flash_vla/hardware/**"
+      - "results/**"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  results:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+      MPLCONFIGDIR: ${{ runner.temp }}/flash-vla-matplotlib
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install CPU validation dependencies
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install "pytest>=9" "matplotlib==3.10.8"
+      - name: Validate identity and continuation behavior
+        run: |
+          python -m pytest -q \
+            eval/tests/test_identity_v3.py \
+            eval/tests/test_weight_dependency.py \
+            eval/tests/test_context_transition.py \
+            eval/tests/test_campaign_registry.py \
+            eval/tests/test_results_publication.py \
+            eval/tests/test_results_rebuild.py \
+            eval/tests/test_results_resume.py
+      - name: Validate published facts
+        run: python -m lab.results validate
+      - name: Check deterministic generated results
+        run: python -m lab.results rebuild --check
+      - name: Ensure tracked results are unchanged
+        run: git diff --exit-code -- results/

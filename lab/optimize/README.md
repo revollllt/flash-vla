@@ -201,5 +201,5 @@ measurement. Invalid trace facts and unowned files require explicit
 reconciliation; rebuild does not invent missing measurement evidence.
 A missing trace or stale derived snapshot state can be rebuilt from retained
 snapshot facts. Missing normalized receipts cannot be inferred from a trace:
-republish from the original ledger if resume.json is absent. Hosted CI wiring
-remains pending.
+republish from the original ledger if resume.json is absent. The published-results CI workflow runs the CPU integrity suites and these
+validation commands; it does not establish GPU or real-checkpoint acceptance.

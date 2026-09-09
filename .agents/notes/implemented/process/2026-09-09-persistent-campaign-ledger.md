@@ -149,7 +149,14 @@ bytes, and shares publication's explicit view-before-summary-before-index
 replacement order. Published forks must bind their parent to the canonical
 CampaignKey directory and use the Registry's canonical UUID child identity. Unowned files are reported rather than deleted. The renderer
 environment is part of reproducibility: current SVG evidence uses Matplotlib
-3.10.8. Hosted CI wiring remains unfinished.
+3.10.8. The published-results workflow runs the relevant CPU identity and
+continuation tests, validates retained results, checks deterministic rebuild,
+and requires an unchanged results diff. It covers changes in the harness,
+Targets, runtime, models and result tooling. The job has read-only repository
+permissions and does not run GPU measurements or publish performance. A checkout
+without tracked results has no publication facts to verify; an empty inventory
+cannot satisfy the real-model publication requirement. Hosted runner setup and
+dependency installation require their own actual CI execution evidence.
 
 A resume snapshot retains terminal normalized measurement/correctness receipts,
 the accepted portable recipes, compact legacy knowledge, open hypotheses and
