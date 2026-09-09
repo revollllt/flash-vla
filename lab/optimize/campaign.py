@@ -103,6 +103,8 @@ def rebuild(directory):
     non_improving = 0
     imported_reanchor_required = records[0][1]['measurement']['evidence'].get(
         'continuation', {}).get('reanchor_required', False)
+    current_measurement_segment = records[0][1]['measurement']['evidence'].get(
+        'measurement_segment', {'id': 0})['id']
     has_reanchor = False
     for expected, (path, record) in enumerate(records):
         _validate_record(metadata, record, expected, incumbent)
@@ -111,6 +113,9 @@ def rebuild(directory):
         cost['gpu_seconds'] += run_cost.get('gpu_seconds', 0.0)
         cost['jobs'].extend(run_cost.get('jobs', []))
         verdict = record.get('verdict')
+        measured_segment = record.get('measurement', {}).get('measurement_segment')
+        if measured_segment is not None:
+            current_measurement_segment = measured_segment['id']
         label = f'iter-{expected:03d}'
         if expected:
             has_reanchor |= record.get('kind') == 'reanchor'
@@ -132,21 +137,21 @@ def rebuild(directory):
     used = dict(candidates=candidates, non_improving=non_improving, jobs=len(cost['jobs']))
     remaining = {key: max(0, budget[key] - used[key]) for key in budget}
     reanchor_required = imported_reanchor_required and not has_reanchor
-    segment, next_action = 'candidate_selection', 'start the next candidate from the incumbent'
+    stage, next_action = 'candidate_selection', 'start the next candidate from the incumbent'
     campaign_status = 'BASELINED' if len(records) == 1 else 'ACTIVE'
     if active:
         run_dir, record = active
         unfinished = next((name for name, stage in record['stages'].items()
                            if stage['status'] in ('running', 'interrupted', 'failed')), None)
         if unfinished:
-            segment = unfinished
+            stage = unfinished
             next_action = f'reconcile {run_dir}'
             campaign_status = 'PAUSED'
         else:
-            segment = next((name for name in STAGES if name in record['spec']['stages']
-                            if record['stages'].get(name, {}).get('status') != 'completed'),
-                           'verdict')
-            next_action = (f'run {segment} for {run_dir}' if segment != 'verdict'
+            stage = next((name for name in STAGES if name in record['spec']['stages']
+                          if record['stages'].get(name, {}).get('status') != 'completed'),
+                         'verdict')
+            next_action = (f'run {stage} for {run_dir}' if stage != 'verdict'
                            else f'record a verdict for {run_dir}')
     elif any(value == 0 for value in remaining.values()):
         next_action = 'campaign budget exhausted'
@@ -158,7 +163,9 @@ def rebuild(directory):
                  target=metadata['target'], objective=metadata['objective'],
                  protocol=metadata['protocol'], fixture=metadata['fixture'],
                  baseline='iter-000', current_incumbent=incumbent,
-                 current_measurement_segment=segment, failed_hypotheses=failed,
+                 current_stage=stage,
+                 current_measurement_segment=current_measurement_segment,
+                 failed_hypotheses=failed,
                  legacy_import={key: len(legacy_history.get(key, [])) for key in
                                 ('accepted', 'rejected', 'unclassified', 'experiment_evidence')},
                  budget=dict(limit=budget, used=used, remaining=remaining), cost=cost,
@@ -198,7 +205,7 @@ def start(root, spec, directory):
         state = rebuild(directory)
         if state['reanchor_required']:
             raise RuntimeError('campaign requires an incumbent re-anchor before a new candidate')
-        if state['current_measurement_segment'] != 'candidate_selection':
+        if state['current_stage'] != 'candidate_selection':
             raise RuntimeError('campaign already has an active candidate')
         if any(value == 0 for value in state['budget']['remaining'].values()):
             raise RuntimeError('campaign budget exhausted')
@@ -226,7 +233,7 @@ def reanchor(directory, evidence):
         fcntl.flock(lock, fcntl.LOCK_EX)
         metadata = store.read(directory / 'campaign.json')
         state = rebuild(directory)
-        if state['current_measurement_segment'] != 'candidate_selection':
+        if state['current_stage'] != 'candidate_selection':
             raise RuntimeError('campaign already has an active candidate')
         identity = evidence['identity']
         if not same_target(metadata['target'], identity):
@@ -236,28 +243,37 @@ def reanchor(directory, evidence):
         objective = evidence['objective']
         if objective.get('name') != metadata['objective'] or objective.get('unit') != 'ms':
             raise ValueError('re-anchor objective does not match campaign')
-        segment = dict(evidence['measurement_segment'])
-        missing = [key for key in MEASUREMENT_ENVIRONMENT_FIELDS if key not in segment]
+        incoming_segment = dict(evidence['measurement_segment'])
+        missing = [key for key in MEASUREMENT_ENVIRONMENT_FIELDS if key not in incoming_segment]
         if missing:
             raise ValueError(f're-anchor measurement segment is missing: {missing}')
-        if segment.get('benchmark_protocol') != metadata['protocol']:
+        if incoming_segment.get('benchmark_protocol') != metadata['protocol']:
             raise ValueError('re-anchor protocol does not match campaign')
         records = [record for _, record in _records(directory)]
-        previous = records[-1]['measurement']
-        previous_segment = (previous['evidence']['measurement_segment'] if len(records) == 1
-                            else previous['measurement_segment'])
-        drifted = any(segment[key] != previous_segment[key]
-                      for key in MEASUREMENT_ENVIRONMENT_FIELDS)
+        incumbent_iteration = int(state['current_incumbent'].split('-', 1)[1])
+        previous = records[incumbent_iteration]['measurement']
+        previous_segment = (previous['evidence']['measurement_segment']
+                            if incumbent_iteration == 0 else previous['measurement_segment'])
+        previous_value = (float(previous['evidence']['objective']['value'])
+                          if incumbent_iteration == 0 else float(previous['candidate_ms']))
+        value = float(objective['value'])
+        drift_limit_ms = acceptance.for_target(metadata['target']['target'])[
+            'latency']['control_spread_max_ms']
+        drift_ms = abs(value - previous_value)
+        drifted = drift_ms > drift_limit_ms
         expected_segment_id = previous_segment['id'] + int(drifted)
-        if segment.get('id', expected_segment_id) != expected_segment_id:
-            raise ValueError('re-anchor segment id does not match environment drift')
+        if incoming_segment.get('id', expected_segment_id) != expected_segment_id:
+            raise ValueError('re-anchor segment id does not match measured drift')
+        segment = incoming_segment if drifted else dict(previous_segment)
         segment['id'] = expected_segment_id
         iteration = state['iterations']
-        value = float(objective['value'])
         measurement = dict(identity=identity, validity='valid', measurement_segment=segment,
                            measurement_context=evidence['measurement_context'],
                            candidate_ms=value, parent_incumbent_ms=value,
-                           segment_anchor_ms=value, reanchor=True, evidence=evidence)
+                           segment_anchor_ms=value, reanchor=True,
+                           reanchor_drift_ms=drift_ms,
+                           reanchor_drift_limit_ms=drift_limit_ms,
+                           evidence=evidence)
         record = dict(iteration=iteration, timestamp=evidence['measurement_context']['timestamp'],
                       candidate_id='incumbent-reanchor', parent_incumbent=state['current_incumbent'],
                       campaign_id=metadata['id'], campaign_identity=identity,
@@ -323,7 +339,7 @@ def finalize(directory, iteration, verdict, correctness, measurement, qualificat
 def resume(directory, until='measure', recovered_seconds=None):
     directory = Path(directory).resolve()
     state = rebuild(directory)
-    if state['current_measurement_segment'] == 'candidate_selection':
+    if state['current_stage'] == 'candidate_selection':
         return state
     matches = list((directory / 'runs').glob('iter-*/evidence.json'))
     active = [path.parent for path in matches if store.read(path).get('verdict') is None]

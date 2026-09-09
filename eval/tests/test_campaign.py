@@ -122,8 +122,9 @@ class CampaignTests(unittest.TestCase):
             [sys.executable, '-m', 'lab.optimize', 'campaign-status', str(self.directory)],
             text=True)
         fresh = json.loads(output)
-        for key in ('target', 'baseline', 'current_incumbent', 'current_measurement_segment',
-                    'failed_hypotheses', 'budget', 'next_action'):
+        for key in ('target', 'baseline', 'current_incumbent', 'current_stage',
+                    'current_measurement_segment', 'failed_hypotheses', 'budget',
+                    'next_action'):
             self.assertIn(key, fresh)
         self.assertEqual(fresh['cost']['gpu_seconds'], 17.0)
 
@@ -161,7 +162,8 @@ class CampaignTests(unittest.TestCase):
         state = campaign.rebuild(self.directory)
         self.assertEqual(state['iterations'], 2)
         self.assertEqual(state['current_incumbent'], 'iter-000')
-        self.assertEqual(state['current_measurement_segment'], 'candidate_selection')
+        self.assertEqual(state['current_stage'], 'candidate_selection')
+        self.assertEqual(state['current_measurement_segment'], 0)
 
     def test_interrupted_segments_require_reconcile_before_one_resume(self):
         for segment in ('probe', 'measure', 'qualify'):
@@ -186,7 +188,9 @@ class CampaignTests(unittest.TestCase):
                 record['cost']['gpu_seconds'] = 9.0
                 record['status'] = 'stopped'
                 store.write(Path(record['directory']) / 'evidence.json', record)
-                self.assertEqual(campaign.rebuild(directory)['current_measurement_segment'], segment)
+                state = campaign.rebuild(directory)
+                self.assertEqual(state['current_stage'], segment)
+                self.assertEqual(state['current_measurement_segment'], 0)
                 with patch.object(runner, 'run') as resume_run:
                     with self.assertRaisesRegex(RuntimeError, 'explicit reconcile'):
                         campaign.resume(directory)
