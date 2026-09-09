@@ -42,6 +42,14 @@ implementation, its necessary artifact/calibration recipes, correctness and an
 uninstrumented incumbent measurement. Re-anchor is a segment boundary, never an
 optimization iteration or a cross-context speedup.
 
+The derived context registry retains each activated checkpoint/fixture pair,
+its first anchor observation timestamp and latest segment ID. Environment changes
+create new segments under the same context. Returning to a prior context updates
+its latest segment only after a fresh validated anchor; historical latency is
+never reinstated as a current measurement. Pending, failed and aborted transitions
+do not register or activate contexts. The registry is rebuilt from anchor evidence,
+not maintained as a second authoritative ledger.
+
 A transition executes the committed portable engine in a clean isolated
 checkout. Declared inputs must match that commit, and actual runner provenance
 must match the execution revision. Every new execution directory rebuilds

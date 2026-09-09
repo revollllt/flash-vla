@@ -6,6 +6,7 @@ import time
 
 from . import measurement as measurements, runner, store, transition
 from eval import acceptance
+from flash_vla.runtime.identity import MeasurementContext
 from .schema import STAGES, validate as validate_experiment, validate_applicability
 
 
@@ -332,6 +333,16 @@ def rebuild(directory):
                  reanchor_required=reanchor_required,
                  next_action=next_action, iterations=len(records))
     if 'execution_variant' in metadata:
+        contexts = {}
+        for segment in context_segments:
+            observed = MeasurementContext.from_dict(segment['measurement']['measurement_context'])
+            entry = contexts.setdefault(observed.context_id, dict(
+                weights=dict(observed.weights), fixture=dict(observed.fixture),
+                created=observed.timestamp))
+            entry['latest_segment'] = segment['id']
+        state['contexts'] = contexts
+        state['active_context'] = MeasurementContext.from_dict(
+            active_segment['measurement']['measurement_context']).context_id
         state['portable_incumbent'] = incumbent
         state['measurement_context'] = active_segment['measurement']['measurement_context']
         state['fixture'] = state['measurement_context']['fixture']['id']

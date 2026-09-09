@@ -132,6 +132,8 @@ def test_equal_latency_does_not_hide_segment_boundary(workspace, change):
         incoming["measurement_context"]["environment"][change] = "changed"
     state = campaign.transition_context(root, directory, incoming)
     assert state["current_measurement_segment"] == 1
+    assert len(state["contexts"]) == (2 if change in ("checkpoint", "fixture") else 1)
+    assert state["contexts"][state["active_context"]]["latest_segment"] == 1
     assert state["current_incumbent_latency_ms"] == 16.0
     assert state["iterations"] == 1
     assert campaign.start(root, next_spec(directory), directory)["iteration"] == 1
@@ -422,3 +424,56 @@ def test_same_assets_new_environment_still_materializes_required_artifacts(works
     assert state["iterations"] == 4
     assert state["current_measurement_segment"] == 2
     assert journal(root) == ["compatibility", "rebuild", "retune", "check", "measure"] * 2
+
+
+def test_context_registry_restores_history_and_reuses_returning_context(workspace):
+    from flash_vla.runtime.identity import MeasurementContext
+
+    root, directory = workspace
+    before = campaign.rebuild(directory)
+    original = copy.deepcopy(before["measurement_context"])
+    context_a = MeasurementContext.from_dict(original).context_id
+    assert before["active_context"] == context_a
+    assert before["contexts"] == {context_a: dict(
+        weights=original["weights"], fixture=original["fixture"],
+        created=original["timestamp"], latest_segment=0)}
+
+    incoming = request(root, directory)
+    incoming["measurement_context"]["timestamp"] = original["timestamp"] + 10
+    switched = campaign.transition_context(root, directory, incoming)
+    context_b = MeasurementContext.from_dict(incoming["measurement_context"]).context_id
+    assert context_b != context_a
+    assert switched["active_context"] == context_b
+    assert switched["contexts"][context_a] == before["contexts"][context_a]
+    assert switched["contexts"][context_b]["latest_segment"] == 1
+
+    returning = request(root, directory, latency=31.0)
+    returning["measurement_context"] = copy.deepcopy(original)
+    returning["measurement_context"]["timestamp"] += 20
+    returning["measurement_context"]["environment"]["driver"] = "new driver"
+    state = campaign.transition_context(root, directory, returning)
+    assert state["active_context"] == context_a
+    assert len(state["contexts"]) == 2
+    assert state["contexts"][context_a] == dict(before["contexts"][context_a], latest_segment=2)
+    assert state["contexts"][context_b] == switched["contexts"][context_b]
+    assert state["current_incumbent_latency_ms"] == state["segment_anchor_latency_ms"] == 31.0
+    assert state["improvement_vs_baseline_pct"] is None
+    assert state["iterations"] == 1
+    store.write(directory / "state.json", {"contexts": {}, "active_context": "stale"})
+    rebuilt = campaign.rebuild(directory)
+    assert rebuilt["contexts"] == state["contexts"]
+    assert rebuilt["active_context"] == context_a
+
+
+def test_pending_and_aborted_transition_do_not_register_context(workspace):
+    root, directory = workspace
+    before = campaign.rebuild(directory)
+    incoming = request(root, directory)
+    transition.begin(root, directory, incoming)
+    pending = campaign.rebuild(directory)
+    assert pending["pending_transition"] is not None
+    assert pending["contexts"] == before["contexts"]
+    assert pending["active_context"] == before["active_context"]
+    aborted = transition.abort(directory)
+    assert aborted["contexts"] == before["contexts"]
+    assert aborted["active_context"] == before["active_context"]
