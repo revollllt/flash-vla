@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from lab.optimize import campaign, runner, store
+from lab.optimize import campaign, runner, scheduler, store
 
 
 IDENTITY = {
@@ -208,6 +208,31 @@ class CampaignTests(unittest.TestCase):
                 recovered = store.read(Path(record['directory']) / 'evidence.json')
                 self.assertEqual(recovered['cost']['gpu_seconds'], 9.0)
                 self.assertEqual(len(recovered['attempts']), 1)
+
+    def test_cancelled_slurm_attempt_needs_an_explicit_invalid_verdict(self):
+        record = self.start('slurm-cancelled')
+        run = Path(record['directory'])
+        record['stages']['check'] = dict(status='completed', resource='cpu', elapsed_s=1.0)
+        record['stages']['measure'] = dict(
+            status='running', resource='gpu', owner={'job': '123'}, started=1.0,
+        )
+        record['correctness'] = 'pass'
+        record['status'] = 'stopped'
+        record['cost']['jobs'] = ['123']
+        store.write(run / 'evidence.json', record)
+
+        with patch.object(scheduler, 'job_state', return_value='CANCELLED'):
+            recovered = runner.reconcile(run, recovered_seconds=9.0)
+        self.assertEqual(recovered['cost']['gpu_seconds'], 9.0)
+        self.assertIsNone(recovered['verdict'])
+        self.assertNotEqual(recovered['validity'], 'valid')
+
+        state = self.finalize(
+            1, 'invalid', measurement={'validity': 'invalid'},
+            qualification={'status': 'not_run'},
+        )
+        self.assertEqual(state['current_incumbent'], 'iter-000')
+        self.assertEqual(state['failed_hypotheses'][0]['verdict'], 'invalid')
 
     def test_simultaneous_start_allocates_only_one_monotonic_iteration(self):
         from concurrent.futures import ThreadPoolExecutor
