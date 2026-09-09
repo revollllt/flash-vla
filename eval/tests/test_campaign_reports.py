@@ -62,6 +62,8 @@ def harness(monkeypatch):
     monkeypatch.setattr(latency, "_env", lambda *args: deepcopy(ENV))
     monkeypatch.setattr(gate, "declare", lambda target, plan, **kw: Engine(plan, **kw))
     monkeypatch.setattr(gate, "_registry_version", lambda: "fixture registry")
+    toy_target = SimpleNamespace(graph=lambda shape: Engine.graph, registry=Engine.target.registry)
+    monkeypatch.setattr(reports, "import_module", lambda name: SimpleNamespace(TARGET=toy_target))
 
     def official(scripts, checks, run, python, expected, seed, expected_weights=None, options=None):
         assert run is True
@@ -309,3 +311,46 @@ def test_campaign_import_requires_actual_official_stage_coverage(harness, tmp_pa
         script["identities"][1]["shape"][key] += 1
     with pytest.raises(ValueError):
         reports.correctness(raw)
+
+
+@pytest.mark.parametrize("mutation", [None, "missing_active", "extra_inactive", "backend", "engine"])
+def test_pi05_shallow_evidence_uses_actual_depth_graph(mutation):
+    from benchmarks.targets import declare
+
+    full = declare("h100/pi05", "shipped").identity.as_dict()
+    candidate = declare("h100/pi05", "shipped", steps=1, layers=1).identity.as_dict()
+    reference = declare("h100/pi05", "reference", steps=1, layers=1).identity.as_dict()
+    # The test edits are uncommitted; bind these CPU graph fixtures explicitly.
+    for identity in (full, candidate, reference):
+        identity["engine_revision"] = "graph-fixture-revision"
+    assert "llm_backbone_attention" in full["plan"]
+    assert "llm_backbone_attention" not in candidate["plan"]
+    context = dict(
+        **deepcopy(ASSETS),
+        environment=dict(gpu_sku="test GPU", driver="test driver", cuda_runtime="13.0",
+                         pytorch="test torch", tilelang="test compiler", clock_policy="unlocked",
+                         power_policy=ENV["power_policy"], capture_regime="cuda_graph"),
+        hostname="test node", slurm_job_id="test job", timestamp=1.)
+    policy = next(c for c in acceptance.for_target(full["target"])["correctness"]["checks"]
+                  if c["check"] == "in_engine_shallow")
+    report = dict(
+        config=dict(oracle="in_engine_reference", steps=1, layers=1),
+        identity=dict(candidate=candidate, reference=reference),
+        numerical_oracle=dict(identity=deepcopy(reference)),
+        measurement_context=dict(reference=deepcopy(context), candidate=deepcopy(context)),
+        replay_identical=True, finite=True, threshold_key="shallow",
+        tolerance=acceptance.tolerances("bf16")["shallow"], min_cosine=1., max_rel_rms=0.)
+    active = "action_expert_attention"
+    if mutation == "missing_active":
+        del candidate["plan"][active]
+    elif mutation == "extra_inactive":
+        candidate["plan"]["llm_backbone_attention"] = full["plan"]["llm_backbone_attention"]
+    elif mutation == "backend":
+        candidate["plan"][active] = "tilelang"
+    elif mutation == "engine":
+        candidate["engine_revision"] = "another-implementation"
+    if mutation is None:
+        assert reports._in_engine(dict(report=report), full, policy).weights == ASSETS["weights"]
+    else:
+        with pytest.raises(ValueError, match="implementation"):
+            reports._in_engine(dict(report=report), full, policy)

@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "context_id": "sha256:d927a7195e00c8418b061564b922bd80eec9dce845436fd3c99c41250bfe36a1",
+  "weights": {
+    "checkpoint_id": "pravsels/pi05-build-block-tower-baseline@c02537599ca0577dcf8081018a49978e9129be64/checkpoints/25000",
+    "checkpoint_digest": "pravsels/pi05-build-block-tower-baseline@c02537599ca0577dcf8081018a49978e9129be64/checkpoints/25000"
+  },
+  "fixture": {
+    "id": "flash-vla/pi05-inputs-v1/seed-0",
+    "digest": "sha256:ec4dbe8210364b23744417248283f0ed759477c778b5a6a8b3d5b3f72caee692"
+  },
+  "measurement_context": {
+    "weights": {
+      "checkpoint_id": "pravsels/pi05-build-block-tower-baseline@c02537599ca0577dcf8081018a49978e9129be64/checkpoints/25000",
+      "checkpoint_digest": "pravsels/pi05-build-block-tower-baseline@c02537599ca0577dcf8081018a49978e9129be64/checkpoints/25000"
+    },
+    "fixture": {
+      "id": "flash-vla/pi05-inputs-v1/seed-0",
+      "digest": "sha256:ec4dbe8210364b23744417248283f0ed759477c778b5a6a8b3d5b3f72caee692"
+    },
+    "environment": {
+      "gpu_sku": "NVIDIA H100 80GB HBM3",
+      "driver": "570.86.10",
+      "cuda_runtime": "12.6",
+      "pytorch": "2.7.1+cu126",
+      "tilelang": "0.1.11",
+      "clock_policy": {
+        "benchmark_control": "inherit",
+        "slurm_gpu_freq_request": null,
+        "effective_locked_clocks": "unobserved"
+      },
+      "power_policy": {
+        "requested_limit_w": 700.0,
+        "enforced_limit_w": 700.0
+      },
+      "capture_regime": "cuda_graph",
+      "clock_observation": {
+        "application_graphics_mhz": "1980",
+        "application_memory_mhz": "2619"
+      }
+    },
+    "hostname": "ACD1-6",
+    "slurm_job_id": "610196",
+    "timestamp": 1788974752.9048817,
+    "reference_provenance": {}
+  },
+  "latest_segment": 0,
+  "segment_anchor_ms": 15.892422758042812,
+  "best_validated_ms": 15.892422758042812,
+  "validated_incumbent": {
+    "iteration": 0,
+    "engine_revision": "024b640a7a7d05a1797ba45a16c007f916b0ee02",
+    "plan": {
+      "vision_encoder_patch_embed": "tilelang",
+      "vision_encoder_norm_qkv": "tilelang",
+      "vision_encoder_attention": "tilelang",
+      "vision_encoder_out_proj_residual": "tilelang",
+      "vision_encoder_norm_ffn_up": "tilelang",
+      "vision_encoder_ffn_down_residual": "tilelang",
+      "llm_backbone_projector": "tilelang",
+      "llm_backbone_embed_prompt": "tilelang",
+      "llm_backbone_norm_qkv_rope": "tilelang",
+      "llm_backbone_attention": "gemma-cuda",
+      "llm_backbone_out_proj_residual": "tilelang",
+      "llm_backbone_norm_gated_ffn": "tilelang",
+      "llm_backbone_ffn_down_residual": "tilelang",
+      "action_expert_action_in_proj": "tilelang",
+      "action_expert_norm_qkv_rope": "cuda-pdl",
+      "action_expert_attention": "cuda-pdl",
+      "action_expert_out_proj_residual": "cuda-pdl",
+      "action_expert_norm_gated_ffn": "cuda-pdl",
+      "action_expert_ffn_down_residual": "cuda-pdl",
+      "action_expert_action_out_proj": "tilelang"
+    }
+  },
+  "last_validated_iteration": 0
+}

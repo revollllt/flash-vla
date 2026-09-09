@@ -1,9 +1,11 @@
 """Translate existing evaluator reports into Campaign evidence; never run an experiment."""
 import argparse
 import json
+from importlib import import_module
 import math
 from pathlib import Path
 
+from benchmarks.targets import resolve
 from eval import acceptance
 from flash_vla.runtime.identity import Identity, inference_signature
 
@@ -88,7 +90,11 @@ def _in_engine(check, expected, configuration):
         if report["config"][name] != wanted:
             raise ValueError("correctness ladder depth differs from acceptance")
         shape[name] = wanted
-    identity = dict(expected, shape=shape)
+    # Shallow graphs can omit call sites present in the full workload.
+    # Resolve against the registered graph, never keys supplied by the report.
+    target = import_module("flash_vla." + resolve(expected["target"]).replace("/", ".")).TARGET
+    plan = target.registry.resolve(expected["plan"], target.graph(shape).call_sites)
+    identity = dict(expected, shape=shape, plan=plan)
     measurement.identity(report["identity"]["candidate"], identity)
     oracle = report["numerical_oracle"]["identity"]
     measurement.identity(oracle, dict(identity, plan=oracle["plan"]))

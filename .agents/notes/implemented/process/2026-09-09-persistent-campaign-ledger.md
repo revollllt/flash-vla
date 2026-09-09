@@ -25,6 +25,11 @@ Campaign lock protects validation/reconstruction against concurrent finalization
 Missing data may permit a new lineage; partial or corrupt authoritative data
 does not. Derived state can always be reconstructed from the validated ledger.
 
+Correctness report import resolves the full plan against the registered graph
+at each ladder depth. A shallow graph may omit full-depth call sites; active
+routes and the measured engine revision still match exactly. When importing
+older reports, use the corresponding Target graph source.
+
 An alternative lineage requires an explicit fork reason and retains parent
 Campaign and iteration provenance. Forking is limited to terminal ledgers and
 preserves iteration genealogy, failed hypotheses and independent declared source
