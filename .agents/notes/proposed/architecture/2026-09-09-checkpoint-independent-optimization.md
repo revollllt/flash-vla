@@ -44,8 +44,8 @@ and compatible signature are available.
 The v3 identity matrix, explicit migration, runner producers and context changes
 must be tested independently of GPU latency. Identity semantics and the
 [transition ledger boundary](../../implemented/process/2026-09-09-persistent-campaign-ledger.md)
-are implemented. Automatic Campaign discovery, publication, fresh-clone recovery
-and real checkpoint drills remain required in their planned phases. Random-weight tests do not establish real-checkpoint transfer.
+and automatic local Campaign discovery are implemented. Publication, fresh-clone
+recovery and real checkpoint drills remain required in their planned phases. Random-weight tests do not establish real-checkpoint transfer.
 
 ## Risks
 

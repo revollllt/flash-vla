@@ -4,10 +4,31 @@ This controller is for the existing H100 Pi0/Pi0.5 tools. Acceptance remains
 owned by `eval/acceptance.py`; `eval.gate` remains the qualification verdict.
 The owner requested no new hashes, frozen contracts, baselines or gates.
 
-A long-running campaign adds lineage around these same experiments. Create one
-from an existing baseline report with `campaign-create CAMPAIGN
---baseline-evidence REPORT --objective NAME --protocol NAME --fixture NAME`,
-then allocate candidates with `start SPEC --campaign CAMPAIGN`. The spec must
+V3 campaigns are located by CampaignKey through CampaignRegistry. Create one
+from validated baseline evidence with `campaign-create --baseline-evidence REPORT
+--objective NAME --protocol NAME --fixture NAME`; the returned directory is
+canonical under artifacts/optimization/campaigns. V3 creation takes no manual
+Campaign directory. The legacy v2 command still requires one. With a canonical
+key JSON, `campaign-find KEY.json`, `campaign-open KEY.json` and
+`campaign-open-or-create KEY.json` discover or restore the default lineage.
+The last command needs --baseline-evidence only when no local Campaign exists.
+Use --root to select the repository.
+
+Opening a known key with new checkpoint evidence restores the existing lineage;
+it does not activate the new checkpoint. Complete the context transition before
+comparing its measurements. A missing local Campaign and a corrupt one are
+different outcomes: corruption never creates a replacement. Published snapshot
+seeding is not implemented yet.
+
+Use `campaign-fork KEY.json --reason TEXT` for an explicit alternative lineage,
+then `campaign-open KEY.json --fork-id ID` to reopen that fork. Forks retain
+terminal history, unresolved hypotheses and declared source snapshots. The portable
+source must match its committed engine revision; each fork gets an independent
+execution checkout. They require no active candidate or transition and do not copy
+raw logs or rerun jobs. Failed checkout preparation leaves an unpublished fork
+that cannot be opened as a ready Campaign.
+
+After resolving the directory, allocate candidates with `start SPEC --campaign CAMPAIGN`. The spec must
 declare the baseline's workload identity and protocol. V3 candidates also bind the
 active measurement_context and measurement_segment; their fixture identifies that
 context rather than a permanent Campaign identity. `campaign-status` and

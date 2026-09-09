@@ -18,6 +18,23 @@ objective and benchmark protocol. Checkpoint and fixture provenance identify a
 measurement context; the stable measurement environment additionally identifies
 its segment. Context changes preserve Campaign and optimization iteration IDs.
 
+The local Registry maps the semantic CampaignKey to one canonical directory.
+Its digest uses the existing small-metadata serializer; it never reads source
+or tensor bytes. A Registry lock serializes discovery and creation, and the
+Campaign lock protects validation/reconstruction against concurrent finalization.
+Missing data may permit a new lineage; partial or corrupt authoritative data
+does not. Derived state can always be reconstructed from the validated ledger.
+
+An alternative lineage requires an explicit fork reason and retains parent
+Campaign and iteration provenance. Forking is limited to terminal ledgers and
+preserves iteration genealogy, failed hypotheses and independent declared source
+snapshots. Raw logs, profiler output and execution checkouts are not duplicated.
+Fork execution uses an independent checkout of the committed portable engine;
+historical parent paths remain provenance, never the child's execution entrypoint.
+The child becomes discoverable only after checkout preparation succeeds.
+The default key continues to discover the original Campaign. New checkpoint
+discovery never silently changes the active context.
+
 Campaign metadata, iteration evidence, transition evidence and materialization
 receipts are authoritative; state, normalized trace and plots are rebuildable
 views. Context activation requires compatible assets, the inherited portable
@@ -75,6 +92,10 @@ labeling a candidate's parent alone does not establish implementation inheritanc
   do not retain all samples or identity axes.
 - Accepting a portable parent label without restoring its implementation was
   rejected because checkpoint-specific code could remain in the next candidate.
+- A separate mutable Registry index was rejected because the canonical location
+  already provides discovery without another source of truth.
+- Silently replacing an incomplete directory was rejected because an interrupted
+  creator may have retained evidence that needs explicit recovery.
 - Dropping rejected history was rejected because it would erase falsifiers and
   make repeated work likely.
 - Treating a re-anchor as an optimization gain was rejected because source and
@@ -100,6 +121,9 @@ materialize packed/calibration outputs, reject incompatible input and stale
 measurement evidence, recover failed commands, and retain iteration numbering.
 Separate Git commits verify the actual isolated execution revision. Rendering
 tests verify disconnected segment lines and byte-identical repeated SVG output.
+Registry tests use separate Python processes contending on the same key, real
+temporary Git source snapshots, corrupt authoritative files and stale derived
+state. CLI tests resolve Campaign paths without human directory naming.
 These fixtures do not establish real Pi0.5/LingBot checkpoint transfer or GPU
 performance.
 

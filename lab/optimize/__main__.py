@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from . import campaign, context, runner, store, transition
+from .registry import CampaignRegistry
 from .schema import validate
 
 
@@ -13,8 +14,10 @@ def main(argv=None):
                                             'campaign-create', 'campaign-status', 'campaign-resume',
                                             'campaign-validate', 'campaign-finalize',
                                             'campaign-render', 'campaign-reanchor', 'campaign-materialize',
-                                            'campaign-migrate-legacy', 'campaign-transition', 'campaign-transition-abort'))
-    parser.add_argument('path', type=Path, help='spec JSON for preflight/start; run directory otherwise')
+                                            'campaign-migrate-legacy', 'campaign-transition', 'campaign-transition-abort',
+                                            'campaign-find', 'campaign-open', 'campaign-open-or-create', 'campaign-fork'))
+    parser.add_argument('path', type=Path, nargs='?',
+                        help='key JSON for registry commands; spec or run directory otherwise')
     parser.add_argument('--root', type=Path, default=Path.cwd())
     parser.add_argument('--out', type=Path)
     parser.add_argument('--until', choices=('preflight', 'probe', 'check', 'measure', 'qualify'), default='measure')
@@ -29,14 +32,47 @@ def main(argv=None):
     parser.add_argument('--result', type=Path)
     parser.add_argument('--png', action='store_true')
     parser.add_argument('--html', action='store_true')
+    parser.add_argument('--reason')
+    parser.add_argument('--fork-id')
     args = parser.parse_args(argv)
-    if args.command == 'campaign-create':
+    if args.path is None and args.command != 'campaign-create':
+        parser.error('this command requires a path')
+    if args.command in ('campaign-find', 'campaign-open', 'campaign-open-or-create', 'campaign-fork'):
+        registry = CampaignRegistry(args.root)
+        key = store.read(args.path)
+        if args.command == 'campaign-find':
+            location = registry.find(key)
+        elif args.command == 'campaign-open':
+            location = registry.open(key, fork_id=args.fork_id)
+        elif args.command == 'campaign-fork':
+            if not args.reason:
+                parser.error('campaign-fork requires --reason')
+            location = registry.fork(key, reason=args.reason)
+        else:
+            baseline = store.read(args.baseline_evidence) if args.baseline_evidence else None
+            location = registry.open_or_create(key, baseline=baseline, inputs=args.source_input)
+        result = dict(directory=str(location) if location else None,
+                      state=store.read(location / 'state.json') if location else None)
+    elif args.command == 'campaign-create':
         required = (args.baseline_evidence, args.objective, args.protocol, args.fixture)
         if any(value is None for value in required):
             parser.error('campaign-create requires --baseline-evidence, --objective, --protocol and --fixture')
-        result = campaign.create(args.path, store.read(args.baseline_evidence), args.objective,
-                                 args.protocol, args.fixture,
-                                 root=args.root if args.source_input else None, inputs=args.source_input)
+        baseline = store.read(args.baseline_evidence)
+        if baseline['identity'].get('schema_version') == 3:
+            if args.path is not None:
+                parser.error('v3 campaign-create uses the Registry; omit the manual directory')
+            if args.fixture != baseline['measurement_context']['fixture']['id']:
+                parser.error('--fixture differs from baseline evidence')
+            key = campaign.campaign_key(baseline['identity'], objective=args.objective, protocol=args.protocol)
+            location = CampaignRegistry(args.root).create(key, baseline=baseline, inputs=args.source_input)
+            result = dict(directory=str(location), campaign_key=key,
+                          state=store.read(location / 'state.json'))
+        else:
+            if args.path is None:
+                parser.error('legacy campaign-create requires a directory')
+            result = campaign.create(args.path, baseline, args.objective,
+                                     args.protocol, args.fixture,
+                                     root=args.root if args.source_input else None, inputs=args.source_input)
     elif args.command in ('campaign-status', 'campaign-validate'):
         result = campaign.rebuild(args.path)
     elif args.command == 'campaign-transition':

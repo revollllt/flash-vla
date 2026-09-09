@@ -340,6 +340,10 @@ def rebuild(directory):
             (current_incumbent_latency_ms / state['segment_anchor_latency_ms'] - 1) * 100)
         state['pending_transition'] = interrupted[0] if interrupted else None
         state['execution_repository'] = active_segment.get('repository')
+        fork = metadata.get('fork')
+        if fork and (state['execution_repository'] is None
+                     or not Path(state['execution_repository']).is_relative_to(directory)):
+            state['execution_repository'] = fork.get('execution_repository')
     store.write(directory / 'state.json', state)
     return state
 
