@@ -38,7 +38,7 @@ def main(argv=None):
     if args.path is None and args.command != 'campaign-create':
         parser.error('this command requires a path')
     if args.command in ('campaign-find', 'campaign-open', 'campaign-open-or-create', 'campaign-open-or-seed', 'campaign-fork'):
-        registry = CampaignRegistry(args.root)
+        registry = CampaignRegistry(args.root, require_portable_source=True)
         key = store.read(args.path)
         if args.command == 'campaign-find':
             location = registry.find(key)
@@ -52,6 +52,10 @@ def main(argv=None):
             baseline = store.read(args.baseline_evidence) if args.baseline_evidence else None
             opener = registry.open_or_seed if args.command == 'campaign-open-or-seed' else registry.open_or_create
             location = opener(key, baseline=baseline, inputs=args.source_input)
+        if location and args.command in ('campaign-open-or-create', 'campaign-open-or-seed', 'campaign-fork'):
+            configured = campaign.configure_publication(location, args.root)
+            if configured['current_stage'] == 'publication':
+                campaign.resume(location)
         result = dict(directory=str(location) if location else None,
                       state=store.read(location / 'state.json') if location else None)
     elif args.command == 'campaign-create':
@@ -65,7 +69,10 @@ def main(argv=None):
             if args.fixture != baseline['measurement_context']['fixture']['id']:
                 parser.error('--fixture differs from baseline evidence')
             key = campaign.campaign_key(baseline['identity'], objective=args.objective, protocol=args.protocol)
-            location = CampaignRegistry(args.root).create(key, baseline=baseline, inputs=args.source_input)
+            location = CampaignRegistry(args.root, require_portable_source=True).create(
+                key, baseline=baseline, inputs=args.source_input)
+            campaign.configure_publication(location, args.root)
+            campaign.resume(location)
             result = dict(directory=str(location), campaign_key=key,
                           state=store.read(location / 'state.json'))
         else:
@@ -79,6 +86,8 @@ def main(argv=None):
     elif args.command == 'campaign-transition':
         if args.result is None:
             parser.error('campaign-transition requires --result with a transition request')
+        if not store.read(args.path / 'campaign.json').get('publication_root'):
+            campaign.configure_publication(args.path, args.root)
         result = campaign.transition_context(args.root, args.path, store.read(args.result))
     elif args.command == 'campaign-transition-abort':
         result = transition.abort(args.path, recovered_seconds=args.recovered_seconds)
@@ -90,6 +99,9 @@ def main(argv=None):
         if args.iteration is None or args.result is None:
             parser.error('campaign-finalize requires --iteration and --result')
         outcome = store.read(args.result)
+        metadata = store.read(args.path / 'campaign.json')
+        if 'execution_variant' in metadata and not metadata.get('publication_root'):
+            campaign.configure_publication(args.path, args.root)
         result = campaign.finalize(args.path, args.iteration, outcome['verdict'],
                                    outcome['correctness'], outcome['measurement'],
                                    outcome['qualification'], outcome.get('diagnostics'))

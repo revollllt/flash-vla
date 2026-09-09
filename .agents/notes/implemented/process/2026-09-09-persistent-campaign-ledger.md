@@ -135,6 +135,22 @@ Missing summary does not release the trace's ownership. Index rebuilding refuses
 summary/context views that disagree with trace facts, and unresolved files
 without a trace owner cannot be overwritten. Published terminal history cannot
 be rewritten or truncated by a later publish.
+Automatic CLI publication is bound to a local repository outside Campaign
+identity and exported snapshots. Execution checkouts do not relocate that
+destination. The existing committed portable-source requirement is checked before
+enabling publication and before a portable accepted verdict becomes immutable.
+A dirty-source candidate can retain an invalid verdict before a committed,
+requalified candidate is allocated; historical evidence is never rewritten.
+CLI baseline creation checks declared committed inputs before reserving a lineage.
+Terminal verdict persistence precedes publication;
+a rendering, replacement or index failure cannot erase or reopen that verdict.
+A completion receipt names the last fully published iteration and segment.
+Until it matches the ledger, terminal state remains paused for publication and
+cannot allocate another candidate. Resume retries publication without repeating
+experiment stages or costs. Context validation and fresh-clone re-anchor remain
+prerequisites. Successful context activation publishes its new segment without
+consuming an optimization iteration.
+
 Published facts must be internally consistent before summary generation or
 offline reconstruction: Target and variant, contiguous iterations/segments,
 anchor implementation, complete context provenance, portable parent lineage,
@@ -242,7 +258,13 @@ temporary Git source snapshots, corrupt authoritative files and stale derived
 state. CLI tests resolve Campaign paths without human directory naming.
 Publication tests exercise actual ledger-to-file output, context-local summaries,
 deterministic repeated generation, failure trace retention, lineage ownership,
-fork-first publication and render/replacement failure recovery. A same-number
+fork-first publication and render/replacement failure recovery. Automatic
+publication tests cover all terminal verdicts, actual context activation and CLI
+finalization. Injected renderer, index and completion-receipt failures retain
+the verdict and resume publication with experiment execution forbidden.
+Actual dirty source files exercise pre-promotion rejection and recovery through
+a new committed candidate. Missing source and execution-checkout CLI tests verify
+that configuration failures cannot trap an immutable ledger or relocate results. A same-number
 environment transition cannot index an old SVG after replacement is interrupted.
 Offline rebuild tests inject stale SVG, summaries and global views, invalid
 identity/context/arithmetic, and a trace edit without plot regeneration.

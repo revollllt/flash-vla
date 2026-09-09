@@ -129,25 +129,30 @@ def check(snapshot, value):
     return expected
 
 
-def build(root, directory, value):
-    """Export small validated facts; prove only declared incumbent inputs are committed."""
-    state = campaign.rebuild(directory)
-    record = campaign.incumbent_record(directory, state)
-    if "source" not in record:
+def committed_source(root, source, engine_revision):
+    """Verify declared portable inputs before an irreversible promotion or export."""
+    if not source or not source["inputs"]:
         raise ValueError("published resume requires declared portable source inputs")
-    source = record["source"]
     revision = subprocess.check_output(
         ["git", "rev-parse", "--verify", source["revision"] + "^{commit}"], cwd=root, text=True).strip()
-    if revision != record["change"]["engine_revision"]:
+    if revision != engine_revision:
         raise ValueError("portable source must name its committed engine revision")
     for name in source["inputs"]:
         relative_path(name)
         committed = subprocess.check_output(["git", "show", f"{revision}:{name}"], cwd=root)
         if committed != (Path(source["root"]) / name).read_bytes():
             raise ValueError("portable source differs from committed engine; commit and requalify")
+    return dict(revision=revision, inputs=source["inputs"])
+
+
+def build(root, directory, value):
+    """Export small validated facts; prove only declared incumbent inputs are committed."""
+    state = campaign.rebuild(directory)
+    record = campaign.incumbent_record(directory, state)
+    source = committed_source(root, record.get("source"), record["change"]["engine_revision"])
     snapshot, rebuilt = reconstruct(dict(
         schema_version=1, history=_history(directory),
-        portable_source=dict(revision=revision, inputs=source["inputs"])))
+        portable_source=source))
     if (snapshot["failed_hypotheses"] != state["failed_hypotheses"]
             or snapshot["open_hypotheses"] != state["highest_value_unresolved_hypotheses"]):
         raise ValueError("compact snapshot lost campaign hypotheses")

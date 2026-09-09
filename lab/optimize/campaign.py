@@ -294,6 +294,12 @@ def rebuild(directory):
     if imported:
         # Historical segments cannot clear the fresh-clone validation requirement.
         reanchor_required |= current_measurement_segment <= imported['last_segment']
+    publication_required = False
+    if metadata.get('publication_root'):
+        receipt_path = directory / 'publication.json'
+        receipt = store.read(receipt_path) if receipt_path.exists() else None
+        publication_required = receipt != dict(
+            iteration=len(records) - 1, segment=current_measurement_segment)
     stage, next_action = 'candidate_selection', 'start the next candidate from the incumbent'
     campaign_status = 'BASELINED' if len(records) == 1 else 'ACTIVE'
     if active:
@@ -319,6 +325,9 @@ def rebuild(directory):
     if interrupted:
         stage, campaign_status = 'context_transition', 'PAUSED'
         next_action = f'resume or reconcile context transition {interrupted[0]}'
+    if publication_required and active is None and not interrupted and not reanchor_required:
+        stage, campaign_status = 'publication', 'PAUSED'
+        next_action = 'publish the terminal ledger; do not rerun the experiment'
     state = dict(version=1, campaign_id=metadata['id'], status=campaign_status,
                  target=metadata['target'], objective=metadata['objective'],
                  protocol=metadata['protocol'], fixture=metadata['fixture'],
@@ -334,7 +343,7 @@ def rebuild(directory):
                  legacy_import={key: len(legacy_history.get(key, [])) for key in
                                 ('accepted', 'rejected', 'unclassified', 'experiment_evidence')},
                  budget=dict(limit=budget, used=used, remaining=remaining), cost=cost,
-                 reanchor_required=reanchor_required,
+                 reanchor_required=reanchor_required, publication_required=publication_required,
                  next_action=next_action, iterations=len(records))
     if 'execution_variant' in metadata:
         contexts = {}
@@ -609,15 +618,25 @@ def finalize(directory, iteration, verdict, correctness, measurement, qualificat
             active = transition.segments(directory, _records(directory)[0][1]['measurement']['evidence'])[-1]
             _validate_candidate_context(metadata, record, active,
                                         implementation_identity(incumbent_record(directory, state)))
+        if (metadata.get('publication_root') and verdict == 'accepted'
+                and validate_applicability(record['spec']) != 'checkpoint_specific'):
+            from lab.results.resume import committed_source
+
+            committed_source(metadata['publication_root'], record.get('source'),
+                             record['change']['engine_revision'])
         store.write(matches[0], record)
-        return rebuild(directory)
+        state = rebuild(directory)
+    return _publish_pending(directory) if state['publication_required'] else state
 
 
 def resume(directory, until='measure', recovered_seconds=None):
     directory = Path(directory).resolve()
     state = rebuild(directory)
+    if state['current_stage'] == 'publication':
+        return _publish_pending(directory)
     if state['current_stage'] == 'context_transition':
-        return transition.resume(directory, recovered_seconds=recovered_seconds)
+        state = transition.resume(directory, recovered_seconds=recovered_seconds)
+        return _publish_pending(directory) if state['current_stage'] == 'publication' else state
     if state['current_stage'] == 'candidate_selection':
         return state
     matches = list((directory / 'runs').glob('iter-*/evidence.json'))
@@ -638,4 +657,34 @@ def resume(directory, until='measure', recovered_seconds=None):
 def transition_context(root, directory, request):
     """Execute a checkpoint/fixture/environment transition without allocating an iteration."""
     run_dir = transition.begin(root, directory, request)
-    return transition.run(directory, run_dir)
+    state = transition.run(directory, run_dir)
+    return _publish_pending(directory) if state['current_stage'] == 'publication' else state
+
+
+def configure_publication(directory, root):
+    """Bind this machine's CLI workflow to its results repository, outside identity."""
+    directory, root = Path(directory).resolve(), Path(root).resolve()
+    with (directory / 'campaign.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        metadata = store.read(directory / 'campaign.json')
+        if 'execution_variant' not in metadata:
+            raise ValueError('automatic publication requires migrated Identity v3')
+        previous = metadata.get('publication_root')
+        if previous is not None and previous != str(root):
+            raise ValueError('publication repository differs from the configured local Campaign')
+        if previous is None:
+            from lab.results.resume import committed_source
+
+            incumbent = incumbent_record(directory, rebuild(directory))
+            committed_source(root, incumbent.get('source'), incumbent['change']['engine_revision'])
+        metadata['publication_root'] = str(root)
+        store.write(directory / 'campaign.json', metadata)
+        return rebuild(directory)
+
+
+def _publish_pending(directory):
+    from lab.results.publish import publish
+
+    metadata = store.read(Path(directory) / 'campaign.json')
+    publish(metadata['publication_root'], directory)
+    return rebuild(directory)

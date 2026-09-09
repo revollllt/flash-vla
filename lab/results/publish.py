@@ -17,6 +17,8 @@ def publish(root, directory):
         fcntl.flock(lock, fcntl.LOCK_EX)
         state = campaign.rebuild(directory)
         metadata = store.read(directory / "campaign.json")
+        if metadata.get("publication_root", str(root)) != str(root):
+            raise ValueError("publication repository differs from the configured local Campaign")
         if "execution_variant" not in metadata:
             raise ValueError("published continuation requires explicitly migrated Identity v3")
         if any(record.get("verdict") is None for _, record in campaign._records(directory)):
@@ -67,4 +69,6 @@ def publish(root, directory):
                     target.parent.mkdir(parents=True, exist_ok=True)
                     os.replace(source, target)
             index.rebuild(results)
+            store.write(directory / "publication.json", dict(
+                iteration=state["iterations"] - 1, segment=state["current_measurement_segment"]))
             return dict(directory=str(destination), summary=summary)

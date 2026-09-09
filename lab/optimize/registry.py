@@ -23,7 +23,8 @@ def key_digest(key):
 
 
 class CampaignRegistry:
-    def __init__(self, root):
+    def __init__(self, root, *, require_portable_source=False):
+        self.require_portable_source = require_portable_source
         self.root = Path(root).resolve()
         self.directory = self.root / "artifacts/optimization/campaigns"
 
@@ -90,6 +91,11 @@ class CampaignRegistry:
         )
         if expected != key:
             raise ValueError("baseline belongs to another CampaignKey")
+        if self.require_portable_source:
+            from lab.results.resume import committed_source
+
+            revision = baseline["identity"]["engine_revision"]
+            committed_source(self.root, dict(root=str(self.root), inputs=inputs, revision=revision), revision)
         path = self._path(key)
         campaign.create(path, baseline, key["objective"], key["benchmark_protocol"],
                         baseline["measurement_context"]["fixture"]["id"],

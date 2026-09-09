@@ -56,6 +56,7 @@ jobs:
             eval/tests/test_weight_dependency.py \
             eval/tests/test_context_transition.py \
             eval/tests/test_campaign_registry.py \
+            eval/tests/test_automatic_publication.py \
             eval/tests/test_results_publication.py \
             eval/tests/test_results_rebuild.py \
             eval/tests/test_results_resume.py

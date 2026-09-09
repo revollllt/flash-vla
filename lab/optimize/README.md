@@ -12,13 +12,15 @@ Campaign directory. The legacy v2 command still requires one. With a canonical
 key JSON, `campaign-find KEY.json`, `campaign-open KEY.json` and
 `campaign-open-or-create KEY.json` discover or restore the default lineage.
 The last command needs --baseline-evidence only when no local Campaign exists.
-Use --root to select the repository.
+Use --root to select the repository. CLI baseline creation requires declared
+committed inputs through --source-input; it refuses missing or dirty source
+before reserving the Campaign.
 
 Opening a known key with new checkpoint evidence restores the existing lineage;
 it does not activate the new checkpoint. Complete the context transition before
 comparing its measurements. A missing local Campaign and a corrupt one are
-different outcomes: corruption never creates a replacement. Published snapshot
-seeding is not implemented yet.
+different outcomes: corruption never creates a replacement. Use
+`campaign-open-or-seed` to recover a published lineage when no local ledger exists.
 
 Use `campaign-fork KEY.json --reason TEXT` for an explicit alternative lineage,
 then `campaign-open KEY.json --fork-id ID` to reopen that fork. Forks retain
@@ -190,7 +192,17 @@ The incumbent Git commit and declared source inputs must exist locally.
 Imported history retains iteration IDs, failed/open hypotheses and portable
 recipes. A fresh context transition is mandatory before candidate allocation
 or publication, even when the checkpoint and old environment metadata match.
-Automatic publication after finalize is still pending.
+V3 CLI creation, open-or-create, open-or-seed and fork configure publication
+to the selected repository. A terminal baseline, finalized iteration or activated
+context is published automatically. Imported history still requires its fresh
+re-anchor first. A publication failure preserves the terminal verdict and exposes
+current_stage=publication; use `campaign-resume CAMPAIGN` to retry publication
+without rerunning experiment stages. New candidates wait until publication succeeds.
+The local publication destination is excluded from identity and resume snapshots.
+Once configured, later execution checkouts do not change it. A portable accepted
+candidate must have declared source matching its measured commit before its
+verdict becomes immutable. If this check fails, retain the unusable trial as
+invalid, commit the candidate and requalify in a new iteration.
 `python -m lab.results validate --root REPOSITORY`
 checks published facts and JSON views.
 `python -m lab.results rebuild --check --root REPOSITORY` checks generated files
