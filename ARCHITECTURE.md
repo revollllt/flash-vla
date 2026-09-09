@@ -147,6 +147,13 @@ require their separate immutable identities. The runner copies resolved assets
 read-only for its sampler and backend initialization, so another runner cannot
 change its assets through process environment variables.
 
+Official acceptance runtimes are configured before process startup with
+OPENPI_PYTHON (Pi0/Pi0.5) or LINGBOT_PYTHON. Pi0's official checkpoint additionally
+uses OPENPI_PI0_CHECKPOINT and an explicit immutable ID through
+OPENPI_PI0_MODEL_REVISION (legacy variable name) or its CLI options. These values
+have no machine-specific repository defaults; missing configuration makes the
+official tier unavailable.
+
 Each Target carries exactly one shipped plan and one reference plan (its
 correctness oracle route). Everything else — candidate plans, ablations,
 per-kernel trials — lives in `lab/`, the optimization workspace, which is

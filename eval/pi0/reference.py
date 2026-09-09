@@ -1,6 +1,6 @@
 """Compare H100/Pi0 output against the official OpenPI PyTorch implementation.
 
-    python -m eval.pi0.reference                       # the registry's checkpoint, reference route
+    python -m eval.pi0.reference                       # configured checkpoint, reference route
     python -m eval.pi0.reference --plan shipped
     OPENPI_PI0_CHECKPOINT=/path/to/pi0 \
     OPENPI_PI0_MODEL_REVISION=immutable-id python -m eval.pi0.reference
@@ -89,14 +89,19 @@ def main(argv=None) -> int:
     )
     parser.add_argument(
         "--checkpoint-id", default=None,
-        help="immutable checkpoint ID (default: registered ID for the default checkpoint)"
+        help="immutable checkpoint ID (or OPENPI_PI0_MODEL_REVISION for an env-configured checkpoint)"
     )
     parser.add_argument("--plan", default="reference",
                         help="the call-site plan to build the runner with (default: reference)")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args(argv)
-    checkpoint = Path(args.checkpoint or OPENPI_PI0_CHECKPOINT)
+    location = args.checkpoint or OPENPI_PI0_CHECKPOINT
+    if not location:
+        print("baseline unavailable: set OPENPI_PI0_CHECKPOINT or --checkpoint",
+              file=sys.stderr)
+        return UNAVAILABLE
+    checkpoint = Path(location)
     if checkpoint.is_dir():
         checkpoint = checkpoint / "model.safetensors"
     if not checkpoint.is_file():

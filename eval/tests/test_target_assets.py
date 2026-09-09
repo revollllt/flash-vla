@@ -141,3 +141,67 @@ def test_random_input_targets_accept_the_shared_asset_argument(name):
     assert left.keys() == right.keys()
     for key in left:
         torch.testing.assert_close(left[key], right[key])
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_reference_locations_come_from_machine_environment(tmp_path, configured):
+    import os
+    import subprocess
+    import sys
+
+    selected = {
+        "OPENPI_PYTHON": str(tmp_path / "openpi runtime/python"),
+        "LINGBOT_PYTHON": str(tmp_path / "lingbot runtime/python"),
+        "OPENPI_PI0_CHECKPOINT": str(tmp_path / "pi0 weights"),
+        "OPENPI_PI0_MODEL_REVISION": "registered-weights/v1",
+    }
+    env = {key: value for key, value in os.environ.items() if key not in selected}
+    if configured:
+        env.update(selected)
+    probe = """
+import json
+from eval import acceptance
+print(json.dumps({
+    "openpi": acceptance.for_target("hardware/nvidia/h100/pi05")["baseline_python"],
+    "lingbot": acceptance.for_target("hardware/nvidia/h100/lingbot_vla")["baseline_python"],
+    "checkpoint": acceptance.OPENPI_PI0_CHECKPOINT,
+    "checkpoint_id": acceptance.OPENPI_PI0_MODEL_REVISION,
+}))
+"""
+    process = subprocess.run([sys.executable, "-c", probe], env=env,
+                             check=True, text=True, capture_output=True)
+    actual = json.loads(process.stdout)
+    assert actual == (dict(zip(("openpi", "lingbot", "checkpoint", "checkpoint_id"),
+                               selected.values())) if configured else
+                      dict.fromkeys(("openpi", "lingbot", "checkpoint", "checkpoint_id")))
+
+
+def test_missing_pi0_asset_is_unavailable_before_model_loading(monkeypatch, capsys):
+    from eval.pi0 import reference
+
+    monkeypatch.setattr(reference, "OPENPI_PI0_CHECKPOINT", None)
+    def unexpected_load(*args, **kwargs):
+        pytest.fail("missing asset must not start model loading")
+    monkeypatch.setattr(reference, "run", unexpected_load)
+    assert reference.main([]) == reference.UNAVAILABLE
+    assert "OPENPI_PI0_CHECKPOINT" in capsys.readouterr().err
+
+
+def test_explicit_pi0_asset_keeps_checkpoint_id(tmp_path, monkeypatch):
+    from eval.pi0 import reference
+
+    checkpoint = tmp_path / "model.safetensors"
+    checkpoint.touch()
+    monkeypatch.setattr(reference, "OPENPI_PI0_CHECKPOINT", None)
+    monkeypatch.setattr(reference, "OPENPI_PI0_MODEL_REVISION", None)
+    received = []
+    def run(path, **kwargs):
+        received.append((path, kwargs))
+        return {"passed": True}
+    monkeypatch.setattr(reference, "run", run)
+    assert reference.main(["--checkpoint", str(checkpoint)]) == reference.UNAVAILABLE
+    assert not received
+    assert reference.main(["--checkpoint", str(checkpoint),
+                           "--checkpoint-id", "checkpoint-a"]) == 0
+    assert received == [(str(checkpoint), dict(checkpoint_id="checkpoint-a", seed=0,
+                                              device="cuda", plan="reference"))]

@@ -40,26 +40,16 @@ STATISTICS = ("min", "median", "p99")
 CORRECTNESS_METRICS = ("max_abs", "mean_abs", "rms_error", "rel_rms", "p99_abs",
                        "cosine_similarity")
 
-#: The interpreter the official-baseline scripts run under: the OpenPI
-#: environment, which carries the reference implementation. Override with
-#: `OPENPI_PYTHON`; the gate records a baseline check as unavailable when the
-#: interpreter does not exist.
-OPENPI_PYTHON = os.environ.get(
-    "OPENPI_PYTHON", "/data/user/jzou521/codes/cuda/openpi-official/.venv/bin/python")
+#: Official runtimes are machine configuration, never repository-local defaults.
+#: Unset or missing interpreters make the official tier unavailable.
+OPENPI_PYTHON = os.environ.get("OPENPI_PYTHON")
+LINGBOT_PYTHON = os.environ.get("LINGBOT_PYTHON")
 
-#: The OpenPI checkpoint the Pi0 official-baseline tier compares against. Pi0's
-#: adapter loads real weights (Pi0.5's builds random ones), so its script needs
-#: a path; override with `OPENPI_PI0_CHECKPOINT`. The script reports the tier
-#: as unavailable when the path does not exist, and the gate records it so.
-DEFAULT_OPENPI_PI0_CHECKPOINT = (
-    "/data/user/jzou521/models/openpi/openpi-assets/checkpoints/pi0_libero_pytorch")
-OPENPI_PI0_CHECKPOINT = os.environ.get("OPENPI_PI0_CHECKPOINT",
-                                       DEFAULT_OPENPI_PI0_CHECKPOINT)
-#: Project-defined immutable ID for the registered checkpoint. A path override
-#: needs its own explicit ID; the filename alone is not checkpoint identity.
+#: Pi0 official weights require both a location and an explicit immutable ID.
+#: The legacy environment variable name denotes checkpoint provenance, not
+#: architecture model_revision. Neither value is inferred from a machine path.
+OPENPI_PI0_CHECKPOINT = os.environ.get("OPENPI_PI0_CHECKPOINT")
 OPENPI_PI0_MODEL_REVISION = os.environ.get("OPENPI_PI0_MODEL_REVISION")
-if OPENPI_PI0_MODEL_REVISION is None and OPENPI_PI0_CHECKPOINT == DEFAULT_OPENPI_PI0_CHECKPOINT:
-    OPENPI_PI0_MODEL_REVISION = "flash-vla/openpi-pi0-libero-pytorch/v1"
 
 DEFAULTS: dict[str, Any] = {
     "latency": {
@@ -194,10 +184,7 @@ TARGETS: dict[str, dict[str, Any]] = {
             "in_engine_reference": "eval.correctness",
             "official_baseline": ("eval.lingbot.parity",),
         },
-        "baseline_python": (
-            "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/"
-            "lingbot-official-4eb34b7/bin/python"
-        ),
+        "baseline_python": LINGBOT_PYTHON,
         "capabilities": ("baseline_adapter",),
         "overrides": {},
     },

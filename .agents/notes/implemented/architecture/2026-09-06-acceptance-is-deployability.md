@@ -58,16 +58,22 @@ which cannot import OpenPI, so every gate ended `blocked`.
    this fraction of its measured ceiling in the floor report (the floor
    report's flag for that is the floor model's next change).
 6. **The baseline tier runs under its own interpreter.** Each Target entry
-   names `baseline_python` (the OpenPI environment, `OPENPI_PYTHON` to
-   override); the gate runs the official-baseline scripts under it with the
+   names `baseline_python`, selected by machine environment
+   (`OPENPI_PYTHON` for Pi0/Pi0.5, `LINGBOT_PYTHON` for LingBot); the gate runs
+   the official-baseline scripts under it with the
    repository on the path, the requested input seed and construction options,
    and records `unavailable` when
    that interpreter does not exist or a script reports itself unavailable.
    Each tier judges the Target's reference route, the oracle every candidate
    is compared against in-engine. Pi0's tier builds that route from the
-   OpenPI checkpoint's weights (`OPENPI_PI0_CHECKPOINT`, the Libero Pi0
-   checkpoint on this machine, env-overridable) and reports a missing
-   checkpoint as unavailable. Pi0.5 accepts an explicit checkpoint/configuration
+   OpenPI checkpoint's weights (`OPENPI_PI0_CHECKPOINT`) and requires a
+   separate immutable checkpoint ID (`OPENPI_PI0_MODEL_REVISION`, its legacy
+   environment spelling, or the CLI option). No machine path supplies an
+   implicit identity. Missing configuration or assets make the tier unavailable.
+   Reusing these environment interfaces avoids a second runtime-discovery
+   framework; hardcoded machine defaults would prevent relocation and could
+   silently select the maintainer's checkpoint. Pi0.5 accepts an explicit
+   checkpoint/configuration
    and separate ID/digest, or uses deterministic random weights when no
    checkpoint is requested. Construction options apply to declarations, all
    numerical comparisons, timing legs and optional floor work. Registered
