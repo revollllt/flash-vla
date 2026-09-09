@@ -75,6 +75,14 @@ class OptimizationTraceTests(unittest.TestCase):
 
     def test_normalized_curve_and_complete_trace_schema(self):
         self.populate()
+        state = campaign.rebuild(self.directory)
+        self.assertEqual(state['baseline_latency_ms'], 16.0)
+        self.assertEqual(state['current_incumbent_latency_ms'], 15.4)
+        self.assertAlmostEqual(state['improvement_vs_baseline_pct'], -3.75)
+        self.assertEqual(state['experiments'], {
+            'accepted': 2, 'no_benefit': 1, 'correctness_failed': 1,
+            'invalid': 1, 'blocked': 1,
+        })
         value = trace.normalize(self.directory)
         entries = value['iterations']
         self.assertEqual([item['current_incumbent_latency_ms'] for item in entries],

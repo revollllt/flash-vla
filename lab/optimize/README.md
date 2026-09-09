@@ -15,9 +15,10 @@ terminal result with `campaign-finalize CAMPAIGN --iteration N --result
 RESULT.json`; verdict, correctness, measurement and qualification stay in that
 iteration's evidence.
 
-Only `campaign.json` and `runs/iter-*/evidence.json` are campaign facts.
-`state.json` is a disposable view. The campaign identity is created once and
-has no update operation. Accepted evidence advances the incumbent only after
+`campaign.json`, optional ranked `hypotheses.json`, and
+`runs/iter-*/evidence.json` are campaign facts. `state.json` is a disposable
+view. The campaign identity is created once and has no update operation.
+Accepted evidence advances the incumbent only after
 correctness, valid measurement, qualification and gate results all pass;
 other verdicts stay in the lineage without changing it.
 

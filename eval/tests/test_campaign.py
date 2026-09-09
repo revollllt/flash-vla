@@ -124,9 +124,17 @@ class CampaignTests(unittest.TestCase):
         fresh = json.loads(output)
         for key in ('target', 'baseline', 'current_incumbent', 'current_stage',
                     'current_measurement_segment', 'failed_hypotheses', 'budget',
-                    'next_action'):
+                    'experiments', 'highest_value_unresolved_hypotheses', 'next_action'):
             self.assertIn(key, fresh)
         self.assertEqual(fresh['cost']['gpu_seconds'], 17.0)
+
+    def test_ranked_unresolved_hypotheses_survive_state_rebuild(self):
+        queue = {'version': 1, 'campaign_id': self.directory.name,
+                 'unresolved': [{'id': 'next', 'mechanism': 'next mechanism'}]}
+        store.write(self.directory / 'hypotheses.json', queue)
+        (self.directory / 'state.json').unlink()
+        state = campaign.rebuild(self.directory)
+        self.assertEqual(state['highest_value_unresolved_hypotheses'], queue['unresolved'])
 
     def test_non_improving_budget_survives_state_rebuilds(self):
         for iteration in range(1, 4):

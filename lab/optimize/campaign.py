@@ -92,6 +92,9 @@ def rebuild(directory):
     if not records:
         raise ValueError('campaign has no iter-000 baseline')
     incumbent = 'iter-000'
+    baseline_objective = records[0][1]['measurement']['evidence'].get('objective', {})
+    baseline_latency_ms = (float(baseline_objective['value'])
+                           if baseline_objective.get('unit') == 'ms' else None)
     legacy_history = records[0][1]['measurement']['evidence'].get('legacy_history', {})
     failed = [dict(iteration=None, candidate_id=item['record'].get('id'),
                    mechanism=item['record'].get('thesis'), verdict='legacy_rejected',
@@ -132,6 +135,25 @@ def rebuild(directory):
                 if active is not None:
                     raise ValueError('campaign has multiple active candidates')
                 active = (path.parent, record)
+    incumbent_iteration = int(incumbent.split('-', 1)[1])
+    incumbent_measurement = records[incumbent_iteration][1]['measurement']
+    current_incumbent_latency_ms = (
+        baseline_latency_ms if incumbent_iteration == 0
+        else incumbent_measurement.get('candidate_ms')
+    )
+    improvement_vs_baseline_pct = (
+        (current_incumbent_latency_ms / baseline_latency_ms - 1.0) * 100.0
+        if baseline_latency_ms is not None and current_incumbent_latency_ms is not None
+        else None
+    )
+    experiments = {verdict: 0 for verdict in VERDICTS}
+    for _, record in records[1:]:
+        if record.get('verdict') in experiments:
+            experiments[record['verdict']] += 1
+    hypotheses_path = directory / 'hypotheses.json'
+    highest_value_unresolved_hypotheses = (
+        store.read(hypotheses_path).get('unresolved', []) if hypotheses_path.is_file() else []
+    )
     cost['jobs'] = sorted({str(job) for job in cost['jobs']})
     budget = metadata['budget']
     used = dict(candidates=candidates, non_improving=non_improving, jobs=len(cost['jobs']))
@@ -163,8 +185,13 @@ def rebuild(directory):
                  target=metadata['target'], objective=metadata['objective'],
                  protocol=metadata['protocol'], fixture=metadata['fixture'],
                  baseline='iter-000', current_incumbent=incumbent,
+                 baseline_latency_ms=baseline_latency_ms,
+                 current_incumbent_latency_ms=current_incumbent_latency_ms,
+                 improvement_vs_baseline_pct=improvement_vs_baseline_pct,
                  current_stage=stage,
                  current_measurement_segment=current_measurement_segment,
+                 experiments=experiments,
+                 highest_value_unresolved_hypotheses=highest_value_unresolved_hypotheses,
                  failed_hypotheses=failed,
                  legacy_import={key: len(legacy_history.get(key, [])) for key in
                                 ('accepted', 'rejected', 'unclassified', 'experiment_evidence')},
