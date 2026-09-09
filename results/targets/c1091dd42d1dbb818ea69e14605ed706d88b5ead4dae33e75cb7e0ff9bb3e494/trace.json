@@ -355,6 +355,117 @@
         "reference_provenance": {}
       },
       "anchor_ms": 15.892422758042812
+    },
+    {
+      "id": 1,
+      "before_iteration": 1,
+      "incumbent": "iter-000",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/h100/pi05",
+        "hardware": "h100-sxm5-80gb",
+        "model": "pi05",
+        "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens50-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers18-num_views3-prefix_len968-prompt_len200-qkv_width2560-query_heads8-state_dim32-steps10-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+        "shape": {
+          "batch": 1,
+          "num_views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "image_channels": 3,
+          "visual_tokens_per_view": 256,
+          "visual_tokens": 768,
+          "vision_dim": 1152,
+          "vision_ffn_dim": 4304,
+          "vision_heads": 16,
+          "vision_head_dim": 72,
+          "vision_layers": 27,
+          "prompt_len": 200,
+          "prefix_len": 968,
+          "chunk": 50,
+          "expert_tokens": 50,
+          "state_dim": 32,
+          "action_dim": 32,
+          "steps": 10,
+          "layers": 18,
+          "encoder_dim": 2048,
+          "encoder_ffn_dim": 16384,
+          "query_heads": 8,
+          "kv_heads": 1,
+          "head_dim": 256,
+          "qkv_width": 2560,
+          "expert_dim": 1024,
+          "expert_ffn_dim": 4096
+        },
+        "plan": {
+          "vision_encoder_patch_embed": "tilelang",
+          "vision_encoder_norm_qkv": "tilelang",
+          "vision_encoder_attention": "tilelang",
+          "vision_encoder_out_proj_residual": "tilelang",
+          "vision_encoder_norm_ffn_up": "tilelang",
+          "vision_encoder_ffn_down_residual": "tilelang",
+          "llm_backbone_projector": "tilelang",
+          "llm_backbone_embed_prompt": "tilelang",
+          "llm_backbone_norm_qkv_rope": "tilelang",
+          "llm_backbone_attention": "gemma-cuda",
+          "llm_backbone_out_proj_residual": "tilelang",
+          "llm_backbone_norm_gated_ffn": "tilelang",
+          "llm_backbone_ffn_down_residual": "tilelang",
+          "action_expert_action_in_proj": "tilelang",
+          "action_expert_norm_qkv_rope": "cuda-pdl",
+          "action_expert_attention": "cuda-pdl",
+          "action_expert_out_proj_residual": "cuda-pdl",
+          "action_expert_norm_gated_ffn": "cuda-pdl",
+          "action_expert_ffn_down_residual": "cuda-pdl",
+          "action_expert_action_out_proj": "tilelang"
+        },
+        "model_revision": "pi05-r1",
+        "engine_revision": "024b640a7a7d05a1797ba45a16c007f916b0ee02",
+        "inference_signature": "sha256:a79c1f62c3f14674ad87e88a89bb5f66ac650e1c497ccf5076e64017b55d9f6f",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "pravsels/pi05-build-block-tower-baseline@c02537599ca0577dcf8081018a49978e9129be64/checkpoints/50000",
+          "checkpoint_digest": "pravsels/pi05-build-block-tower-baseline@c02537599ca0577dcf8081018a49978e9129be64/checkpoints/50000"
+        },
+        "fixture": {
+          "id": "flash-vla/pi05-inputs-v1/seed-0",
+          "digest": "sha256:ec4dbe8210364b23744417248283f0ed759477c778b5a6a8b3d5b3f72caee692"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA H100 80GB HBM3",
+          "driver": "570.86.10",
+          "cuda_runtime": "12.6",
+          "pytorch": "2.7.1+cu126",
+          "tilelang": "0.1.11",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 700.0,
+            "enforced_limit_w": 700.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "1980",
+            "application_memory_mhz": "2619"
+          }
+        },
+        "hostname": "ACD1-12",
+        "slurm_job_id": "610705",
+        "timestamp": 1788984495.0213716,
+        "reference_provenance": {}
+      },
+      "anchor_ms": 15.863576903939247
     }
   ]
 }

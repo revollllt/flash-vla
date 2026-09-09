@@ -42,3 +42,13 @@ Canonical Campaign 016bff50eb2c9ef0cbd92b17b9da996614e06f1f679306c611f3e82259975
 now publishes iter-001 as its invariant portable incumbent. See
 artifacts/optimization/lingbot-patch-linear-qualification/decision.json and
 the tracked Target results for the raw-report references and source receipt.
+
+Post-acceptance floor/profile 610727 completed in 199 allocated GPU seconds,
+using clean source 77dd175 and the same patch-linear plan/assets. Segment minima
+are vision 8.277 ms, prefix 9.606 ms and action 69.274 ms; action still launches
+30,024 kernels. Attribution and the existing coarse floor model are valid, but
+the 0.484 ms action ceiling is guidance rather than an achievable latency claim.
+The 17.715 ms copy-classified duration does not prove redundant copies. Retain
+the monolithic backend until a concrete operator-level probe supports a bounded
+change; no persistent or megakernel rewrite is justified by this floor gap alone.
+See artifacts/optimization/lingbot-patch-linear-floor/{floor,summary}.json.
