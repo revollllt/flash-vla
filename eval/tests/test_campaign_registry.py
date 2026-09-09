@@ -255,3 +255,51 @@ def test_child_transition_uses_its_new_checkout_after_fork(setup):
     assert state["current_measurement_segment"] == 2
     assert registry.open(key, fork_id=child.name) == child
     assert campaign.rebuild(parent)["current_measurement_segment"] == 1
+
+
+def test_two_processes_finalize_one_iteration_atomically(workspace):
+    import fcntl
+
+    root, directory = workspace
+    campaign.start(root, candidate("no-op"), directory)
+    worker = """
+import sys
+from pathlib import Path
+from eval.tests.test_weight_dependency import finalize
+print("ready", flush=True)
+try:
+    finalize(Path(sys.argv[1]), 1, "no_benefit",
+             result={"validity": "valid", "candidate_ms": 16.0})
+except ValueError as error:
+    if str(error) != "iteration verdict is immutable":
+        raise
+    print("already finalized", flush=True)
+else:
+    print("finalized", flush=True)
+"""
+    processes = []
+    try:
+        with (directory / "campaign.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            for _ in range(2):
+                processes.append(subprocess.Popen(
+                    [sys.executable, "-c", worker, str(directory)],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
+            for process in processes:
+                assert process.stdout.readline().strip() == "ready"
+        outputs = []
+        for process in processes:
+            stdout, stderr = process.communicate(timeout=30)
+            assert process.returncode == 0, stderr
+            outputs.append(stdout.strip())
+        assert sorted(outputs) == ["already finalized", "finalized"]
+        state = campaign.rebuild(directory)
+        assert state["current_incumbent"] == "iter-000"
+        assert state["iterations"] == 2
+        assert len(list((directory / "runs").glob("iter-001-*/evidence.json"))) == 1
+        assert campaign.start(root, candidate("next"), directory)["iteration"] == 2
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+                process.wait()

@@ -12,7 +12,7 @@ from .schema import relative_path
 def write(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_name(path.name + '.tmp')
+    temp = path.with_name(f'{path.name}.{uuid.uuid4().hex}.tmp')
     with temp.open('w') as output:
         json.dump(value, output, indent=2, allow_nan=False)
         output.write('\n')

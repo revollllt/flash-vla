@@ -55,7 +55,9 @@ The default key continues to discover the original Campaign. New checkpoint
 discovery never silently changes the active context.
 
 Campaign metadata, iteration evidence, transition evidence and materialization
-receipts are authoritative; state, normalized trace and plots are rebuildable
+receipts are authoritative; concurrent record writes use independent temporary
+files before atomic replacement. Finalization remains serialized by the Campaign
+lock; a second finalizer cannot overwrite an immutable verdict. State, normalized trace and plots are rebuildable
 views. Context activation requires compatible assets, the inherited portable
 implementation, its necessary artifact/calibration recipes, correctness and an
 uninstrumented incumbent measurement. Re-anchor is a segment boundary, never an
