@@ -211,7 +211,15 @@ def _configure_rope_frequency(enabled: bool) -> None:
     lingbot.apply_rope = apply_rope
 
 
-def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets):
+def _linear_patch_embedding(self, hidden_states):
+    """Project pre-expanded bf16 patches with the unchanged Conv3d weights."""
+    weight = self.proj.weight.flatten(1)
+    patches = hidden_states.reshape(-1, weight.shape[1]).to(dtype=weight.dtype)
+    return torch.nn.functional.linear(patches, weight)
+
+
+def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets,
+                  linear_patch_embedding: bool = False):
     import yaml
     from lerobot.configs.policies import PreTrainedConfig
     from transformers import AutoConfig
@@ -241,28 +249,34 @@ def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets
     policy.to(device=device, dtype=torch.bfloat16).eval()
     core = policy.model
     core.qwenvl_with_expert.qwenvl.config.num_hidden_layers = layers
-    _patch_vision_attention(core.qwenvl_with_expert.qwenvl.visual)
+    visual = core.qwenvl_with_expert.qwenvl.visual
+    _patch_vision_attention(visual)
+    if linear_patch_embedding:
+        visual.patch_embed.forward = MethodType(_linear_patch_embedding, visual.patch_embed)
     _configure_rope_frequency(cache_rope_frequency)
     gc.collect()
     return core
 
 
 class _State:
-    def __init__(self, cache_rope_frequency: bool, assets) -> None:
+    def __init__(self, cache_rope_frequency: bool, assets, linear_patch_embedding: bool) -> None:
         self.core = None
         self.vision_metadata = None
         self.action_constants = None
         self.cache_rope_frequency = cache_rope_frequency
+        self.linear_patch_embedding = linear_patch_embedding
         self.assets = assets
 
     def ensure(self, weights, layers: int):
         if self.core is None:
-            self.core = _build_policy(weights, layers, self.cache_rope_frequency, self.assets)
+            self.core = _build_policy(weights, layers, self.cache_rope_frequency, self.assets,
+                                      linear_patch_embedding=self.linear_patch_embedding)
         return self.core
 
 
-def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False):
-    state = _State(cache_rope_frequency, scratch.assets)
+def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
+                  linear_patch_embedding=False):
+    state = _State(cache_rope_frequency, scratch.assets, linear_patch_embedding)
 
     @torch.no_grad()
     def vision(pixel_values, out, layers, *weights):
