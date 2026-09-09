@@ -134,6 +134,21 @@ class OptimizationTraceTests(unittest.TestCase):
                     trace.normalize(self.directory)
             store.write(path, record)
 
+    def test_blocked_attempt_without_measurement_identity_remains_visible(self):
+        revision = subprocess.check_output(
+            ['git', '-C', str(self.root), 'rev-parse', 'HEAD'], text=True).strip()
+        identity = dict(IDENTITY, engine_revision=revision)
+        campaign.start(self.root, experiment('blocked-before-measurement', identity=identity),
+                       self.directory)
+        campaign.finalize(self.directory, 1, 'blocked', PASS,
+                          {'validity': 'incomplete', 'reason': 'gate infrastructure'},
+                          {'status': 'blocked'})
+        entry = trace.normalize(self.directory)['iterations'][1]
+        self.assertEqual(entry['verdict'], 'blocked')
+        self.assertEqual(entry['measurement_segment']['id'], 0)
+        self.assertIsNone(entry['candidate_latency_ms'])
+        self.assertEqual(entry['engine_revision'], revision)
+
     @unittest.skipUnless(importlib.util.find_spec('matplotlib'), 'Matplotlib optional dependency absent')
     def test_canonical_svg_and_optional_outputs_consume_plot_points(self):
         self.populate()

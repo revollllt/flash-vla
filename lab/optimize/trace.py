@@ -70,6 +70,7 @@ def normalize(directory):
     for record in records:
         iteration = record['iteration']
         measurement = record['measurement']
+        verdict = record.get('verdict')
         if iteration == 0:
             segment = previous_segment
             context = _context(baseline_source)
@@ -82,6 +83,18 @@ def normalize(directory):
             candidate_ms = None
             parent_ms = None
             validity = 'incomplete'
+        elif verdict in ('invalid', 'blocked', 'correctness_failed') and 'identity' not in measurement:
+            identity = record['campaign_identity']
+            if (not campaign.same_target(target, identity)
+                    or identity.get('engine_revision') != record['change'].get('engine_revision')):
+                raise ValueError(f'iter-{iteration:03d} campaign identity does not match its change')
+            segment = previous_segment
+            context = dict(measurement.get('measurement_context', {}))
+            candidate_ms = measurement.get('candidate_ms')
+            candidate_ms = None if candidate_ms is None else float(candidate_ms)
+            parent_ms = measurement.get('parent_incumbent_ms')
+            parent_ms = None if parent_ms is None else float(parent_ms)
+            validity = measurement.get('validity', 'incomplete')
         else:
             if 'identity' not in measurement:
                 raise ValueError(f'iter-{iteration:03d} measurement has no Identity')
@@ -111,7 +124,6 @@ def normalize(directory):
             parent_ms = measurement.get('parent_incumbent_ms')
             parent_ms = None if parent_ms is None else float(parent_ms)
             validity = measurement['validity']
-        verdict = record.get('verdict')
         if verdict in ('accepted', 'no_benefit') and iteration and (
                 candidate_ms is None or parent_ms is None):
             raise ValueError(f'iter-{iteration:03d} performance verdict needs candidate and parent latency')
