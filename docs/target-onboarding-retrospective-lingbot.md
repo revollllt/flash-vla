@@ -91,6 +91,8 @@ Human 不需要编写 model implementation、Target registration、benchmark、a
 - official/reference/baseline/floor/profile/parity Slurm wrapper 的公共头和 artifact
   路径；
 - Campaign create/render/status 命令及最终 acceptance manifest 骨架。
+- 持久化 ranked hypothesis queue 的字段骨架；排序依据和机制仍由 Agent 从实测
+  headroom 生成。
 
 不能安全生成的部分包括 checkpoint tensor 到 runtime buffer 的语义映射、processor
 行为、model stage 分解、correctness observable 选择和性能 hypothesis。一次 LingBot
