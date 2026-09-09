@@ -1,0 +1,315 @@
+# Autonomous inference v2: checklist and recovery
+
+Source plan (initiating Mac): `/Users/zou/Downloads/Flash-VLA Autonomous Inference Optimization Execution Plan v2.md`. Latest user instructions override plan suggestions. This is the only task state file, and does not supersede source requirements.
+
+## Resume
+
+- Host: `lab-H100`; main repository `/data/user/jzou521/codes/cuda/flash-vla`.
+- Worktree: `/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2`; branch `codex/autonomous-inference-v2`, starting at `91d5f32`.
+- Preserve main's pre-existing `.gitignore` addition and old task files.
+- Python: `/data/user/jzou521/codes/cuda/flash-vla/.venv/bin/python`. Set `PYTHONPATH=$PWD/src:$PWD`, `OPENBLAS_NUM_THREADS=1`, `OMP_NUM_THREADS=1` in the worktree; its source must precede the main editable installation.
+- Phase: P0-B. Next: implement v3 identity, Target-owned architecture signatures, runner provenance and explicit compatibility checks.
+- Checkbox progress: 3/277 verified (P0-A). The previous plan's completed status is unrelated.
+- Environment: SSH, writable checkout and Slurm available; no user jobs at preflight. Project venv lacks Matplotlib. GPU execution and two real compatible Pi0.5 fine-tuned checkpoints remain unverified. Remote rg absent; use `git -c grep.threads=1 grep` after default git grep hit a thread limit.
+
+## Execution
+
+Follow P0 then P1/P2 dependencies. Keep minimal changes and use cheapest discriminating probes with controlled variables. Run affected tests, with broader validation and independent targeted review at major boundaries. Do not add hashes, frozen contracts, baselines or gates beyond the plan's actual requirements; do not hash unchanged files. After three failed attempts, retain evidence and defer that item while continuing independent work. Do not waive unmet requirements. Save progress before long waits, report checklist-based progress after productive loops, and commit validated milestones locally without pushing. Correctness vetoes promotion; uninstrumented same-context A/B/A supports latency claims; context changes require revalidation and re-anchor.
+
+## Non-checkbox requirements remain active
+
+- Sections 4/7/18: full inference ABI signature and identity matrix, architecture/shape separation; checkpoint, plan, filesystem paths, revisions of implementations and weight values are not Target axes.
+- Sections 14-17: compatibility and applicability checks, portable incumbent inheritance, actual rebuild/retune recipes, correctness and re-anchor before activation; checkpoint-specific candidates never replace portable state.
+- Sections 25-40: tracked compact publication, canonical Matplotlib renderer, filtered static HTML, continuation CLI, atomic onboarding handoff, results validation/rebuild CI commands.
+- Sections 43/46/49: falsifiable hypotheses, profiler ladder, LingBot autonomous drill, floor/profile and evidence-based P2 choices; no P0 kernel rewrite.
+- Section 53: two real compatible fine-tuned Pi0.5 checkpoints; A baseline/accepted/no-benefit/accepted; fresh Agent on B resumes iter 4, validates/re-anchors/publishes; next Agent resumes iter 5. Synthetic tests cannot replace this drill.
+- Section 55: all named evidence tests, committed progress.svg and Target summary, two checkpoint/context summaries under one Target.
+
+## Evidence log
+
+- P0-A: 36 expected semantic failures (13.58 s), with no collection/environment failure. Controls before edit: 27 passed / 17 subtests. Raw red run: artifacts/optimization/identity-v3-contract-red.log. Tests deliberately remain failing in the test-first checkpoint commit; P0-B is not accepted yet.
+- P0-A independent read-only review identified two gaps (actual weight ABI mismatch and producer-to-context wiring); both were added and the reviewer confirmed the targeted follow-up resolved them.
+
+- Current source: Identity v2, caller-supplied checkpoint model revision, Campaign fixture equality; results/ and .github/workflows/ absent.
+- Control before changes: project Python with worktree PYTHONPATH, pytest eval/tests/test_identity.py eval/tests/test_campaign.py: 27 passed and 17 subtests passed, 18.55 seconds. No GPU run.
+- Initialization attempt writing this file over SSH stdin failed with source encoding error before file creation. Retry uses ASCII JSON transport.
+
+## Original checkbox rows
+
+- [ ] C001 Identity v3 实现 — 19. Identity Migration / Identity migration checklist (source L1130); evidence: pending
+- [ ] C002 `precision` 迁移为 `execution_variant` — 19. Identity Migration / Identity migration checklist (source L1131); evidence: pending
+- [ ] C003 `model_revision` 改为 architecture semantics — 19. Identity Migration / Identity migration checklist (source L1132); evidence: pending
+- [ ] C004 新增 `inference_signature` — 19. Identity Migration / Identity migration checklist (source L1133); evidence: pending
+- [ ] C005 checkpoint 从 Target identity 移除 — 19. Identity Migration / Identity migration checklist (source L1134); evidence: pending
+- [ ] C006 random fixture seed 不再影响 TargetKey — 19. Identity Migration / Identity migration checklist (source L1135); evidence: pending
+- [ ] C007 known Pi0 migration — 19. Identity Migration / Identity migration checklist (source L1136); evidence: pending
+- [ ] C008 known Pi0.5 migration — 19. Identity Migration / Identity migration checklist (source L1137); evidence: pending
+- [ ] C009 known LingBot migration — 19. Identity Migration / Identity migration checklist (source L1138); evidence: pending
+- [ ] C010 unknown migration fail closed — 19. Identity Migration / Identity migration checklist (source L1139); evidence: pending
+- [ ] C011 legacy report reader 保留 — 19. Identity Migration / Identity migration checklist (source L1140); evidence: pending
+- [ ] C012 新 report 只写 v3 — 19. Identity Migration / Identity migration checklist (source L1141); evidence: pending
+- [ ] C013 Target owns architecture revision — 20. ModelRunner 修改 / ModelRunner checklist (source L1222); evidence: pending
+- [ ] C014 Target owns inference signature — 20. ModelRunner 修改 / ModelRunner checklist (source L1223); evidence: pending
+- [ ] C015 Runner 不从 checkpoint 推导 Target — 20. ModelRunner 修改 / ModelRunner checklist (source L1224); evidence: pending
+- [ ] C016 checkpoint provenance 可进入 benchmark report — 20. ModelRunner 修改 / ModelRunner checklist (source L1225); evidence: pending
+- [ ] C017 legacy API 有明确 deprecation — 20. ModelRunner 修改 / ModelRunner checklist (source L1226); evidence: pending
+- [ ] C018 README example 更新 — 20. ModelRunner 修改 / ModelRunner checklist (source L1227); evidence: pending
+- [ ] C019 benchmark fixture 更新 — 20. ModelRunner 修改 / ModelRunner checklist (source L1228); evidence: pending
+- [ ] C020 Pi0 smoke pass — 20. ModelRunner 修改 / ModelRunner checklist (source L1229); evidence: pending
+- [ ] C021 Pi0.5 smoke pass — 20. ModelRunner 修改 / ModelRunner checklist (source L1230); evidence: pending
+- [ ] C022 LingBot smoke pass — 20. ModelRunner 修改 / ModelRunner checklist (source L1231); evidence: pending
+- [ ] C023 deterministic CampaignKey — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1336); evidence: pending
+- [ ] C024 deterministic key digest — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1337); evidence: pending
+- [ ] C025 `find` — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1338); evidence: pending
+- [ ] C026 `open` — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1339); evidence: pending
+- [ ] C027 `create` — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1340); evidence: pending
+- [ ] C028 `open_or_create` — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1341); evidence: pending
+- [ ] C029 filesystem locking — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1342); evidence: pending
+- [ ] C030 duplicate lineage prevention — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1343); evidence: pending
+- [ ] C031 explicit fork — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1344); evidence: pending
+- [ ] C032 corruption fail closed — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1345); evidence: pending
+- [ ] C033 CLI 不要求 human 提供随机 directory — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1346); evidence: pending
+- [ ] C034 TargetKey 不变 — 24. 新 checkpoint transition 验收 (source L1395); evidence: pending
+- [ ] C035 CampaignKey 不变 — 24. 新 checkpoint transition 验收 (source L1396); evidence: pending
+- [ ] C036 Campaign ID 不变 — 24. 新 checkpoint transition 验收 (source L1397); evidence: pending
+- [ ] C037 iteration numbering 不重置 — 24. 新 checkpoint transition 验收 (source L1398); evidence: pending
+- [ ] C038 context ID 改变 — 24. 新 checkpoint transition 验收 (source L1399); evidence: pending
+- [ ] C039 measurement segment 改变 — 24. 新 checkpoint transition 验收 (source L1400); evidence: pending
+- [ ] C040 incumbent implementation 被继承 — 24. 新 checkpoint transition 验收 (source L1401); evidence: pending
+- [ ] C041 invariant optimization 不重新探索 — 24. 新 checkpoint transition 验收 (source L1402); evidence: pending
+- [ ] C042 rebuild optimization 重建 artifact — 24. 新 checkpoint transition 验收 (source L1403); evidence: pending
+- [ ] C043 retune optimization执行 calibration — 24. 新 checkpoint transition 验收 (source L1404); evidence: pending
+- [ ] C044 correctness 重新运行 — 24. 新 checkpoint transition 验收 (source L1405); evidence: pending
+- [ ] C045 incumbent latency 重新测量 — 24. 新 checkpoint transition 验收 (source L1406); evidence: pending
+- [ ] C046 A→B latency 差异不计为 optimization delta — 24. 新 checkpoint transition 验收 (source L1407); evidence: pending
+- [ ] C047 不同 checkpoint segment 主线断开 — 30. progress.svg / Plot checklist (source L1648); evidence: pending
+- [ ] C048 fixture change 主线断开 — 30. progress.svg / Plot checklist (source L1649); evidence: pending
+- [ ] C049 environment change 主线断开 — 30. progress.svg / Plot checklist (source L1650); evidence: pending
+- [ ] C050 re-anchor 显式显示 — 30. progress.svg / Plot checklist (source L1651); evidence: pending
+- [ ] C051 re-anchor 不算 optimization — 30. progress.svg / Plot checklist (source L1652); evidence: pending
+- [ ] C052 no-benefit 显示 × — 30. progress.svg / Plot checklist (source L1653); evidence: pending
+- [ ] C053 correctness failure 显示但不 promotion — 30. progress.svg / Plot checklist (source L1654); evidence: pending
+- [ ] C054 invalid 不进入主线 — 30. progress.svg / Plot checklist (source L1655); evidence: pending
+- [ ] C055 accepted annotation 有 iteration/change/delta — 30. progress.svg / Plot checklist (source L1656); evidence: pending
+- [ ] C056 title 显示 Target/variant/objective — 30. progress.svg / Plot checklist (source L1657); evidence: pending
+- [ ] C057 segment 标识 checkpoint/fixture — 30. progress.svg / Plot checklist (source L1658); evidence: pending
+- [ ] C058 SVG deterministic rebuild — 30. progress.svg / Plot checklist (source L1659); evidence: pending
+- [ ] C059 clone repository — 32. `open_or_seed` / Fresh clone checklist (source L1741); evidence: pending
+- [ ] C060 没有 `artifacts/` — 32. `open_or_seed` / Fresh clone checklist (source L1742); evidence: pending
+- [ ] C061 Agent resolve Target — 32. `open_or_seed` / Fresh clone checklist (source L1743); evidence: pending
+- [ ] C062 读取 `results/index.json` — 32. `open_or_seed` / Fresh clone checklist (source L1744); evidence: pending
+- [ ] C063 找到 published Campaign — 32. `open_or_seed` / Fresh clone checklist (source L1745); evidence: pending
+- [ ] C064 创建 continuation ledger — 32. `open_or_seed` / Fresh clone checklist (source L1746); evidence: pending
+- [ ] C065 next iteration 保持连续 — 32. `open_or_seed` / Fresh clone checklist (source L1747); evidence: pending
+- [ ] C066 incumbent plan 正确 — 32. `open_or_seed` / Fresh clone checklist (source L1748); evidence: pending
+- [ ] C067 不重做历史失败 hypothesis — 32. `open_or_seed` / Fresh clone checklist (source L1749); evidence: pending
+- [ ] C068 新 iteration 能 publish 回同 lineage — 32. `open_or_seed` / Fresh clone checklist (source L1750); evidence: pending
+- [ ] C069 TargetKey 与 trace 一致 — 37. Published Results Integrity CI / CI checklist / Identity (source L1910); evidence: pending
+- [ ] C070 inference signature 一致 — 37. Published Results Integrity CI / CI checklist / Identity (source L1911); evidence: pending
+- [ ] C071 checkpoint 不进入 TargetKey — 37. Published Results Integrity CI / CI checklist / Identity (source L1912); evidence: pending
+- [ ] C072 ExecutionVariant 一致 — 37. Published Results Integrity CI / CI checklist / Identity (source L1913); evidence: pending
+- [ ] C073 context checkpoint provenance 完整 — 37. Published Results Integrity CI / CI checklist / Context (source L1917); evidence: pending
+- [ ] C074 fixture provenance 完整 — 37. Published Results Integrity CI / CI checklist / Context (source L1918); evidence: pending
+- [ ] C075 environment fingerprint 完整 — 37. Published Results Integrity CI / CI checklist / Context (source L1919); evidence: pending
+- [ ] C076 segment IDs monotonic — 37. Published Results Integrity CI / CI checklist / Context (source L1920); evidence: pending
+- [ ] C077 context change 创建新 segment — 37. Published Results Integrity CI / CI checklist / Context (source L1921); evidence: pending
+- [ ] C078 anchor 正确 — 37. Published Results Integrity CI / CI checklist / Arithmetic (source L1925); evidence: pending
+- [ ] C079 current best 正确 — 37. Published Results Integrity CI / CI checklist / Arithmetic (source L1926); evidence: pending
+- [ ] C080 delta parent 正确 — 37. Published Results Integrity CI / CI checklist / Arithmetic (source L1927); evidence: pending
+- [ ] C081 delta context anchor 正确 — 37. Published Results Integrity CI / CI checklist / Arithmetic (source L1928); evidence: pending
+- [ ] C082 failed candidate 不移动 incumbent — 37. Published Results Integrity CI / CI checklist / Arithmetic (source L1929); evidence: pending
+- [ ] C083 trace 可 rebuild — 37. Published Results Integrity CI / CI checklist / Generated artifacts (source L1933); evidence: pending
+- [ ] C084 SVG 可 rebuild — 37. Published Results Integrity CI / CI checklist / Generated artifacts (source L1934); evidence: pending
+- [ ] C085 summary 可 rebuild — 37. Published Results Integrity CI / CI checklist / Generated artifacts (source L1935); evidence: pending
+- [ ] C086 resume snapshot 可 rebuild — 37. Published Results Integrity CI / CI checklist / Generated artifacts (source L1936); evidence: pending
+- [ ] C087 index 可 rebuild — 37. Published Results Integrity CI / CI checklist / Generated artifacts (source L1937); evidence: pending
+- [ ] C088 README 可 rebuild — 37. Published Results Integrity CI / CI checklist / Generated artifacts (source L1938); evidence: pending
+- [ ] C089 HTML 可 rebuild — 37. Published Results Integrity CI / CI checklist / Generated artifacts (source L1939); evidence: pending
+- [ ] C090 model revision 是 architecture revision — 40. Onboarding → Campaign 必须原子交接 / Onboarding checklist (source L2056); evidence: pending
+- [ ] C091 inference signature 已生成 — 40. Onboarding → Campaign 必须原子交接 / Onboarding checklist (source L2057); evidence: pending
+- [ ] C092 checkpoint 只作为 initial weights — 40. Onboarding → Campaign 必须原子交接 / Onboarding checklist (source L2058); evidence: pending
+- [ ] C093 upstream commit 只作为 reference provenance — 40. Onboarding → Campaign 必须原子交接 / Onboarding checklist (source L2059); evidence: pending
+- [ ] C094 checkpoint compatibility pass — 40. Onboarding → Campaign 必须原子交接 / Onboarding checklist (source L2060); evidence: pending
+- [ ] C095 official reference pass — 40. Onboarding → Campaign 必须原子交接 / Onboarding checklist (source L2061); evidence: pending
+- [ ] C096 Target instantiate pass — 40. Onboarding → Campaign 必须原子交接 / Onboarding checklist (source L2062); evidence: pending
+- [ ] C097 correctness pass — 40. Onboarding → Campaign 必须原子交接 / Onboarding checklist (source L2063); evidence: pending
+- [ ] C098 baseline pass — 40. Onboarding → Campaign 必须原子交接 / Onboarding checklist (source L2064); evidence: pending
+- [ ] C099 Campaign Registry 成功 — 40. Onboarding → Campaign 必须原子交接 / Onboarding checklist (source L2065); evidence: pending
+- [ ] C100 context 0 注册 — 40. Onboarding → Campaign 必须原子交接 / Onboarding checklist (source L2066); evidence: pending
+- [ ] C101 results baseline 发布 — 40. Onboarding → Campaign 必须原子交接 / Onboarding checklist (source L2067); evidence: pending
+- [ ] C102 之后才 READY_FOR_OPTIMIZATION — 40. Onboarding → Campaign 必须原子交接 / Onboarding checklist (source L2068); evidence: pending
+- [ ] C103 Same Target — 44. LingBot / Pi0.5 验收 drill / Drill A — Pi0.5 checkpoint transfer (source L2192); evidence: pending
+- [ ] C104 Same Campaign — 44. LingBot / Pi0.5 验收 drill / Drill A — Pi0.5 checkpoint transfer (source L2193); evidence: pending
+- [ ] C105 新 MeasurementContext — 44. LingBot / Pi0.5 验收 drill / Drill A — Pi0.5 checkpoint transfer (source L2194); evidence: pending
+- [ ] C106 新 segment — 44. LingBot / Pi0.5 验收 drill / Drill A — Pi0.5 checkpoint transfer (source L2195); evidence: pending
+- [ ] C107 iter 继续从 4 — 44. LingBot / Pi0.5 验收 drill / Drill A — Pi0.5 checkpoint transfer (source L2196); evidence: pending
+- [ ] C108 portable incumbent 自动继承 — 44. LingBot / Pi0.5 验收 drill / Drill A — Pi0.5 checkpoint transfer (source L2197); evidence: pending
+- [ ] C109 re-anchor — 44. LingBot / Pi0.5 验收 drill / Drill A — Pi0.5 checkpoint transfer (source L2198); evidence: pending
+- [ ] C110 图不断 genealogy，但 latency line segment 断开 — 44. LingBot / Pi0.5 验收 drill / Drill A — Pi0.5 checkpoint transfer (source L2199); evidence: pending
+- [ ] C111 model revision 不变 — 44. LingBot / Pi0.5 验收 drill / Drill B — random checkpoint (source L2209); evidence: pending
+- [ ] C112 TargetKey 不变 — 44. LingBot / Pi0.5 验收 drill / Drill B — random checkpoint (source L2210); evidence: pending
+- [ ] C113 CampaignKey 不变 — 44. LingBot / Pi0.5 验收 drill / Drill B — random checkpoint (source L2211); evidence: pending
+- [ ] C114 checkpoint context 改变 — 44. LingBot / Pi0.5 验收 drill / Drill B — random checkpoint (source L2212); evidence: pending
+- [ ] C115 inference signature mismatch — 44. LingBot / Pi0.5 验收 drill / Drill C — architecture incompatibility (source L2228); evidence: pending
+- [ ] C116 old Campaign 拒绝接入 — 44. LingBot / Pi0.5 验收 drill / Drill C — architecture incompatibility (source L2229); evidence: pending
+- [ ] C117 明确告诉 Agent 需要 new Target/model revision — 44. LingBot / Pi0.5 验收 drill / Drill C — architecture incompatibility (source L2230); evidence: pending
+- [ ] C118 TargetKey 不变 — 44. LingBot / Pi0.5 验收 drill / Drill D — upstream implementation update (source L2240); evidence: pending
+- [ ] C119 optimization lineage 不变 — 44. LingBot / Pi0.5 验收 drill / Drill D — upstream implementation update (source L2241); evidence: pending
+- [ ] C120 reference provenance 更新 — 44. LingBot / Pi0.5 验收 drill / Drill D — upstream implementation update (source L2242); evidence: pending
+- [ ] C121 如果重新 baseline，则显式记录 oracle provenance — 44. LingBot / Pi0.5 验收 drill / Drill D — upstream implementation update (source L2243); evidence: pending
+- [ ] C122 verdict = no_benefit — 45. Failure Injection Suite / FI-1 No-op (source L2251); evidence: pending
+- [ ] C123 incumbent 不变 — 45. Failure Injection Suite / FI-1 No-op (source L2252); evidence: pending
+- [ ] C124 trace 保留 — 45. Failure Injection Suite / FI-1 No-op (source L2253); evidence: pending
+- [ ] C125 SVG 有 × — 45. Failure Injection Suite / FI-1 No-op (source L2254); evidence: pending
+- [ ] C126 即使更快也不能 promotion — 45. Failure Injection Suite / FI-2 Correctness failure (source L2258); evidence: pending
+- [ ] C127 trace 保存失败 — 45. Failure Injection Suite / FI-2 Correctness failure (source L2259); evidence: pending
+- [ ] C128 新 Agent 找到 Campaign — 45. Failure Injection Suite / FI-3 Agent crash (source L2265); evidence: pending
+- [ ] C129 不 silent rerun — 45. Failure Injection Suite / FI-3 Agent crash (source L2266); evidence: pending
+- [ ] C130 reconcile — 45. Failure Injection Suite / FI-3 Agent crash (source L2267); evidence: pending
+- [ ] C131 iteration ID 不重复 — 45. Failure Injection Suite / FI-3 Agent crash (source L2268); evidence: pending
+- [ ] C132 同 Campaign — 45. Failure Injection Suite / FI-4 Checkpoint switch (source L2272); evidence: pending
+- [ ] C133 新 segment — 45. Failure Injection Suite / FI-4 Checkpoint switch (source L2273); evidence: pending
+- [ ] C134 re-anchor — 45. Failure Injection Suite / FI-4 Checkpoint switch (source L2274); evidence: pending
+- [ ] C135 不计算跨 checkpoint speedup — 45. Failure Injection Suite / FI-4 Checkpoint switch (source L2275); evidence: pending
+- [ ] C136 同 Campaign — 45. Failure Injection Suite / FI-5 Fixture switch (source L2279); evidence: pending
+- [ ] C137 新 segment — 45. Failure Injection Suite / FI-5 Fixture switch (source L2280); evidence: pending
+- [ ] C138 re-anchor — 45. Failure Injection Suite / FI-5 Fixture switch (source L2281); evidence: pending
+- [ ] C139 old segment 禁止继续比较 — 45. Failure Injection Suite / FI-6 CUDA/clock drift (source L2285); evidence: pending
+- [ ] C140 new segment/re-anchor — 45. Failure Injection Suite / FI-6 CUDA/clock drift (source L2286); evidence: pending
+- [ ] C141 lock 保证 atomicity — 45. Failure Injection Suite / FI-7 Duplicate Agent (source L2292); evidence: pending
+- [ ] C142 不出现 duplicate iter — 45. Failure Injection Suite / FI-7 Duplicate Agent (source L2293); evidence: pending
+- [ ] C143 CI fail — 45. Failure Injection Suite / FI-8 Stale results (source L2299); evidence: pending
+- [ ] C144 不进入 portable incumbent — 45. Failure Injection Suite / FI-9 checkpoint-specific optimization (source L2303); evidence: pending
+- [ ] C145 新 checkpoint 不错误继承 — 45. Failure Injection Suite / FI-9 checkpoint-specific optimization (source L2304); evidence: pending
+- [x] C146 所有预期 semantics 都有 test — 49. 实施阶段 / P0-A — Semantic contract tests / Gate (source L2451); evidence: eval/tests/test_identity_v3.py, 36 expected failures against unchanged v2; control 27 passed; independent targeted review and follow-up passed
+- [x] C147 当前实现应出现预期 failing tests — 49. 实施阶段 / P0-A — Semantic contract tests / Gate (source L2452); evidence: eval/tests/test_identity_v3.py, 36 expected failures against unchanged v2; control 27 passed; independent targeted review and follow-up passed
+- [x] C148 测试失败原因只对应 identity semantics — 49. 实施阶段 / P0-A — Semantic contract tests / Gate (source L2453); evidence: eval/tests/test_identity_v3.py, 36 expected failures against unchanged v2; control 27 passed; independent targeted review and follow-up passed
+- [ ] C149 identity matrix 全过 — 49. 实施阶段 / P0-B — Identity v3 / Gate (source L2470); evidence: pending
+- [ ] C150 legacy read 正常 — 49. 实施阶段 / P0-B — Identity v3 / Gate (source L2471); evidence: pending
+- [ ] C151 random checkpoint 不切 Target — 49. 实施阶段 / P0-B — Identity v3 / Gate (source L2472); evidence: pending
+- [ ] C152 checkpoint A → B drill — 49. 实施阶段 / P0-C — Checkpoint transition / Gate (source L2489); evidence: pending
+- [ ] C153 no false speedup — 49. 实施阶段 / P0-C — Checkpoint transition / Gate (source L2490); evidence: pending
+- [ ] C154 iteration continuity — 49. 实施阶段 / P0-C — Checkpoint transition / Gate (source L2491); evidence: pending
+- [ ] C155 Agent restart — 49. 实施阶段 / P0-D — Campaign Registry / Gate (source L2508); evidence: pending
+- [ ] C156 concurrent Agent — 49. 实施阶段 / P0-D — Campaign Registry / Gate (source L2509); evidence: pending
+- [ ] C157 same checkpoint/new checkpoint discovery — 49. 实施阶段 / P0-D — Campaign Registry / Gate (source L2510); evidence: pending
+- [ ] C158 GitHub 可直接查看 Target performance — 49. 实施阶段 / P0-E — Results Publication / Gate (source L2529); evidence: pending
+- [ ] C159 checkpoint context 可见 — 49. 实施阶段 / P0-E — Results Publication / Gate (source L2530); evidence: pending
+- [ ] C160 raw artifact 不进入 Git — 49. 实施阶段 / P0-E — Results Publication / Gate (source L2531); evidence: pending
+- [ ] C161 stale output fail — 49. 实施阶段 / P0-F — Results CI / Gate (source L2541); evidence: pending
+- [ ] C162 arithmetic mismatch fail — 49. 实施阶段 / P0-F — Results CI / Gate (source L2542); evidence: pending
+- [ ] C163 Target/context mismatch fail — 49. 实施阶段 / P0-F — Results CI / Gate (source L2543); evidence: pending
+- [ ] C164 checkpoint 不再决定 model revision — 49. 实施阶段 / P0-G — Onboarding migration / Gate (source L2553); evidence: pending
+- [ ] C165 initial checkpoint compatibility check — 49. 实施阶段 / P0-G — Onboarding migration / Gate (source L2554); evidence: pending
+- [ ] C166 Campaign atomic creation — 49. 实施阶段 / P0-G — Onboarding migration / Gate (source L2555); evidence: pending
+- [ ] C167 baseline publish — 49. 实施阶段 / P0-G — Onboarding migration / Gate (source L2556); evidence: pending
+- [ ] C168 fresh Agent 不需要 maintainer knowledge — 49. 实施阶段 / P1-A — Agent Skills / Gate (source L2571); evidence: pending
+- [ ] C169 新 checkpoint 自动 reuse Campaign — 49. 实施阶段 / P1-A — Agent Skills / Gate (source L2572); evidence: pending
+- [ ] C170 TargetKey resolved — 51. 每个 optimization iteration 的 checklist / Before experiment (source L2671); evidence: pending
+- [ ] C171 inference signature verified — 51. 每个 optimization iteration 的 checklist / Before experiment (source L2672); evidence: pending
+- [ ] C172 Campaign restored — 51. 每个 optimization iteration 的 checklist / Before experiment (source L2673); evidence: pending
+- [ ] C173 MeasurementContext active — 51. 每个 optimization iteration 的 checklist / Before experiment (source L2674); evidence: pending
+- [ ] C174 incumbent confirmed — 51. 每个 optimization iteration 的 checklist / Before experiment (source L2675); evidence: pending
+- [ ] C175 segment confirmed — 51. 每个 optimization iteration 的 checklist / Before experiment (source L2676); evidence: pending
+- [ ] C176 hypothesis written — 51. 每个 optimization iteration 的 checklist / Before experiment (source L2677); evidence: pending
+- [ ] C177 alternative explanation written — 51. 每个 optimization iteration 的 checklist / Before experiment (source L2678); evidence: pending
+- [ ] C178 falsifier written — 51. 每个 optimization iteration 的 checklist / Before experiment (source L2679); evidence: pending
+- [ ] C179 cheapest probe written — 51. 每个 optimization iteration 的 checklist / Before experiment (source L2680); evidence: pending
+- [ ] C180 weight dependency declared — 51. 每个 optimization iteration 的 checklist / Before experiment (source L2681); evidence: pending
+- [ ] C181 minimal change scope — 51. 每个 optimization iteration 的 checklist / Implementation (source L2685); evidence: pending
+- [ ] C182 no unrelated refactor — 51. 每个 optimization iteration 的 checklist / Implementation (source L2686); evidence: pending
+- [ ] C183 ExecutionVariant unchanged — 51. 每个 optimization iteration 的 checklist / Implementation (source L2687); evidence: pending
+- [ ] C184 benchmark protocol unchanged — 51. 每个 optimization iteration 的 checklist / Implementation (source L2688); evidence: pending
+- [ ] C185 checkpoint unchanged during A/B/A — 51. 每个 optimization iteration 的 checklist / Implementation (source L2689); evidence: pending
+- [ ] C186 fixture unchanged during A/B/A — 51. 每个 optimization iteration 的 checklist / Implementation (source L2690); evidence: pending
+- [ ] C187 correctness passed — 51. 每个 optimization iteration 的 checklist / Correctness (source L2694); evidence: pending
+- [ ] C188 quality gate passed when required — 51. 每个 optimization iteration 的 checklist / Correctness (source L2695); evidence: pending
+- [ ] C189 same segment — 51. 每个 optimization iteration 的 checklist / Measurement (source L2699); evidence: pending
+- [ ] C190 warmup protocol correct — 51. 每个 optimization iteration 的 checklist / Measurement (source L2700); evidence: pending
+- [ ] C191 repetitions correct — 51. 每个 optimization iteration 的 checklist / Measurement (source L2701); evidence: pending
+- [ ] C192 A/B/A valid — 51. 每个 optimization iteration 的 checklist / Measurement (source L2702); evidence: pending
+- [ ] C193 variance acceptable — 51. 每个 optimization iteration 的 checklist / Measurement (source L2703); evidence: pending
+- [ ] C194 no environment drift — 51. 每个 optimization iteration 的 checklist / Attribution (source L2707); evidence: pending
+- [ ] C195 no checkpoint drift — 51. 每个 optimization iteration 的 checklist / Attribution (source L2708); evidence: pending
+- [ ] C196 no fixture drift — 51. 每个 optimization iteration 的 checklist / Attribution (source L2709); evidence: pending
+- [ ] C197 no re-anchor interpreted as optimization — 51. 每个 optimization iteration 的 checklist / Attribution (source L2710); evidence: pending
+- [ ] C198 gain meets promotion criteria — 51. 每个 optimization iteration 的 checklist / Attribution (source L2711); evidence: pending
+- [ ] C199 terminal verdict — 51. 每个 optimization iteration 的 checklist / Finalize (source L2715); evidence: pending
+- [ ] C200 ledger append — 51. 每个 optimization iteration 的 checklist / Finalize (source L2716); evidence: pending
+- [ ] C201 trace update — 51. 每个 optimization iteration 的 checklist / Finalize (source L2717); evidence: pending
+- [ ] C202 context summary update — 51. 每个 optimization iteration 的 checklist / Finalize (source L2718); evidence: pending
+- [ ] C203 progress.svg update — 51. 每个 optimization iteration 的 checklist / Finalize (source L2719); evidence: pending
+- [ ] C204 resume snapshot update — 51. 每个 optimization iteration 的 checklist / Finalize (source L2720); evidence: pending
+- [ ] C205 global index update — 51. 每个 optimization iteration 的 checklist / Finalize (source L2721); evidence: pending
+- [ ] C206 Target = hardware × inference-compatible model revision × shape — 52. Repository Final Acceptance Checklist / Identity (source L2729); evidence: pending
+- [ ] C207 checkpoint 不属于 Target — 52. Repository Final Acceptance Checklist / Identity (source L2730); evidence: pending
+- [ ] C208 upstream commit 不属于 Target — 52. Repository Final Acceptance Checklist / Identity (source L2731); evidence: pending
+- [ ] C209 engine revision 不属于 Target — 52. Repository Final Acceptance Checklist / Identity (source L2732); evidence: pending
+- [ ] C210 inference signature machine-checkable — 52. Repository Final Acceptance Checklist / Identity (source L2733); evidence: pending
+- [ ] C211 Pi0/Pi0.5 distinction正确 — 52. Repository Final Acceptance Checklist / Identity (source L2734); evidence: pending
+- [ ] C212 fine-tuned Pi0.5 checkpoints 共享 Target — 52. Repository Final Acceptance Checklist / Identity (source L2735); evidence: pending
+- [ ] C213 quantization 用 ExecutionVariant — 52. Repository Final Acceptance Checklist / Execution Policy (source L2739); evidence: pending
+- [ ] C214 DiT cache 用 ExecutionVariant — 52. Repository Final Acceptance Checklist / Execution Policy (source L2740); evidence: pending
+- [ ] C215 kernel optimization 不改变 ExecutionVariant — 52. Repository Final Acceptance Checklist / Execution Policy (source L2741); evidence: pending
+- [ ] C216 tuning 必须满足固定 quality contract — 52. Repository Final Acceptance Checklist / Execution Policy (source L2742); evidence: pending
+- [ ] C217 new checkpoint 自动复用 Campaign — 52. Repository Final Acceptance Checklist / Checkpoint transfer (source L2746); evidence: pending
+- [ ] C218 invariant optimization 复用 — 52. Repository Final Acceptance Checklist / Checkpoint transfer (source L2747); evidence: pending
+- [ ] C219 rebuild optimization 重建 — 52. Repository Final Acceptance Checklist / Checkpoint transfer (source L2748); evidence: pending
+- [ ] C220 retune optimization 重调 — 52. Repository Final Acceptance Checklist / Checkpoint transfer (source L2749); evidence: pending
+- [ ] C221 checkpoint-specific 不污染 portable incumbent — 52. Repository Final Acceptance Checklist / Checkpoint transfer (source L2750); evidence: pending
+- [ ] C222 new checkpoint correctness revalidation — 52. Repository Final Acceptance Checklist / Checkpoint transfer (source L2751); evidence: pending
+- [ ] C223 new checkpoint latency re-anchor — 52. Repository Final Acceptance Checklist / Checkpoint transfer (source L2752); evidence: pending
+- [ ] C224 automatic discovery — 52. Repository Final Acceptance Checklist / Campaign (source L2756); evidence: pending
+- [ ] C225 no human path — 52. Repository Final Acceptance Checklist / Campaign (source L2757); evidence: pending
+- [ ] C226 no duplicate lineage — 52. Repository Final Acceptance Checklist / Campaign (source L2758); evidence: pending
+- [ ] C227 interruption resume — 52. Repository Final Acceptance Checklist / Campaign (source L2759); evidence: pending
+- [ ] C228 fresh clone seed — 52. Repository Final Acceptance Checklist / Campaign (source L2760); evidence: pending
+- [ ] C229 explicit fork — 52. Repository Final Acceptance Checklist / Campaign (source L2761); evidence: pending
+- [ ] C230 context fingerprint — 52. Repository Final Acceptance Checklist / Measurement rigor (source L2765); evidence: pending
+- [ ] C231 segment boundaries — 52. Repository Final Acceptance Checklist / Measurement rigor (source L2766); evidence: pending
+- [ ] C232 checkpoint changes trigger segment — 52. Repository Final Acceptance Checklist / Measurement rigor (source L2767); evidence: pending
+- [ ] C233 fixture changes trigger segment — 52. Repository Final Acceptance Checklist / Measurement rigor (source L2768); evidence: pending
+- [ ] C234 environment changes trigger segment — 52. Repository Final Acceptance Checklist / Measurement rigor (source L2769); evidence: pending
+- [ ] C235 protocol change 不静默混入 — 52. Repository Final Acceptance Checklist / Measurement rigor (source L2770); evidence: pending
+- [ ] C236 re-anchor 不算 speedup — 52. Repository Final Acceptance Checklist / Measurement rigor (source L2771); evidence: pending
+- [ ] C237 all iterations retained — 52. Repository Final Acceptance Checklist / Trace (source L2775); evidence: pending
+- [ ] C238 accepted retained — 52. Repository Final Acceptance Checklist / Trace (source L2776); evidence: pending
+- [ ] C239 no-benefit retained — 52. Repository Final Acceptance Checklist / Trace (source L2777); evidence: pending
+- [ ] C240 correctness failure retained — 52. Repository Final Acceptance Checklist / Trace (source L2778); evidence: pending
+- [ ] C241 invalid retained — 52. Repository Final Acceptance Checklist / Trace (source L2779); evidence: pending
+- [ ] C242 weight dependency retained — 52. Repository Final Acceptance Checklist / Trace (source L2780); evidence: pending
+- [ ] C243 context retained — 52. Repository Final Acceptance Checklist / Trace (source L2781); evidence: pending
+- [ ] C244 segment retained — 52. Repository Final Acceptance Checklist / Trace (source L2782); evidence: pending
+- [ ] C245 tracked `results/` — 52. Repository Final Acceptance Checklist / Results (source L2786); evidence: pending
+- [ ] C246 global index — 52. Repository Final Acceptance Checklist / Results (source L2787); evidence: pending
+- [ ] C247 Target summary — 52. Repository Final Acceptance Checklist / Results (source L2788); evidence: pending
+- [ ] C248 per-context summary — 52. Repository Final Acceptance Checklist / Results (source L2789); evidence: pending
+- [ ] C249 compact trace — 52. Repository Final Acceptance Checklist / Results (source L2790); evidence: pending
+- [ ] C250 resume snapshot — 52. Repository Final Acceptance Checklist / Results (source L2791); evidence: pending
+- [ ] C251 progress.svg — 52. Repository Final Acceptance Checklist / Results (source L2792); evidence: pending
+- [ ] C252 README dashboard — 52. Repository Final Acceptance Checklist / Results (source L2793); evidence: pending
+- [ ] C253 optional static HTML — 52. Repository Final Acceptance Checklist / Results (source L2794); evidence: pending
+- [ ] C254 checkpoint segments visually separated — 52. Repository Final Acceptance Checklist / Plot integrity (source L2798); evidence: pending
+- [ ] C255 fixture segments visually separated — 52. Repository Final Acceptance Checklist / Plot integrity (source L2799); evidence: pending
+- [ ] C256 re-anchor shown — 52. Repository Final Acceptance Checklist / Plot integrity (source L2800); evidence: pending
+- [ ] C257 failed candidates shown — 52. Repository Final Acceptance Checklist / Plot integrity (source L2801); evidence: pending
+- [ ] C258 no cross-context false speedup — 52. Repository Final Acceptance Checklist / Plot integrity (source L2802); evidence: pending
+- [ ] C259 plot deterministic — 52. Repository Final Acceptance Checklist / Plot integrity (source L2803); evidence: pending
+- [ ] C260 identity tests — 52. Repository Final Acceptance Checklist / CI (source L2807); evidence: pending
+- [ ] C261 migration tests — 52. Repository Final Acceptance Checklist / CI (source L2808); evidence: pending
+- [ ] C262 context tests — 52. Repository Final Acceptance Checklist / CI (source L2809); evidence: pending
+- [ ] C263 checkpoint transition tests — 52. Repository Final Acceptance Checklist / CI (source L2810); evidence: pending
+- [ ] C264 campaign concurrency tests — 52. Repository Final Acceptance Checklist / CI (source L2811); evidence: pending
+- [ ] C265 results rebuild tests — 52. Repository Final Acceptance Checklist / CI (source L2812); evidence: pending
+- [ ] C266 stale publication detection — 52. Repository Final Acceptance Checklist / CI (source L2813); evidence: pending
+- [ ] C267 arithmetic verification — 52. Repository Final Acceptance Checklist / CI (source L2814); evidence: pending
+- [ ] C268 resume reads summary first — 52. Repository Final Acceptance Checklist / Agent context efficiency (source L2818); evidence: pending
+- [ ] C269 compact trace second — 52. Repository Final Acceptance Checklist / Agent context efficiency (source L2819); evidence: pending
+- [ ] C270 raw profiler lazy-loaded — 52. Repository Final Acceptance Checklist / Agent context efficiency (source L2820); evidence: pending
+- [ ] C271 historical logs lazy-loaded — 52. Repository Final Acceptance Checklist / Agent context efficiency (source L2821); evidence: pending
+- [ ] C272 failed hypotheses summarized — 52. Repository Final Acceptance Checklist / Agent context efficiency (source L2822); evidence: pending
+- [ ] C273 new Agent 不扫描全部 artifacts — 52. Repository Final Acceptance Checklist / Agent context efficiency (source L2823); evidence: pending
+- [ ] C274 Target 无用户绝对路径 — 52. Repository Final Acceptance Checklist / Portability (source L2827); evidence: pending
+- [ ] C275 checkpoint location 不影响 identity — 52. Repository Final Acceptance Checklist / Portability (source L2828); evidence: pending
+- [ ] C276 upstream checkout location 不影响 identity — 52. Repository Final Acceptance Checklist / Portability (source L2829); evidence: pending
+- [ ] C277 same Target works on different filesystem layout — 52. Repository Final Acceptance Checklist / Portability (source L2830); evidence: pending
