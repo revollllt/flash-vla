@@ -103,3 +103,33 @@ def test_reference_cli_forwards_config_to_both_stages(monkeypatch):
     assert reference.main(["--checkpoint", "weights", "--checkpoint-id", "asset-v1",
                            "--openpi-config", "pi05_droid"]) == 0
     assert received == ["pi05_droid", "pi05_droid"]
+
+
+def test_reference_provenance_tracks_loaded_module_and_dirty_state(tmp_path):
+    import importlib.util
+    import subprocess
+    from dataclasses import asdict
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    source = tmp_path / "upstream_probe.py"
+    source.write_text("class Model: pass\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", source.name], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=Test", "-c",
+                    "user.email=test@example.org", "commit", "-qm", "upstream"], check=True)
+    spec = importlib.util.spec_from_file_location("upstream_provenance_probe", source)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+        observed = openpi05.reference_provenance(module.Model(), Config(), exact_rope=True)
+        head = subprocess.check_output(["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+                                       text=True).strip()
+        assert observed["upstream"] == dict(commit=head, dirty=False, module=spec.name)
+        assert observed["config"] == asdict(Config())
+        assert observed["exact_rope"] is True
+        source.write_text("class Model: pass\n# local implementation edit\n")
+        changed = openpi05.reference_provenance(module.Model(), Config())
+        assert changed["upstream"]["commit"] == head
+        assert changed["upstream"]["dirty"] is True
+    finally:
+        del sys.modules[spec.name]

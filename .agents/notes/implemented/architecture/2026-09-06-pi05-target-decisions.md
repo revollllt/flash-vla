@@ -71,7 +71,12 @@ Real-checkpoint reference runs require an explicit upstream training configurati
 The adapter rejects Pi0, state-free Pi0.5, unmerged LoRA variants, and incompatible
 action dimensions or prompt padding before allocating the model. The selected
 action horizon is the shape used by both implementations, and the resolved
-configuration remains reference provenance in the report. Configuration checks
+configuration remains reference provenance in the report. Both official stages
+also record the loaded upstream class module, upstream and adapter Git commits,
+tracked dirty-state observations, and the exact-RoPE setting. These observations
+do not alter Target/Campaign identity and do not certify untracked code or the
+complete dependency closure. Historical missing provenance remains unknown.
+Configuration checks
 do not prove the checkpoint's origin, tensor ABI, robot preprocessing, numerical
 correctness or policy quality; those still require their own observed evidence.
 An available conversion config.json must agree with the selected reference

@@ -175,6 +175,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
 
     baseline = openpi05.build_model(checkpoint, torch_device, seed=seed,
                                     exact_rope=exact_rope, config=config)
+    provenance = openpi05.reference_provenance(baseline, config, exact_rope=exact_rope)
     rope_freqs = baseline.paligemma_with_expert.paligemma.model.language_model.rotary_emb.inv_freq
     past_key_values, _, _ = openpi05.prefix_kv_cache(
         baseline, images, state,
@@ -209,6 +210,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
         "checkpoint": checkpoint or "random",
         "openpi_config": openpi_config,
         "reference_model_config": asdict(config),
+        "reference_provenance": provenance,
         "plan": engine.plan,
         "exact_rope": exact_rope,
         "reference_inv_freq": [round(float(v), 7) for v in rope_freqs[:4]],
@@ -304,6 +306,7 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
     n_valid = 3 * VISION_TOKENS + int(mask.sum())
 
     baseline = openpi05.build_model(checkpoint, torch_device, seed=seed, config=config)
+    provenance = openpi05.reference_provenance(baseline, config)
     # Both sides must run the same depth; our engine takes `layers`, the
     # reference has to be cut. The prefix is a different module and stays whole.
     reference_layers = openpi05.truncate_expert(baseline, layers)
@@ -347,6 +350,7 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
         "checkpoint": checkpoint or "random",
         "openpi_config": openpi_config,
         "reference_model_config": asdict(config),
+        "reference_provenance": provenance,
         "metrics": error_metrics(reference, output),
     }
     shallow = tolerances(engine.identity.precision)["shallow"]

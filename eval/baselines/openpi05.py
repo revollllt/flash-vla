@@ -20,7 +20,9 @@ what the engine loads.
 """
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
+import inspect
+import subprocess
 import json
 from pathlib import Path
 
@@ -41,6 +43,25 @@ VISION = "paligemma_with_expert.paligemma.model.vision_tower.vision_model"
 PROJECTOR = "paligemma_with_expert.paligemma.model.multi_modal_projector.linear"
 ENCODER = "paligemma_with_expert.paligemma.model.language_model"
 DECODER = "paligemma_with_expert.gemma_expert.model"
+
+
+
+def reference_provenance(model, config, *, exact_rope=False):
+    """Record the loaded upstream class and adapter Git state, without hashing weights."""
+    provenance = {}
+    for role, source in (("upstream", Path(inspect.getfile(type(model)))),
+                         ("adapter", Path(__file__))):
+        directory = source.resolve().parent
+        commit = subprocess.check_output(
+            ["git", "-C", str(directory), "rev-parse", "HEAD"], text=True).strip()
+        dirty = subprocess.check_output(
+            ["git", "-C", str(directory), "status", "--porcelain", "--untracked-files=no"],
+            text=True)
+        provenance[role] = dict(commit=commit, dirty=bool(dirty))
+    provenance["upstream"]["module"] = type(model).__module__
+    provenance["config"] = asdict(config)
+    provenance["exact_rope"] = exact_rope
+    return provenance
 
 
 def restore_rope_precision(model) -> int:
