@@ -36,3 +36,10 @@ Campaign `lingbot-vla-4b-h100-bf16` iteration 4, Slurm job 606866: every
 in-engine and official correctness check passed; candidate chunk minimum was
 113.724 ms versus 120.091 ms for the same-process control, with 0.019 ms
 control spread. The promotion gate verdict was `pass`.
+
+After the route became `shipped`, Slurm job 606960 independently reran the
+frozen 36-layer, 10-step official parity path. Vision embeddings, prefix KV,
+first-step velocity, normalized actions, and physical actions were bitwise
+equal; repeated captured replay was also identical. The machine-readable
+report is `artifacts/onboarding/lingbot-vla-4b-h100-bf16/correctness/`
+`promoted-shipped-10step-parity.json`.
