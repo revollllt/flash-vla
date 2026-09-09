@@ -20,6 +20,7 @@ the CPU smoke check uses.
 from __future__ import annotations
 
 import gc
+import warnings
 from contextlib import contextmanager
 from dataclasses import replace
 from functools import partial
@@ -33,7 +34,7 @@ from .cuda.arena import StaticArena
 from .cuda.program import Program, Segment, Step
 from .engine import wrap_ops
 from .graph import BufRef, Graph, Node, WeightRef
-from .identity import Identity
+from .identity import Identity, validate_weight_schema
 from .vla import DTYPES, VLA
 
 
@@ -89,16 +90,32 @@ class ModelRunner:
     """
 
     def __init__(self, target: VLA, checkpoint: Mapping[str, torch.Tensor] | None = None, *,
-                 model_revision: str, plan: Any = "shipped", device: str = "cuda", capture: bool = True,
+                 checkpoint_id: str | None = None, checkpoint_digest: str | None = None,
+                 checkpoint_signature: str | None = None, model_revision: str | None = None,
+                 plan: Any = "shipped", device: str = "cuda", capture: bool = True,
                  warmup: int = 3, **config: Any) -> None:
         self.target = target
+        if model_revision is not None:
+            warnings.warn("model_revision is owned by Target; use checkpoint_id for weights",
+                          DeprecationWarning, stacklevel=2)
+            if model_revision != target.model_revision:
+                raise ValueError("model_revision must equal TARGET.model_revision; "
+                                 "checkpoint provenance belongs in checkpoint_id")
+        if checkpoint_signature is not None and checkpoint_signature != target.inference_signature:
+            raise ValueError("inference signature mismatch; resolve a compatible Target/model revision")
+        self.measurement_context = {
+            "weights": {"checkpoint_id": checkpoint_id, "checkpoint_digest": checkpoint_digest},
+        }
         self.config = target.configure(**config)
         self.shape: dict[str, int] = dict(target.shape(self.config, checkpoint))
         self.graph: Graph = target.graph(self.shape)
+        if checkpoint is not None:
+            validate_weight_schema(target.checkpoint_shapes(checkpoint), self.graph.weight_shapes)
         self.plan: dict[str, str] = target.select_plan(plan)
         routes = target.registry.resolve(self.plan, self.graph.call_sites)
         self.identity = Identity(target=target.name, hardware=target.hardware,
-                                 model=target.model, model_revision=model_revision,
+                                 model=target.model, model_revision=target.model_revision,
+                                 inference_signature=target.inference_signature,
                                  shape=self.shape, plan=routes,
                                  precision=target.precision)
         self.program: tuple[Step, ...] = tuple(self.graph.program)

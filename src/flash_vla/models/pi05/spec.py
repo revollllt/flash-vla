@@ -205,3 +205,28 @@ def runtime_shapes(steps: int = DEFAULT_FLOW_STEPS) -> dict[str, tuple[int, ...]
         "decoder_action_out_proj_b": (steps, ACTION_DIM),
     })
     return shapes
+
+
+# Architecture ABI, before runtime scheduling and checkpoint-value transforms.
+from flash_vla.runtime.identity import inference_signature
+
+MODEL_REVISION = 'pi05-r1'
+INFERENCE_CONTRACT = {
+    "architecture": {
+        "family": 'pi05',
+        "vision": [VISION_LAYERS, VISION_DIM, VISION_FFN, VISION_HEADS, VISION_HEAD_DIM],
+        "backbone": [ENCODER_LAYERS, ENCODER_DIM, ENCODER_FFN],
+        "expert": [ENCODER_LAYERS, DECODER_DIM, DECODER_FFN],
+        "attention": [DECODER_HEADS, KV_HEADS, HEAD_DIM, ROPE_THETA],
+        "state_dim": STATE_DIM, "action_dim": ACTION_DIM,
+    },
+    "parameter_shapes": weight_shapes(),
+    "weight_layout": 'openpi-normalized-qkv-rope-rms-v1',
+    "io_contract": {
+        "images": ["num_views", IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS],
+        "state": [STATE_DIM], "noise": ["chunk", ACTION_DIM],
+        "actions": ["chunk", ACTION_DIM],
+    },
+    "control_flow": {'state': 'discrete-prefix-tokens', 'expert_norm': 'adaptive-rms-scale-shift-gate', 'denoise': 'euler', 'prefix': 'bidirectional-masked', 'time_embedding': [0.004, 4.0], 'masked_key': -3e+38},
+}
+INFERENCE_SIGNATURE = inference_signature(**INFERENCE_CONTRACT)

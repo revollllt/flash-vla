@@ -121,19 +121,19 @@ def _cache_layers(past_key_values) -> list[tuple[torch.Tensor, torch.Tensor]]:
     return [(k, v) for k, v in past_key_values]
 
 
-def _checkpoint_revision(checkpoint: str | None, model_revision: str | None,
+def _checkpoint_id(checkpoint: str | None, checkpoint_id: str | None,
                          seed: int) -> str:
     if checkpoint is None:
         return f"{OPENPI_RANDOM_CHECKPOINT_REVISION}/seed-{seed}"
-    if not model_revision:
-        raise ValueError("a real checkpoint needs an immutable model_revision")
-    return model_revision
+    if not checkpoint_id:
+        raise ValueError("a real checkpoint needs an immutable checkpoint_id")
+    return checkpoint_id
 
 
 def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = None,
         prompt: str = DEFAULT_PROMPT, layers: int = 18, seed: int = 0,
         device: str = "cuda", exact_rope: bool = True,
-        plan: str | None = None, model_revision: str | None = None) -> dict[str, object]:
+        plan: str | None = None, checkpoint_id: str | None = None) -> dict[str, object]:
     """Run both implementations on identical inputs and report per-layer error.
 
     `plan` names the call-site plan the runner is built with; the default is
@@ -141,7 +141,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
     -- the backbone attention is plan-selected, so the reference route does
     not exercise its CUDA kernel.
     """
-    revision = _checkpoint_revision(checkpoint, model_revision, seed)
+    revision = _checkpoint_id(checkpoint, checkpoint_id, seed)
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
 
@@ -172,7 +172,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
     del baseline, past_key_values
     torch.cuda.empty_cache()
 
-    engine = ModelRunner(TARGET, target_weights, model_revision=revision,
+    engine = ModelRunner(TARGET, target_weights, checkpoint_id=revision, checkpoint_digest=revision,
                          plan=plan or "reference", device=device,
                          num_views=3, chunk_size=50, layers=layers, tokenizer=tokenizer,
                          prompt=prompt)
@@ -186,6 +186,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
 
     report: dict[str, object] = {
         "identity": engine.identity.as_dict(),
+        "measurement_context": engine.measurement_context,
         "prompt_tokens": n_tokens,
         "n_valid_prefix": n_valid,
         "n_valid_engine": engine_n_valid,
@@ -264,9 +265,9 @@ def _transplant(engine, reference_cache, seq_len: int) -> None:
 def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
         prompt: str = DEFAULT_PROMPT, steps: int = 1, layers: int = 18, seed: int = 0,
         full: bool = False, device: str = "cuda",
-        model_revision: str | None = None) -> dict[str, object]:
+        checkpoint_id: str | None = None) -> dict[str, object]:
     """Run both decoders on identical inputs and report the action-chunk error."""
-    revision = _checkpoint_revision(checkpoint, model_revision, seed)
+    revision = _checkpoint_id(checkpoint, checkpoint_id, seed)
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
 
@@ -301,7 +302,7 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
     del baseline, past_key_values
     torch.cuda.empty_cache()
 
-    engine = ModelRunner(TARGET, target_weights, model_revision=revision,
+    engine = ModelRunner(TARGET, target_weights, checkpoint_id=revision, checkpoint_digest=revision,
                          plan="reference", device=device, num_views=3,
                          chunk_size=CHUNK, steps=steps, layers=layers, tokenizer=tokenizer,
                          prompt=prompt)
@@ -318,6 +319,7 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
 
     report: dict[str, object] = {
         "identity": engine.identity.as_dict(),
+        "measurement_context": engine.measurement_context,
         "mode": "full pass" if full else "transplanted KV cache",
         "steps": steps,
         "layers": layers,
@@ -347,7 +349,7 @@ def main(argv=None) -> int:
                         help="paligemma_tokenizer.model (default: $PALIGEMMA_TOKENIZER)")
     parser.add_argument("--checkpoint", default=None,
                         help="OpenPI pi05 model.safetensors or its directory (default: random)")
-    parser.add_argument("--model-revision", default=None,
+    parser.add_argument("--checkpoint-id", default=None,
                         help="immutable checkpoint ID; required with --checkpoint")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
     parser.add_argument("--layers", type=int, default=18, help="depth of the checked stage, for bisection")
@@ -367,11 +369,11 @@ def main(argv=None) -> int:
     if args.stage in ("llm_backbone", "all"):
         passed &= run_backbone(args.tokenizer, args.checkpoint, args.prompt, args.layers, args.seed,
                                args.device, exact_rope=not args.openpi_rope_bf16,
-                               plan=args.plan, model_revision=args.model_revision)["passed"]
+                               plan=args.plan, checkpoint_id=args.checkpoint_id)["passed"]
     if args.stage in ("action_expert", "all"):
         passed &= run_expert(args.tokenizer, args.checkpoint, args.prompt, args.steps, args.layers,
                              args.seed, args.full, args.device,
-                             model_revision=args.model_revision)["passed"]
+                             checkpoint_id=args.checkpoint_id)["passed"]
     return 0 if passed else 1
 
 

@@ -30,7 +30,7 @@ from eval.metrics import error_metrics
 UNAVAILABLE = 3
 
 
-def run(checkpoint: str, *, model_revision: str, seed: int = 0, device: str = "cuda",
+def run(checkpoint: str, *, checkpoint_id: str, seed: int = 0, device: str = "cuda",
         plan: str = "reference") -> dict[str, object]:
     """Run both implementations with identical synthetic inputs and noise.
 
@@ -58,7 +58,7 @@ def run(checkpoint: str, *, model_revision: str, seed: int = 0, device: str = "c
     del baseline
     torch.cuda.empty_cache()
 
-    engine = ModelRunner(TARGET, target_weights, model_revision=model_revision,
+    engine = ModelRunner(TARGET, target_weights, checkpoint_id=checkpoint_id, checkpoint_digest=checkpoint_id,
                          plan=plan, device=device, num_views=3, chunk_size=50,
                          steps=10, layers=18)
     del target_weights
@@ -70,7 +70,8 @@ def run(checkpoint: str, *, model_revision: str, seed: int = 0, device: str = "c
     # the registry's full-depth tolerance of the runner's precision policy.
     tolerance = tolerances(engine.identity.precision)["deepest"]
     metrics = error_metrics(reference, output)
-    report = {"identity": engine.identity.as_dict(), **metrics,
+    report = {"identity": engine.identity.as_dict(),
+              "measurement_context": engine.measurement_context, **metrics,
               "threshold_key": "deepest", "tolerance": dict(tolerance),
               "passed": bool(torch.isfinite(output).all().item()
                              and metrics["cosine_similarity"] > tolerance["cosine_min"]
@@ -87,7 +88,7 @@ def main(argv=None) -> int:
              "OPENPI_PI0_CHECKPOINT)"
     )
     parser.add_argument(
-        "--model-revision", default=None,
+        "--checkpoint-id", default=None,
         help="immutable checkpoint ID (default: registered ID for the default checkpoint)"
     )
     parser.add_argument("--plan", default="reference",
@@ -102,13 +103,13 @@ def main(argv=None) -> int:
         print(f"baseline unavailable: OpenPI checkpoint not found at {checkpoint} "
               "(set OPENPI_PI0_CHECKPOINT)", file=sys.stderr)
         return UNAVAILABLE
-    model_revision = (args.model_revision if args.checkpoint is not None
-                      else args.model_revision or OPENPI_PI0_MODEL_REVISION)
-    if not model_revision:
+    checkpoint_id = (args.checkpoint_id if args.checkpoint is not None
+                      else args.checkpoint_id or OPENPI_PI0_MODEL_REVISION)
+    if not checkpoint_id:
         print("baseline unavailable: an overridden OpenPI checkpoint needs "
-              "OPENPI_PI0_MODEL_REVISION or --model-revision", file=sys.stderr)
+              "OPENPI_PI0_MODEL_REVISION or --checkpoint-id", file=sys.stderr)
         return UNAVAILABLE
-    report = run(str(checkpoint), model_revision=model_revision, seed=args.seed,
+    report = run(str(checkpoint), checkpoint_id=checkpoint_id, seed=args.seed,
                  device=args.device, plan=args.plan)
     return 0 if report["passed"] else 1
 

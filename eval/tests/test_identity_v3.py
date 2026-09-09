@@ -236,3 +236,115 @@ def test_runner_rejects_same_shapes_with_incompatible_semantic_signature():
         ModelRunner(target, None, checkpoint_id="other-architecture",
                     checkpoint_signature="sha256:changed-attention-semantics",
                     device="cpu", capture=False)
+
+
+@pytest.mark.parametrize("target,model,revision", [
+    ("hardware/nvidia/h100/pi0", "pi0", "pi0-r1"),
+    ("hardware/nvidia/h100/pi05", "pi05", "pi05-r1"),
+    ("hardware/nvidia/h100/lingbot_vla", "lingbot-vla", "lingbot-vla-r1"),
+])
+def test_explicit_known_v2_migration_preserves_checkpoint_and_requires_revalidation(target, model, revision):
+    from lab.optimize.migrate import identity_v3
+
+    old = payload(schema_version=2, target=target, model=model,
+                  model_revision="checkpoint-a", precision="bf16")
+    old.pop("inference_signature")
+    old.pop("execution_variant")
+    report = {"identity": old, "objective": {"value": 12.0, "unit": "ms"},
+              "measurement_context": {"hostname": "old-node"}}
+    before = copy.deepcopy(report)
+    migrated = identity_v3(report)
+    assert report == before
+    assert migrated["identity"]["model_revision"] == revision
+    assert migrated["identity"]["inference_signature"]
+    assert migrated["measurement_context"]["weights"]["checkpoint_id"] == "checkpoint-a"
+    assert migrated["measurement_context"]["weights"]["checkpoint_digest"] is None
+    assert migrated["measurement_context"]["hostname"] == "old-node"
+    assert migrated["legacy_identity"] == old
+    assert migrated["continuation"]["correctness_required"]
+    assert migrated["continuation"]["reanchor_required"]
+    assert migrated["objective"] == report["objective"]
+    other = identity_v3({**report, "identity": {**old, "model_revision": "checkpoint-b"}})
+    assert key(migrated["identity"]) == key(other["identity"])
+
+
+def test_unknown_legacy_target_needs_explicit_mapping():
+    from lab.optimize.migrate import identity_v3
+    old = payload(schema_version=2, target="unknown-target",
+                  model_revision="checkpoint-a", precision="bf16")
+    with pytest.raises(ValueError, match="explicit architecture mapping"):
+        identity_v3({"identity": old})
+
+
+def test_runner_legacy_revision_is_architecture_only():
+    from benchmarks.targets import declare
+    from flash_vla.runtime import ModelRunner
+    target = declare("h100/pi05").target
+    with pytest.warns(DeprecationWarning):
+        runner = ModelRunner(target, None, model_revision=target.model_revision,
+                             device="cpu", capture=False)
+    assert runner.identity.model_revision == target.model_revision
+    with pytest.warns(DeprecationWarning):
+        with pytest.raises(ValueError, match="checkpoint_id"):
+            ModelRunner(target, None, model_revision="checkpoint-a",
+                        device="cpu", capture=False)
+
+
+def test_pi0_runtime_layout_changes_do_not_redefine_source_abi():
+    from flash_vla.models.pi0 import spec
+    before = identity_module.inference_signature(**spec.INFERENCE_CONTRACT)
+    with patch.object(spec, "weight_shapes", return_value={"candidate-packed-table": (5, 7)}):
+        assert spec.source_weight_shapes() == spec.INFERENCE_CONTRACT["parameter_shapes"]
+        assert identity_module.inference_signature(**spec.INFERENCE_CONTRACT) == before
+    assert not any("fused" in name or "language_embeds" in name
+                   for name in spec.INFERENCE_CONTRACT["parameter_shapes"])
+
+
+def test_pi0_reference_cli_passes_the_checkpoint_id(tmp_path):
+    from eval.pi0 import reference
+    checkpoint = tmp_path / "model.safetensors"
+    checkpoint.touch()
+    with patch.object(reference, "run", autospec=True, return_value={"passed": True}) as run:
+        assert reference.main(["--checkpoint", str(checkpoint),
+                               "--checkpoint-id", "manifest-a"]) == 0
+    assert run.call_args.kwargs["checkpoint_id"] == "manifest-a"
+
+
+@pytest.mark.parametrize("field", ["weights", "fixture"])
+def test_profile_rejects_cross_context_delta(field):
+    from types import SimpleNamespace
+    from benchmarks import profile
+
+    observed = []
+    def build(target, plan, **options):
+        provenance = context()
+        if plan == "b":
+            provenance[field]["checkpoint_digest" if field == "weights" else "digest"] = "changed"
+        return SimpleNamespace(
+            identity=Identity.from_dict(payload()), measurement_context=provenance,
+            sample_inputs=lambda seed: {}, forward=lambda **kwargs: observed.append(plan),
+            graph_contract={},
+        )
+    with patch.object(profile, "require_cuda"), \
+         patch.object(profile.torch.cuda, "init"), \
+         patch.object(profile.torch.cuda, "synchronize"), \
+         patch.object(profile.torch.cuda, "empty_cache"), \
+         patch.object(profile.torch.cuda, "get_device_properties",
+                      return_value=SimpleNamespace(multi_processor_count=132)), \
+         patch.object(profile, "resolve", side_effect=lambda name: name), \
+         patch.object(profile, "build", side_effect=build), \
+         patch.object(profile, "_env", return_value={}), \
+         patch.object(profile, "segments", return_value=()), \
+         patch.object(profile, "_deltas") as deltas:
+        with pytest.raises(ValueError, match="measurement context changed"):
+            profile.run("test", ["a", "b"])
+    assert observed == ["a"]
+    deltas.assert_not_called()
+
+
+def test_new_identity_cannot_silently_emit_v2_without_signature():
+    value = payload()
+    value.pop("schema_version")
+    value.pop("inference_signature")
+    with pytest.raises(ValueError, match="requires architecture revision and inference signature"):
+        Identity(**value)

@@ -1,7 +1,7 @@
 """LingBot-VLA-4B dimensions and exact official checkpoint schema."""
 from __future__ import annotations
 
-MODEL_REVISION = (
+CHECKPOINT_REVISION = (
     "lingbot-vla-4b-posttrain-robotwin@"
     "fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+"
     "qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
@@ -138,3 +138,33 @@ EXPERT_WEIGHT_NAMES = tuple(
 )
 
 __all__ = [name for name in globals() if name.isupper()] + ["weight_shapes"]
+
+
+from flash_vla.runtime.identity import inference_signature
+
+MODEL_REVISION = "lingbot-vla-r1"
+INFERENCE_CONTRACT = {
+    "architecture": {
+        "family": "lingbot-vla",
+        "vision": [VISION_LAYERS, VISION_DIM, VISION_FFN, VISION_HEADS, VISION_HEAD_DIM],
+        "backbone": [LAYERS, BACKBONE_DIM, BACKBONE_FFN],
+        "expert": [LAYERS, EXPERT_DIM, EXPERT_FFN],
+        "attention": [QUERY_HEADS, KV_HEADS, HEAD_DIM],
+        "state_dim": STATE_DIM, "action_dim": ACTION_DIM,
+    },
+    "parameter_shapes": WEIGHT_SHAPES,
+    "weight_layout": "lingbot-official-out-in-v1",
+    "io_contract": {
+        "pixel_values": ["views", "patch_rows", PATCH_WIDTH],
+        "language_tokens": [1, "language_slots"],
+        "language_masks": [1, "language_slots"], "image_masks": ["views"],
+        "state": [1, STATE_DIM], "noise": [1, "chunk", ACTION_DIM],
+        "actions": [1, "chunk", ACTION_DIM],
+    },
+    "control_flow": {
+        "stages": ["vision", "prefix", "action"], "depth_input": False,
+        "denoise": "euler", "state": "continuous-suffix-token",
+        "expert_norm": "time-conditioned-scale-shift",
+    },
+}
+INFERENCE_SIGNATURE = inference_signature(**INFERENCE_CONTRACT)

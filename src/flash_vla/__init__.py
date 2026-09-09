@@ -5,7 +5,8 @@
     from flash_vla.models.pi0 import random_checkpoint, random_checkpoint_revision
 
     runner = ModelRunner(TARGET, random_checkpoint(),
-                         model_revision=random_checkpoint_revision(0),
+                         checkpoint_id=random_checkpoint_revision(0),
+                         checkpoint_digest=random_checkpoint_revision(0),
                          num_views=3, chunk_size=50)
     actions = runner.forward(images=images, state=state, noise=noise)
 

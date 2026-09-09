@@ -20,6 +20,13 @@ import os
 from typing import Any, Callable
 
 from flash_vla.runtime import ModelRunner
+from flash_vla.runtime.identity import canonical_digest
+
+DEFAULT_LINGBOT_CHECKPOINT = "/data/user/jzou521/models/lingbot-vla-4b-posttrain-robotwin-fb71a2c"
+DEFAULT_LINGBOT_FIXTURE = (
+    "/data/user/jzou521/codes/cuda/flash-vla/artifacts/onboarding/"
+    "lingbot-vla-4b-h100-bf16/official/fixture.safetensors"
+)
 
 DEFAULT_PROMPT = "pick up the plate and put it in the sink"
 
@@ -36,13 +43,21 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
 
     config = dict(num_views=num_views, chunk_size=chunk_size, steps=steps, layers=layers,
                   prompt_len=prompt_len or MAX_TOKEN_LEN, prompt=prompt)
-    model_revision = random_checkpoint_revision(seed)
+    checkpoint_id = random_checkpoint_revision(seed)
     if declare:
-        return ModelRunner(TARGET, None, model_revision=model_revision, plan=plan,
+        runner = ModelRunner(TARGET, None, checkpoint_id=checkpoint_id,
+                             checkpoint_digest=checkpoint_id, plan=plan,
                            device=device, capture=False, **config)
-    checkpoint = fold(random_checkpoint(seed=seed, device=device), steps=steps)
-    return ModelRunner(TARGET, checkpoint, model_revision=model_revision, plan=plan, device=device,
-                       tokenizer=Pi05Tokenizer(tokenizer_path), **config)
+    else:
+        checkpoint = fold(random_checkpoint(seed=seed, device=device), steps=steps)
+        runner = ModelRunner(TARGET, checkpoint, checkpoint_id=checkpoint_id,
+                             checkpoint_digest=checkpoint_id, plan=plan, device=device,
+                           tokenizer=Pi05Tokenizer(tokenizer_path), **config)
+    fixture = {"producer": "flash-vla/pi05-inputs-v1", "seed": seed, "prompt": prompt}
+    runner.measurement_context["fixture"] = {
+        "id": fixture["producer"] + "/seed-" + str(seed), "digest": canonical_digest(fixture),
+    }
+    return runner
 
 
 def _pi0(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_size: int = 50,
@@ -53,38 +68,59 @@ def _pi0(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_size
     from flash_vla.models.pi0.spec import random_checkpoint_revision
 
     config = dict(num_views=num_views, chunk_size=chunk_size, steps=steps, layers=layers)
-    model_revision = random_checkpoint_revision(seed)
+    checkpoint_id = random_checkpoint_revision(seed)
     if declare:
-        return ModelRunner(TARGET, None, model_revision=model_revision, plan=plan,
+        runner = ModelRunner(TARGET, None, checkpoint_id=checkpoint_id,
+                             checkpoint_digest=checkpoint_id, plan=plan,
                            device=device, capture=False,
                            prompt_len=prompt_len, **config)
-    checkpoint = random_checkpoint(num_views=num_views, chunk_size=chunk_size,
-                                   prompt_len=prompt_len, seed=seed, device=device)
-    return ModelRunner(TARGET, checkpoint, model_revision=model_revision, plan=plan,
-                       device=device, **config)
+    else:
+        checkpoint = random_checkpoint(num_views=num_views, chunk_size=chunk_size,
+                                       prompt_len=prompt_len, seed=seed, device=device)
+        runner = ModelRunner(TARGET, checkpoint, checkpoint_id=checkpoint_id,
+                             checkpoint_digest=checkpoint_id, plan=plan,
+                           device=device, **config)
+    fixture = {"producer": "flash-vla/pi0-inputs-v1", "seed": seed}
+    runner.measurement_context["fixture"] = {
+        "id": fixture["producer"] + "/seed-" + str(seed), "digest": canonical_digest(fixture),
+    }
+    return runner
 
 
 def _lingbot(plan: Any = "shipped", *, seed: int = 42, steps: int = 10, layers: int = 36,
              device: str = "cuda", declare: bool = False,
-             checkpoint: str = (
-                 "/data/user/jzou521/models/"
-                 "lingbot-vla-4b-posttrain-robotwin-fb71a2c"
-             ),
-             fixture: str = (
-                 "/data/user/jzou521/codes/cuda/flash-vla/artifacts/onboarding/"
-                 "lingbot-vla-4b-h100-bf16/official/fixture.safetensors"
-             )):
+             checkpoint: str = DEFAULT_LINGBOT_CHECKPOINT,
+             fixture: str = DEFAULT_LINGBOT_FIXTURE,
+             checkpoint_id: str | None = None, checkpoint_digest: str | None = None,
+             fixture_id: str | None = None, fixture_digest: str | None = None):
     from flash_vla.hardware.nvidia.h100.lingbot_vla import TARGET
-    from flash_vla.models.lingbot import MODEL_REVISION, load_checkpoint
+    from flash_vla.models.lingbot import CHECKPOINT_REVISION, load_checkpoint
 
+    if checkpoint_id is None:
+        if checkpoint != DEFAULT_LINGBOT_CHECKPOINT:
+            raise ValueError("checkpoint override needs checkpoint_id and checkpoint_digest")
+        checkpoint_id = CHECKPOINT_REVISION
+        checkpoint_digest = CHECKPOINT_REVISION
+    if not checkpoint_digest:
+        raise ValueError("checkpoint_digest must identify the immutable weights manifest")
+    if fixture_id is None:
+        if fixture != DEFAULT_LINGBOT_FIXTURE:
+            raise ValueError("fixture override needs fixture_id and fixture_digest")
+        fixture_id = "lingbot-robotwin-canonical-v1/seed-42"
+        fixture_digest = fixture_id
+    if not fixture_digest:
+        raise ValueError("fixture_digest must identify the immutable fixture")
     config = dict(steps=steps, layers=layers)
-    if declare:
-        return ModelRunner(TARGET, None, model_revision=MODEL_REVISION, plan=plan,
-                           device="cpu", capture=False, **config)
-    os.environ["LINGBOT_CHECKPOINT"] = checkpoint
-    os.environ["LINGBOT_FIXTURE"] = fixture
-    return ModelRunner(TARGET, load_checkpoint(checkpoint), model_revision=MODEL_REVISION,
-                       plan=plan, device=device, **config)
+    if not declare:
+        os.environ["LINGBOT_CHECKPOINT"] = checkpoint
+        os.environ["LINGBOT_FIXTURE"] = fixture
+    runner = ModelRunner(TARGET, None if declare else load_checkpoint(checkpoint),
+                         checkpoint_id=checkpoint_id, checkpoint_digest=checkpoint_digest,
+                         plan=plan, device="cpu" if declare else device,
+                         capture=not declare, **config)
+    runner.measurement_context["fixture"] = {"id": fixture_id, "digest": fixture_digest}
+    return runner
+
 
 
 #: Target name -> factory. Short aliases resolve through `resolve`.

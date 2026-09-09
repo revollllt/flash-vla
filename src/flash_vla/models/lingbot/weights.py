@@ -17,6 +17,7 @@ class LingBotCheckpoint(Mapping[str, torch.Tensor]):
         if not self.path.is_file():
             raise FileNotFoundError(self.path)
         with safe_open(self.path, framework="pt", device="cpu") as source:
+            self.shapes = {name: tuple(source.get_slice(name).get_shape()) for name in source.keys()}
             keys = set(source.keys())
             expected = set(WEIGHT_SHAPES)
             if keys != expected:

@@ -37,6 +37,8 @@ class they came from.
 """
 from __future__ import annotations
 
+from .metrics import report_context
+
 import argparse
 import hashlib
 import importlib
@@ -243,6 +245,7 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
     totals["headroom_pct"] = headroom_pct
     report = {
         "identity": identity.as_dict(),
+        "measurement_context": report_context(engine, _env()),
         "env": _env(),
         "floor_model": {"form": FORM_VERSION, "constants_file": str(constants_path),
                         "constants_version": constants_version, "constants": constants,

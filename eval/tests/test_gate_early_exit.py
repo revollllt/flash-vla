@@ -2,6 +2,7 @@ import json
 import subprocess
 import sys
 import unittest
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -13,7 +14,9 @@ def declared(model_revision='fixture/seed-0'):
     return SimpleNamespace(identity=Identity(
         target='hardware/nvidia/h100/pi05', hardware='h100-sxm5-80gb', model='pi05',
         model_revision=model_revision, shape={'chunk': 50, 'steps': 10},
-        plan={'site': 'backend'}, precision='bf16', engine_revision='engine'))
+        plan={'site': 'backend'}, precision='bf16', engine_revision='engine', schema_version=2),
+        measurement_context={'weights': {'checkpoint_id': model_revision,
+                                          'checkpoint_digest': model_revision}})
 
 
 class EarlyExitTests(unittest.TestCase):
@@ -71,3 +74,26 @@ class EarlyExitTests(unittest.TestCase):
         self.assertEqual(result[0]['status'], 'mismatched')
         self.assertEqual(result[0]['scripts'][0]['identities'], [baseline, baseline])
         self.assertEqual(invoke.call_args.args[0][-2:], ['--seed', '0'])
+
+
+class BaselineCheckpointTests(unittest.TestCase):
+    def test_v3_baseline_requires_matching_weight_provenance(self):
+        checks = [dict(check="official", mode="gate", oracle="official_baseline")]
+        expected = replace(declared().identity, model_revision="pi05-r1",
+                           inference_signature="sha256:architecture", schema_version=3)
+        wanted = {"checkpoint_id": "checkpoint-a", "checkpoint_digest": "manifest-a"}
+        for weights, status in (
+            (wanted, "passed"),
+            ({**wanted, "checkpoint_digest": "manifest-b"}, "mismatched"),
+            (None, "mismatched"),
+        ):
+            with self.subTest(weights=weights):
+                report = {"identity": expected.as_dict()}
+                if weights is not None:
+                    report["measurement_context"] = {"weights": weights}
+                proc = subprocess.CompletedProcess([], 0, stdout=json.dumps(report), stderr="")
+                with patch.object(gate.subprocess, "run", return_value=proc):
+                    result = gate._run_baseline_checks(
+                        ("adapter",), checks, True, sys.executable, expected, 0,
+                        expected_weights=wanted)
+                self.assertEqual(result[0]["status"], status)

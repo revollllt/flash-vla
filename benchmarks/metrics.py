@@ -19,6 +19,7 @@ to get them. They are re-exported below so existing call sites keep working.
 from __future__ import annotations
 
 import statistics
+import time
 import sys
 from importlib import metadata
 from typing import Any, Callable
@@ -101,3 +102,21 @@ def require_cuda() -> None:
 
 __all__ = ["bench_ms", "capture", "diff_stats", "env_block", "graph_time_cold", "percentile",
            "require_cuda"]
+
+
+def report_context(engine, environment):
+    """Stamp measurement provenance separately from architecture identity."""
+    from flash_vla.runtime.identity import MeasurementContext
+    return MeasurementContext(
+        weights=engine.measurement_context["weights"],
+        fixture=engine.measurement_context["fixture"],
+        environment={
+            "gpu_sku": environment.get("gpu"), "driver": environment.get("driver"),
+            "cuda_runtime": environment.get("torch_cuda"), "pytorch": environment.get("torch"),
+            "tilelang": environment.get("tilelang"), "clock_policy": environment.get("clocks"),
+            "power_policy": environment.get("power_policy"), "capture_regime": "cuda_graph",
+        },
+        hostname=environment.get("node"), slurm_job_id=environment.get("job"),
+        timestamp=time.time(),
+        reference_provenance=engine.measurement_context.get("reference_provenance", {}),
+    ).as_dict()

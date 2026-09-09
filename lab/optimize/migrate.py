@@ -1,4 +1,5 @@
 """Import the two pre-ledger Pi campaigns without inventing missing evidence."""
+import copy
 import json
 from pathlib import Path
 import subprocess
@@ -94,3 +95,48 @@ def pi_campaign(root, directory):
     result = campaign.create(directory, baseline, 'e2e_chunk_latency_ms', 'latency-v2',
                              'flash-vla-random-inputs-v1/seed-0')
     return dict(campaign=result, state=campaign.rebuild(directory))
+
+
+def identity_v3(report, *, architecture=None):
+    """Explicitly migrate a v2 report; historical latency requires revalidation."""
+    from flash_vla.runtime.identity import Identity
+    from flash_vla.models.pi0 import spec as pi0
+    from flash_vla.models.pi05 import spec as pi05
+    from flash_vla.models.lingbot import spec as lingbot
+
+    previous = report['identity']
+    if previous.get('schema_version') != 2:
+        raise ValueError('identity_v3 migration requires a v2 report')
+    known = {
+        'hardware/nvidia/h100/pi0': ('pi0', pi0),
+        'hardware/nvidia/h100/pi05': ('pi05', pi05),
+        'hardware/nvidia/h100/lingbot_vla': ('lingbot-vla', lingbot),
+    }
+    if architecture is None:
+        if previous['target'] not in known:
+            raise ValueError('unknown Target: supply an explicit architecture mapping')
+        model, spec = known[previous['target']]
+        architecture = dict(model=model, model_revision=spec.MODEL_REVISION,
+                            inference_signature=spec.INFERENCE_SIGNATURE)
+    identity = Identity(
+        target=previous['target'], hardware=previous['hardware'],
+        model=architecture['model'], model_revision=architecture['model_revision'],
+        inference_signature=architecture['inference_signature'],
+        shape=previous['shape'], plan=previous['plan'],
+        precision=previous['precision'], engine_revision=previous.get('engine_revision'),
+    )
+    result = copy.deepcopy(report)
+    result['identity'] = identity.as_dict()
+    context = result.setdefault('measurement_context', {})
+    weights = context.setdefault('weights', {})
+    old_checkpoint = previous['model_revision']
+    if 'checkpoint_id' in weights and weights['checkpoint_id'] != old_checkpoint:
+        raise ValueError('legacy checkpoint revision conflicts with existing provenance')
+    weights['checkpoint_id'] = old_checkpoint
+    # A v2 ID alone does not prove an immutable weights manifest.
+    weights.setdefault('checkpoint_digest', None)
+    result['legacy_identity'] = copy.deepcopy(previous)
+    result['continuation'] = dict(result.get('continuation', {}),
+                                  correctness_required=True, reanchor_required=True,
+                                  reason='v2 checkpoint identity migrated to architecture semantics')
+    return result

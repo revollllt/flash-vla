@@ -11,6 +11,8 @@ import torch
 
 from flash_vla.models.lingbot.spec import (
     ACTION_DIM,
+    MODEL_REVISION,
+    INFERENCE_SIGNATURE,
     BACKBONE_DIM,
     BACKBONE_FFN,
     CHUNK,
@@ -64,7 +66,9 @@ class LingBotConfig:
 class LingBotVLA(VLA):
     name = "hardware/nvidia/h100/lingbot_vla"
     hardware = "h100-sxm5-80gb"
-    model = "lingbot-vla-4b-posttrain-robotwin-without-depth"
+    model = "lingbot-vla"
+    model_revision = MODEL_REVISION
+    inference_signature = INFERENCE_SIGNATURE
     precision = "bf16"
     shape_axes = (
         "batch", "views", "image_height", "image_width", "patch_rows_per_view",
@@ -135,6 +139,11 @@ class LingBotVLA(VLA):
 
     def weight_shapes(self, shape: Mapping[str, int]) -> Mapping[str, tuple[int, ...]]:
         return WEIGHT_SHAPES
+
+    def checkpoint_shapes(self, checkpoint):
+        if isinstance(checkpoint, LingBotCheckpoint):
+            return checkpoint.shapes
+        return super().checkpoint_shapes(checkpoint)
 
     def load_weights(self, checkpoint: Mapping[str, torch.Tensor],
                      weights: Mapping[str, torch.Tensor]) -> None:

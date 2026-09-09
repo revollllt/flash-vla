@@ -134,7 +134,7 @@ def _json_reports(text: str) -> list[dict[str, Any]]:
 
 def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
                          run: bool, python: str | None, expected: Identity,
-                         seed: int) -> list[dict[str, Any]]:
+                         seed: int, expected_weights: dict | None = None) -> list[dict[str, Any]]:
     """The official-baseline tier: the Target's scripts as subprocesses, or not run.
 
     Each script runs once under the registry's interpreter; a baseline check
@@ -173,7 +173,8 @@ def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
                   "returncode": proc.returncode, "stderr_tail": proc.stderr[-2000:]}
         if proc.stdout.strip():
             try:
-                identities = [report["identity"] for report in _json_reports(proc.stdout)]
+                reports = _json_reports(proc.stdout)
+                identities = [report["identity"] for report in reports]
                 parsed = [Identity.from_dict(value) for value in identities]
             except (KeyError, TypeError, ValueError) as error:
                 result["identity_error"] = str(error)
@@ -181,7 +182,19 @@ def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
                     result["status"] = "failed"
             else:
                 result["identities"] = identities
-                if status == "passed" and (not parsed or not all(
+                weights_match = True
+                if expected.schema_version == 3:
+                    reported_weights = [
+                        report.get("measurement_context", {}).get("weights") for report in reports
+                    ]
+                    result["weights"] = reported_weights
+                    weights_match = (expected_weights is not None and all(
+                        weights is not None and all(
+                            expected_weights.get(key) is not None
+                            and weights.get(key) == expected_weights[key]
+                            for key in ("checkpoint_id", "checkpoint_digest"))
+                        for weights in reported_weights))
+                if status == "passed" and (not weights_match or not parsed or not all(
                         expected.same_workload(value) for value in parsed)):
                     result["status"] = "mismatched"
         elif status == "passed":
@@ -289,7 +302,8 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
     reference = reference or "shipped"
     spec = acceptance.for_target(target)
     mode = mode or spec["latency"]["candidate_rule"]["default_mode"]
-    declared_identity = declare(target, candidate, seed=seed).identity
+    declaration = declare(target, candidate, seed=seed)
+    declared_identity = declaration.identity
     identity = declared_identity.as_dict()
     record: dict[str, Any] = {
         "identity": identity, "target": target,
@@ -318,7 +332,7 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
     if "baseline_adapter" in spec["capabilities"]:
         record["checks"] += _run_baseline_checks(baseline_scripts, checks, baseline,
                                                  spec["baseline_python"], declared_identity,
-                                                 seed)
+                                                 seed, expected_weights=declaration.measurement_context["weights"])
         record["correctness_coverage"]["official_adapter"] = "requested" if baseline else "not_run"
     failed = [c["check"] for c in record["checks"] if c["mode"] == "gate" and c["status"] == "failed"]
     blocked = [c["check"] for c in record["checks"] if c["mode"] == "gate"

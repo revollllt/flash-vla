@@ -38,6 +38,8 @@ subtraction. Shares are of the duration sum, not critical-path latency.
 """
 from __future__ import annotations
 
+from .metrics import report_context
+
 import argparse
 import json
 import os
@@ -50,7 +52,7 @@ from typing import Any, Callable
 import torch
 from torch.profiler import ProfilerActivity, profile, record_function
 
-from flash_vla.runtime.identity import Identity
+from flash_vla.runtime.identity import Identity, MeasurementContext
 from flash_vla.runtime.engine import segments
 
 from .latency import _env, parse_options
@@ -351,6 +353,7 @@ def run(target: str, plans: list[str | None], seed: int = 0, trace_dir: str | No
     leg_options = list(leg_options or [{}] * len(plans))
     legs = []
     reference_identity: Identity | None = None
+    reference_context = None
     for index, (plan, options) in enumerate(zip(plans, leg_options)):
         print(f"== leg {index}: {target} plan={plan} options={options}", flush=True)
         engine = build(target, plan, seed=seed, **{**overrides, **options})
@@ -359,6 +362,12 @@ def run(target: str, plans: list[str | None], seed: int = 0, trace_dir: str | No
         elif not reference_identity.same_workload(engine.identity):
             raise ValueError(f"leg {index} is not the same workload as leg 0; "
                              "profile legs may differ in plan only")
+        context = report_context(engine, _env())
+        current_context = MeasurementContext.from_dict(context)
+        if reference_context is None:
+            reference_context = current_context
+        elif reference_context.segment_key != current_context.segment_key:
+            raise ValueError("profile measurement context changed; compare within one segment")
         inputs = engine.sample_inputs(seed)
         engine.forward(**inputs)
         torch.cuda.synchronize()
@@ -371,11 +380,13 @@ def run(target: str, plans: list[str | None], seed: int = 0, trace_dir: str | No
             seg_reports[name] = attribute(engine, name, sm_count, path, eager_path)
             names |= set(seg_reports[name]["kernel_names"])
         legs.append({"leg": index, "plan": plan, "options": dict(options),
-                     "identity": engine.identity.as_dict(), "segments": seg_reports,
+                     "identity": engine.identity.as_dict(),
+                     "measurement_context": context, "segments": seg_reports,
                      "contract": check_contract(engine.graph_contract, names)})
         del engine
         torch.cuda.empty_cache()
-    report = {"identity": legs[0]["identity"], "env": _env(), "sm_count": sm_count,
+    report = {"identity": legs[0]["identity"],
+              "measurement_context": legs[0]["measurement_context"], "env": _env(), "sm_count": sm_count,
               "config": {"seed": seed, "plans": plans, "trace_dir": trace_dir},
               "legs": legs, "deltas": _deltas(legs) if len(legs) > 1 else None}
     return report

@@ -86,6 +86,8 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
     layers = reference.identity.shape.get("layers", layers)
     if not reference.identity.same_workload(candidate.identity):
         raise ValueError("reference and candidate are not the same workload")
+    if reference.measurement_context["weights"] != candidate.measurement_context["weights"]:
+        raise ValueError("reference and candidate use different checkpoint provenance")
     inputs = reference.sample_inputs(seed)
     active_layers = reference.identity.shape.get("layers")
 
@@ -143,6 +145,8 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
     report = {
         "identity": {"reference": reference.identity.as_dict(),
                      "candidate": candidate.identity.as_dict()},
+        "measurement_context": {"reference": reference.measurement_context,
+                                "candidate": candidate.measurement_context},
         "config": {"steps": steps, "layers": layers, "seed": seed, "isolate": isolate,
                    "oracle": "in_engine_reference"},
         "stages": stages,

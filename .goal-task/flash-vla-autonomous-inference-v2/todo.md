@@ -8,8 +8,8 @@ Source plan (initiating Mac): `/Users/zou/Downloads/Flash-VLA Autonomous Inferen
 - Worktree: `/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2`; branch `codex/autonomous-inference-v2`, starting at `91d5f32`.
 - Preserve main's pre-existing `.gitignore` addition and old task files.
 - Python: `/data/user/jzou521/codes/cuda/flash-vla/.venv/bin/python`. Set `PYTHONPATH=$PWD/src:$PWD`, `OPENBLAS_NUM_THREADS=1`, `OMP_NUM_THREADS=1` in the worktree; its source must precede the main editable installation.
-- Phase: P0-B. Next: implement v3 identity, Target-owned architecture signatures, runner provenance and explicit compatibility checks.
-- Checkbox progress: 3/277 verified (P0-A). The previous plan's completed status is unrelated.
+- Phase: P0-C. Next: implement checkpoint transition, applicability/rebuild/retune, context registration and re-anchor without consuming optimization iteration IDs; then Campaign Registry in P0-D.
+- Checkbox progress: 25/277 verified (P0-A and P0-B evidence, including overlapping identity/runner requirements). The previous plan's completed status is unrelated.
 - Environment: SSH, writable checkout and Slurm available; no user jobs at preflight. Project venv lacks Matplotlib. GPU execution and two real compatible Pi0.5 fine-tuned checkpoints remain unverified. Remote rg absent; use `git -c grep.threads=1 grep` after default git grep hit a thread limit.
 
 ## Execution
@@ -27,6 +27,17 @@ Follow P0 then P1/P2 dependencies. Keep minimal changes and use cheapest discrim
 
 ## Evidence log
 
+- P0-B final constructor delta: default Identity construction now requires v3 architecture metadata; v1/v2 are explicit legacy reads/constructions. Affected identity/gate suites passed 69 tests and 12 subtests in 14.71 s after this change. Log: artifacts/optimization/p0b-final-delta.log. The preceding full CPU run and smoke apply to the rest of this milestone.
+- P0-A test-first commit: 7896fa8. P0-B is the following implementation milestone on codex/autonomous-inference-v2. Main remains unchanged by this work.
+
+- P0-B: full CPU suite on this worktree passed 151 tests and 41 subtests in 17.99 s, with one existing Matplotlib-dependent skip. Log: artifacts/optimization/p0b-cpu.log. This is not GPU correctness or results-render acceptance.
+- P0-B CPU declaration smoke: all three Targets 8/8, all 25 lab plans and all three route oracles passed. Log: artifacts/optimization/p0b-smoke.log.
+- Pi0 source ABI: read 129424 header bytes from the existing pi0_libero_pytorch/model.safetensors, compared all 777 parameter names/shapes with the independently declared source_weight_shapes; exact match. No tensor data read or file hash computed.
+- P0-B independent targeted review: fixed Pi0 CLI extra argument, official adapter checkpoint matching, profile cross-context deltas and Pi0 source/runtime ABI coupling. Second targeted review passed with no new major finding in that scope.
+- ExecutionVariant remains a high-level identity; only the existing BF16 runtime kernels are executable. FP8/cache separation tests do not claim those algorithms are implemented.
+- Current known follow-up: report_context records missing power policy as null rather than inventing it. Before real measurement/transition acceptance, collect actual environment/power provenance and reject incomplete evidence. Old campaign reanchor still consumes an iteration and splits on measured drift; P0-C must replace those semantics. No real A/B transfer or context registry has been implemented.
+- Real checkpoint assets: located pi0_libero_pytorch and pi05_libero_pytorch plus one LingBot checkpoint. Two inference-compatible real Pi0.5 fine-tuned checkpoints are not yet established; existing Pi0.5 Libero architecture compatibility is not assumed. Optional user asset-source question sent; independent P0 work continues.
+
 - P0-A: 36 expected semantic failures (13.58 s), with no collection/environment failure. Controls before edit: 27 passed / 17 subtests. Raw red run: artifacts/optimization/identity-v3-contract-red.log. Tests deliberately remain failing in the test-first checkpoint commit; P0-B is not accepted yet.
 - P0-A independent read-only review identified two gaps (actual weight ABI mismatch and producer-to-context wiring); both were added and the reviewer confirmed the targeted follow-up resolved them.
 
@@ -36,28 +47,28 @@ Follow P0 then P1/P2 dependencies. Keep minimal changes and use cheapest discrim
 
 ## Original checkbox rows
 
-- [ ] C001 Identity v3 实现 — 19. Identity Migration / Identity migration checklist (source L1130); evidence: pending
-- [ ] C002 `precision` 迁移为 `execution_variant` — 19. Identity Migration / Identity migration checklist (source L1131); evidence: pending
-- [ ] C003 `model_revision` 改为 architecture semantics — 19. Identity Migration / Identity migration checklist (source L1132); evidence: pending
-- [ ] C004 新增 `inference_signature` — 19. Identity Migration / Identity migration checklist (source L1133); evidence: pending
-- [ ] C005 checkpoint 从 Target identity 移除 — 19. Identity Migration / Identity migration checklist (source L1134); evidence: pending
-- [ ] C006 random fixture seed 不再影响 TargetKey — 19. Identity Migration / Identity migration checklist (source L1135); evidence: pending
-- [ ] C007 known Pi0 migration — 19. Identity Migration / Identity migration checklist (source L1136); evidence: pending
-- [ ] C008 known Pi0.5 migration — 19. Identity Migration / Identity migration checklist (source L1137); evidence: pending
-- [ ] C009 known LingBot migration — 19. Identity Migration / Identity migration checklist (source L1138); evidence: pending
-- [ ] C010 unknown migration fail closed — 19. Identity Migration / Identity migration checklist (source L1139); evidence: pending
-- [ ] C011 legacy report reader 保留 — 19. Identity Migration / Identity migration checklist (source L1140); evidence: pending
-- [ ] C012 新 report 只写 v3 — 19. Identity Migration / Identity migration checklist (source L1141); evidence: pending
-- [ ] C013 Target owns architecture revision — 20. ModelRunner 修改 / ModelRunner checklist (source L1222); evidence: pending
-- [ ] C014 Target owns inference signature — 20. ModelRunner 修改 / ModelRunner checklist (source L1223); evidence: pending
-- [ ] C015 Runner 不从 checkpoint 推导 Target — 20. ModelRunner 修改 / ModelRunner checklist (source L1224); evidence: pending
-- [ ] C016 checkpoint provenance 可进入 benchmark report — 20. ModelRunner 修改 / ModelRunner checklist (source L1225); evidence: pending
-- [ ] C017 legacy API 有明确 deprecation — 20. ModelRunner 修改 / ModelRunner checklist (source L1226); evidence: pending
-- [ ] C018 README example 更新 — 20. ModelRunner 修改 / ModelRunner checklist (source L1227); evidence: pending
-- [ ] C019 benchmark fixture 更新 — 20. ModelRunner 修改 / ModelRunner checklist (source L1228); evidence: pending
-- [ ] C020 Pi0 smoke pass — 20. ModelRunner 修改 / ModelRunner checklist (source L1229); evidence: pending
-- [ ] C021 Pi0.5 smoke pass — 20. ModelRunner 修改 / ModelRunner checklist (source L1230); evidence: pending
-- [ ] C022 LingBot smoke pass — 20. ModelRunner 修改 / ModelRunner checklist (source L1231); evidence: pending
+- [x] C001 Identity v3 实现 — 19. Identity Migration / Identity migration checklist (source L1130); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C002 `precision` 迁移为 `execution_variant` — 19. Identity Migration / Identity migration checklist (source L1131); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C003 `model_revision` 改为 architecture semantics — 19. Identity Migration / Identity migration checklist (source L1132); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C004 新增 `inference_signature` — 19. Identity Migration / Identity migration checklist (source L1133); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C005 checkpoint 从 Target identity 移除 — 19. Identity Migration / Identity migration checklist (source L1134); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C006 random fixture seed 不再影响 TargetKey — 19. Identity Migration / Identity migration checklist (source L1135); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C007 known Pi0 migration — 19. Identity Migration / Identity migration checklist (source L1136); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C008 known Pi0.5 migration — 19. Identity Migration / Identity migration checklist (source L1137); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C009 known LingBot migration — 19. Identity Migration / Identity migration checklist (source L1138); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C010 unknown migration fail closed — 19. Identity Migration / Identity migration checklist (source L1139); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C011 legacy report reader 保留 — 19. Identity Migration / Identity migration checklist (source L1140); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C012 新 report 只写 v3 — 19. Identity Migration / Identity migration checklist (source L1141); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C013 Target owns architecture revision — 20. ModelRunner 修改 / ModelRunner checklist (source L1222); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C014 Target owns inference signature — 20. ModelRunner 修改 / ModelRunner checklist (source L1223); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C015 Runner 不从 checkpoint 推导 Target — 20. ModelRunner 修改 / ModelRunner checklist (source L1224); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C016 checkpoint provenance 可进入 benchmark report — 20. ModelRunner 修改 / ModelRunner checklist (source L1225); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C017 legacy API 有明确 deprecation — 20. ModelRunner 修改 / ModelRunner checklist (source L1226); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C018 README example 更新 — 20. ModelRunner 修改 / ModelRunner checklist (source L1227); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C019 benchmark fixture 更新 — 20. ModelRunner 修改 / ModelRunner checklist (source L1228); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [ ] C020 Pi0 smoke pass — 20. ModelRunner 修改 / ModelRunner checklist (source L1229); evidence: CPU declaration 8/8 and routes pass; actual GPU smoke still pending
+- [ ] C021 Pi0.5 smoke pass — 20. ModelRunner 修改 / ModelRunner checklist (source L1230); evidence: CPU declaration 8/8 and routes pass; actual GPU smoke still pending
+- [ ] C022 LingBot smoke pass — 20. ModelRunner 修改 / ModelRunner checklist (source L1231); evidence: CPU declaration 8/8 and routes pass; actual GPU smoke still pending
 - [ ] C023 deterministic CampaignKey — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1336); evidence: pending
 - [ ] C024 deterministic key digest — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1337); evidence: pending
 - [ ] C025 `find` — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1338); evidence: pending
@@ -184,9 +195,9 @@ Follow P0 then P1/P2 dependencies. Keep minimal changes and use cheapest discrim
 - [x] C146 所有预期 semantics 都有 test — 49. 实施阶段 / P0-A — Semantic contract tests / Gate (source L2451); evidence: eval/tests/test_identity_v3.py, 36 expected failures against unchanged v2; control 27 passed; independent targeted review and follow-up passed
 - [x] C147 当前实现应出现预期 failing tests — 49. 实施阶段 / P0-A — Semantic contract tests / Gate (source L2452); evidence: eval/tests/test_identity_v3.py, 36 expected failures against unchanged v2; control 27 passed; independent targeted review and follow-up passed
 - [x] C148 测试失败原因只对应 identity semantics — 49. 实施阶段 / P0-A — Semantic contract tests / Gate (source L2453); evidence: eval/tests/test_identity_v3.py, 36 expected failures against unchanged v2; control 27 passed; independent targeted review and follow-up passed
-- [ ] C149 identity matrix 全过 — 49. 实施阶段 / P0-B — Identity v3 / Gate (source L2470); evidence: pending
-- [ ] C150 legacy read 正常 — 49. 实施阶段 / P0-B — Identity v3 / Gate (source L2471); evidence: pending
-- [ ] C151 random checkpoint 不切 Target — 49. 实施阶段 / P0-B — Identity v3 / Gate (source L2472); evidence: pending
+- [x] C149 identity matrix 全过 — 49. 实施阶段 / P0-B — Identity v3 / Gate (source L2470); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C150 legacy read 正常 — 49. 实施阶段 / P0-B — Identity v3 / Gate (source L2471); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
+- [x] C151 random checkpoint 不切 Target — 49. 实施阶段 / P0-B — Identity v3 / Gate (source L2472); evidence: Identity v3/source ABI/Runner and explicit migration implementation; eval/tests/test_identity_v3.py plus affected report/gate tests, P0-B CPU regression and targeted review
 - [ ] C152 checkpoint A → B drill — 49. 实施阶段 / P0-C — Checkpoint transition / Gate (source L2489); evidence: pending
 - [ ] C153 no false speedup — 49. 实施阶段 / P0-C — Checkpoint transition / Gate (source L2490); evidence: pending
 - [ ] C154 iteration continuity — 49. 实施阶段 / P0-C — Checkpoint transition / Gate (source L2491); evidence: pending

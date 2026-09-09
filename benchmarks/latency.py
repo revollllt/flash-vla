@@ -49,12 +49,12 @@ from typing import Any, Callable
 import torch
 
 from eval.acceptance import DEFAULTS
-from flash_vla.runtime.identity import Identity
+from flash_vla.runtime.identity import Identity, MeasurementContext
 from flash_vla.runtime.engine import host_slots, segments
 
 from .attribution import Attribution, LoopTrace
 from .attribution import summary as attribution_summary
-from .metrics import env_block, require_cuda
+from .metrics import env_block, require_cuda, report_context
 from .targets import PLAN_NAMES, build, resolve
 
 _LAT = DEFAULTS["latency"]
@@ -302,6 +302,7 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
     selector = device_selector() if attribution else None
     legs = []
     built = []
+    reference_context = None
     reference_identity: Identity | None = None
     for plan in plans:
         if any(item["plan"] == plan for item in built):
@@ -318,6 +319,12 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
             print(f"== leg {index}: {target} plan={plan}", flush=True)
             item = next(item for item in built if item["plan"] == plan)
             engine, inputs = item["engine"], item["inputs"]
+            context = report_context(engine, _env())
+            current_context = MeasurementContext.from_dict(context)
+            if reference_context is None:
+                reference_context = current_context
+            elif reference_context.segment_key != current_context.segment_key:
+                raise ValueError("A/B/A measurement context changed; re-anchor in a new segment")
             collector = Attribution(device_index=selector) if attribution else None
             if collector is None:
                 metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
@@ -329,7 +336,7 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
                                       soak_s=_LAT["soak_s"], attribution=collector)
                 evidence = collector.as_dict()
             legs.append({"leg": index, "plan": plan, "identity": engine.identity.as_dict(),
-                         "metrics": metrics, "attribution": evidence})
+                         "measurement_context": context, "metrics": metrics, "attribution": evidence})
             print(json.dumps(legs[-1]["metrics"]), flush=True)
             if evidence is not None:
                 print(attribution_summary(evidence), flush=True)
@@ -340,6 +347,7 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
 
     report = {
         "identity": legs[0]["identity"],
+        "measurement_context": legs[0]["measurement_context"],
         "env": _env(),
         "config": {"reps": reps, "warmup": warmup, "seed": seed, "plans": plans,
                    "calibration": calibrate, "statistics": list(_LAT["statistics"]),

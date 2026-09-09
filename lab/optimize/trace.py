@@ -50,7 +50,7 @@ def normalize(directory):
     segment_anchor = campaign_baseline
     incumbent = campaign_baseline
     target = metadata['target']
-    if not campaign.same_target(target, baseline_source['identity']):
+    if not campaign.same_workload(metadata, baseline_source['identity']):
         raise ValueError('baseline measurement has a different TargetKey')
     if (not baseline_source['identity'].get('engine_revision')
             or baseline_source['identity']['engine_revision']
@@ -61,9 +61,14 @@ def normalize(directory):
     trace_metadata = dict(hardware=target['hardware'], model=target['model'],
                           model_revision=target['model_revision'],
                           shape_profile=_shape_profile(target['shape']),
-                          shape=dict(target['shape']), precision=target['precision'],
+                          shape=dict(target['shape']),
+                          precision=(metadata['execution_variant']['quantization']['mode']
+                                     if 'execution_variant' in metadata else target['precision']),
                           objective=metadata['objective'], protocol=metadata['protocol'],
                           fixture=metadata['fixture'])
+    if 'execution_variant' in metadata:
+        trace_metadata['execution_variant'] = metadata['execution_variant']
+        trace_metadata['inference_signature'] = target['inference_signature']
     entries = []
     for record in records:
         iteration = record['iteration']
@@ -83,7 +88,7 @@ def normalize(directory):
             validity = 'incomplete'
         elif verdict in ('invalid', 'blocked', 'correctness_failed') and 'identity' not in measurement:
             identity = record['campaign_identity']
-            if (not campaign.same_target(target, identity)
+            if (not campaign.same_workload(metadata, identity)
                     or identity.get('engine_revision') != record['change'].get('engine_revision')):
                 raise ValueError(f'iter-{iteration:03d} campaign identity does not match its change')
             segment = previous_segment
@@ -97,7 +102,7 @@ def normalize(directory):
             if 'identity' not in measurement:
                 raise ValueError(f'iter-{iteration:03d} measurement has no Identity')
             identity = measurement['identity']
-            if not campaign.same_target(target, identity):
+            if not campaign.same_workload(metadata, identity):
                 raise ValueError(f'iter-{iteration:03d} measurement has a different TargetKey')
             if (not identity.get('engine_revision')
                     or identity['engine_revision'] != record['change'].get('engine_revision')):

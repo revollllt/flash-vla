@@ -17,14 +17,33 @@ MEASUREMENT_ENVIRONMENT_FIELDS = (
 
 
 def target_key(identity):
-    if identity.get('schema_version') != 2 or not identity.get('model_revision'):
-        raise ValueError('campaign evidence needs Identity v2 with a resolved model revision')
-    return {key: identity[key] for key in
-            ('target', 'hardware', 'model', 'model_revision', 'shape', 'precision')}
+    version = identity.get('schema_version')
+    if version == 3:
+        if not identity.get('model_revision') or not identity.get('inference_signature'):
+            raise ValueError('Identity v3 needs architecture revision and inference signature')
+        return {key: identity[key] for key in
+                ('target', 'hardware', 'model', 'model_revision', 'inference_signature', 'shape')}
+    if version == 2 and identity.get('model_revision'):
+        # Existing ledgers retain their v2 semantics until explicitly migrated.
+        return {key: identity[key] for key in
+                ('target', 'hardware', 'model', 'model_revision', 'shape', 'precision')}
+    raise ValueError('campaign evidence needs a resolved Identity v2 or v3')
+
+
+def campaign_key(identity, *, objective, protocol):
+    if identity.get('schema_version') != 3:
+        raise ValueError('Campaign discovery needs explicitly migrated Identity v3')
+    return dict(target=target_key(identity), execution_variant=identity['execution_variant'],
+                objective=objective, benchmark_protocol=protocol)
 
 
 def same_target(target, identity):
     return target == target_key(identity)
+
+
+def same_workload(metadata, identity):
+    return (same_target(metadata['target'], identity)
+            and metadata.get('execution_variant') == identity.get('execution_variant'))
 
 
 def _records(directory):
@@ -42,6 +61,8 @@ def create(directory, baseline_evidence, objective, protocol, fixture):
                     target=target, objective=objective,
                     protocol=protocol, fixture=fixture,
                     budget=acceptance.for_target(target['target'])['budget'])
+    if identity.get('schema_version') == 3:
+        metadata['execution_variant'] = identity['execution_variant']
     if metadata['budget'] is None:
         raise ValueError(f'no acceptance budget for {target["target"]}')
     baseline = dict(iteration=0, candidate_id='baseline', parent_incumbent=None,
@@ -67,14 +88,14 @@ def _validate_record(metadata, record, expected_iteration, incumbent):
     if expected_iteration == 0:
         if record.get('parent_incumbent') is not None or record.get('verdict') != 'accepted':
             raise ValueError('iter-000 must be the accepted baseline')
-        if not same_target(metadata['target'], record['measurement']['evidence']['identity']):
+        if not same_workload(metadata, record['measurement']['evidence']['identity']):
             raise ValueError('iter-000 measurement has a different TargetKey')
         return
     if record.get('parent_incumbent') != incumbent:
         raise ValueError(f'iter-{expected_iteration:03d} parent is not the allocation incumbent')
     if record.get('verdict') not in TERMINAL | {None}:
         raise ValueError(f'unknown verdict {record.get("verdict")!r}')
-    if not same_target(metadata['target'], record['campaign_identity']):
+    if not same_workload(metadata, record['campaign_identity']):
         raise ValueError(f'iter-{expected_iteration:03d} has a different TargetKey')
     if record['spec'].get('protocol') != metadata['protocol']:
         raise ValueError(f'iter-{expected_iteration:03d} has a different protocol')
@@ -225,7 +246,7 @@ def start(root, spec, directory):
     with (directory / 'campaign.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         metadata = store.read(directory / 'campaign.json')
-        if not same_target(metadata['target'], declared):
+        if not same_workload(metadata, declared):
             raise ValueError('candidate TargetKey does not match campaign')
         if spec.get('protocol') != metadata['protocol'] or spec.get('fixture') != metadata['fixture']:
             raise ValueError('candidate protocol or fixture does not match campaign')
@@ -263,7 +284,7 @@ def reanchor(directory, evidence):
         if state['current_stage'] != 'candidate_selection':
             raise RuntimeError('campaign already has an active candidate')
         identity = evidence['identity']
-        if not same_target(metadata['target'], identity):
+        if not same_workload(metadata, identity):
             raise ValueError('re-anchor TargetKey does not match campaign')
         if not identity.get('engine_revision'):
             raise ValueError('re-anchor needs a resolved engine revision')

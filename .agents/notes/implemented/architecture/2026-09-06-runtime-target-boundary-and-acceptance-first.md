@@ -34,18 +34,15 @@ that decide whether a new VLA model or device can be brought up quickly:
    with the graph API and subclasses the `VLA` template; `ModelRunner` is the
    one implementation of the `Engine` protocol, owning materialization, plan
    binding, workspace allocation, the warmup -> freeze -> capture -> replay
-   lifecycle and the derived costs; `Identity` carries the four Target axes,
-   the resolved plan and the engine revision (table options were retired with
-   the fused overlay becoming a backend route). Identity schema v2 separates
-   immutable `model_revision` from the flash-vla `engine_revision` and makes
-   workload comparison ignore plan and engine revision. A v1 report remains
-   readable, but its missing model revision makes it fail closed for lineage.
-   `ModelRunner` requires the checkpoint producer to provide that revision:
-   the benchmark factories use a project-defined random-fixture version plus
-   seed, the registered Pi0 checkpoint has its own project-defined ID, and an
-   overridden real checkpoint without an explicit revision is unavailable.
-   The internal Pi0.5 random fixture and the OpenPI-produced random fixture use
-   distinct namespaces because they are different tensors even at one seed.
+   lifecycle and the derived costs. Identity v3 separates Target architecture
+   (hardware, model revision, inference signature and shape) from the
+   ExecutionVariant and candidate provenance. Targets supply architecture
+   metadata; checkpoint producers supply weight provenance separately.
+   Legacy v1/v2 reports remain explicitly legacy until mapped to a known
+   architecture and revalidated. The checkpoint/fixture and comparable
+   environment reside in MeasurementContext; A/B/A must keep them stable.
+   The independent-checkpoint extension is specified in the
+   [checkpoint-independent optimization proposal](../../proposed/architecture/2026-09-09-checkpoint-independent-optimization.md).
    `engine_revision` is the full HEAD of a clean checkout; dirty source remains
    unresolved instead of claiming its parent commit. Formal Campaign ingestion
    rejects unresolved revisions; the benchmark gate does not add a separate
@@ -59,7 +56,7 @@ that decide whether a new VLA model or device can be brought up quickly:
    checks with gate/report modes, tolerances keyed by precision policy) and
    one entry per Target holding only budget, baseline-tier scripts and
    overrides. Parity scripts read their thresholds from it. Precision policy
-   is an identity axis with `bf16` its only value; a policy other than
+   is part of ExecutionVariant, with `bf16` the currently executable mode; a policy other than
    `bf16` cannot be promoted while the policy-quality slot is empty. The
    registry names no latency objective: what it holds on the latency side is
    the promotion bar, the run-validity limit, the two candidate modes, the
@@ -167,14 +164,15 @@ that decide whether a new VLA model or device can be brought up quickly:
 
 ## Verification
 
-Identity V2 is covered by pure-CPU tests for the seven workload comparisons,
-v1 reading with fail-closed comparison, v2 serialization, empty or reserved
-mutable revision labels, deterministic fixture revision separation, clean and
-dirty engine revisions, baseline mismatch rejection, and kernel CSV identity.
-The kernel CSV writer rejects an older header instead of silently appending a
-misaligned row. Declaration smoke checks each
-Pi Target's own complete shape axes and plan binding. The phase GPU evidence is
-recorded with the PR-1 milestone after both Target smoke runs.
+Identity v3 CPU tests cover architecture/workload separation, checkpoint and
+fixture contexts, environment segment keys, explicit legacy migration,
+pre-allocation ABI rejection and baseline provenance matching. Pi0's source
+parameter ABI is independent of its runtime folding schema. The legacy
+v1/v2 readers and kernel CSV header checks remain covered. Declaration smoke
+checks each Target's own shape axes and plan binding. These checks establish
+schema and construction behavior; they do not establish checkpoint-transfer
+latency or full GPU correctness.
+
 
 All on H100 SXM5 (`acd_u`, clocks unlocked), against the same seeded
 random weights and inputs before and after each step.

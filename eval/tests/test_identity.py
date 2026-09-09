@@ -1,5 +1,6 @@
 import copy
 import csv
+from dataclasses import replace
 import json
 import subprocess
 import tempfile
@@ -16,7 +17,8 @@ def identity(**overrides):
         "target": "hardware/nvidia/h100/pi05",
         "hardware": "h100-sxm5-80gb",
         "model": "pi05",
-        "model_revision": "openpi@immutable:pi05",
+        "model_revision": "pi05-r1",
+        "inference_signature": "sha256:pi05-architecture",
         "shape": {"chunk": 50, "steps": 10},
         "plan": {"site": "reference"},
         "precision": "bf16",
@@ -48,16 +50,16 @@ class WorkloadIdentityTests(unittest.TestCase):
             identity(shape={"chunk": 50, "steps": 5})))
 
     def test_different_precision_is_not_the_same_workload(self):
-        other = copy.copy(identity())
-        object.__setattr__(other, "precision", "fp16")
+        other = replace(identity(), execution_variant={
+            "quantization": {"mode": "fp16"}, "cache": {"mode": "none"}})
         self.assertFalse(identity().same_workload(other))
 
 
 class IdentitySerializationTests(unittest.TestCase):
-    def test_v2_uses_unambiguous_revision_fields(self):
+    def test_v3_uses_unambiguous_revision_fields(self):
         payload = identity().as_dict()
         self.assertEqual(payload["schema_version"], IDENTITY_SCHEMA_VERSION)
-        self.assertEqual(payload["model_revision"], "openpi@immutable:pi05")
+        self.assertEqual(payload["model_revision"], "pi05-r1")
         self.assertEqual(payload["engine_revision"], "aaaaaaa")
         self.assertNotIn("revision", payload)
         self.assertEqual(Identity.from_dict(payload), identity())
@@ -82,7 +84,7 @@ class IdentitySerializationTests(unittest.TestCase):
 
     def test_unknown_schema_version_is_rejected(self):
         payload = identity().as_dict()
-        payload["schema_version"] = 3
+        payload["schema_version"] = 4
         with self.assertRaises(ValueError):
             Identity.from_dict(payload)
 
@@ -93,9 +95,9 @@ class IdentitySerializationTests(unittest.TestCase):
 
 
 class ProducerIdentityTests(unittest.TestCase):
-    def test_random_checkpoint_seed_changes_model_revision(self):
+    def test_random_checkpoint_seed_changes_provenance_only(self):
         from benchmarks.targets import declare
-        from eval.pi05.reference import _checkpoint_revision
+        from eval.pi05.reference import _checkpoint_id
 
         for target in ("h100/pi0", "h100/pi05"):
             with self.subTest(target=target):
@@ -103,9 +105,9 @@ class ProducerIdentityTests(unittest.TestCase):
                 repeat = declare(target, "reference", seed=0).identity
                 other = declare(target, seed=1).identity
                 self.assertTrue(first.same_workload(repeat))
-                self.assertFalse(first.same_workload(other))
-        self.assertNotEqual(declare("h100/pi05", seed=0).identity.model_revision,
-                            _checkpoint_revision(None, None, 0))
+                self.assertTrue(first.same_workload(other))
+        self.assertNotEqual(declare("h100/pi05", seed=0).measurement_context["weights"]["checkpoint_id"],
+                            _checkpoint_id(None, None, 0))
 
     def test_kernel_csv_carries_complete_identity(self):
         expected = identity().as_dict()

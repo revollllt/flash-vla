@@ -19,6 +19,8 @@ import torch
 
 from flash_vla.models.pi0.spec import (
     ACTION_DIM,
+    MODEL_REVISION,
+    INFERENCE_SIGNATURE,
     DECODER_DIM,
     DECODER_FFN,
     DECODER_HEADS,
@@ -63,6 +65,8 @@ class Pi0(VLA):
     name = "hardware/nvidia/h100/pi0"
     hardware = "h100-sxm5-80gb"
     model = "pi0"
+    model_revision = MODEL_REVISION
+    inference_signature = INFERENCE_SIGNATURE
     precision = "bf16"
     shape_axes = (
         "batch", "num_views", "image_height", "image_width", "image_channels",

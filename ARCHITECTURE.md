@@ -5,12 +5,15 @@ action latency on one fixed workload takes priority over a universal operator
 abstraction, so the atomic unit of production is neither a model nor a kernel:
 
 ```text
-Target = hardware x model revision x shape profile x precision policy
+Target = hardware x inference-compatible model revision x shape profile
+Workload = Target x ExecutionVariant
 ```
 
 Everything specialized — buffers, fusion boundaries, tile configurations,
-kernels — belongs to one Target. Two measurements describe the same thing only
-when they carry the same Target.
+kernels — belongs to one Target. A Target owns a machine-checkable inference signature. Checkpoint values, task,
+source revisions and filesystem locations are provenance rather than Target axes.
+Direct latency comparisons additionally require the same measurement context
+and stable environment.
 
 ![flash-vla architecture](docs/arch.png)
 
@@ -100,13 +103,20 @@ component share its kernels and diverge only in their plans.
   return values are ignored.
 - Buffers, their padding and their alias views are declared data, not a
   consequence of running the graph.
-- Every report carries an `Identity`. A workload match requires hardware,
-  model, immutable model revision, the complete shape profile and precision
-  policy to match. Plan and engine revision remain recorded candidate
-  variables and do not change the workload. Checkpoint producers pass the
-  model revision explicitly; dirty source has no resolved engine revision.
-  Official-baseline identities remain in gate
-  evidence, and a workload mismatch blocks the verdict.
+- New runner reports carry Identity v3. A workload match requires hardware,
+  model, architecture revision, inference signature, complete shape and
+  ExecutionVariant. Plan and engine revision are candidate provenance.
+  Targets own architecture metadata; producers pass checkpoint provenance
+  separately. The runner checks weight ABI before allocation. Dirty source
+  has no resolved engine revision.
+- MeasurementContext separates weights, fixture and comparable environment
+  from Target identity. A/B/A legs must share a segment key. Checkpoint,
+  fixture or environment changes cannot be attributed as candidate speedup.
+  Reference implementation revisions remain oracle provenance.
+- Legacy Identity v1/v2 remains readable with its original schema. Explicit
+  v2 migration retains old checkpoint provenance and requires correctness
+  revalidation and a new latency anchor. Unknown Targets require an explicit
+  architecture mapping.
 - The floor model is guidance, never an objective. Its ceiling divides only by
   tagged measured constants of the hardware axis's `measured/` table, its
   roofline only by the axis's `spec.py` peaks, and the registry's stop

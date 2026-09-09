@@ -57,16 +57,18 @@ from flash_vla.hardware.nvidia.h100.pi0 import TARGET
 from flash_vla.models.pi0 import random_checkpoint, random_checkpoint_revision
 
 runner = ModelRunner(TARGET, random_checkpoint(),
-                     model_revision=random_checkpoint_revision(0),
+                     checkpoint_id=random_checkpoint_revision(0),
+                     checkpoint_digest=random_checkpoint_revision(0),
                      num_views=3, chunk_size=50)
 actions = runner.forward(images=images, state=state, noise=noise)
 ```
 
 `random_checkpoint()` fabricates weights so the pipeline can be run and timed
 without a trained model. For real weights, pass a dict matching
-`flash_vla.models.pi0.spec.weight_shapes()` and its immutable checkpoint ID as
-`model_revision`. Benchmark factories derive a project-defined revision from
-their deterministic random-fixture version and seed.
+`flash_vla.models.pi0.spec.weight_shapes()` with `checkpoint_id` and immutable manifest provenance as `checkpoint_digest`.
+The Target owns its architecture revision and inference signature. Benchmark
+factories record their deterministic producer version and seed as checkpoint
+provenance, so changing a seed does not create a new Target.
 
 ## Benchmarks and checks
 

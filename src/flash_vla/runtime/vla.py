@@ -71,6 +71,8 @@ class VLA:
     name: str
     hardware: str
     model: str
+    model_revision: str
+    inference_signature: str
     precision: str = "bf16"
     #: Ordered graph-static axes returned by `shape`; each Target owns this schema.
     shape_axes: tuple[str, ...]
@@ -106,6 +108,10 @@ class VLA:
     def build(self, g: Graph, shape: Mapping[str, int]) -> None:
         """Write the computation graph with the graph API."""
         raise NotImplementedError
+
+    def checkpoint_shapes(self, checkpoint: Mapping[str, Any]) -> Mapping[str, tuple[int, ...]]:
+        """Weight metadata only; file-backed Targets override to avoid loading tensors."""
+        return {name: tuple(value.shape) for name, value in checkpoint.items()}
 
     def load_weights(self, checkpoint: Mapping[str, torch.Tensor],
                      weights: Mapping[str, torch.Tensor]) -> None:
