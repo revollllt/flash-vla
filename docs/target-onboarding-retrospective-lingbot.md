@@ -104,7 +104,7 @@ orchestration 加 Agent 手工生成；积累第二个独立新模型后再按 R
 | official/project Python 依赖不同 | 冻结 official environment，作业显式选择解释器 | 第二个 Target 需要相同多环境编排 |
 | parity stdout 被 upstream 日志污染 | upstream stdout 转 stderr，JSON stdout 保持纯净 | 已是通用 CLI hygiene，无需新 runtime 层 |
 | A/A' 因重复 engine 构建产生约 14 ms 漂移 | 每个 unique plan 构建一次并复用 A engine | 其他 Target 复现同一生命周期 invariant |
-| 长暂停后的环境漂移 | re-anchor 根据完整环境自动分配 measurement segment | 已属于 Campaign 通用 invariant |
+| 长暂停后的性能漂移 | re-anchor 对比 incumbent latency；超出既有 noise policy 时自动分配新 measurement segment | 已属于 Campaign 通用 invariant |
 | source-version qualification 不支持 | 当前使用同树 route，未绕过 gate | 合法 Target 无法以 route 表达时按 Rule B 提取 |
 
 因此 P7 的动作是保留上述边界和重开条件，而不是立即增加 runtime surface。
