@@ -38,6 +38,7 @@ against the acceptance registry.
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import os
 import platform
@@ -325,7 +326,8 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         print(json.dumps(legs[-1]["metrics"]), flush=True)
         if evidence is not None:
             print(attribution_summary(evidence), flush=True)
-        del engine
+        del engine, inputs
+        gc.collect()
         torch.cuda.empty_cache()
 
     report = {
