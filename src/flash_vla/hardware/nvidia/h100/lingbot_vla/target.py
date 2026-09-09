@@ -92,9 +92,9 @@ class LingBotVLA(VLA):
     }
     registry = REGISTRY
     plan = {
-        "lingbot_vision": "upstream-shipped",
-        "lingbot_prefix": "upstream-shipped",
-        "lingbot_action": "upstream-shipped",
+        "lingbot_vision": "rope-frequency",
+        "lingbot_prefix": "rope-frequency",
+        "lingbot_action": "rope-frequency",
     }
     reference_plan: Mapping[str, str] = {}
 
