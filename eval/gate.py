@@ -27,6 +27,9 @@ Verdicts, in the order they are decided:
            checkpoint is missing
   pass     everything above held
 
+With --correctness-only, successful required checks return correctness_pass.
+This is not a qualification pass: latency and deployment have not been checked.
+
 `--mode improve` (default) is for a performance candidate: it must improve the
 chunk `min` by more than the promotion bar and the control spread, and regress
 neither `median` nor `p99` by more than the spread. `--mode no-regression` is
@@ -295,7 +298,7 @@ def _deployment_verdict(report: dict[str, Any], dep: dict[str, Any]) -> dict[str
 def run(target: str, candidate: str = "shipped", reference: str = "shipped",
         mode: str | None = None, reps: int | None = None, seed: int = 0,
         baseline: bool = False, out_dir: str | None = None,
-        include_floor: bool = False) -> dict[str, Any]:
+        include_floor: bool = False, correctness_only: bool = False) -> dict[str, Any]:
     """Qualify against the existing incumbent; stop before timing on failed evidence."""
     target = resolve(target)
     candidate = candidate or "shipped"
@@ -342,10 +345,14 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
         record["reason"] = f"required correctness evidence: failed={failed}, blocked={blocked}"
         return _finish(record, out_dir)
 
+    if correctness_only:
+        record["verdict"], record["reason"] = "correctness_pass", "required correctness checks passed; latency not run"
+        return _finish(record, out_dir)
+
     lat = spec["latency"]
     plans = [reference, candidate, reference]
     latency_report = latency.run(target, plans, reps=reps or lat["reps"], warmup=lat["warmup"],
-                                 seed=seed)
+                                 seed=seed, attribution=False)
     record["latency"] = {"report": latency_report,
                          "rule": _latency_verdict(latency_report, lat, mode)}
     record["deployment"] = _deployment_verdict(latency_report, spec["deployment"])
@@ -433,15 +440,17 @@ def main(argv=None) -> int:
     parser.add_argument("--reps", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--baseline", action="store_true", help="also run the baseline-tier scripts")
+    parser.add_argument("--correctness-only", action="store_true",
+                        help="run the existing correctness ladder without latency or floor work")
     parser.add_argument("--floor", action="store_true", help="also collect the optional diagnostic floor")
     parser.add_argument("--out-dir", default=None)
     args = parser.parse_args(argv)
     mode = args.mode.replace("-", "_") if args.mode else None
     record = run(args.target, args.candidate, reference=args.reference, mode=mode,
                  reps=args.reps, seed=args.seed, baseline=args.baseline, out_dir=args.out_dir,
-                 include_floor=args.floor)
+                 include_floor=args.floor, correctness_only=args.correctness_only)
     print(summary(record))
-    return {"pass": 0, "fail": 1, "blocked": 2}[record["verdict"]]
+    return {"pass": 0, "correctness_pass": 0, "fail": 1, "blocked": 2}[record["verdict"]]
 
 
 if __name__ == "__main__":

@@ -153,3 +153,24 @@ the runner's device. Application clock readings alone do not certify locked
 clocks: until the actual policy is established, clock_policy remains null and
 the complete-context check rejects formal acceptance. Environment probes do not
 substitute for model correctness, re-anchor or A/B/A evidence.
+
+The existing evaluator can run its registered correctness ladder separately via
+`python -m eval.gate --target TARGET --baseline --correctness-only`. Required
+failures still stop subsequent work. Success exits zero with the distinct
+correctness_pass verdict, which cannot authorize promotion without full
+qualification. Formal gate timing disables attribution
+sampling; diagnostic timing remains available through the benchmark CLI.
+
+`python -m lab.optimize.reports correctness GATE.json --out CHECK.json` converts
+a completed ladder report. `anchor LATENCY.json --correctness CHECK.json` converts
+an incumbent A/A/A run; `comparison LATENCY.json --segment N` converts candidate
+A/B/A evidence. Both accept --objective and --out. A full gate report can also
+supply its embedded latency, and its correctness can be used directly for an
+anchor. These commands read existing reports and emit one normalized JSON
+object; they never rerun measurement or infer missing provenance.
+
+Conversion requires the actual latency-v2 repetition, warmup and soak settings,
+valid control spread, complete uninstrumented statistics, and bound correctness
+evidence. A faster numerical failure cannot become acceptable through this
+format conversion. Compatibility command production, actual checkpoint loading
+and verifiable clock policy remain necessary for the real transfer drill.

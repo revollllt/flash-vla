@@ -35,6 +35,9 @@ from typing import Any
 import torch
 
 from benchmarks.targets import PLAN_NAMES, build, resolve
+from benchmarks.latency import _env
+from benchmarks.metrics import report_context
+from flash_vla.runtime.identity import MeasurementContext
 from eval.acceptance import DEFAULTS, tolerances
 from eval.metrics import error_metrics
 
@@ -78,6 +81,10 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
     depth = {k: v for k, v in (("steps", steps), ("layers", layers)) if v is not None}
     reference = build(target, "reference", seed=seed, **depth, **overrides)
     candidate = build(target, plan or "shipped", seed=seed, **depth, **overrides)
+    oracle = dict(reference.identity.as_dict(), plan=reference.target.registry.resolve(
+        reference.target.select_plan("reference"), reference.graph.call_sites))
+    if reference.identity.plan != oracle["plan"]:
+        raise ValueError("reference runner does not use the Target reference route")
     tol = tolerances(reference.identity.precision)
     if threshold not in tol:
         raise KeyError(f"threshold {threshold!r} is not a tolerance of "
@@ -88,6 +95,11 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
         raise ValueError("reference and candidate are not the same workload")
     if reference.measurement_context["weights"] != candidate.measurement_context["weights"]:
         raise ValueError("reference and candidate use different checkpoint provenance")
+    if reference.measurement_context["fixture"] != candidate.measurement_context["fixture"]:
+        raise ValueError("reference and candidate use different fixture provenance")
+    environment = _env(candidate.device)
+    contexts = {role: report_context(engine, environment)
+                for role, engine in (("reference", reference), ("candidate", candidate))}
     inputs = reference.sample_inputs(seed)
     active_layers = reference.identity.shape.get("layers")
 
@@ -95,7 +107,7 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
     # the valid prefix length) before the lockstep pass that is compared.
     reference.forward(**inputs)
     candidate.forward(**inputs)
-    torch.cuda.synchronize()
+    torch.cuda.synchronize(candidate.device)
 
     stages: dict[str, Any] = {}
     finite = True
@@ -108,7 +120,7 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
             continue
         reference.replay(step.name)
         candidate.replay(step.name)
-        torch.cuda.synchronize()
+        torch.cuda.synchronize(candidate.device)
         outputs = reference.stage_outputs.get(step.name, ())
         stages[step.name] = {}
         for name, layer_axis in outputs:
@@ -123,16 +135,16 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
             finite &= is_finite
             if isolate:
                 got.copy_(ref)
-        torch.cuda.synchronize()
+        torch.cuda.synchronize(candidate.device)
 
     # Replay determinism: the candidate's whole forward twice, bit-identical.
     first = candidate.forward(**inputs).clone()
-    torch.cuda.synchronize()
+    torch.cuda.synchronize(candidate.device)
     second = candidate.forward(**inputs).clone()
-    torch.cuda.synchronize()
+    torch.cuda.synchronize(candidate.device)
     replay_identical = bool(torch.equal(first, second))
     ref_out = reference.forward(**inputs).clone()
-    torch.cuda.synchronize()
+    torch.cuda.synchronize(candidate.device)
     output = _compare("output", ref_out, second, None, active_layers)
 
     compared = [output["metrics"]] + [
@@ -141,12 +153,16 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
     max_rel_rms = max(m["rel_rms"] for m in compared)
     tolerance = tol[threshold]
     within = bool(min_cosine > tolerance["cosine_min"] and max_rel_rms < tolerance["rel_rms_max"])
+    after = report_context(candidate, _env(candidate.device))
+    if (MeasurementContext.from_dict(after).segment_key
+            != MeasurementContext.from_dict(contexts["candidate"]).segment_key):
+        raise ValueError("correctness measurement context changed during execution")
     shallow = steps == 1 and layers == 1
     report = {
         "identity": {"reference": reference.identity.as_dict(),
                      "candidate": candidate.identity.as_dict()},
-        "measurement_context": {"reference": reference.measurement_context,
-                                "candidate": candidate.measurement_context},
+        "measurement_context": contexts,
+        "numerical_oracle": {"identity": oracle},
         "config": {"steps": steps, "layers": layers, "seed": seed, "isolate": isolate,
                    "oracle": "in_engine_reference"},
         "stages": stages,

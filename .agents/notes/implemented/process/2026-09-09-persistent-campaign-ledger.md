@@ -56,6 +56,26 @@ control spread policy. The canonical Matplotlib plot contains separate latency
 lines per segment and independent anchor annotations; reproducible SVG IDs
 ensure deterministic output.
 
+Campaign report conversion consumes the existing evaluator and latency outputs.
+It preserves original A/B/A legs, validates the producer's fixed sampling policy
+and refuses diagnostic instrumentation, incomplete statistics or unknown context.
+A re-anchor uses repeated measurements of the same implementation; its middle
+leg is the anchor, and all three control minima must agree within the existing
+acceptance policy. Conversion itself never reruns an experiment.
+
+Correctness conversion uses the existing acceptance ladder, including its
+gate/report distinction, numerical tolerances and official adapter provenance.
+In-engine checks at different ladder depths must describe the same checkpoint,
+fixture and stable environment, with candidate implementation and prescribed
+depths bound to the report. Finite and replay-identical outputs remain required.
+A diagnostic deep comparison does not acquire a numerical gate by conversion.
+Unknown quality contracts cannot authorize nondefault ExecutionVariants.
+The reference route and engine revision must match the producer's declared
+numerical oracle; required official scripts must exactly cover the registered
+adapters. Leg instrumentation cannot contradict an uninstrumented label.
+Correctness-only success is explicitly scoped as correctness_pass and cannot
+substitute for the full qualification pass required by promotion.
+
 Measurement environment queries select the actual CUDA device by UUID, including
 visibility remapping. Requested and enforced power limits are distinct measured
 values. Query failures remain errors. Environment snapshots bracket every latency
@@ -121,6 +141,11 @@ materialize packed/calibration outputs, reject incompatible input and stale
 measurement evidence, recover failed commands, and retain iteration numbering.
 Separate Git commits verify the actual isolated execution revision. Rendering
 tests verify disconnected segment lines and byte-identical repeated SVG output.
+Report-conversion tests execute the real harness and gate logic with CPU toy
+engines, then feed their produced schemas through the offline CLI and Campaign
+creation. Failure cases include missing gates, wrong depth or implementation,
+checkpoint/context drift, weak official evidence and changed latency sampling.
+They do not certify real model numerical parity or GPU measurement provenance.
 Registry tests use separate Python processes contending on the same key, real
 temporary Git source snapshots, corrupt authoritative files and stale derived
 state. CLI tests resolve Campaign paths without human directory naming.
