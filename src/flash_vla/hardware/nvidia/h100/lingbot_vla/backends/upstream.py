@@ -272,12 +272,47 @@ def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets
     return core
 
 
+def _prepare_time_modulation(core, steps, dtype, device):
+    # Pi0.5 precomputes fixed-timestep AdaRMS conditions too. Preserve LingBot's
+    # own BF16 schedule, embedding, and linear arithmetic rather than its fold.
+    from lingbotvla.models.vla.pi0.utils import create_sinusoidal_pos_embedding
+
+    dt = torch.tensor(-1.0 / steps, dtype=dtype, device=device)
+    time = torch.tensor(1.0, dtype=dtype, device=device)
+    conditions = []
+    for _ in range(steps):
+        condition = create_sinusoidal_pos_embedding(
+            time.expand(1), core.config.proj_width, 4e-3, 4.0, device=device,
+        ).to(dtype=dtype)
+        if core.config.separate_time_proj:
+            condition = torch.nn.functional.silu(core.time_mlp_in(condition))
+            condition = torch.nn.functional.silu(core.time_mlp_out(condition))
+        conditions.append(condition)
+        time += dt
+
+    step = [0]
+    layers = core.qwenvl_with_expert.qwen_expert.model.layers
+    depth = core.qwenvl_with_expert.qwenvl.config.num_hidden_layers
+    for layer in layers[:depth]:
+        for norm in (layer.input_layernorm, layer.post_attention_layernorm):
+            for projection in (norm.gamma, norm.beta):
+                values = [projection(condition) for condition in conditions]
+
+                def cached_forward(condition, values=values):
+                    return values[step[0]]
+
+                projection.forward = cached_forward
+    return step
+
+
 class _State:
     def __init__(self, cache_rope_frequency: bool, assets, linear_patch_embedding: bool,
-                 cache_rope_tables: bool) -> None:
+                 cache_rope_tables: bool, precompute_time_modulation: bool) -> None:
         self.core = None
         self.vision_metadata = None
         self.action_constants = None
+        self.precompute_time_modulation = precompute_time_modulation
+        self.time_modulation_step = None
         self.cache_rope_frequency = cache_rope_frequency
         self.linear_patch_embedding = linear_patch_embedding
         self.cache_rope_tables = cache_rope_tables
@@ -292,9 +327,10 @@ class _State:
 
 
 def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
-                  linear_patch_embedding=False, cache_rope_tables=False):
+                  linear_patch_embedding=False, cache_rope_tables=False,
+                  precompute_time_modulation=False):
     state = _State(cache_rope_frequency, scratch.assets, linear_patch_embedding,
-                   cache_rope_tables)
+                   cache_rope_tables, precompute_time_modulation)
 
     @torch.no_grad()
     def vision(pixel_values, out, layers, *weights):
@@ -363,10 +399,16 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                 torch.tensor(-1.0 / steps, dtype=noise.dtype, device=noise.device),
                 torch.tensor(1.0, dtype=noise.dtype, device=noise.device),
             )
+        if state.precompute_time_modulation and state.time_modulation_step is None:
+            state.time_modulation_step = _prepare_time_modulation(
+                core, steps, noise.dtype, noise.device,
+            )
         dt, initial_time = state.action_constants
         time = initial_time.clone()
         current = noise.clone()
         for step in range(steps):
+            if state.time_modulation_step is not None:
+                state.time_modulation_step[0] = step
             velocity = core.predict_velocity(
                 state_tensor, prefix_masks, cache, current, time.expand(1)
             )
