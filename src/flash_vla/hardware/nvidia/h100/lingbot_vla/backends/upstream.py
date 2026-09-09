@@ -272,7 +272,7 @@ def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets
     return core
 
 
-def _prepare_time_modulation(core, steps, dtype, device):
+def _prepare_time_modulation(core, steps, dtype, device, *, fuse_norm=False):
     # Pi0.5 precomputes fixed-timestep AdaRMS conditions too. Preserve LingBot's
     # own BF16 schedule, embedding, and linear arithmetic rather than its fold.
     from lingbotvla.models.vla.pi0.utils import create_sinusoidal_pos_embedding
@@ -302,16 +302,27 @@ def _prepare_time_modulation(core, steps, dtype, device):
                     return values[step[0]]
 
                 projection.forward = cached_forward
+            if fuse_norm:
+                from .fused_norm import ada_rms
+
+                def normalized(hidden_states, condition, norm=norm):
+                    return ada_rms(hidden_states, norm.weight,
+                                   norm.gamma(condition).unsqueeze(1),
+                                   norm.beta(condition).unsqueeze(1),
+                                   norm.variance_epsilon)
+
+                norm.forward = normalized
     return step
 
 
 class _State:
     def __init__(self, cache_rope_frequency: bool, assets, linear_patch_embedding: bool,
-                 cache_rope_tables: bool, precompute_time_modulation: bool) -> None:
+                 cache_rope_tables: bool, precompute_time_modulation: bool, fuse_norm: bool) -> None:
         self.core = None
         self.vision_metadata = None
         self.action_constants = None
         self.precompute_time_modulation = precompute_time_modulation
+        self.fuse_norm = fuse_norm
         self.time_modulation_step = None
         self.cache_rope_frequency = cache_rope_frequency
         self.linear_patch_embedding = linear_patch_embedding
@@ -328,9 +339,9 @@ class _State:
 
 def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                   linear_patch_embedding=False, cache_rope_tables=False,
-                  precompute_time_modulation=False):
+                  precompute_time_modulation=False, fuse_norm=False):
     state = _State(cache_rope_frequency, scratch.assets, linear_patch_embedding,
-                   cache_rope_tables, precompute_time_modulation)
+                   cache_rope_tables, precompute_time_modulation, fuse_norm)
 
     @torch.no_grad()
     def vision(pixel_values, out, layers, *weights):
@@ -401,7 +412,7 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
             )
         if state.precompute_time_modulation and state.time_modulation_step is None:
             state.time_modulation_step = _prepare_time_modulation(
-                core, steps, noise.dtype, noise.device,
+                core, steps, noise.dtype, noise.device, fuse_norm=state.fuse_norm,
             )
         dt, initial_time = state.action_constants
         time = initial_time.clone()

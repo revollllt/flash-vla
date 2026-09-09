@@ -1,0 +1,5 @@
+{
+  "lingbot_vision": "fused-norm",
+  "lingbot_prefix": "fused-norm",
+  "lingbot_action": "fused-norm"
+}

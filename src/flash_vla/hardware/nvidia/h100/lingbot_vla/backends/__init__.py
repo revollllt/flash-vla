@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from flash_vla.runtime.registry import Registry
 
+from . import fused_norm as _fused_norm
 from . import patch_linear as _patch_linear
 from . import rope_frequency as _rope_frequency
 from . import rope_table as _rope_table
@@ -16,6 +17,7 @@ BACKENDS = {
     "patch-linear": _patch_linear,
     "rope-table": _rope_table,
     "time-modulation": _time_modulation,
+    "fused-norm": _fused_norm,
 }
 REGISTRY = Registry(BACKENDS, default="upstream-reference")
 
