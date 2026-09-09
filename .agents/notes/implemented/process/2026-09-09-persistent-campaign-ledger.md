@@ -13,13 +13,31 @@ mix workloads and attribute environment drift to code.
 ## Decision
 
 Legacy campaigns bind TargetKey, objective, benchmark protocol and fixture.
-V3 workload identity also separates ExecutionVariant; the pending
-[checkpoint-independent transition proposal](../../proposed/architecture/2026-09-09-checkpoint-independent-optimization.md)
-moves fixture measurement provenance outside campaign identity. `campaign.json`, iteration evidence and source materialization receipts are facts;
-status, normalized trace, Markdown, and plots are rebuildable views. Incumbent
-movement is derived only from atomic terminal evidence. The canonical plot is
-rendered by Matplotlib from normalized plot points and marks environment
-re-anchors separately from code promotions.
+V3 Campaign identity binds the workload (TargetKey and ExecutionVariant),
+objective and benchmark protocol. Checkpoint and fixture provenance identify a
+measurement context; the stable measurement environment additionally identifies
+its segment. Context changes preserve Campaign and optimization iteration IDs.
+
+Campaign metadata, iteration evidence, transition evidence and materialization
+receipts are authoritative; state, normalized trace and plots are rebuildable
+views. Context activation requires compatible assets, the inherited portable
+implementation, its necessary artifact/calibration recipes, correctness and an
+uninstrumented incumbent measurement. Re-anchor is a segment boundary, never an
+optimization iteration or a cross-context speedup.
+
+A transition executes the committed portable engine in a clean isolated
+checkout. Declared inputs must match that commit, and actual runner provenance
+must match the execution revision. Every new execution directory rebuilds
+required artifacts; equal asset identities do not prove artifacts exist there.
+Completed stages survive interruption. Failed stages require explicit
+reconciliation; aborted transitions require a fresh anchor before comparison.
+
+Correctness binds the full stable context, while structural compatibility is
+independent of candidate kernels. Candidate and parent latencies derive from
+validated same-context A/B/A legs, including the fixed sampling protocol and
+control spread policy. The canonical Matplotlib plot contains separate latency
+lines per segment and independent anchor annotations; reproducible SVG IDs
+ensure deterministic output.
 
 The registered Pi histories import the original job 600566 latency JSON and
 candidate JSONL rows verbatim. They receive `legacy_import` evidence level,
@@ -67,6 +85,12 @@ preservation, and mandatory re-anchor. Renderer tests exercise SVG plus optional
 PNG/HTML using Matplotlib 3.10.8 in the original environment. Applicability tests
 cover dependency validation, portable ancestor recipe retention, actual temporary
 file restoration, context-only trace points and preservation of unrelated edits.
-These CPU tests do not establish real checkpoint transfer or recipe execution.
+Transition tests execute CPU subprocesses against small on-disk weights,
+materialize packed/calibration outputs, reject incompatible input and stale
+measurement evidence, recover failed commands, and retain iteration numbering.
+Separate Git commits verify the actual isolated execution revision. Rendering
+tests verify disconnected segment lines and byte-identical repeated SVG output.
+These fixtures do not establish real Pi0.5/LingBot checkpoint transfer or GPU
+performance.
 
 Related: [the original optimization campaign](../performance/2026-09-06-optimization-campaign-plan.md).

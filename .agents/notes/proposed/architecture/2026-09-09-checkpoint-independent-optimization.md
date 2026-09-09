@@ -4,8 +4,8 @@ Status: proposed
 
 ## Problem
 
-The current Identity v2 treats checkpoint revisions as model revisions, and
-Campaign fixes fixture identity. Compatible fine-tuned weights therefore lose
+The legacy Identity v2 treated checkpoint revisions as model revisions, and
+legacy Campaigns fixed fixture identity. Compatible fine-tuned weights therefore lose
 optimization lineage, while removing those comparisons without replacing them
 would permit false cross-checkpoint speedups. This proposal replaces the
 checkpoint identity decision in the
@@ -42,9 +42,10 @@ and compatible signature are available.
 ## Acceptance criteria
 
 The v3 identity matrix, explicit migration, runner producers and context changes
-must be tested independently of GPU latency. Campaign transfer, concurrency,
-publication, interruption recovery and real checkpoint drills follow in their
-planned phases. Random-weight tests do not establish real-checkpoint transfer.
+must be tested independently of GPU latency. Identity semantics and the
+[transition ledger boundary](../../implemented/process/2026-09-09-persistent-campaign-ledger.md)
+are implemented. Automatic Campaign discovery, publication, fresh-clone recovery
+and real checkpoint drills remain required in their planned phases. Random-weight tests do not establish real-checkpoint transfer.
 
 ## Risks
 

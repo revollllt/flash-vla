@@ -1,7 +1,7 @@
 """Normalize Campaign Ledger facts into the one optimization trace schema."""
 from pathlib import Path
 
-from . import campaign, store
+from . import campaign, store, transition
 
 
 ENVIRONMENT_FIELDS = campaign.MEASUREMENT_ENVIRONMENT_FIELDS
@@ -46,7 +46,13 @@ def normalize(directory):
     if objective.get('name') != metadata['objective'] or objective.get('unit') != 'ms':
         raise ValueError('baseline objective must match the campaign and use milliseconds')
     campaign_baseline = float(objective['value'])
-    previous_segment = _segment(baseline_source)
+    context_segments = (transition.segments(directory, baseline_source)
+                        if 'execution_variant' in metadata else [])
+    context_events = {}
+    for segment in context_segments[1:]:
+        context_events.setdefault(segment['before_iteration'], []).append(segment)
+    previous_segment = (transition.descriptor(context_segments[0], metadata['protocol'])
+                        if context_segments else _segment(baseline_source))
     segment_anchor = campaign_baseline
     incumbent = campaign_baseline
     target = metadata['target']
@@ -72,6 +78,10 @@ def normalize(directory):
     entries = []
     for record in records:
         iteration = record['iteration']
+        for anchor in context_events.get(iteration, []):
+            previous_segment = transition.descriptor(anchor, metadata['protocol'])
+            segment_anchor = float(anchor['measurement']['objective']['value'])
+            incumbent = segment_anchor
         measurement = record['measurement']
         verdict = record.get('verdict')
         if iteration == 0:
@@ -161,8 +171,14 @@ def normalize(directory):
                        if verdict == 'accepted' else 'not_promoted'),
             diagnostic_artifacts=record['diagnostics'], experiment_cost=record['cost'])
         entries.append(entry)
+    anchors = [dict(id=segment['id'], before_iteration=segment['before_iteration'],
+                    incumbent=segment['incumbent'],
+                    identity=segment['measurement']['identity'],
+                    measurement_context=segment['measurement']['measurement_context'],
+                    anchor_ms=segment['measurement']['objective']['value'])
+               for segment in context_segments]
     return dict(schema_version=1, campaign_id=metadata['id'], metadata=trace_metadata,
-                iterations=entries)
+                iterations=entries, segments=anchors)
 
 
 def progress_markdown(value):

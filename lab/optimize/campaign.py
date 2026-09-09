@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 import time
 
-from . import runner, store
+from . import measurement as measurements, runner, store, transition
 from eval import acceptance
 from .schema import STAGES, validate as validate_experiment, validate_applicability
 
@@ -58,6 +58,14 @@ def create(directory, baseline_evidence, objective, protocol, fixture, *, root=N
     target = target_key(identity)
     if directory.exists():
         raise FileExistsError(directory)
+    if identity.get('schema_version') == 3:
+        measurements.latency(baseline_evidence, expected_identity=identity,
+                             expected_context=baseline_evidence['measurement_context'],
+                             protocol=protocol, objective=objective)
+        measurements.correctness(baseline_evidence['correctness'], identity,
+                                 baseline_evidence['measurement_context'])
+        if fixture != baseline_evidence['measurement_context']['fixture']['id']:
+            raise ValueError('baseline fixture differs from its measurement context')
     metadata = dict(version=1, id=directory.name, created=time.time(),
                     target=target, objective=objective,
                     protocol=protocol, fixture=fixture,
@@ -77,6 +85,9 @@ def create(directory, baseline_evidence, objective, protocol, fixture, *, root=N
                     diagnostics={}, cost=baseline_evidence.get(
                         'cost', {'cpu_seconds': 0.0, 'gpu_seconds': 0.0, 'jobs': []}),
                     verdict='accepted')
+    if identity.get('schema_version') == 3:
+        baseline['correctness'] = baseline_evidence['correctness']
+        baseline['measurement']['validity'] = 'valid'
     if root is not None:
         if not inputs:
             raise ValueError('baseline source capture requires explicit inputs')
@@ -87,7 +98,7 @@ def create(directory, baseline_evidence, objective, protocol, fixture, *, root=N
     return metadata
 
 
-def _validate_record(metadata, record, expected_iteration, incumbent):
+def _validate_record(metadata, record, expected_iteration, incumbent, segment=None, parent_identity=None):
     if record.get('iteration') != expected_iteration:
         raise ValueError(f'non-monotonic iteration: expected {expected_iteration}')
     if expected_iteration == 0:
@@ -107,8 +118,59 @@ def _validate_record(metadata, record, expected_iteration, incumbent):
         validate_applicability(record['spec'])
     if record['spec'].get('protocol') != metadata['protocol']:
         raise ValueError(f'iter-{expected_iteration:03d} has a different protocol')
-    if record['spec'].get('fixture') != metadata['fixture']:
-        raise ValueError(f'iter-{expected_iteration:03d} has a different fixture')
+    if segment is None:
+        if record['spec'].get('fixture') != metadata['fixture']:
+            raise ValueError(f'iter-{expected_iteration:03d} has a different fixture')
+    else:
+        _validate_candidate_context(metadata, record, segment, parent_identity)
+
+
+
+def implementation_identity(record):
+    value = (record['measurement']['evidence']['identity'] if record['iteration'] == 0
+             else record['campaign_identity'])
+    return dict(value, engine_revision=record['change']['engine_revision'])
+
+
+def incumbent_record(directory, state):
+    return _records(directory)[int(state['current_incumbent'].split('-')[1])][1]
+
+
+def _validate_candidate_context(metadata, record, segment, parent_identity=None):
+    spec = record['spec']
+    active = measurements.context(segment['measurement']['measurement_context'])
+    observed = measurements.context(spec['measurement_context'])
+    if observed.segment_key != active.segment_key or spec['measurement_segment'] != segment['id']:
+        raise ValueError('candidate context/segment differs; transition and re-anchor first')
+    if spec['fixture'] != active.fixture['id']:
+        raise ValueError('candidate fixture differs from active measurement context')
+    identity = implementation_identity(record)
+    result = record['measurement']
+    if isinstance(record['correctness'], dict) and record['correctness'].get('status') == 'pass':
+        measurements.correctness(record['correctness'], identity, spec['measurement_context'])
+    if result.get('validity') == 'valid':
+        normalized = dict(result, objective=dict(name=metadata['objective'], unit='ms',
+                                                value=result['candidate_ms']))
+        measurements.latency(normalized, expected_identity=identity,
+                             expected_context=spec['measurement_context'],
+                             protocol=metadata['protocol'], objective=metadata['objective'])
+        if result['measurement_segment'] != transition.descriptor(segment, metadata['protocol']):
+            raise ValueError('candidate measurement belongs to another segment')
+        measurements.comparison(result, expected_identity=identity, parent_identity=parent_identity,
+                                expected_context=spec['measurement_context'],
+                                protocol=metadata['protocol'], objective=metadata['objective'])
+
+
+def _activate_segment(metadata, records, segment, incumbent):
+    if segment['incumbent'] != incumbent:
+        raise ValueError('segment anchor does not use the portable incumbent')
+    identity = implementation_identity(records[int(incumbent.split('-')[1])][1])
+    anchor = segment['measurement']
+    measurements.correctness(anchor['correctness'], identity, anchor['measurement_context'])
+    measurements.latency(anchor, expected_identity=identity,
+                         expected_context=anchor['measurement_context'],
+                         protocol=metadata['protocol'], objective=metadata['objective'])
+    return segment
 
 
 def rebuild(directory):
@@ -121,6 +183,16 @@ def rebuild(directory):
     if not records:
         raise ValueError('campaign has no iter-000 baseline')
     incumbent = 'iter-000'
+    context_segments = (transition.segments(directory, records[0][1]['measurement']['evidence'])
+                        if 'execution_variant' in metadata else [])
+    context_events = {}
+    for segment in context_segments:
+        boundary = segment['before_iteration']
+        if not 0 <= boundary <= len(records):
+            raise ValueError('segment boundary lies outside the campaign lineage')
+        context_events.setdefault(boundary, []).append(segment)
+    active_segment = None
+    contextual_latency = None
     baseline_objective = records[0][1]['measurement']['evidence'].get('objective', {})
     baseline_latency_ms = (float(baseline_objective['value'])
                            if baseline_objective.get('unit') == 'ms' else None)
@@ -139,7 +211,12 @@ def rebuild(directory):
         'measurement_segment', {'id': 0})['id']
     has_reanchor = False
     for expected, (path, record) in enumerate(records):
-        _validate_record(metadata, record, expected, incumbent)
+        for segment in context_events.get(expected, []):
+            active_segment = _activate_segment(metadata, records, segment, incumbent)
+            contextual_latency = active_segment['measurement']['objective']['value']
+            current_measurement_segment = active_segment['id']
+        _validate_record(metadata, record, expected, incumbent, active_segment,
+                         implementation_identity(records[int(incumbent.split('-')[1])][1]))
         run_cost = record.get('cost', {})
         cost['cpu_seconds'] += run_cost.get('cpu_seconds', 0.0)
         cost['gpu_seconds'] += run_cost.get('gpu_seconds', 0.0)
@@ -156,6 +233,8 @@ def rebuild(directory):
                 'weight_dependency') != 'checkpoint_specific'
             if verdict == 'accepted' and portable:
                 incumbent = label
+                if active_segment:
+                    contextual_latency = record['measurement']['candidate_ms']
                 non_improving = 0
             elif verdict == 'no_benefit':
                 non_improving += 1
@@ -166,15 +245,22 @@ def rebuild(directory):
                 if active is not None:
                     raise ValueError('campaign has multiple active candidates')
                 active = (path.parent, record)
+    for segment in context_events.get(len(records), []):
+        active_segment = _activate_segment(metadata, records, segment, incumbent)
+        contextual_latency = active_segment['measurement']['objective']['value']
+        current_measurement_segment = active_segment['id']
     incumbent_iteration = int(incumbent.split('-', 1)[1])
     incumbent_measurement = records[incumbent_iteration][1]['measurement']
     current_incumbent_latency_ms = (
         baseline_latency_ms if incumbent_iteration == 0
         else incumbent_measurement.get('candidate_ms')
     )
+    if active_segment:
+        current_incumbent_latency_ms = contextual_latency
     improvement_vs_baseline_pct = (
         (current_incumbent_latency_ms / baseline_latency_ms - 1.0) * 100.0
-        if baseline_latency_ms is not None and current_incumbent_latency_ms is not None
+        if (baseline_latency_ms is not None and current_incumbent_latency_ms is not None
+            and (not active_segment or active_segment['id'] == 0))
         else None
     )
     experiments = {verdict: 0 for verdict in VERDICTS}
@@ -189,7 +275,20 @@ def rebuild(directory):
     budget = metadata['budget']
     used = dict(candidates=candidates, non_improving=non_improving, jobs=len(cost['jobs']))
     remaining = {key: max(0, budget[key] - used[key]) for key in budget}
-    reanchor_required = imported_reanchor_required and not has_reanchor
+    transition_records = transition.records(directory) if context_segments else []
+    for _, item in transition_records:
+        for resource in ('cpu_seconds', 'gpu_seconds'):
+            cost[resource] += item['cost'][resource]
+        cost['jobs'] = sorted(set(cost['jobs']) | set(item['cost']['jobs']))
+    used['jobs'] = len(cost['jobs'])
+    remaining = {key: max(0, budget[key] - used[key]) for key in budget}
+    interrupted = [str(path.parent) for path, item in transition_records
+                   if item['status'] not in ('activated', 'aborted')]
+    if len(interrupted) > 1:
+        raise ValueError('campaign has multiple pending context transitions')
+    has_reanchor |= len(context_segments) > 1
+    reanchor_required = ((imported_reanchor_required and not has_reanchor)
+                         or bool(transition_records and transition_records[-1][1]['status'] == 'aborted'))
     stage, next_action = 'candidate_selection', 'start the next candidate from the incumbent'
     campaign_status = 'BASELINED' if len(records) == 1 else 'ACTIVE'
     if active:
@@ -212,6 +311,9 @@ def rebuild(directory):
     if reanchor_required and active is None:
         next_action = 'record a fresh incumbent re-anchor before starting a candidate'
         campaign_status = 'PAUSED'
+    if interrupted:
+        stage, campaign_status = 'context_transition', 'PAUSED'
+        next_action = f'resume or reconcile context transition {interrupted[0]}'
     state = dict(version=1, campaign_id=metadata['id'], status=campaign_status,
                  target=metadata['target'], objective=metadata['objective'],
                  protocol=metadata['protocol'], fixture=metadata['fixture'],
@@ -231,6 +333,13 @@ def rebuild(directory):
                  next_action=next_action, iterations=len(records))
     if 'execution_variant' in metadata:
         state['portable_incumbent'] = incumbent
+        state['measurement_context'] = active_segment['measurement']['measurement_context']
+        state['fixture'] = state['measurement_context']['fixture']['id']
+        state['segment_anchor_latency_ms'] = active_segment['measurement']['objective']['value']
+        state['improvement_vs_context_anchor_pct'] = (
+            (current_incumbent_latency_ms / state['segment_anchor_latency_ms'] - 1) * 100)
+        state['pending_transition'] = interrupted[0] if interrupted else None
+        state['execution_repository'] = active_segment.get('repository')
     store.write(directory / 'state.json', state)
     return state
 
@@ -247,48 +356,46 @@ def portable_optimizations(directory):
 
 
 def materialize_incumbent(root, directory):
-    """Restore declared portable source inputs before editing the next candidate.
-
-    Only the last candidate's recorded edits may be overwritten. Unrecorded edits
-    and inputs outside the incumbent snapshot require explicit resolution.
-    The returned identity supplies the portable plan for the next experiment.
-    """
+    """Restore declared portable inputs without overwriting unrecorded edits."""
     root, directory = Path(root).resolve(), Path(directory).resolve()
     with (directory / 'campaign.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         state = rebuild(directory)
         if state['current_stage'] != 'candidate_selection':
-            raise RuntimeError('cannot materialize while a candidate is active')
-        records = [record for _, record in _records(directory)]
-        incumbent = records[int(state['current_incumbent'].split('-')[1])]
-        if 'source' not in incumbent:
-            raise ValueError('incumbent source snapshot is missing; supply its declared inputs')
-        source = incumbent['source']
-        latest = records[-1]
-        previous = latest.get('source', source)
-        uncovered = set(previous['inputs']) - set(source['inputs'])
-        if uncovered:
-            raise ValueError(f'incumbent snapshot does not cover candidate inputs: {sorted(uncovered)}')
-        copies = []
-        for name in source['inputs']:
-            saved = (Path(source['root']) / name).read_bytes()
-            destination = root / name
-            current = destination.read_bytes() if destination.exists() else None
-            if current == saved:
-                continue
-            if (name not in previous['inputs'] or current is None
-                    or current != (Path(previous['root']) / name).read_bytes()):
-                raise ValueError(f'unrecorded edit must be preserved before materialization: {name}')
-            copies.append((Path(source['root']) / name, destination))
-        identity = (incumbent['measurement']['evidence']['identity']
-                    if incumbent['iteration'] == 0 else incumbent['campaign_identity'])
-        for saved, destination in copies:
-            shutil.copyfile(saved, destination)
-        receipt = dict(after_iteration=latest['iteration'], incumbent=state['current_incumbent'],
-                       repository=str(root), source=source, identity=identity, timestamp=time.time())
-        store.write(directory / 'materializations' / f'after-iter-{latest["iteration"]:03d}.json',
-                    receipt)
-        return receipt
+            raise RuntimeError('cannot materialize while a candidate or transition is active')
+        return _restore_incumbent(root, directory, state)
+
+
+def _restore_incumbent(root, directory, state):
+    records = [record for _, record in _records(directory)]
+    incumbent = records[int(state['current_incumbent'].split('-')[1])]
+    if 'source' not in incumbent:
+        raise ValueError('incumbent source snapshot is missing; supply its declared inputs')
+    source = incumbent['source']
+    latest = records[-1]
+    previous = latest.get('source', source)
+    uncovered = set(previous['inputs']) - set(source['inputs'])
+    if uncovered:
+        raise ValueError(f'incumbent snapshot does not cover candidate inputs: {sorted(uncovered)}')
+    copies = []
+    for name in source['inputs']:
+        saved = (Path(source['root']) / name).read_bytes()
+        destination = root / name
+        current = destination.read_bytes() if destination.exists() else None
+        if current == saved:
+            continue
+        if (name not in previous['inputs'] or current is None
+                or current != (Path(previous['root']) / name).read_bytes()):
+            raise ValueError(f'unrecorded edit must be preserved before materialization: {name}')
+        copies.append((Path(source['root']) / name, destination))
+    identity = implementation_identity(incumbent)
+    for saved, destination in copies:
+        shutil.copyfile(saved, destination)
+    receipt = dict(after_iteration=latest['iteration'], incumbent=state['current_incumbent'],
+                   repository=str(root), source=source, identity=identity, timestamp=time.time())
+    store.write(directory / 'materializations' / f'after-iter-{latest["iteration"]:03d}.json',
+                receipt)
+    return receipt
 
 
 def _parent_materialization(root, directory, spec, state):
@@ -333,7 +440,8 @@ def start(root, spec, directory):
         metadata = store.read(directory / 'campaign.json')
         if not same_workload(metadata, declared):
             raise ValueError('candidate TargetKey does not match campaign')
-        if spec.get('protocol') != metadata['protocol'] or spec.get('fixture') != metadata['fixture']:
+        if (spec.get('protocol') != metadata['protocol']
+                or ('execution_variant' not in metadata and spec.get('fixture') != metadata['fixture'])):
             raise ValueError('candidate protocol or fixture does not match campaign')
         state = rebuild(directory)
         if state['reanchor_required']:
@@ -342,6 +450,12 @@ def start(root, spec, directory):
             raise RuntimeError('campaign already has an active candidate')
         if any(value == 0 for value in state['budget']['remaining'].values()):
             raise RuntimeError('campaign budget exhausted')
+        if 'execution_variant' in metadata:
+            active = transition.segments(directory, _records(directory)[0][1]['measurement']['evidence'])[-1]
+            draft = dict(spec=spec, campaign_identity=declared, iteration=state['iterations'],
+                         change={'engine_revision': declared['engine_revision']},
+                         correctness={}, measurement={})
+            _validate_candidate_context(metadata, draft, active)
         materialization = _parent_materialization(root, directory, spec, state)
         iteration = state['iterations']
         label = f'iter-{iteration:03d}'
@@ -471,6 +585,11 @@ def finalize(directory, iteration, verdict, correctness, measurement, qualificat
                       qualification=qualification, diagnostics=diagnostics or {},
                       verdict=verdict, status='terminal', validity=measurement.get('validity'),
                       conclusion=('improved' if verdict == 'accepted' else verdict))
+        metadata = store.read(directory / 'campaign.json')
+        if 'execution_variant' in metadata:
+            active = transition.segments(directory, _records(directory)[0][1]['measurement']['evidence'])[-1]
+            _validate_candidate_context(metadata, record, active,
+                                        implementation_identity(incumbent_record(directory, state)))
         store.write(matches[0], record)
         return rebuild(directory)
 
@@ -478,6 +597,8 @@ def finalize(directory, iteration, verdict, correctness, measurement, qualificat
 def resume(directory, until='measure', recovered_seconds=None):
     directory = Path(directory).resolve()
     state = rebuild(directory)
+    if state['current_stage'] == 'context_transition':
+        return transition.resume(directory, recovered_seconds=recovered_seconds)
     if state['current_stage'] == 'candidate_selection':
         return state
     matches = list((directory / 'runs').glob('iter-*/evidence.json'))
@@ -493,3 +614,9 @@ def resume(directory, until='measure', recovered_seconds=None):
         runner.reconcile(active[0], recovered_seconds)
     runner.run(active[0], until)
     return rebuild(directory)
+
+
+def transition_context(root, directory, request):
+    """Execute a checkpoint/fixture/environment transition without allocating an iteration."""
+    run_dir = transition.begin(root, directory, request)
+    return transition.run(directory, run_dir)

@@ -71,7 +71,7 @@ def run(directory, until='measure'):
                 continue
             if name in ('measure', 'qualify') and record['correctness'] != 'pass':
                 raise RuntimeError('required correctness evidence is missing')
-            _stage(record, name)
+            run_stage(record, name)
             if record['status'] == 'stopped':
                 break
         if record['status'] != 'stopped':
@@ -81,7 +81,7 @@ def run(directory, until='measure'):
         return record
 
 
-def _stage(record, name):
+def run_stage(record, name):
     directory = Path(record['directory'])
     config = record['spec']['stages'][name]
     resource = 'gpu' if name == 'qualify' else config['resource']
@@ -114,8 +114,12 @@ def _stage(record, name):
             stage['owner'] = scheduler.allocation()
             store.write(directory / 'evidence.json', record)
         with (directory / f'{name}.stdout').open('w') as stdout, (directory / f'{name}.stderr').open('w') as stderr:
-            proc = subprocess.Popen(stage['argv'], cwd=record['repository'], stdout=stdout,
-                                    stderr=stderr, start_new_session=True)
+            environment = dict(os.environ)
+            repository = Path(record['repository'])
+            environment['PYTHONPATH'] = os.pathsep.join(
+                [str(repository / 'src'), str(repository), environment.get('PYTHONPATH', '')])
+            proc = subprocess.Popen(stage['argv'], cwd=repository, stdout=stdout,
+                                    stderr=stderr, start_new_session=True, env=environment)
             stage['pid'] = proc.pid
             store.write(directory / 'evidence.json', record)
             stage['returncode'] = proc.wait(timeout=config.get('timeout_s', 1800))
@@ -173,6 +177,8 @@ def reconcile(directory, recovered_seconds=None):
     with (directory / 'worker.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         record = store.read(directory / 'evidence.json')
+        if record['status'] in ('activated', 'aborted'):
+            raise RuntimeError('context transition is already terminal')
         for name, stage in list(record['stages'].items()):
             if stage['status'] == 'completed':
                 continue

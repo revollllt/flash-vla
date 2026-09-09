@@ -20,7 +20,7 @@ class PlotMetadata:
 
 @dataclass(frozen=True)
 class PlotPoint:
-    iteration: int
+    iteration: int | None
     candidate_id: str
     verdict: str | None
     segment: int
@@ -31,6 +31,12 @@ class PlotPoint:
     delta_baseline_pct: float | None
     summary: str
     reanchor: bool = False
+    position: float | None = None
+    promotion: str | None = None
+
+    @property
+    def x(self):
+        return self.iteration if self.position is None else self.position
 
 
 def from_trace(value):
@@ -43,9 +49,18 @@ def from_trace(value):
                         baseline_ms=item['segment_baseline_latency_ms'],
                         delta_parent_pct=item['delta_vs_parent_pct'],
                         delta_baseline_pct=item['delta_vs_baseline_pct'],
-                        summary=item['change_summary'], reanchor=item.get('reanchor', False))
+                        summary=item['change_summary'], reanchor=item.get('reanchor', False),
+                        promotion=item.get('promotion'))
               for item in value['iterations']]
-    return plot_metadata, points
+    for segment in value.get('segments', [])[1:]:
+        context = segment['measurement_context']
+        points.append(PlotPoint(
+            iteration=None, position=segment['before_iteration'] - 0.5,
+            candidate_id=f'reanchor-{segment["id"]}', verdict=None, segment=segment['id'],
+            candidate_ms=None, incumbent_ms=segment['anchor_ms'], baseline_ms=segment['anchor_ms'],
+            delta_parent_pct=None, delta_baseline_pct=None, reanchor=True,
+            summary=f'checkpoint {context["weights"]["checkpoint_id"]}; fixture {context["fixture"]["id"]}'))
+    return plot_metadata, sorted(points, key=lambda point: (point.x, point.segment))
 
 
 def render_optimization_progress(*, metadata: PlotMetadata, points: Sequence[PlotPoint],
@@ -56,33 +71,41 @@ def render_optimization_progress(*, metadata: PlotMetadata, points: Sequence[Plo
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
-    points = sorted(points, key=lambda point: point.iteration)
-    iterations = [point.iteration for point in points]
-    incumbent_ms = [point.incumbent_ms for point in points]
+    points = sorted(points, key=lambda point: (point.x, point.segment))
     fig, ax = plt.subplots(figsize=(11, 6.5))
-    ax.plot(iterations, incumbent_ms, marker='o', linewidth=1.8,
-            label='accepted incumbent')
+    segments = list(dict.fromkeys(point.segment for point in points))
+    for index, segment in enumerate(segments):
+        group = [point for point in points if point.segment == segment]
+        ax.plot([point.x for point in group], [point.incumbent_ms for point in group],
+                marker='o', linewidth=1.8, color='C0',
+                label='portable incumbent' if index == 0 else None)
     for point in points:
         if point.verdict == 'no_benefit':
-            ax.scatter(point.iteration, point.candidate_ms, marker='x', alpha=0.65)
+            ax.scatter(point.x, point.candidate_ms, marker='x', color='0.25',
+                       alpha=0.85, s=65, linewidths=1.5, zorder=4)
+        elif point.promotion == 'context_only':
+            ax.scatter(point.x, point.candidate_ms, marker='D', color='0.5', alpha=0.65)
         elif point.verdict in {'correctness_failed', 'invalid', 'blocked'}:
             value = point.incumbent_ms if point.candidate_ms is None else point.candidate_ms
-            ax.scatter(point.iteration, value, marker='.', alpha=0.45)
+            ax.scatter(point.x, value, marker='.', alpha=0.45)
     previous_segment = points[0].segment
     for point in points[1:]:
         if point.segment != previous_segment:
-            ax.axvline(point.iteration - 0.5, linestyle='--', linewidth=1.0, alpha=0.6)
+            ax.axvline(point.x if point.reanchor else point.x - 0.5, linestyle='--', linewidth=1.0, alpha=0.6)
             previous_segment = point.segment
-    previous_incumbent = None
+    previous_was_anchor = False
     previous_segment = points[0].segment
     for point in points:
         segment_changed = point.segment != previous_segment
-        incumbent_changed = previous_incumbent is None or point.incumbent_ms < previous_incumbent
-        at_right_edge = point.iteration == points[-1].iteration
-        offset = (-6, 8) if at_right_edge else (6, -28)
-        alignment = 'right' if at_right_edge else 'left'
+        near_right_edge = point.x >= points[-1].x - 0.5
+        below = previous_was_anchor and not point.reanchor
+        offset = (-8 if near_right_edge else 8, -16 if below else 16)
+        alignment = 'right' if near_right_edge else 'left'
+        vertical = 'top' if below else 'bottom'
         if segment_changed or point.reanchor:
             label = f'segment {point.segment} re-anchor\n{point.incumbent_ms:.3f} ms'
+            if point.reanchor:
+                label += f'\n{point.summary}'
             if point.verdict == 'accepted' and not point.reanchor:
                 parent_delta = ('n/a' if point.delta_parent_pct is None
                                 else f'{point.delta_parent_pct:+.2f}%')
@@ -91,32 +114,38 @@ def render_optimization_progress(*, metadata: PlotMetadata, points: Sequence[Plo
                 label += (f'\niter {point.iteration}: {point.summary}'
                           f'\n{parent_delta} vs parent\n{baseline_delta} vs baseline')
             ax.annotate(label,
-                        xy=(point.iteration, point.incumbent_ms), xytext=offset,
-                        textcoords='offset points', fontsize=8, horizontalalignment=alignment)
-        elif point.verdict == 'accepted' and incumbent_changed:
+                        xy=(point.x, point.incumbent_ms), xytext=offset,
+                        textcoords='offset points', fontsize=8, horizontalalignment=alignment,
+                        verticalalignment=vertical)
+        elif point.verdict == 'accepted' and point.promotion != 'context_only':
             parent_delta = ('n/a' if point.delta_parent_pct is None
                             else f'{point.delta_parent_pct:+.2f}%')
             baseline_delta = ('n/a' if point.delta_baseline_pct is None
                               else f'{point.delta_baseline_pct:+.2f}%')
             label = (f'iter {point.iteration}: {point.summary}\n{point.incumbent_ms:.3f} ms'
                      f'\n{parent_delta} vs parent\n{baseline_delta} vs baseline')
-            ax.annotate(label, xy=(point.iteration, point.incumbent_ms), xytext=offset,
-                        textcoords='offset points', fontsize=8, horizontalalignment=alignment)
-        previous_incumbent = point.incumbent_ms
+            ax.annotate(label, xy=(point.x, point.incumbent_ms), xytext=offset,
+                        textcoords='offset points', fontsize=8, horizontalalignment=alignment,
+                        verticalalignment=vertical)
+        previous_was_anchor = point.reanchor
         previous_segment = point.segment
     title = (f'{metadata.hardware} | {metadata.model} @ {metadata.model_revision}\n'
              f'{metadata.shape_profile} | {metadata.precision}')
     subtitle = f'objective={metadata.objective} | protocol={metadata.protocol}'
     ax.set_title(f'{title}\n{subtitle}')
-    ax.set_xlabel('Optimization iteration')
+    from matplotlib.ticker import MaxNLocator
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.set_xlabel('Optimization iteration (re-anchors do not consume an iteration)')
     ax.set_ylabel('Latency (ms)')
+    ax.margins(y=0.22)
     ax.grid(alpha=0.25)
     ax.legend()
     fig.tight_layout()
     output_svg = Path(output_svg)
     output_svg.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_svg, format='svg', bbox_inches='tight',
-                metadata={'Creator': 'flash-vla', 'Date': None})
+    with matplotlib.rc_context({'svg.hashsalt': 'flash-vla'}):
+        fig.savefig(output_svg, format='svg', bbox_inches='tight',
+                    metadata={'Creator': 'flash-vla', 'Date': None})
     if output_png is not None:
         fig.savefig(output_png, format='png', dpi=160, bbox_inches='tight')
     plt.close(fig)
@@ -127,7 +156,8 @@ def render_html(metadata: PlotMetadata, points: Sequence[PlotPoint], output_html
     rows = []
     for point in points:
         candidate = '—' if point.candidate_ms is None else f'{point.candidate_ms:.3f}'
-        rows.append(f'<tr><td>{point.iteration}</td><td>{point.segment}</td>'
+        label = 're-anchor' if point.iteration is None else point.iteration
+        rows.append(f'<tr><td>{label}</td><td>{point.segment}</td>'
                     f'<td>{escape(point.candidate_id)}</td><td>{escape(point.verdict or "active")}</td>'
                     f'<td>{candidate}</td><td>{point.incumbent_ms:.3f}</td>'
                     f'<td>{escape(point.summary)}</td></tr>')

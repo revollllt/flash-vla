@@ -3,7 +3,7 @@ import argparse
 import json
 from pathlib import Path
 
-from . import campaign, context, runner, store
+from . import campaign, context, runner, store, transition
 from .schema import validate
 
 
@@ -13,7 +13,7 @@ def main(argv=None):
                                             'campaign-create', 'campaign-status', 'campaign-resume',
                                             'campaign-validate', 'campaign-finalize',
                                             'campaign-render', 'campaign-reanchor', 'campaign-materialize',
-                                            'campaign-migrate-legacy'))
+                                            'campaign-migrate-legacy', 'campaign-transition', 'campaign-transition-abort'))
     parser.add_argument('path', type=Path, help='spec JSON for preflight/start; run directory otherwise')
     parser.add_argument('--root', type=Path, default=Path.cwd())
     parser.add_argument('--out', type=Path)
@@ -39,6 +39,12 @@ def main(argv=None):
                                  root=args.root if args.source_input else None, inputs=args.source_input)
     elif args.command in ('campaign-status', 'campaign-validate'):
         result = campaign.rebuild(args.path)
+    elif args.command == 'campaign-transition':
+        if args.result is None:
+            parser.error('campaign-transition requires --result with a transition request')
+        result = campaign.transition_context(args.root, args.path, store.read(args.result))
+    elif args.command == 'campaign-transition-abort':
+        result = transition.abort(args.path, recovered_seconds=args.recovered_seconds)
     elif args.command == 'campaign-materialize':
         result = campaign.materialize_incumbent(args.root, args.path)
     elif args.command == 'campaign-resume':

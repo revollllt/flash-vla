@@ -69,7 +69,7 @@ class RecoveryTests(unittest.TestCase):
         record['spec']['stages']['check']['resource']='gpu'
         with patch.dict(os.environ,{'SLURM_JOB_ID':'123'}):
             with self.assertRaisesRegex(RuntimeError,'confirmation reserve'):
-                runner._stage(record,'check')
+                runner.run_stage(record,'check')
         self.assertEqual(record['cost']['jobs'],[])
 
     def test_qualification_rechecks_sources_after_gate(self):
@@ -92,7 +92,7 @@ class RecoveryTests(unittest.TestCase):
         with patch.dict(os.environ,{'SLURM_JOB_ID':'123'}), \
              patch.object(scheduler,'allocation',return_value={'job':'123'}), \
              patch.object(runner,'_command',return_value=[sys.executable,'-c',code]):
-            runner._stage(record,'qualify')
+            runner.run_stage(record,'qualify')
         self.assertEqual(record['promotion'],'blocked')
         self.assertFalse(record['promotion_review']['applicable'])
 

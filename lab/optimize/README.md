@@ -8,15 +8,17 @@ A long-running campaign adds lineage around these same experiments. Create one
 from an existing baseline report with `campaign-create CAMPAIGN
 --baseline-evidence REPORT --objective NAME --protocol NAME --fixture NAME`,
 then allocate candidates with `start SPEC --campaign CAMPAIGN`. The spec must
-declare the baseline's Identity v2 or v3, protocol and fixture. `campaign-status` and
+declare the baseline's workload identity and protocol. V3 candidates also bind the
+active measurement_context and measurement_segment; their fixture identifies that
+context rather than a permanent Campaign identity. `campaign-status` and
 `campaign-validate` rebuild `state.json`; `campaign-resume` continues a clean
 stage or requires explicit reconciliation for an interrupted one. Record a
 terminal result with `campaign-finalize CAMPAIGN --iteration N --result
 RESULT.json`; verdict, correctness, measurement and qualification stay in that
 iteration's evidence.
 
-`campaign.json`, optional ranked `hypotheses.json`, and
-`runs/iter-*/evidence.json` are campaign facts. `state.json` is a disposable
+`campaign.json`, optional ranked `hypotheses.json`, iteration evidence,
+transition evidence, and source materialization receipts are campaign facts. `state.json` is a disposable
 view. The campaign identity is created once and has no update operation.
 Accepted evidence advances the incumbent only after
 correctness, valid measurement, qualification and gate results all pass;
@@ -34,11 +36,33 @@ Baseline source coverage is explicit through repeatable `--source-input PATH`
 arguments to campaign-create. Missing source coverage must be resolved before
 materialization; declared-input copies are not a full repository snapshot.
 
-These declarations preserve dependency and recipe evidence. Executing recipes
-during checkpoint transition and creating re-anchors outside optimization
-iteration numbering remain pending in the checkpoint-independent architecture
-proposal. The legacy re-anchor command rejects v3 campaigns before writing
-evidence; v3 activation requires the forthcoming context transition API.
+V3 context activation uses `campaign-transition CAMPAIGN --root CHECKOUT
+--result REQUEST.json`. The request supplies identity, protocol, objective,
+measurement_context and compatibility/check/measure commands. Commands emit a
+single normalized JSON report to stdout. Compatibility binds the workload ABI
+and assets; correctness additionally binds the exact implementation and stable
+environment. Latency carries objective name/value/unit, protocol, validity and an
+explicit instrumented=false marker. Missing provenance prevents activation.
+
+Transitions retain their own command evidence and costs outside optimization
+iterations. The portable engine commit runs in an isolated clean checkout; its
+declared source snapshot must match that commit. Every new execution directory
+runs the inherited rebuild/retune recipes, then correctness and measurement.
+Only successful activation changes the current context and segment. The state
+returns execution_repository for continued work. Candidate measurements include
+A/B/A leg evidence; parent and candidate scalars must derive from those validated
+same-context legs under the fixed protocol.
+
+`campaign-resume` resumes completed transition stages without repeating them.
+Failed or interrupted stages require explicit reconciliation and recovered cost,
+as for ordinary runs. `campaign-transition-abort` preserves failed evidence and
+requires a new re-anchor before candidate allocation. The legacy re-anchor
+command remains available only for v2 ledgers.
+
+The normalized trace stores segment anchors separately from optimization
+iterations. Rendering breaks latency lines at segment boundaries, annotates
+checkpoint/fixture provenance, and produces deterministic SVG from the same
+trace.
 
 `campaign-render CAMPAIGN` normalizes ledger evidence once into
 `optimization_trace.json`, writes `progress.md`, and sends only that normalized
@@ -72,6 +96,12 @@ provide `--recovered-seconds` from accounting. This is an explicit recovery
 value, not an estimated timer reading. Logs and previous attempts remain.
 Allocated job time, including setup failures, is separately retained in Slurm
 accounting; controller stage time alone is not the campaign's total cost.
+
+Transition commands must use the validated repository as their execution source;
+the runner puts that checkout first in PYTHONPATH. Use repository modules for
+its measurement/evaluation code and explicit paths for external reference tools.
+The normalized command boundary is not a substitute for a registered Target's
+actual compatibility, correctness or benchmark evidence.
 
 Source copies cover declared inputs only. Dependency selection belongs to the
 experiment author. Unlisted external/runtime dependencies remain outside the

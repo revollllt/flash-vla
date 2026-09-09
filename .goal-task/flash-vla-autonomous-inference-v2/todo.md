@@ -8,9 +8,9 @@ Source plan (initiating Mac): `/Users/zou/Downloads/Flash-VLA Autonomous Inferen
 - Worktree: `/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2`; branch `codex/autonomous-inference-v2`, starting at `91d5f32`.
 - Preserve main's pre-existing `.gitignore` addition and old task files.
 - Python: `/data/user/jzou521/codes/cuda/flash-vla/.venv/bin/python`. Set `PYTHONPATH=$PWD/src:$PWD`, `OPENBLAS_NUM_THREADS=1`, `OMP_NUM_THREADS=1` in the worktree; its source must precede the main editable installation.
-- Phase: P0-C in progress. Applicability declarations, portable ancestor selection and actual source preparation are implemented. Next: first-class context transition with recipe execution, correctness and re-anchor outside optimization iterations; then Campaign Registry in P0-D.
-- Checkbox progress: 26/277 verified (P0-A/B plus CPU FI-9 portable exclusion; real checkpoint transfer remains pending). The previous plan's completed status is unrelated.
-- Environment: SSH, writable checkout and Slurm available; no user jobs at preflight. Project venv lacks Matplotlib. GPU execution and two real compatible Pi0.5 fine-tuned checkpoints remain unverified. Remote rg absent; use `git -c grep.threads=1 grep` after default git grep hit a thread limit.
+- Phase: P0-C transition core implemented and CPU/renderer-verified. Next: connect production report/request adapters and collect missing actual environment provenance (power policy), then run real compatible checkpoint transfer; Campaign Registry in P0-D follows. Real checkpoint A/B availability remains unresolved, and independent registry work can proceed while assets are resolved.
+- Checkbox progress: 33/277 verified (P0-A/B, CPU portable exclusion and renderer behavior). Real model checkpoint transfer remains pending. The previous plan's completed status is unrelated.
+- Environment: SSH, writable checkout and Slurm available; no user jobs at preflight. Project venv itself lacks Matplotlib; isolated Matplotlib 3.10.8 and dependencies are available in ignored artifacts/optimization/python-deps from the existing uv cache (online installation failed through the proxy). For renderer tests append $PWD/artifacts/optimization/python-deps to PYTHONPATH and set MPLCONFIGDIR=$PWD/artifacts/optimization/mpl-config. GPU execution and two real compatible Pi0.5 fine-tuned checkpoints remain unverified. Remote rg absent; use `git -c grep.threads=1 grep` after default git grep hit a thread limit.
 
 ## Execution
 
@@ -27,10 +27,17 @@ Follow P0 then P1/P2 dependencies. Keep minimal changes and use cheapest discrim
 
 ## Evidence log
 
-- P0-C applicability/source preparation: v3 candidates declare all four dependency classes; rebuild/retune require executable command recipes. Accepted checkpoint-specific results stay context-only in state and trace, while subsequent candidates must materialize the portable source and declare its parent plan. Actual temporary file tests verify restoration and preservation of unrecorded edits. Recipe execution during transfer is NOT implemented yet.
+- P0-C transition core: transition command records live outside optimization iterations; only validated activation creates a segment. Compatibility, inherited rebuild/retune recipes, correctness and benchmark commands execute as real subprocesses. Failed stages retain receipts and require explicit reconcile; retries reuse completed work, abort retains re-anchor requirement. Each fresh transition directory rebuilds needed artifacts even if only environment changed.
+- Source provenance: real temporary Git commits verify that transition executes the portable engine revision in an isolated clean checkout, preserves the caller's checkpoint-specific implementation, and returns execution_repository. An uncommitted snapshot cannot masquerade as that engine revision.
+- Measurement boundaries: correctness binds stable environment as well as assets; candidate/parent values require same-context A/B/A leg evidence, fixed sampling and valid control spread. Activated transitions clear legacy imported re-anchor requirements. These tests use CPU toy weights and synthetic latency values; they are NOT Pi0.5/LingBot real-checkpoint or GPU acceptance.
+- Core plus renderer regression: 81 tests and 12 subtests passed in 76.85 s, no skip, with isolated Matplotlib dependencies. Log: artifacts/optimization/p0c-transition.log. After visual inspection exposed annotation overlap, the scoped rendering delta passed 6 tests and 4 subtests in 12.97 s; log artifacts/optimization/p0c-render-qa.log.
+- Actual SVG/PNG QA: disconnected per-segment curves, separate non-iteration anchor, checkpoint/fixture annotation, no-benefit cross and accepted annotations verified; repeated SVG output is byte-identical. Synthetic QA artifacts: artifacts/optimization/p0c-render-qa/test_render_draws_separate_lat0/contexts.svg and contexts.png. These are ignored test artifacts, not published results or performance claims.
+- Independent targeted review: fixed imported-anchor recovery, stale-environment correctness, unbound parent scalar, dirty execution revision, and missing artifacts after an environment-only transition. Final scoped review passed; final small annotation layout adjustment was verified by the affected rendering tests and image inspection.
+
+- P0-C applicability/source preparation: v3 candidates declare all four dependency classes; rebuild/retune require executable command recipes. Accepted checkpoint-specific results stay context-only in state and trace, while subsequent candidates must materialize the portable source and declare its parent plan. Actual temporary file tests verify restoration and preservation of unrecorded edits. This was the preceding applicability milestone; recipe execution is now covered by the transition core above.
 - Runner/schema regression: test_optimize.py and test_optimize_recovery.py passed 18 tests in 1.75 s; artifacts/optimization/p0c-runner-regression.log.
 - Scoped tests: 37 passed, 12 subtests passed, 1 existing Matplotlib-dependent skip (4.62 s); artifacts/optimization/p0c-applicability.log. No GPU measurements or real checkpoint transition were run.
-- Independent scoped review resolved source/plan carryover and the legacy reanchor bypass. The old reanchor API now rejects v3 before any ledger write; actual v3 context transition must be implemented next. Final targeted review found no remaining major issue in applicability/source preparation.
+- Independent scoped review resolved source/plan carryover and the legacy reanchor bypass. The old reanchor API rejects v3 before any ledger write; the new first-class transition API is now implemented above. Final targeted review found no remaining major issue in applicability/source preparation.
 
 - P0-B final constructor delta: default Identity construction now requires v3 architecture metadata; v1/v2 are explicit legacy reads/constructions. Affected identity/gate suites passed 69 tests and 12 subtests in 14.71 s after this change. Log: artifacts/optimization/p0b-final-delta.log. The preceding full CPU run and smoke apply to the rest of this milestone.
 - P0-A test-first commit: 7896fa8. P0-B is the following implementation milestone on codex/autonomous-inference-v2. Main remains unchanged by this work.
@@ -40,7 +47,7 @@ Follow P0 then P1/P2 dependencies. Keep minimal changes and use cheapest discrim
 - Pi0 source ABI: read 129424 header bytes from the existing pi0_libero_pytorch/model.safetensors, compared all 777 parameter names/shapes with the independently declared source_weight_shapes; exact match. No tensor data read or file hash computed.
 - P0-B independent targeted review: fixed Pi0 CLI extra argument, official adapter checkpoint matching, profile cross-context deltas and Pi0 source/runtime ABI coupling. Second targeted review passed with no new major finding in that scope.
 - ExecutionVariant remains a high-level identity; only the existing BF16 runtime kernels are executable. FP8/cache separation tests do not claim those algorithms are implemented.
-- Current known follow-up: report_context records missing power policy as null rather than inventing it. Before real measurement/transition acceptance, collect actual environment/power provenance and reject incomplete evidence. Legacy v2 campaign reanchor still consumes an iteration and splits on measured drift; v3 now rejects that entrypoint pending the new transition API. No real A/B transfer or context registry has been implemented.
+- Current known follow-up: report_context records missing power policy as null rather than inventing it. Before real measurement/transition acceptance, collect actual environment/power provenance and reject incomplete evidence. Legacy v2 campaign reanchor still consumes an iteration and splits on measured drift; v3 rejects that entrypoint and uses independent transition records. No real A/B transfer has been verified; automatic Campaign Registry remains pending.
 - Real checkpoint assets: located pi0_libero_pytorch and pi05_libero_pytorch plus one LingBot checkpoint. Two inference-compatible real Pi0.5 fine-tuned checkpoints are not yet established; existing Pi0.5 Libero architecture compatibility is not assumed. Optional user asset-source question sent; independent P0 work continues.
 
 - P0-A: 36 expected semantic failures (13.58 s), with no collection/environment failure. Controls before edit: 27 passed / 17 subtests. Raw red run: artifacts/optimization/identity-v3-contract-red.log. Tests deliberately remain failing in the test-first checkpoint commit; P0-B was not accepted at that test-first checkpoint; it is now accepted above.
@@ -85,31 +92,31 @@ Follow P0 then P1/P2 dependencies. Keep minimal changes and use cheapest discrim
 - [ ] C031 explicit fork — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1344); evidence: pending
 - [ ] C032 corruption fail closed — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1345); evidence: pending
 - [ ] C033 CLI 不要求 human 提供随机 directory — 22. Campaign Registry：P0 / Campaign Registry checklist (source L1346); evidence: pending
-- [ ] C034 TargetKey 不变 — 24. 新 checkpoint transition 验收 (source L1395); evidence: pending
-- [ ] C035 CampaignKey 不变 — 24. 新 checkpoint transition 验收 (source L1396); evidence: pending
-- [ ] C036 Campaign ID 不变 — 24. 新 checkpoint transition 验收 (source L1397); evidence: pending
-- [ ] C037 iteration numbering 不重置 — 24. 新 checkpoint transition 验收 (source L1398); evidence: pending
-- [ ] C038 context ID 改变 — 24. 新 checkpoint transition 验收 (source L1399); evidence: pending
-- [ ] C039 measurement segment 改变 — 24. 新 checkpoint transition 验收 (source L1400); evidence: pending
-- [ ] C040 incumbent implementation 被继承 — 24. 新 checkpoint transition 验收 (source L1401); evidence: pending
-- [ ] C041 invariant optimization 不重新探索 — 24. 新 checkpoint transition 验收 (source L1402); evidence: pending
-- [ ] C042 rebuild optimization 重建 artifact — 24. 新 checkpoint transition 验收 (source L1403); evidence: pending
-- [ ] C043 retune optimization执行 calibration — 24. 新 checkpoint transition 验收 (source L1404); evidence: pending
-- [ ] C044 correctness 重新运行 — 24. 新 checkpoint transition 验收 (source L1405); evidence: pending
-- [ ] C045 incumbent latency 重新测量 — 24. 新 checkpoint transition 验收 (source L1406); evidence: pending
-- [ ] C046 A→B latency 差异不计为 optimization delta — 24. 新 checkpoint transition 验收 (source L1407); evidence: pending
-- [ ] C047 不同 checkpoint segment 主线断开 — 30. progress.svg / Plot checklist (source L1648); evidence: pending
+- [ ] C034 TargetKey 不变 — 24. 新 checkpoint transition 验收 (source L1395); evidence: transition mechanism covered by test_context_transition.py CPU subprocess/Git fixtures; real compatible model checkpoint transfer remains pending
+- [ ] C035 CampaignKey 不变 — 24. 新 checkpoint transition 验收 (source L1396); evidence: transition mechanism covered by test_context_transition.py CPU subprocess/Git fixtures; real compatible model checkpoint transfer remains pending
+- [ ] C036 Campaign ID 不变 — 24. 新 checkpoint transition 验收 (source L1397); evidence: transition mechanism covered by test_context_transition.py CPU subprocess/Git fixtures; real compatible model checkpoint transfer remains pending
+- [ ] C037 iteration numbering 不重置 — 24. 新 checkpoint transition 验收 (source L1398); evidence: transition mechanism covered by test_context_transition.py CPU subprocess/Git fixtures; real compatible model checkpoint transfer remains pending
+- [ ] C038 context ID 改变 — 24. 新 checkpoint transition 验收 (source L1399); evidence: transition mechanism covered by test_context_transition.py CPU subprocess/Git fixtures; real compatible model checkpoint transfer remains pending
+- [ ] C039 measurement segment 改变 — 24. 新 checkpoint transition 验收 (source L1400); evidence: transition mechanism covered by test_context_transition.py CPU subprocess/Git fixtures; real compatible model checkpoint transfer remains pending
+- [ ] C040 incumbent implementation 被继承 — 24. 新 checkpoint transition 验收 (source L1401); evidence: transition mechanism covered by test_context_transition.py CPU subprocess/Git fixtures; real compatible model checkpoint transfer remains pending
+- [ ] C041 invariant optimization 不重新探索 — 24. 新 checkpoint transition 验收 (source L1402); evidence: transition mechanism covered by test_context_transition.py CPU subprocess/Git fixtures; real compatible model checkpoint transfer remains pending
+- [ ] C042 rebuild optimization 重建 artifact — 24. 新 checkpoint transition 验收 (source L1403); evidence: transition mechanism covered by test_context_transition.py CPU subprocess/Git fixtures; real compatible model checkpoint transfer remains pending
+- [ ] C043 retune optimization执行 calibration — 24. 新 checkpoint transition 验收 (source L1404); evidence: transition mechanism covered by test_context_transition.py CPU subprocess/Git fixtures; real compatible model checkpoint transfer remains pending
+- [ ] C044 correctness 重新运行 — 24. 新 checkpoint transition 验收 (source L1405); evidence: transition mechanism covered by test_context_transition.py CPU subprocess/Git fixtures; real compatible model checkpoint transfer remains pending
+- [ ] C045 incumbent latency 重新测量 — 24. 新 checkpoint transition 验收 (source L1406); evidence: transition mechanism covered by test_context_transition.py CPU subprocess/Git fixtures; real compatible model checkpoint transfer remains pending
+- [ ] C046 A→B latency 差异不计为 optimization delta — 24. 新 checkpoint transition 验收 (source L1407); evidence: transition mechanism covered by test_context_transition.py CPU subprocess/Git fixtures; real compatible model checkpoint transfer remains pending
+- [x] C047 不同 checkpoint segment 主线断开 — 30. progress.svg / Plot checklist (source L1648); evidence: P0-C trace/render tests plus actual SVG/PNG inspection and deterministic rebuild; artifacts/optimization/p0c-render-qa.log and test_render_draws_separate_lat0/contexts.svg (synthetic renderer fixture, not real checkpoint performance)
 - [ ] C048 fixture change 主线断开 — 30. progress.svg / Plot checklist (source L1649); evidence: pending
 - [ ] C049 environment change 主线断开 — 30. progress.svg / Plot checklist (source L1650); evidence: pending
-- [ ] C050 re-anchor 显式显示 — 30. progress.svg / Plot checklist (source L1651); evidence: pending
-- [ ] C051 re-anchor 不算 optimization — 30. progress.svg / Plot checklist (source L1652); evidence: pending
-- [ ] C052 no-benefit 显示 × — 30. progress.svg / Plot checklist (source L1653); evidence: pending
+- [x] C050 re-anchor 显式显示 — 30. progress.svg / Plot checklist (source L1651); evidence: P0-C trace/render tests plus actual SVG/PNG inspection and deterministic rebuild; artifacts/optimization/p0c-render-qa.log and test_render_draws_separate_lat0/contexts.svg (synthetic renderer fixture, not real checkpoint performance)
+- [x] C051 re-anchor 不算 optimization — 30. progress.svg / Plot checklist (source L1652); evidence: P0-C trace/render tests plus actual SVG/PNG inspection and deterministic rebuild; artifacts/optimization/p0c-render-qa.log and test_render_draws_separate_lat0/contexts.svg (synthetic renderer fixture, not real checkpoint performance)
+- [x] C052 no-benefit 显示 × — 30. progress.svg / Plot checklist (source L1653); evidence: P0-C trace/render tests plus actual SVG/PNG inspection and deterministic rebuild; artifacts/optimization/p0c-render-qa.log and test_render_draws_separate_lat0/contexts.svg (synthetic renderer fixture, not real checkpoint performance)
 - [ ] C053 correctness failure 显示但不 promotion — 30. progress.svg / Plot checklist (source L1654); evidence: pending
 - [ ] C054 invalid 不进入主线 — 30. progress.svg / Plot checklist (source L1655); evidence: pending
-- [ ] C055 accepted annotation 有 iteration/change/delta — 30. progress.svg / Plot checklist (source L1656); evidence: pending
+- [x] C055 accepted annotation 有 iteration/change/delta — 30. progress.svg / Plot checklist (source L1656); evidence: P0-C trace/render tests plus actual SVG/PNG inspection and deterministic rebuild; artifacts/optimization/p0c-render-qa.log and test_render_draws_separate_lat0/contexts.svg (synthetic renderer fixture, not real checkpoint performance)
 - [ ] C056 title 显示 Target/variant/objective — 30. progress.svg / Plot checklist (source L1657); evidence: pending
-- [ ] C057 segment 标识 checkpoint/fixture — 30. progress.svg / Plot checklist (source L1658); evidence: pending
-- [ ] C058 SVG deterministic rebuild — 30. progress.svg / Plot checklist (source L1659); evidence: pending
+- [x] C057 segment 标识 checkpoint/fixture — 30. progress.svg / Plot checklist (source L1658); evidence: P0-C trace/render tests plus actual SVG/PNG inspection and deterministic rebuild; artifacts/optimization/p0c-render-qa.log and test_render_draws_separate_lat0/contexts.svg (synthetic renderer fixture, not real checkpoint performance)
+- [x] C058 SVG deterministic rebuild — 30. progress.svg / Plot checklist (source L1659); evidence: P0-C trace/render tests plus actual SVG/PNG inspection and deterministic rebuild; artifacts/optimization/p0c-render-qa.log and test_render_draws_separate_lat0/contexts.svg (synthetic renderer fixture, not real checkpoint performance)
 - [ ] C059 clone repository — 32. `open_or_seed` / Fresh clone checklist (source L1741); evidence: pending
 - [ ] C060 没有 `artifacts/` — 32. `open_or_seed` / Fresh clone checklist (source L1742); evidence: pending
 - [ ] C061 Agent resolve Target — 32. `open_or_seed` / Fresh clone checklist (source L1743); evidence: pending

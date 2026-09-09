@@ -5,10 +5,41 @@ import sys
 
 import pytest
 
-from lab.optimize import campaign, schema, store, trace
+from lab.optimize import campaign, schema, store, trace, transition
+from eval import acceptance
 from eval.tests.test_campaign import experiment, PASS, VALID, QUALIFIED
-from eval.tests.test_identity_v3 import payload, context
+from eval.tests.test_identity_v3 import payload, context as identity_context
 from eval.tests.test_optimization_trace import SEGMENT0
+
+
+def context():
+    value = identity_context()
+    value["fixture"]["id"] = "pi05-perf-v1"
+    return value
+
+
+def finalize(directory, iteration, verdict, correctness=PASS, result=VALID, qualification=QUALIFIED):
+    record = store.read(next((directory / "runs").glob(f"iter-{iteration:03d}-*/evidence.json")))
+    spec = record["spec"]
+    identity = campaign.implementation_identity(record)
+    checked = dict(correctness, identity=identity, measurement_context=spec["measurement_context"])
+    measured = dict(identity=identity, measurement_context=spec["measurement_context"],
+                    measurement_segment=dict(id=spec["measurement_segment"], benchmark_protocol="latency-v2",
+                                             **spec["measurement_context"]["environment"]),
+                    protocol="latency-v2", instrumented=False, candidate_ms=14.0,
+                    parent_incumbent_ms=16.0)
+    measured.update(result)
+    parent = campaign.implementation_identity(
+        campaign.incumbent_record(directory, campaign.rebuild(directory)))
+    if measured.get("validity") == "valid" and "aba" not in measured:
+        policy = acceptance.for_target(identity["target"])["latency"]
+        legs = [dict(identity=who, measurement_context=spec["measurement_context"],
+                     metrics={"chunk_latency": {"min": value}})
+                for who, value in ((parent, measured["parent_incumbent_ms"]),
+                                   (identity, measured["candidate_ms"]),
+                                   (parent, measured["parent_incumbent_ms"]))]
+        measured["aba"] = dict(legs=legs, config={key: policy[key] for key in ("reps", "warmup")})
+    return campaign.finalize(directory, iteration, verdict, checked, measured, qualification)
 
 
 def recipe():
@@ -18,6 +49,8 @@ def recipe():
 def candidate(name="candidate", dependency="invariant"):
     spec = experiment(name, identity=payload())
     spec["applicability"] = {"weight_dependency": dependency}
+    spec["measurement_context"] = context()
+    spec["measurement_segment"] = 0
     if dependency == "rebuild":
         spec["artifact_recipe"] = recipe()
     elif dependency == "retune":
@@ -35,8 +68,15 @@ def workspace(tmp_path):
                     "-qm", "baseline"], check=True)
     (root / "src").mkdir()
     (root / "src/kernel.cu").write_text("original")
+    subprocess.run(["git", "-C", str(root), "add", "src/kernel.cu"], check=True)
+    subprocess.run(["git", "-C", str(root), "-c", "user.name=Test",
+                    "-c", "user.email=test@example.org", "commit", "-qm", "source"], check=True)
+    revision = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+    identity = payload(engine_revision=revision)
     directory = tmp_path / "campaign"
-    baseline = dict(identity=payload(), measurement_context=context(), measurement_segment=SEGMENT0,
+    baseline = dict(identity=identity, measurement_context=context(), measurement_segment=SEGMENT0,
+                    protocol="latency-v2", validity="valid", instrumented=False,
+                    correctness=dict(status="pass", identity=identity, measurement_context=context()),
                     objective=dict(name="e2e_chunk_latency_ms", unit="ms", value=16.0))
     campaign.create(directory, baseline, "e2e_chunk_latency_ms",
                     "latency-v2", "pi05-perf-v1", root=root, inputs=["src/kernel.cu"])
@@ -73,9 +113,9 @@ def test_weight_dependent_candidates_need_executable_recipe(dependency, field, b
 def test_checkpoint_specific_result_is_retained_without_portable_promotion(workspace):
     root, directory = workspace
     campaign.start(root, candidate("fusion"), directory)
-    campaign.finalize(directory, 1, "accepted", PASS, VALID, QUALIFIED)
+    finalize(directory, 1, "accepted", PASS, VALID, QUALIFIED)
     campaign.start(root, candidate("special_weights", "checkpoint_specific"), directory)
-    state = campaign.finalize(directory, 2, "accepted", PASS, VALID, QUALIFIED)
+    state = finalize(directory, 2, "accepted", PASS, VALID, QUALIFIED)
     assert state["portable_incumbent"] == state["current_incumbent"] == "iter-001"
     result = store.read(directory / "runs/iter-002-special_weights/evidence.json")
     assert result["verdict"] == "accepted"
@@ -95,9 +135,9 @@ def test_transfer_preserves_recipes_of_all_accepted_ancestors(workspace):
     root, directory = workspace
     for iteration, dependency in enumerate(("invariant", "rebuild", "retune"), 1):
         campaign.start(root, candidate(f"step{iteration}", dependency), directory)
-        campaign.finalize(directory, iteration, "accepted", PASS, VALID, QUALIFIED)
+        finalize(directory, iteration, "accepted", PASS, VALID, QUALIFIED)
     campaign.start(root, candidate("rejected", "rebuild"), directory)
-    campaign.finalize(directory, 4, "no_benefit", PASS, VALID, QUALIFIED)
+    finalize(directory, 4, "no_benefit", PASS, VALID, QUALIFIED)
     lineage = campaign.portable_optimizations(directory)
     assert [r["iteration"] for r in lineage] == [1, 2, 3]
     assert lineage[1]["spec"]["artifact_recipe"] == recipe()
@@ -120,7 +160,7 @@ def test_failed_correctness_never_promotes_checkpoint_specific_candidate(workspa
     root, directory = workspace
     campaign.start(root, candidate(dependency="checkpoint_specific"), directory)
     with pytest.raises(ValueError, match="accepted requires"):
-        campaign.finalize(directory, 1, "accepted", {"status": "failed"}, VALID, QUALIFIED)
+        finalize(directory, 1, "accepted", {"status": "failed"}, VALID, QUALIFIED)
     assert campaign.rebuild(directory)["portable_incumbent"] == "iter-000"
 
 
@@ -131,12 +171,12 @@ def test_source_and_plan_are_restored_before_next_candidate(workspace):
     spec = candidate("fusion")
     spec["identity"]["plan"] = {"attention": "fusion"}
     campaign.start(root, spec, directory)
-    campaign.finalize(directory, 1, "accepted", PASS, VALID, QUALIFIED)
+    finalize(directory, 1, "accepted", PASS, VALID, QUALIFIED)
     source.write_text("special checkpoint constants")
     special = candidate("special", "checkpoint_specific")
     special["identity"]["plan"] = {"attention": "special"}
     campaign.start(root, special, directory)
-    campaign.finalize(directory, 2, "accepted", PASS, VALID, QUALIFIED)
+    finalize(directory, 2, "accepted", PASS, VALID, QUALIFIED)
     with pytest.raises(RuntimeError, match="materialize"):
         campaign.start(root, candidate("next"), directory)
     assert source.read_text() == "special checkpoint constants"
@@ -159,7 +199,7 @@ def test_materialization_preserves_unrecorded_edits(workspace):
     source = root / "src/kernel.cu"
     source.write_text("special checkpoint constants")
     campaign.start(root, candidate("special", "checkpoint_specific"), directory)
-    campaign.finalize(directory, 1, "accepted", PASS, VALID, QUALIFIED)
+    finalize(directory, 1, "accepted", PASS, VALID, QUALIFIED)
     source.write_text("unrelated user edit")
     with pytest.raises(ValueError, match="unrecorded edit"):
         campaign.materialize_incumbent(root, directory)
@@ -175,9 +215,10 @@ def test_trace_keeps_context_only_result_without_moving_portable_curve(workspace
         identity = dict(record["campaign_identity"],
                         engine_revision=record["change"]["engine_revision"])
         measurement = dict(validity="valid", identity=identity,
-                           measurement_context=context(), measurement_segment=SEGMENT0,
+                           measurement_context=context(), measurement_segment=dict(id=0, benchmark_protocol="latency-v2",
+                                                       **context()["environment"]),
                            candidate_ms=value, parent_incumbent_ms=16.0 if iteration == 1 else 14.0)
-        campaign.finalize(directory, iteration, "accepted", PASS, measurement, QUALIFIED)
+        finalize(directory, iteration, "accepted", PASS, measurement, QUALIFIED)
     entries = trace.normalize(directory)["iterations"]
     assert [r["current_incumbent_latency_ms"] for r in entries] == [16.0, 14.0, 14.0]
     assert entries[2]["candidate_latency_ms"] == 12.0
