@@ -181,8 +181,9 @@ class OptimizationTraceTests(unittest.TestCase):
         svg = (self.directory / 'progress.svg').read_text()
         self.assertTrue(svg.startswith('<?xml'))
         for text in (IDENTITY['model_revision'], 'objective=e2e_chunk_latency_ms',
-                     'iter 2: implement candidate-2', 'vs parent', 'vs baseline',
-                     'segment 1 re-anchor'):
+                     'iter 2: accepted', 'vs parent', 'vs baseline',
+                     'segment 1 re-anchor', 'iter 3: correctness_failed',
+                     'iter 4: invalid', 'iter 5: blocked', 'no valid latency'):
             self.assertIn(text, svg)
         self.assertGreater((self.directory / 'progress.png').stat().st_size, 1000)
         html = (self.directory / 'progress.html').read_text()

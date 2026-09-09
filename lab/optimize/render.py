@@ -102,8 +102,17 @@ def render_optimization_progress(*, metadata: PlotMetadata, points: Sequence[Plo
         elif point.promotion == 'context_only':
             ax.scatter(point.x, point.candidate_ms, marker='D', color='0.5', alpha=0.65)
         elif point.verdict in {'correctness_failed', 'invalid', 'blocked'}:
-            value = point.incumbent_ms if point.candidate_ms is None else point.candidate_ms
-            ax.scatter(point.x, value, marker='.', alpha=0.45)
+            missing_latency = point.candidate_ms is None
+            value = 0.025 if missing_latency else point.candidate_ms
+            coordinates = ax.get_xaxis_transform() if missing_latency else ax.transData
+            ax.scatter(point.x, value, marker='v', color='C3', s=55,
+                       zorder=5, transform=coordinates)
+            label = f'iter {point.iteration}: {point.verdict}'
+            if missing_latency:
+                label += '\nno valid latency'
+            ax.annotate(label, xy=(point.x, value), xycoords=coordinates,
+                        xytext=(0, 8), textcoords='offset points', fontsize=8,
+                        horizontalalignment='center', color='C3')
     previous_segment = points[0].segment
     for point in points[1:]:
         if point.segment != previous_segment:
