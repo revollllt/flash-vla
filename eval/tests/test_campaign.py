@@ -105,6 +105,10 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(state['failed_hypotheses'][0]['verdict'], 'no_benefit')
 
     def test_invalid_is_not_no_benefit_and_cost_survives_new_process(self):
+        baseline_path = self.directory / 'runs/iter-000-baseline/evidence.json'
+        baseline = store.read(baseline_path)
+        baseline['cost']['jobs'] = [9000]
+        store.write(baseline_path, baseline)
         record = self.start('invalid-read')
         record['cost'] = {'cpu_seconds': 3.0, 'gpu_seconds': 17.0, 'jobs': ['9001']}
         store.write(Path(record['directory']) / 'evidence.json', record)
@@ -113,7 +117,7 @@ class CampaignTests(unittest.TestCase):
         state = campaign.rebuild(self.directory)
         self.assertEqual(state['budget']['used']['non_improving'], 0)
         self.assertEqual(state['cost']['gpu_seconds'], 17.0)
-        self.assertEqual(state['cost']['jobs'], ['9001'])
+        self.assertEqual(state['cost']['jobs'], ['9000', '9001'])
         output = subprocess.check_output(
             [sys.executable, '-m', 'lab.optimize', 'campaign-status', str(self.directory)],
             text=True)

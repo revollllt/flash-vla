@@ -77,11 +77,14 @@ class RecoveryTests(unittest.TestCase):
         import sys
         s=spec();s['stages']['qualify']={}
         record=runner.start(self.root,s,self.out)
+        record['spec']['conditions']={'seed':42}
         record['spec']['qualification_sources']=dict(
             incumbent=record['source'],candidate=record['source'],
             incumbent_checkout=str(self.root),candidate_checkout=str(self.root),
             affected_targets=[record['target']])
-        self.assertIn('eval.gate',runner._command(record,'qualify'))
+        command=runner._command(record,'qualify')
+        self.assertIn('eval.gate',command)
+        self.assertEqual(command[command.index('--seed')+1],'42')
         output=self.out/'qualify';output.mkdir()
         payload=json.dumps(dict(verdict='pass'))
         code=(f'from pathlib import Path; Path({str(output / "report.json")!r}).write_text({payload!r}); '

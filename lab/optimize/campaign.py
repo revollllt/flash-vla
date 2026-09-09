@@ -123,7 +123,7 @@ def rebuild(directory):
                 if active is not None:
                     raise ValueError('campaign has multiple active candidates')
                 active = (path.parent, record)
-    cost['jobs'] = sorted(set(cost['jobs']))
+    cost['jobs'] = sorted({str(job) for job in cost['jobs']})
     budget = metadata['budget']
     used = dict(candidates=candidates, non_improving=non_improving, jobs=len(cost['jobs']))
     remaining = {key: max(0, budget[key] - used[key]) for key in budget}

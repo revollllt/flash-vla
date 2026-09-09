@@ -51,6 +51,7 @@ def _command(record, name):
         return [sys.executable, '-m', 'eval.gate', '--target', record['target'],
                 '--candidate', record['spec'].get('candidate', 'shipped'),
                 '--incumbent', record['spec'].get('incumbent', 'shipped'),
+                '--seed', str(record['spec'].get('conditions', {}).get('seed', 0)),
                 '--baseline', '--out-dir', str(Path(record['directory']) / 'qualify')]
     return [part.replace('{python}', sys.executable).replace('{out}', record['directory'])
             .replace('{inputs}', record['source']['root'])
