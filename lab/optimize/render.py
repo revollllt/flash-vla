@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
+from textwrap import fill
 from typing import Sequence
 
 
@@ -129,12 +130,13 @@ def render_optimization_progress(*, metadata: PlotMetadata, points: Sequence[Plo
                         verticalalignment=vertical)
         previous_was_anchor = point.reanchor
         previous_segment = point.segment
+    shape_title = fill(f'{metadata.shape_profile} | {metadata.precision}', width=100)
     title = (f'{metadata.hardware} | {metadata.model} @ {metadata.model_revision}\n'
-             f'{metadata.shape_profile} | {metadata.precision}')
+             f'{shape_title}')
     subtitle = f'objective={metadata.objective} | protocol={metadata.protocol}'
     ax.set_title(f'{title}\n{subtitle}')
     from matplotlib.ticker import MaxNLocator
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True, min_n_ticks=1))
     ax.set_xlabel('Optimization iteration (re-anchors do not consume an iteration)')
     ax.set_ylabel('Latency (ms)')
     ax.margins(y=0.22)

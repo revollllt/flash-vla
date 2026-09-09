@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Flash-VLA published results</title>
+<style>
+:root{color-scheme:light;font:15px/1.5 system-ui,sans-serif;color:#172536;background:#f3f6f8}
+*{box-sizing:border-box}body{margin:0;padding:40px 3vw}main{max-width:1600px;margin:auto}
+header{margin-bottom:28px}.eyebrow{color:#376d72;letter-spacing:.12em;font-size:12px;font-weight:700}
+h1{font-size:clamp(26px,3vw,38px);letter-spacing:-.035em;margin:8px 0}
+p{max-width:850px;color:#516174}a{color:#116c79;text-underline-offset:3px}
+nav{display:flex;gap:20px}form{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:14px;padding:20px;background:white;border:1px solid #dbe3e9;border-radius:12px}
+label{display:flex;flex-direction:column;gap:7px;font-size:12px;font-weight:600;color:#516174;min-width:0}
+select,button{font:inherit;border:1px solid #c6d3dc;border-radius:6px;padding:9px;background:white;color:#172536;min-width:0;width:100%}
+button{align-self:end;cursor:pointer;font-size:14px;background:#eaf3f4}select:focus,button:focus{outline:2px solid #167d8a;outline-offset:2px}
+#count{margin:18px 0 10px;font-size:13px}.table-scroll{overflow-x:auto;background:white;border:1px solid #dbe3e9;border-radius:10px}
+table{border-collapse:collapse;width:100%;min-width:1120px;text-align:left}th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;background:#edf2f5;color:#516174;white-space:nowrap}
+th,td{padding:14px 12px;border-bottom:1px solid #e6ecef;vertical-align:top}td{font-size:13px;max-width:250px;overflow-wrap:anywhere}
+td:nth-child(n+7):nth-child(-n+10){font-variant-numeric:tabular-nums;white-space:nowrap}
+tr:last-child td{border-bottom:0}tbody tr:hover{background:#f6fafb}small{display:block;font-size:11px;color:#617386;margin-top:5px}
+code{font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere}summary{cursor:pointer;white-space:nowrap}
+.badge{display:inline-block;background:#e4f2ee;color:#286455;border-radius:4px;padding:2px 5px;font-size:10px;margin:5px 0}
+#empty{padding:20px;margin:0}footer{font-size:12px;color:#617386;margin-top:18px}
+@media(max-width:600px){body{padding:22px 14px}form{padding:14px;grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+</head>
+<body><main>
+<header><div class="eyebrow">FLASH-VLA · PUBLISHED RESULTS</div>
+<h1>Inference performance, with context.</h1>
+<p>Each row shows the latest validated segment for one checkpoint and fixture.
+Speedup is relative to that segment's own anchor. Values from different contexts are not directly comparable.</p>
+<nav><a href="README.md">Results overview</a><a href="index.json">Campaign index JSON</a></nav></header>
+<form id="filters" aria-label="Filter published results">
+<label>Hardware<select data-filter="hardware"><option value="">All</option><option value="h100-sxm5-80gb">h100-sxm5-80gb</option></select></label><label>Model<select data-filter="model"><option value="">All</option><option value="lingbot-vla">lingbot-vla</option></select></label><label>Model revision<select data-filter="revision"><option value="">All</option><option value="lingbot-vla-r1">lingbot-vla-r1</option></select></label><label>Shape<select data-filter="shape"><option value="">All</option><option value="{&quot;action_dim&quot;:75,&quot;backbone_dim&quot;:2048,&quot;backbone_ffn_dim&quot;:11008,&quot;batch&quot;:1,&quot;chunk&quot;:50,&quot;expert_dim&quot;:768,&quot;expert_ffn_dim&quot;:2752,&quot;head_dim&quot;:128,&quot;image_height&quot;:224,&quot;image_width&quot;:224,&quot;kv_heads&quot;:2,&quot;language_slots&quot;:72,&quot;layers&quot;:36,&quot;patch_rows_per_view&quot;:256,&quot;patch_width&quot;:1176,&quot;prefix_len&quot;:264,&quot;query_heads&quot;:16,&quot;state_dim&quot;:75,&quot;steps&quot;:10,&quot;suffix_len&quot;:51,&quot;views&quot;:3,&quot;vision_dim&quot;:1280,&quot;vision_ffn_dim&quot;:3420,&quot;vision_head_dim&quot;:80,&quot;vision_heads&quot;:16,&quot;vision_layers&quot;:32,&quot;visual_tokens&quot;:192,&quot;visual_tokens_per_view&quot;:64}">{&quot;action_dim&quot;:75,&quot;backbone_dim&quot;:2048,&quot;backbone_ffn_dim&quot;:11008,&quot;batch&quot;:1,&quot;chunk&quot;:50,&quot;expert_dim&quot;:768,&quot;expert_ffn_dim&quot;:2752,&quot;head_dim&quot;:128,&quot;image_height&quot;:224,&quot;image_width&quot;:224,&quot;kv_heads&quot;:2,&quot;language_slots&quot;:72,&quot;layers&quot;:36,&quot;patch_rows_per_view&quot;:256,&quot;patch_width&quot;:1176,&quot;prefix_len&quot;:264,&quot;query_heads&quot;:16,&quot;state_dim&quot;:75,&quot;steps&quot;:10,&quot;suffix_len&quot;:51,&quot;views&quot;:3,&quot;vision_dim&quot;:1280,&quot;vision_ffn_dim&quot;:3420,&quot;vision_head_dim&quot;:80,&quot;vision_heads&quot;:16,&quot;vision_layers&quot;:32,&quot;visual_tokens&quot;:192,&quot;visual_tokens_per_view&quot;:64}</option></select></label><label>Execution variant<select data-filter="variant"><option value="">All</option><option value="{&quot;cache&quot;:{&quot;mode&quot;:&quot;none&quot;},&quot;quantization&quot;:{&quot;mode&quot;:&quot;bf16&quot;}}">{&quot;cache&quot;:{&quot;mode&quot;:&quot;none&quot;},&quot;quantization&quot;:{&quot;mode&quot;:&quot;bf16&quot;}}</option></select></label><label>Checkpoint<select data-filter="context"><option value="">All</option><option value="lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3">lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3</option></select></label><label>Objective<select data-filter="objective"><option value="">All</option><option value="e2e_chunk_latency_ms">e2e_chunk_latency_ms</option></select></label><button type="reset">Reset filters</button></form>
+<p id="count" role="status" aria-live="polite"></p>
+<div class="table-scroll"><table aria-label="Published checkpoint contexts">
+<thead><tr><th>Hardware</th><th>Model revision</th><th>Shape</th><th>Variant</th>
+<th>Checkpoint / fixture</th><th>Objective</th><th>Anchor ms</th><th>Best ms</th>
+<th>Speedup</th><th>Best iter</th><th>Evidence</th></tr></thead><tbody>
+<tr data-hardware="h100-sxm5-80gb" data-model="lingbot-vla" data-revision="lingbot-vla-r1" data-shape="{&quot;action_dim&quot;:75,&quot;backbone_dim&quot;:2048,&quot;backbone_ffn_dim&quot;:11008,&quot;batch&quot;:1,&quot;chunk&quot;:50,&quot;expert_dim&quot;:768,&quot;expert_ffn_dim&quot;:2752,&quot;head_dim&quot;:128,&quot;image_height&quot;:224,&quot;image_width&quot;:224,&quot;kv_heads&quot;:2,&quot;language_slots&quot;:72,&quot;layers&quot;:36,&quot;patch_rows_per_view&quot;:256,&quot;patch_width&quot;:1176,&quot;prefix_len&quot;:264,&quot;query_heads&quot;:16,&quot;state_dim&quot;:75,&quot;steps&quot;:10,&quot;suffix_len&quot;:51,&quot;views&quot;:3,&quot;vision_dim&quot;:1280,&quot;vision_ffn_dim&quot;:3420,&quot;vision_head_dim&quot;:80,&quot;vision_heads&quot;:16,&quot;vision_layers&quot;:32,&quot;visual_tokens&quot;:192,&quot;visual_tokens_per_view&quot;:64}" data-variant="{&quot;cache&quot;:{&quot;mode&quot;:&quot;none&quot;},&quot;quantization&quot;:{&quot;mode&quot;:&quot;bf16&quot;}}" data-context="lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3" data-objective="e2e_chunk_latency_ms"><td>h100-sxm5-80gb</td><td><a href="targets/016bff50eb2c9ef0cbd92b17b9da996614e06f1f679306c611f3e822599755a7/README.md">lingbot-vla-r1</a><small>lingbot-vla</small></td><td><details><summary>View shape</summary><code>{&quot;action_dim&quot;:75,&quot;backbone_dim&quot;:2048,&quot;backbone_ffn_dim&quot;:11008,&quot;batch&quot;:1,&quot;chunk&quot;:50,&quot;expert_dim&quot;:768,&quot;expert_ffn_dim&quot;:2752,&quot;head_dim&quot;:128,&quot;image_height&quot;:224,&quot;image_width&quot;:224,&quot;kv_heads&quot;:2,&quot;language_slots&quot;:72,&quot;layers&quot;:36,&quot;patch_rows_per_view&quot;:256,&quot;patch_width&quot;:1176,&quot;prefix_len&quot;:264,&quot;query_heads&quot;:16,&quot;state_dim&quot;:75,&quot;steps&quot;:10,&quot;suffix_len&quot;:51,&quot;views&quot;:3,&quot;vision_dim&quot;:1280,&quot;vision_ffn_dim&quot;:3420,&quot;vision_head_dim&quot;:80,&quot;vision_heads&quot;:16,&quot;vision_layers&quot;:32,&quot;visual_tokens&quot;:192,&quot;visual_tokens_per_view&quot;:64}</code></details></td><td><details><summary>BF16 · cache none</summary><code>{&quot;cache&quot;:{&quot;mode&quot;:&quot;none&quot;},&quot;quantization&quot;:{&quot;mode&quot;:&quot;bf16&quot;}}</code></details></td><td><a href="targets/016bff50eb2c9ef0cbd92b17b9da996614e06f1f679306c611f3e822599755a7/contexts/sha256:bda8df25ed1b0d9792ea69c9fb3bdda3a5d277aa23237059fc2f029e3a858765/summary.json">lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3</a> <span class="badge">Representative</span><small>Fixture: lingbot-robotwin-canonical-v1/seed-42 · Segment 0</small></td><td>e2e_chunk_latency_ms<small>latency-v2</small></td><td>105.409</td><td>105.409</td><td>1.000×</td><td>0</td><td><a href="targets/016bff50eb2c9ef0cbd92b17b9da996614e06f1f679306c611f3e822599755a7/progress.svg">Progress plot</a><small>Lineage: 016bff50eb2c9ef0cbd92b17b9da996614e06f1f679306c611f3e822599755a7</small></td></tr></tbody></table><p id="empty" hidden>No published contexts match these filters.</p></div>
+<footer>Generated from validated published summaries. Raw experiment logs and profiler captures remain outside this dashboard.</footer>
+<script>
+const rows = [...document.querySelectorAll('tbody tr')];
+const filters = [...document.querySelectorAll('[data-filter]')];
+function update() {
+  let visible = 0;
+  for (const row of rows) {
+    row.hidden = !filters.every(filter => !filter.value || row.dataset[filter.dataset.filter] === filter.value);
+    if (!row.hidden) visible++;
+  }
+  document.querySelector('#count').textContent = visible + ' of ' + rows.length + ' checkpoint contexts';
+  document.querySelector('#empty').hidden = visible !== 0;
+}
+document.querySelector('#filters').addEventListener('change', update);
+document.querySelector('#filters').addEventListener('reset', () => setTimeout(update, 0));
+update();
+</script>
+</main></body></html>

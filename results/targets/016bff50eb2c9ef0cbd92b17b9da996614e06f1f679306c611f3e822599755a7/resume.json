@@ -1,0 +1,887 @@
+{
+  "schema_version": 1,
+  "campaign_key": {
+    "target": {
+      "target": "hardware/nvidia/h100/lingbot_vla",
+      "hardware": "h100-sxm5-80gb",
+      "model": "lingbot-vla",
+      "model_revision": "lingbot-vla-r1",
+      "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+      "shape": {
+        "batch": 1,
+        "views": 3,
+        "image_height": 224,
+        "image_width": 224,
+        "patch_rows_per_view": 256,
+        "patch_width": 1176,
+        "visual_tokens_per_view": 64,
+        "visual_tokens": 192,
+        "vision_layers": 32,
+        "vision_dim": 1280,
+        "vision_ffn_dim": 3420,
+        "vision_heads": 16,
+        "vision_head_dim": 80,
+        "language_slots": 72,
+        "prefix_len": 264,
+        "state_dim": 75,
+        "action_dim": 75,
+        "chunk": 50,
+        "suffix_len": 51,
+        "steps": 10,
+        "layers": 36,
+        "backbone_dim": 2048,
+        "backbone_ffn_dim": 11008,
+        "expert_dim": 768,
+        "expert_ffn_dim": 2752,
+        "query_heads": 16,
+        "kv_heads": 2,
+        "head_dim": 128
+      }
+    },
+    "execution_variant": {
+      "quantization": {
+        "mode": "bf16"
+      },
+      "cache": {
+        "mode": "none"
+      }
+    },
+    "objective": "e2e_chunk_latency_ms",
+    "benchmark_protocol": "latency-v2"
+  },
+  "lineage_id": "016bff50eb2c9ef0cbd92b17b9da996614e06f1f679306c611f3e822599755a7",
+  "next_iteration": 1,
+  "portable_incumbent": {
+    "iteration": 0,
+    "engine_revision": "5570f1943545d6026349dae846fbc27901417255",
+    "plan": {
+      "lingbot_vision": "rope-frequency",
+      "lingbot_prefix": "rope-frequency",
+      "lingbot_action": "rope-frequency"
+    }
+  },
+  "active_context": "sha256:bda8df25ed1b0d9792ea69c9fb3bdda3a5d277aa23237059fc2f029e3a858765",
+  "context_state": {
+    "sha256:bda8df25ed1b0d9792ea69c9fb3bdda3a5d277aa23237059fc2f029e3a858765": {
+      "weights": {
+        "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+        "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+      },
+      "fixture": {
+        "id": "lingbot-robotwin-canonical-v1/seed-42",
+        "digest": "lingbot-robotwin-canonical-v1/seed-42"
+      },
+      "created": 1788970636.6924608,
+      "latest_segment": 0
+    }
+  },
+  "last_segment": 0,
+  "open_hypotheses": [],
+  "failed_hypotheses": [],
+  "portable_source": {
+    "revision": "5570f1943545d6026349dae846fbc27901417255",
+    "inputs": [
+      "src/flash_vla/hardware/nvidia/h100/lingbot_vla/__init__.py",
+      "src/flash_vla/hardware/nvidia/h100/lingbot_vla/backends/__init__.py",
+      "src/flash_vla/hardware/nvidia/h100/lingbot_vla/backends/rope_frequency.py",
+      "src/flash_vla/hardware/nvidia/h100/lingbot_vla/backends/upstream.py",
+      "src/flash_vla/hardware/nvidia/h100/lingbot_vla/pipeline.py",
+      "src/flash_vla/hardware/nvidia/h100/lingbot_vla/target.py",
+      "src/flash_vla/models/lingbot/__init__.py",
+      "src/flash_vla/models/lingbot/spec.py",
+      "src/flash_vla/models/lingbot/weights.py"
+    ]
+  },
+  "history": {
+    "metadata": {
+      "version": 1,
+      "id": "016bff50eb2c9ef0cbd92b17b9da996614e06f1f679306c611f3e822599755a7",
+      "created": 1788971303.8813758,
+      "target": {
+        "target": "hardware/nvidia/h100/lingbot_vla",
+        "hardware": "h100-sxm5-80gb",
+        "model": "lingbot-vla",
+        "model_revision": "lingbot-vla-r1",
+        "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+        "shape": {
+          "batch": 1,
+          "views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "patch_rows_per_view": 256,
+          "patch_width": 1176,
+          "visual_tokens_per_view": 64,
+          "visual_tokens": 192,
+          "vision_layers": 32,
+          "vision_dim": 1280,
+          "vision_ffn_dim": 3420,
+          "vision_heads": 16,
+          "vision_head_dim": 80,
+          "language_slots": 72,
+          "prefix_len": 264,
+          "state_dim": 75,
+          "action_dim": 75,
+          "chunk": 50,
+          "suffix_len": 51,
+          "steps": 10,
+          "layers": 36,
+          "backbone_dim": 2048,
+          "backbone_ffn_dim": 11008,
+          "expert_dim": 768,
+          "expert_ffn_dim": 2752,
+          "query_heads": 16,
+          "kv_heads": 2,
+          "head_dim": 128
+        }
+      },
+      "objective": "e2e_chunk_latency_ms",
+      "protocol": "latency-v2",
+      "fixture": "lingbot-robotwin-canonical-v1/seed-42",
+      "budget": {
+        "candidates": 6,
+        "non_improving": 3,
+        "jobs": 12
+      },
+      "execution_variant": {
+        "quantization": {
+          "mode": "bf16"
+        },
+        "cache": {
+          "mode": "none"
+        }
+      }
+    },
+    "records": [
+      {
+        "iteration": 0,
+        "candidate_id": "baseline",
+        "parent_incumbent": null,
+        "timestamp": 1788971303.8813758,
+        "hypothesis": null,
+        "change": {
+          "summary": "campaign baseline",
+          "scope": [],
+          "engine_revision": "5570f1943545d6026349dae846fbc27901417255"
+        },
+        "cost": {
+          "gpu_seconds": 649,
+          "jobs": [
+            "609928",
+            "609959"
+          ],
+          "accounting_scope": "Slurm allocated GPU seconds, including setup; CPU usage not measured"
+        },
+        "verdict": "accepted",
+        "correctness": {
+          "status": "pass",
+          "checks": [
+            {
+              "check": "replay_determinism",
+              "mode": "gate",
+              "status": "passed"
+            },
+            {
+              "check": "finiteness",
+              "mode": "gate",
+              "status": "passed"
+            },
+            {
+              "check": "in_engine_shallow",
+              "mode": "gate",
+              "status": "passed"
+            },
+            {
+              "check": "in_engine_deep",
+              "mode": "report",
+              "status": "passed"
+            },
+            {
+              "check": "in_engine_multistep",
+              "mode": "report",
+              "status": "passed"
+            },
+            {
+              "check": "baseline_layer0",
+              "mode": "gate",
+              "status": "passed"
+            },
+            {
+              "check": "baseline_depth",
+              "mode": "report",
+              "status": "passed"
+            }
+          ],
+          "identity": {
+            "schema_version": 3,
+            "target": "hardware/nvidia/h100/lingbot_vla",
+            "hardware": "h100-sxm5-80gb",
+            "model": "lingbot-vla",
+            "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+            "shape": {
+              "batch": 1,
+              "views": 3,
+              "image_height": 224,
+              "image_width": 224,
+              "patch_rows_per_view": 256,
+              "patch_width": 1176,
+              "visual_tokens_per_view": 64,
+              "visual_tokens": 192,
+              "vision_layers": 32,
+              "vision_dim": 1280,
+              "vision_ffn_dim": 3420,
+              "vision_heads": 16,
+              "vision_head_dim": 80,
+              "language_slots": 72,
+              "prefix_len": 264,
+              "state_dim": 75,
+              "action_dim": 75,
+              "chunk": 50,
+              "suffix_len": 51,
+              "steps": 10,
+              "layers": 36,
+              "backbone_dim": 2048,
+              "backbone_ffn_dim": 11008,
+              "expert_dim": 768,
+              "expert_ffn_dim": 2752,
+              "query_heads": 16,
+              "kv_heads": 2,
+              "head_dim": 128
+            },
+            "plan": {
+              "lingbot_vision": "rope-frequency",
+              "lingbot_prefix": "rope-frequency",
+              "lingbot_action": "rope-frequency"
+            },
+            "model_revision": "lingbot-vla-r1",
+            "engine_revision": "5570f1943545d6026349dae846fbc27901417255",
+            "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+            "execution_variant": {
+              "quantization": {
+                "mode": "bf16"
+              },
+              "cache": {
+                "mode": "none"
+              }
+            }
+          },
+          "measurement_context": {
+            "weights": {
+              "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+              "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+            },
+            "fixture": {
+              "id": "lingbot-robotwin-canonical-v1/seed-42",
+              "digest": "lingbot-robotwin-canonical-v1/seed-42"
+            },
+            "environment": {
+              "gpu_sku": "NVIDIA H100 80GB HBM3",
+              "driver": "570.86.10",
+              "cuda_runtime": "12.6",
+              "pytorch": "2.9.1+cu126",
+              "tilelang": "unavailable",
+              "clock_policy": {
+                "benchmark_control": "inherit",
+                "slurm_gpu_freq_request": null,
+                "effective_locked_clocks": "unobserved"
+              },
+              "power_policy": {
+                "requested_limit_w": 700.0,
+                "enforced_limit_w": 700.0
+              },
+              "capture_regime": "cuda_graph",
+              "clock_observation": {
+                "application_graphics_mhz": "1980",
+                "application_memory_mhz": "2619"
+              }
+            },
+            "hostname": "ACD1-12",
+            "slurm_job_id": "609928",
+            "timestamp": 1788970169.1888168,
+            "reference_provenance": {}
+          }
+        },
+        "qualification": {
+          "status": "imported",
+          "gate_verdict": null
+        },
+        "measurement": {
+          "validity": "valid",
+          "evidence": {
+            "validity": "valid",
+            "identity": {
+              "schema_version": 3,
+              "target": "hardware/nvidia/h100/lingbot_vla",
+              "hardware": "h100-sxm5-80gb",
+              "model": "lingbot-vla",
+              "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+              "shape": {
+                "batch": 1,
+                "views": 3,
+                "image_height": 224,
+                "image_width": 224,
+                "patch_rows_per_view": 256,
+                "patch_width": 1176,
+                "visual_tokens_per_view": 64,
+                "visual_tokens": 192,
+                "vision_layers": 32,
+                "vision_dim": 1280,
+                "vision_ffn_dim": 3420,
+                "vision_heads": 16,
+                "vision_head_dim": 80,
+                "language_slots": 72,
+                "prefix_len": 264,
+                "state_dim": 75,
+                "action_dim": 75,
+                "chunk": 50,
+                "suffix_len": 51,
+                "steps": 10,
+                "layers": 36,
+                "backbone_dim": 2048,
+                "backbone_ffn_dim": 11008,
+                "expert_dim": 768,
+                "expert_ffn_dim": 2752,
+                "query_heads": 16,
+                "kv_heads": 2,
+                "head_dim": 128
+              },
+              "plan": {
+                "lingbot_vision": "rope-frequency",
+                "lingbot_prefix": "rope-frequency",
+                "lingbot_action": "rope-frequency"
+              },
+              "model_revision": "lingbot-vla-r1",
+              "engine_revision": "5570f1943545d6026349dae846fbc27901417255",
+              "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+              "execution_variant": {
+                "quantization": {
+                  "mode": "bf16"
+                },
+                "cache": {
+                  "mode": "none"
+                }
+              }
+            },
+            "measurement_context": {
+              "weights": {
+                "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+                "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+              },
+              "fixture": {
+                "id": "lingbot-robotwin-canonical-v1/seed-42",
+                "digest": "lingbot-robotwin-canonical-v1/seed-42"
+              },
+              "environment": {
+                "gpu_sku": "NVIDIA H100 80GB HBM3",
+                "driver": "570.86.10",
+                "cuda_runtime": "12.6",
+                "pytorch": "2.9.1+cu126",
+                "tilelang": "unavailable",
+                "clock_policy": {
+                  "benchmark_control": "inherit",
+                  "slurm_gpu_freq_request": null,
+                  "effective_locked_clocks": "unobserved"
+                },
+                "power_policy": {
+                  "requested_limit_w": 700.0,
+                  "enforced_limit_w": 700.0
+                },
+                "capture_regime": "cuda_graph",
+                "clock_observation": {
+                  "application_graphics_mhz": "1980",
+                  "application_memory_mhz": "2619"
+                }
+              },
+              "hostname": "ACD1-12",
+              "slurm_job_id": "609959",
+              "timestamp": 1788970636.6924608,
+              "reference_provenance": {}
+            },
+            "protocol": "latency-v2",
+            "instrumented": false,
+            "objective": {
+              "name": "e2e_chunk_latency_ms",
+              "unit": "ms",
+              "value": 105.40860705077648
+            },
+            "correctness": {
+              "status": "pass",
+              "checks": [
+                {
+                  "check": "replay_determinism",
+                  "mode": "gate",
+                  "status": "passed"
+                },
+                {
+                  "check": "finiteness",
+                  "mode": "gate",
+                  "status": "passed"
+                },
+                {
+                  "check": "in_engine_shallow",
+                  "mode": "gate",
+                  "status": "passed"
+                },
+                {
+                  "check": "in_engine_deep",
+                  "mode": "report",
+                  "status": "passed"
+                },
+                {
+                  "check": "in_engine_multistep",
+                  "mode": "report",
+                  "status": "passed"
+                },
+                {
+                  "check": "baseline_layer0",
+                  "mode": "gate",
+                  "status": "passed"
+                },
+                {
+                  "check": "baseline_depth",
+                  "mode": "report",
+                  "status": "passed"
+                }
+              ],
+              "identity": {
+                "schema_version": 3,
+                "target": "hardware/nvidia/h100/lingbot_vla",
+                "hardware": "h100-sxm5-80gb",
+                "model": "lingbot-vla",
+                "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+                "shape": {
+                  "batch": 1,
+                  "views": 3,
+                  "image_height": 224,
+                  "image_width": 224,
+                  "patch_rows_per_view": 256,
+                  "patch_width": 1176,
+                  "visual_tokens_per_view": 64,
+                  "visual_tokens": 192,
+                  "vision_layers": 32,
+                  "vision_dim": 1280,
+                  "vision_ffn_dim": 3420,
+                  "vision_heads": 16,
+                  "vision_head_dim": 80,
+                  "language_slots": 72,
+                  "prefix_len": 264,
+                  "state_dim": 75,
+                  "action_dim": 75,
+                  "chunk": 50,
+                  "suffix_len": 51,
+                  "steps": 10,
+                  "layers": 36,
+                  "backbone_dim": 2048,
+                  "backbone_ffn_dim": 11008,
+                  "expert_dim": 768,
+                  "expert_ffn_dim": 2752,
+                  "query_heads": 16,
+                  "kv_heads": 2,
+                  "head_dim": 128
+                },
+                "plan": {
+                  "lingbot_vision": "rope-frequency",
+                  "lingbot_prefix": "rope-frequency",
+                  "lingbot_action": "rope-frequency"
+                },
+                "model_revision": "lingbot-vla-r1",
+                "engine_revision": "5570f1943545d6026349dae846fbc27901417255",
+                "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+                "execution_variant": {
+                  "quantization": {
+                    "mode": "bf16"
+                  },
+                  "cache": {
+                    "mode": "none"
+                  }
+                }
+              },
+              "measurement_context": {
+                "weights": {
+                  "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+                  "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+                },
+                "fixture": {
+                  "id": "lingbot-robotwin-canonical-v1/seed-42",
+                  "digest": "lingbot-robotwin-canonical-v1/seed-42"
+                },
+                "environment": {
+                  "gpu_sku": "NVIDIA H100 80GB HBM3",
+                  "driver": "570.86.10",
+                  "cuda_runtime": "12.6",
+                  "pytorch": "2.9.1+cu126",
+                  "tilelang": "unavailable",
+                  "clock_policy": {
+                    "benchmark_control": "inherit",
+                    "slurm_gpu_freq_request": null,
+                    "effective_locked_clocks": "unobserved"
+                  },
+                  "power_policy": {
+                    "requested_limit_w": 700.0,
+                    "enforced_limit_w": 700.0
+                  },
+                  "capture_regime": "cuda_graph",
+                  "clock_observation": {
+                    "application_graphics_mhz": "1980",
+                    "application_memory_mhz": "2619"
+                  }
+                },
+                "hostname": "ACD1-12",
+                "slurm_job_id": "609928",
+                "timestamp": 1788970169.1888168,
+                "reference_provenance": {}
+              }
+            },
+            "aba": {
+              "config": {
+                "reps": 100,
+                "warmup": 5,
+                "soak_s": 10,
+                "p99_min_reps": 100
+              },
+              "legs": [
+                {
+                  "identity": {
+                    "schema_version": 3,
+                    "target": "hardware/nvidia/h100/lingbot_vla",
+                    "hardware": "h100-sxm5-80gb",
+                    "model": "lingbot-vla",
+                    "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+                    "shape": {
+                      "batch": 1,
+                      "views": 3,
+                      "image_height": 224,
+                      "image_width": 224,
+                      "patch_rows_per_view": 256,
+                      "patch_width": 1176,
+                      "visual_tokens_per_view": 64,
+                      "visual_tokens": 192,
+                      "vision_layers": 32,
+                      "vision_dim": 1280,
+                      "vision_ffn_dim": 3420,
+                      "vision_heads": 16,
+                      "vision_head_dim": 80,
+                      "language_slots": 72,
+                      "prefix_len": 264,
+                      "state_dim": 75,
+                      "action_dim": 75,
+                      "chunk": 50,
+                      "suffix_len": 51,
+                      "steps": 10,
+                      "layers": 36,
+                      "backbone_dim": 2048,
+                      "backbone_ffn_dim": 11008,
+                      "expert_dim": 768,
+                      "expert_ffn_dim": 2752,
+                      "query_heads": 16,
+                      "kv_heads": 2,
+                      "head_dim": 128
+                    },
+                    "plan": {
+                      "lingbot_vision": "rope-frequency",
+                      "lingbot_prefix": "rope-frequency",
+                      "lingbot_action": "rope-frequency"
+                    },
+                    "model_revision": "lingbot-vla-r1",
+                    "engine_revision": "5570f1943545d6026349dae846fbc27901417255",
+                    "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+                    "execution_variant": {
+                      "quantization": {
+                        "mode": "bf16"
+                      },
+                      "cache": {
+                        "mode": "none"
+                      }
+                    }
+                  },
+                  "measurement_context": {
+                    "weights": {
+                      "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+                      "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+                    },
+                    "fixture": {
+                      "id": "lingbot-robotwin-canonical-v1/seed-42",
+                      "digest": "lingbot-robotwin-canonical-v1/seed-42"
+                    },
+                    "environment": {
+                      "gpu_sku": "NVIDIA H100 80GB HBM3",
+                      "driver": "570.86.10",
+                      "cuda_runtime": "12.6",
+                      "pytorch": "2.9.1+cu126",
+                      "tilelang": "unavailable",
+                      "clock_policy": {
+                        "benchmark_control": "inherit",
+                        "slurm_gpu_freq_request": null,
+                        "effective_locked_clocks": "unobserved"
+                      },
+                      "power_policy": {
+                        "requested_limit_w": 700.0,
+                        "enforced_limit_w": 700.0
+                      },
+                      "capture_regime": "cuda_graph",
+                      "clock_observation": {
+                        "application_graphics_mhz": "1980",
+                        "application_memory_mhz": "2619"
+                      }
+                    },
+                    "hostname": "ACD1-12",
+                    "slurm_job_id": "609959",
+                    "timestamp": 1788970591.1769354,
+                    "reference_provenance": {}
+                  },
+                  "metrics": {
+                    "chunk_latency": {
+                      "min": 105.4086871445179,
+                      "median": 105.47070018947124,
+                      "p99": 105.5618291720748,
+                      "n": 100
+                    },
+                    "device_latency": {
+                      "min": 105.41007995605469,
+                      "median": 105.46636581420898,
+                      "p99": 105.58979034423828,
+                      "n": 100
+                    },
+                    "host_time": {},
+                    "segment_latency": {},
+                    "overhead": {
+                      "min": -4.868016690015793,
+                      "median": -4.89904411137104,
+                      "p99": -5.144215025007725
+                    }
+                  }
+                },
+                {
+                  "identity": {
+                    "schema_version": 3,
+                    "target": "hardware/nvidia/h100/lingbot_vla",
+                    "hardware": "h100-sxm5-80gb",
+                    "model": "lingbot-vla",
+                    "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+                    "shape": {
+                      "batch": 1,
+                      "views": 3,
+                      "image_height": 224,
+                      "image_width": 224,
+                      "patch_rows_per_view": 256,
+                      "patch_width": 1176,
+                      "visual_tokens_per_view": 64,
+                      "visual_tokens": 192,
+                      "vision_layers": 32,
+                      "vision_dim": 1280,
+                      "vision_ffn_dim": 3420,
+                      "vision_heads": 16,
+                      "vision_head_dim": 80,
+                      "language_slots": 72,
+                      "prefix_len": 264,
+                      "state_dim": 75,
+                      "action_dim": 75,
+                      "chunk": 50,
+                      "suffix_len": 51,
+                      "steps": 10,
+                      "layers": 36,
+                      "backbone_dim": 2048,
+                      "backbone_ffn_dim": 11008,
+                      "expert_dim": 768,
+                      "expert_ffn_dim": 2752,
+                      "query_heads": 16,
+                      "kv_heads": 2,
+                      "head_dim": 128
+                    },
+                    "plan": {
+                      "lingbot_vision": "rope-frequency",
+                      "lingbot_prefix": "rope-frequency",
+                      "lingbot_action": "rope-frequency"
+                    },
+                    "model_revision": "lingbot-vla-r1",
+                    "engine_revision": "5570f1943545d6026349dae846fbc27901417255",
+                    "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+                    "execution_variant": {
+                      "quantization": {
+                        "mode": "bf16"
+                      },
+                      "cache": {
+                        "mode": "none"
+                      }
+                    }
+                  },
+                  "measurement_context": {
+                    "weights": {
+                      "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+                      "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+                    },
+                    "fixture": {
+                      "id": "lingbot-robotwin-canonical-v1/seed-42",
+                      "digest": "lingbot-robotwin-canonical-v1/seed-42"
+                    },
+                    "environment": {
+                      "gpu_sku": "NVIDIA H100 80GB HBM3",
+                      "driver": "570.86.10",
+                      "cuda_runtime": "12.6",
+                      "pytorch": "2.9.1+cu126",
+                      "tilelang": "unavailable",
+                      "clock_policy": {
+                        "benchmark_control": "inherit",
+                        "slurm_gpu_freq_request": null,
+                        "effective_locked_clocks": "unobserved"
+                      },
+                      "power_policy": {
+                        "requested_limit_w": 700.0,
+                        "enforced_limit_w": 700.0
+                      },
+                      "capture_regime": "cuda_graph",
+                      "clock_observation": {
+                        "application_graphics_mhz": "1980",
+                        "application_memory_mhz": "2619"
+                      }
+                    },
+                    "hostname": "ACD1-12",
+                    "slurm_job_id": "609959",
+                    "timestamp": 1788970636.6924608,
+                    "reference_provenance": {}
+                  },
+                  "metrics": {
+                    "chunk_latency": {
+                      "min": 105.40860705077648,
+                      "median": 105.47566413879395,
+                      "p99": 105.56272137910128,
+                      "n": 100
+                    },
+                    "device_latency": {
+                      "min": 105.39558410644531,
+                      "median": 105.4642562866211,
+                      "p99": 105.51660919189453,
+                      "n": 100
+                    },
+                    "host_time": {},
+                    "segment_latency": {},
+                    "overhead": {
+                      "min": -4.903997853398323,
+                      "median": -5.068704605102539,
+                      "p99": -5.508770816028118
+                    }
+                  }
+                },
+                {
+                  "identity": {
+                    "schema_version": 3,
+                    "target": "hardware/nvidia/h100/lingbot_vla",
+                    "hardware": "h100-sxm5-80gb",
+                    "model": "lingbot-vla",
+                    "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+                    "shape": {
+                      "batch": 1,
+                      "views": 3,
+                      "image_height": 224,
+                      "image_width": 224,
+                      "patch_rows_per_view": 256,
+                      "patch_width": 1176,
+                      "visual_tokens_per_view": 64,
+                      "visual_tokens": 192,
+                      "vision_layers": 32,
+                      "vision_dim": 1280,
+                      "vision_ffn_dim": 3420,
+                      "vision_heads": 16,
+                      "vision_head_dim": 80,
+                      "language_slots": 72,
+                      "prefix_len": 264,
+                      "state_dim": 75,
+                      "action_dim": 75,
+                      "chunk": 50,
+                      "suffix_len": 51,
+                      "steps": 10,
+                      "layers": 36,
+                      "backbone_dim": 2048,
+                      "backbone_ffn_dim": 11008,
+                      "expert_dim": 768,
+                      "expert_ffn_dim": 2752,
+                      "query_heads": 16,
+                      "kv_heads": 2,
+                      "head_dim": 128
+                    },
+                    "plan": {
+                      "lingbot_vision": "rope-frequency",
+                      "lingbot_prefix": "rope-frequency",
+                      "lingbot_action": "rope-frequency"
+                    },
+                    "model_revision": "lingbot-vla-r1",
+                    "engine_revision": "5570f1943545d6026349dae846fbc27901417255",
+                    "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+                    "execution_variant": {
+                      "quantization": {
+                        "mode": "bf16"
+                      },
+                      "cache": {
+                        "mode": "none"
+                      }
+                    }
+                  },
+                  "measurement_context": {
+                    "weights": {
+                      "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+                      "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+                    },
+                    "fixture": {
+                      "id": "lingbot-robotwin-canonical-v1/seed-42",
+                      "digest": "lingbot-robotwin-canonical-v1/seed-42"
+                    },
+                    "environment": {
+                      "gpu_sku": "NVIDIA H100 80GB HBM3",
+                      "driver": "570.86.10",
+                      "cuda_runtime": "12.6",
+                      "pytorch": "2.9.1+cu126",
+                      "tilelang": "unavailable",
+                      "clock_policy": {
+                        "benchmark_control": "inherit",
+                        "slurm_gpu_freq_request": null,
+                        "effective_locked_clocks": "unobserved"
+                      },
+                      "power_policy": {
+                        "requested_limit_w": 700.0,
+                        "enforced_limit_w": 700.0
+                      },
+                      "capture_regime": "cuda_graph",
+                      "clock_observation": {
+                        "application_graphics_mhz": "1980",
+                        "application_memory_mhz": "2619"
+                      }
+                    },
+                    "hostname": "ACD1-12",
+                    "slurm_job_id": "609959",
+                    "timestamp": 1788970682.2683845,
+                    "reference_provenance": {}
+                  },
+                  "metrics": {
+                    "chunk_latency": {
+                      "min": 105.4148469120264,
+                      "median": 105.43724289163947,
+                      "p99": 105.4739709943533,
+                      "n": 100
+                    },
+                    "device_latency": {
+                      "min": 105.3602523803711,
+                      "median": 105.43614196777344,
+                      "p99": 105.50125122070312,
+                      "n": 100
+                    },
+                    "host_time": {},
+                    "segment_latency": {},
+                    "overhead": {
+                      "min": -4.955397114157677,
+                      "median": -5.195941064506769,
+                      "p99": -5.450860396027565
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "diagnostics": {}
+      }
+    ],
+    "transitions": [],
+    "hypotheses": {
+      "unresolved": []
+    }
+  }
+}

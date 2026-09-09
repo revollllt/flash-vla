@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "context_id": "sha256:bda8df25ed1b0d9792ea69c9fb3bdda3a5d277aa23237059fc2f029e3a858765",
+  "weights": {
+    "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+    "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+  },
+  "fixture": {
+    "id": "lingbot-robotwin-canonical-v1/seed-42",
+    "digest": "lingbot-robotwin-canonical-v1/seed-42"
+  },
+  "measurement_context": {
+    "weights": {
+      "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+      "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+    },
+    "fixture": {
+      "id": "lingbot-robotwin-canonical-v1/seed-42",
+      "digest": "lingbot-robotwin-canonical-v1/seed-42"
+    },
+    "environment": {
+      "gpu_sku": "NVIDIA H100 80GB HBM3",
+      "driver": "570.86.10",
+      "cuda_runtime": "12.6",
+      "pytorch": "2.9.1+cu126",
+      "tilelang": "unavailable",
+      "clock_policy": {
+        "benchmark_control": "inherit",
+        "slurm_gpu_freq_request": null,
+        "effective_locked_clocks": "unobserved"
+      },
+      "power_policy": {
+        "requested_limit_w": 700.0,
+        "enforced_limit_w": 700.0
+      },
+      "capture_regime": "cuda_graph",
+      "clock_observation": {
+        "application_graphics_mhz": "1980",
+        "application_memory_mhz": "2619"
+      }
+    },
+    "hostname": "ACD1-12",
+    "slurm_job_id": "609959",
+    "timestamp": 1788970636.6924608,
+    "reference_provenance": {}
+  },
+  "latest_segment": 0,
+  "segment_anchor_ms": 105.40860705077648,
+  "best_validated_ms": 105.40860705077648,
+  "validated_incumbent": {
+    "iteration": 0,
+    "engine_revision": "5570f1943545d6026349dae846fbc27901417255",
+    "plan": {
+      "lingbot_vision": "rope-frequency",
+      "lingbot_prefix": "rope-frequency",
+      "lingbot_action": "rope-frequency"
+    }
+  },
+  "last_validated_iteration": 0
+}
