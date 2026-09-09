@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 import unittest
 from unittest.mock import patch
 
@@ -15,6 +16,7 @@ class _Identity:
 class _Engine:
     def __init__(self, plan):
         self.plan = plan
+        self.device = "cuda:0"
         self.identity = _Identity()
         self.measurement_context = {
             "weights": {"checkpoint_id": "a", "checkpoint_digest": "a"},
@@ -39,7 +41,8 @@ class LatencyRunTests(unittest.TestCase):
             return {"chunk_latency": stats, "device_latency": stats,
                     "host_time": {}, "segment_latency": {}, "overhead": stats}
 
-        with patch.object(latency, "require_cuda"), \
+        with patch.object(latency.torch.cuda, "device", return_value=nullcontext()), \
+             patch.object(latency, "require_cuda"), \
              patch.object(latency.torch.cuda, "init"), \
              patch.object(latency.torch.cuda, "empty_cache"), \
              patch.object(latency, "resolve", side_effect=lambda value: value), \
@@ -70,7 +73,7 @@ class LatencyRunTests(unittest.TestCase):
                             engine.measurement_context["fixture"]["digest"] = "b"
                     return engine
 
-                def environment():
+                def environment(*args):
                     environment_calls.append(1)
                     return {"driver": "b" if changed == "environment" and len(environment_calls) > 1 else "a"}
 
@@ -80,7 +83,8 @@ class LatencyRunTests(unittest.TestCase):
                     return {"chunk_latency": stats, "device_latency": stats,
                             "host_time": {}, "segment_latency": {}, "overhead": stats}
 
-                with patch.object(latency, "require_cuda"), \
+                with patch.object(latency.torch.cuda, "device", return_value=nullcontext()), \
+                     patch.object(latency, "require_cuda"), \
                      patch.object(latency.torch.cuda, "init"), \
                      patch.object(latency.torch.cuda, "empty_cache"), \
                      patch.object(latency, "resolve", side_effect=lambda value: value), \

@@ -125,3 +125,10 @@ Attention fixtures are correctness snapshots, not production performance
 fixtures. The QKV pilot rotates 100 MiB of weights across ten calls per graph.
 Isolated latency and profiled software ranges cannot substitute for E2E
 qualification. See `docs/optimization-results.md` for evidence and limitations.
+
+Production environment reports distinguish the requested clock protocol from
+observed policy. GPU UUID, driver and requested/enforced power limits refer to
+the runner's device. Application clock readings alone do not certify locked
+clocks: until the actual policy is established, clock_policy remains null and
+the complete-context check rejects formal acceptance. Environment probes do not
+substitute for model correctness, re-anchor or A/B/A evidence.

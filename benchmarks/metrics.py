@@ -78,7 +78,7 @@ def diff_stats(ref: torch.Tensor, got: torch.Tensor) -> dict[str, Any]:
     }
 
 
-def env_block() -> dict[str, Any]:
+def env_block(device=None) -> dict[str, Any]:
     """GPU / toolchain versions, for stamping result files."""
     try:
         tilelang_version = metadata.version("tilelang")
@@ -86,7 +86,7 @@ def env_block() -> dict[str, Any]:
         tilelang_version = "unavailable"
 
     return {
-        "gpu": torch.cuda.get_device_name(0),
+        "gpu": torch.cuda.get_device_name(device),
         "python": sys.executable,
         "torch": torch.__version__,
         "torch_cuda": torch.version.cuda,
@@ -113,8 +113,9 @@ def report_context(engine, environment):
         environment={
             "gpu_sku": environment.get("gpu"), "driver": environment.get("driver"),
             "cuda_runtime": environment.get("torch_cuda"), "pytorch": environment.get("torch"),
-            "tilelang": environment.get("tilelang"), "clock_policy": environment.get("clocks"),
+            "tilelang": environment.get("tilelang"), "clock_policy": environment.get("clock_policy"),
             "power_policy": environment.get("power_policy"), "capture_regime": "cuda_graph",
+            "clock_observation": environment.get("clock_observation"),
         },
         hostname=environment.get("node"), slurm_job_id=environment.get("job"),
         timestamp=time.time(),

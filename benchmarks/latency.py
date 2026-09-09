@@ -38,11 +38,13 @@ against the acceptance registry.
 from __future__ import annotations
 
 import argparse
+import csv
 import gc
 import json
 import os
 import platform
 import statistics
+import subprocess
 import time
 from typing import Any, Callable
 
@@ -234,13 +236,31 @@ def _deltas(legs: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
-def _env() -> dict[str, Any]:
-    env = env_block()
+def _env(device=None) -> dict[str, Any]:
+    fields = ("driver_version", "power.limit", "enforced.power.limit",
+              "clocks.applications.graphics", "clocks.applications.memory")
+    result = subprocess.run(
+        ["nvidia-smi", "-i", device_selector(device), "--query-gpu=" + ",".join(fields),
+         "--format=csv,noheader,nounits"],
+        capture_output=True, text=True, timeout=10, check=True,
+    )
+    rows = list(csv.reader(result.stdout.splitlines(), skipinitialspace=True))
+    if len(rows) != 1 or len(rows[0]) != len(fields):
+        raise ValueError("expected one complete nvidia-smi row for the current CUDA device")
+    driver, requested, enforced, graphics, memory = rows[0]
+    env = env_block(device)
     env.update({
         "node": platform.node(),
         "job": os.environ.get("SLURM_JOB_ID"),
-        "driver": _driver_version(),
+        "driver": driver,
         "clocks": _LAT["clocks"],
+        # Application clocks do not reveal GPU locked clocks. Preserve the
+        # requested protocol above, but do not certify it as observed policy.
+        "clock_policy": None,
+        "clock_observation": {"application_graphics_mhz": graphics,
+                              "application_memory_mhz": memory},
+        "power_policy": {"requested_limit_w": float(requested),
+                         "enforced_limit_w": float(enforced)},
     })
     return env
 
@@ -256,32 +276,11 @@ def parse_options(items: list[str]) -> dict[str, Any]:
     return out
 
 
-def device_selector() -> str | None:
-    """What `nvidia-smi -i` must be given to sample the device this process runs on.
-
-    `CUDA_VISIBLE_DEVICES` renumbers the process's view but not `nvidia-smi`'s,
-    and on this partition it can hold a UUID rather than an index, so the UUID
-    torch reports for device 0 is the only selector that means the same thing to
-    both. Falls back to the first visible index, then to every device.
-    """
-    try:
-        uuid = getattr(torch.cuda.get_device_properties(0), "uuid", None)
-        if uuid is not None:
-            return f"GPU-{uuid}"
-    except (AssertionError, RuntimeError, AttributeError):
-        pass
-    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")[0].strip()
-    return visible or None
-
-
-def _driver_version() -> str | None:
-    try:
-        import subprocess
-        out = subprocess.run(["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
-                             capture_output=True, text=True, timeout=10)
-        return out.stdout.strip().splitlines()[0] if out.returncode == 0 else None
-    except (OSError, subprocess.SubprocessError, IndexError):
-        return None
+def device_selector(device=None) -> str:
+    """Select the actual CUDA device, including CUDA_VISIBLE_DEVICES remapping."""
+    uuid = str(torch.cuda.get_device_properties(
+        torch.cuda.current_device() if device is None else device).uuid)
+    return uuid if uuid.startswith(("GPU-", "MIG-")) else f"GPU-{uuid}"
 
 
 def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
@@ -299,7 +298,6 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
     plans = [plan or "shipped" for plan in plans]
     if calibrate:
         plans = [plans[0]] * 3
-    selector = device_selector() if attribution else None
     legs = []
     built = []
     reference_context = None
@@ -319,22 +317,28 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
             print(f"== leg {index}: {target} plan={plan}", flush=True)
             item = next(item for item in built if item["plan"] == plan)
             engine, inputs = item["engine"], item["inputs"]
-            context = report_context(engine, _env())
+            environment = _env(engine.device)
+            context = report_context(engine, environment)
             current_context = MeasurementContext.from_dict(context)
             if reference_context is None:
                 reference_context = current_context
             elif reference_context.segment_key != current_context.segment_key:
                 raise ValueError("A/B/A measurement context changed; re-anchor in a new segment")
-            collector = Attribution(device_index=selector) if attribution else None
-            if collector is None:
-                metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
-                                  soak_s=_LAT["soak_s"])
-                evidence = None
-            else:
-                with collector:
+            collector = Attribution(device_index=device_selector(engine.device)) if attribution else None
+            with torch.cuda.device(engine.device):
+                if collector is None:
                     metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
-                                      soak_s=_LAT["soak_s"], attribution=collector)
-                evidence = collector.as_dict()
+                                      soak_s=_LAT["soak_s"])
+                    evidence = None
+                else:
+                    with collector:
+                        metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
+                                          soak_s=_LAT["soak_s"], attribution=collector)
+                    evidence = collector.as_dict()
+            environment = _env(engine.device)
+            after = MeasurementContext.from_dict(report_context(engine, environment))
+            if after.segment_key != current_context.segment_key:
+                raise ValueError("A/B/A measurement context changed during a leg; require re-anchor")
             legs.append({"leg": index, "plan": plan, "identity": engine.identity.as_dict(),
                          "measurement_context": context, "metrics": metrics, "attribution": evidence})
             print(json.dumps(legs[-1]["metrics"]), flush=True)
@@ -348,7 +352,7 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
     report = {
         "identity": legs[0]["identity"],
         "measurement_context": legs[0]["measurement_context"],
-        "env": _env(),
+        "env": environment,
         "config": {"reps": reps, "warmup": warmup, "seed": seed, "plans": plans,
                    "calibration": calibrate, "statistics": list(_LAT["statistics"]),
                    "p99_min_reps": _LAT["p99_min_reps"],
