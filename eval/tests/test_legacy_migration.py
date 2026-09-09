@@ -103,6 +103,26 @@ class LegacyMigrationTests(unittest.TestCase):
         self.assertEqual(candidate['iteration'], 2)
         self.assertEqual(candidate['parent_incumbent'], 'iter-001')
 
+    def test_reanchor_assigns_a_new_segment_only_for_environment_drift(self):
+        directory = Path(self.temp.name) / 'pi05'
+        migrate.pi_campaign(self.root, directory)
+        identity = store.read(directory / 'campaign.json')['target']
+        identity = dict(schema_version=2, **identity, plan={'model': 'shipped'},
+                        engine_revision=self.revision)
+        segment = dict(SEGMENT1)
+        segment.pop('id')
+        evidence = dict(
+            identity=identity,
+            objective={'name': 'e2e_chunk_latency_ms', 'unit': 'ms', 'value': 14.2},
+            measurement_segment=segment,
+            measurement_context={'hostname': 'ACD1-4', 'slurm_job_id': '606100',
+                                 'timestamp': 200.0},
+        )
+        campaign.reanchor(directory, evidence)
+        entry = trace.normalize(directory)['iterations'][1]
+        self.assertEqual(entry['measurement_segment']['id'], 1)
+        self.assertTrue(entry['reanchor'])
+
 
 if __name__ == '__main__':
     unittest.main()

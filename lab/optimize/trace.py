@@ -4,9 +4,7 @@ from pathlib import Path
 from . import campaign, store
 
 
-ENVIRONMENT_FIELDS = ('gpu_sku', 'driver', 'cuda_runtime', 'pytorch', 'tilelang',
-                      'clock_policy', 'power_policy', 'benchmark_protocol',
-                      'capture_regime')
+ENVIRONMENT_FIELDS = campaign.MEASUREMENT_ENVIRONMENT_FIELDS
 CONTEXT_FIELDS = ('hostname', 'slurm_job_id', 'timestamp')
 
 

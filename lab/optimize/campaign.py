@@ -10,6 +10,10 @@ from .schema import STAGES, validate as validate_experiment
 
 VERDICTS = ('accepted', 'no_benefit', 'correctness_failed', 'invalid', 'blocked')
 TERMINAL = set(VERDICTS)
+MEASUREMENT_ENVIRONMENT_FIELDS = (
+    'gpu_sku', 'driver', 'cuda_runtime', 'pytorch', 'tilelang',
+    'clock_policy', 'power_policy', 'benchmark_protocol', 'capture_regime',
+)
 
 
 def target_key(identity):
@@ -232,15 +236,22 @@ def reanchor(directory, evidence):
         objective = evidence['objective']
         if objective.get('name') != metadata['objective'] or objective.get('unit') != 'ms':
             raise ValueError('re-anchor objective does not match campaign')
-        segment = evidence['measurement_segment']
+        segment = dict(evidence['measurement_segment'])
+        missing = [key for key in MEASUREMENT_ENVIRONMENT_FIELDS if key not in segment]
+        if missing:
+            raise ValueError(f're-anchor measurement segment is missing: {missing}')
         if segment.get('benchmark_protocol') != metadata['protocol']:
             raise ValueError('re-anchor protocol does not match campaign')
         records = [record for _, record in _records(directory)]
         previous = records[-1]['measurement']
         previous_segment = (previous['evidence']['measurement_segment'] if len(records) == 1
                             else previous['measurement_segment'])
-        if segment.get('id') not in (previous_segment['id'], previous_segment['id'] + 1):
-            raise ValueError('re-anchor segment must continue or advance the current segment')
+        drifted = any(segment[key] != previous_segment[key]
+                      for key in MEASUREMENT_ENVIRONMENT_FIELDS)
+        expected_segment_id = previous_segment['id'] + int(drifted)
+        if segment.get('id', expected_segment_id) != expected_segment_id:
+            raise ValueError('re-anchor segment id does not match environment drift')
+        segment['id'] = expected_segment_id
         iteration = state['iterations']
         value = float(objective['value'])
         measurement = dict(identity=identity, validity='valid', measurement_segment=segment,
