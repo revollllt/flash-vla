@@ -20,7 +20,7 @@
     },
     "environment": {
       "gpu_sku": "NVIDIA H100 80GB HBM3",
-      "driver": "570.86.10",
+      "driver": "610.43.02",
       "cuda_runtime": "12.6",
       "pytorch": "2.9.1+cu126",
       "tilelang": "unavailable",
@@ -35,26 +35,26 @@
       },
       "capture_regime": "cuda_graph",
       "clock_observation": {
-        "application_graphics_mhz": "1980",
-        "application_memory_mhz": "2619"
+        "application_graphics_mhz": "[Requested functionality has been deprecated]",
+        "application_memory_mhz": "[Requested functionality has been deprecated]"
       }
     },
-    "hostname": "ACD1-1",
-    "slurm_job_id": "610984",
-    "timestamp": 1788993740.4003696,
+    "hostname": "ACD1-25",
+    "slurm_job_id": "611022",
+    "timestamp": 1788995680.7800763,
     "reference_provenance": {}
   },
-  "latest_segment": 1,
-  "segment_anchor_ms": 90.37934616208076,
-  "best_validated_ms": 85.21087095141411,
+  "latest_segment": 2,
+  "segment_anchor_ms": 86.39227412641048,
+  "best_validated_ms": 64.80356119573116,
   "validated_incumbent": {
-    "iteration": 5,
-    "engine_revision": "c516eb2026a44af537b21263f1e2d002e91c5186",
+    "iteration": 6,
+    "engine_revision": "26196b310faa1de345c7de4cdcf6d0849039b12e",
     "plan": {
-      "lingbot_vision": "time-modulation",
-      "lingbot_prefix": "time-modulation",
-      "lingbot_action": "time-modulation"
+      "lingbot_vision": "fused-norm",
+      "lingbot_prefix": "fused-norm",
+      "lingbot_action": "fused-norm"
     }
   },
-  "last_validated_iteration": 5
+  "last_validated_iteration": 6
 }
