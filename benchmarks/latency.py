@@ -301,32 +301,40 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         plans = [plans[0]] * 3
     selector = device_selector() if attribution else None
     legs = []
+    built = []
     reference_identity: Identity | None = None
-    for index, plan in enumerate(plans):
-        print(f"== leg {index}: {target} plan={plan}", flush=True)
+    for plan in plans:
+        if any(item["plan"] == plan for item in built):
+            continue
         engine = build(target, plan, seed=seed, **overrides)
         if reference_identity is None:
             reference_identity = engine.identity
         elif not reference_identity.same_workload(engine.identity):
-            raise ValueError(f"leg {index} is not the same workload as leg 0; "
-                             "legs of one run may differ in plan only")
+            raise ValueError("plans in one run may differ in implementation only")
         inputs = engine.sample_inputs(seed)
-        collector = Attribution(device_index=selector) if attribution else None
-        if collector is None:
-            metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
-                              soak_s=_LAT["soak_s"])
-            evidence = None
-        else:
-            with collector:
+        built.append({"plan": plan, "engine": engine, "inputs": inputs})
+    try:
+        for index, plan in enumerate(plans):
+            print(f"== leg {index}: {target} plan={plan}", flush=True)
+            item = next(item for item in built if item["plan"] == plan)
+            engine, inputs = item["engine"], item["inputs"]
+            collector = Attribution(device_index=selector) if attribution else None
+            if collector is None:
                 metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
-                                  soak_s=_LAT["soak_s"], attribution=collector)
-            evidence = collector.as_dict()
-        legs.append({"leg": index, "plan": plan, "identity": engine.identity.as_dict(),
-                     "metrics": metrics, "attribution": evidence})
-        print(json.dumps(legs[-1]["metrics"]), flush=True)
-        if evidence is not None:
-            print(attribution_summary(evidence), flush=True)
-        del engine, inputs
+                                  soak_s=_LAT["soak_s"])
+                evidence = None
+            else:
+                with collector:
+                    metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
+                                      soak_s=_LAT["soak_s"], attribution=collector)
+                evidence = collector.as_dict()
+            legs.append({"leg": index, "plan": plan, "identity": engine.identity.as_dict(),
+                         "metrics": metrics, "attribution": evidence})
+            print(json.dumps(legs[-1]["metrics"]), flush=True)
+            if evidence is not None:
+                print(attribution_summary(evidence), flush=True)
+    finally:
+        built.clear()
         gc.collect()
         torch.cuda.empty_cache()
 
