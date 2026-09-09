@@ -66,7 +66,9 @@ def lingbot_target(checkout):
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
-    isolate_rope(sys.modules[name + ".backends.upstream"])
+    backends = sys.modules[name + ".backends"].BACKENDS
+    for backend in dict.fromkeys(backends.values()):
+        isolate_rope(backend)
     provenance = dict(revision=revision, checkout=str(source),
                       controller_revision=controller_revision,
                       target_package=str(package), module=name,

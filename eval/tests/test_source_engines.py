@@ -28,14 +28,14 @@ def checkouts(tmp_path):
     (package / "backends/upstream.py").write_text("def make_wrappers(*args, **kwargs): return {}\n")
     (package / "__init__.py").write_text("from .backends import TARGET\n")
     (package / "backends/__init__.py").write_text(
-        "from . import upstream\nfrom types import SimpleNamespace\nTARGET=SimpleNamespace(marker='old', state=[])\n")
+        "from . import upstream\nBACKENDS={'upstream': upstream}\nfrom types import SimpleNamespace\nTARGET=SimpleNamespace(marker='old', state=[])\n")
     git(current, "add", ".")
     git(current, "commit", "-m", "old")
     old_revision = git(current, "rev-parse", "HEAD")
     old = tmp_path / "old"
     git(current, "worktree", "add", "--detach", str(old), old_revision)
     (package / "backends/__init__.py").write_text(
-        "from . import upstream\nfrom types import SimpleNamespace\nTARGET=SimpleNamespace(marker='new', state=[])\n")
+        "from . import upstream\nBACKENDS={'upstream': upstream}\nfrom types import SimpleNamespace\nTARGET=SimpleNamespace(marker='new', state=[])\n")
     git(current, "add", ".")
     git(current, "commit", "-m", "candidate")
     return current, old
@@ -139,3 +139,39 @@ def test_official_adapter_forwards_source_without_replacing_oracle(tmp_path):
                             "--option", "source_checkout=/actual/source"]) == 0
     run.assert_called_once_with("reference", oracle, 42, 36, 10,
                                 asset_config="assets.json", source_checkout="/actual/source")
+
+
+def test_prebound_route_factory_is_isolated(checkouts):
+    current, _ = checkouts
+    package = current / source.BACKENDS.parent
+    (package / "backends/upstream.py").write_text(
+        "def make_wrappers(*args, **kwargs):\n"
+        "    import probe_rope_external as external\n"
+        "    def vision():\n"
+        "        external.apply_rope = lambda: 'cached'\n"
+        "        return external.apply_rope()\n"
+        "    def prefix(): return external.apply_rope()\n"
+        "    return dict(vision=vision, prefix=prefix)\n")
+    (package / "backends/alias.py").write_text(
+        "from .upstream import make_wrappers as bound_factory\n"
+        "def make_wrappers(*args, **kwargs): return bound_factory(*args, **kwargs)\n")
+    (package / "backends/__init__.py").write_text(
+        "from . import upstream, alias\n"
+        "BACKENDS={'reference': upstream, 'candidate': alias}\n"
+        "TARGET=object()\n")
+    git(current, "add", ".")
+    git(current, "commit", "-m", "prebound route")
+    official = lambda: "official"
+    external = SimpleNamespace(apply_rope=official)
+    with patch.object(source, "ROOT", current):
+        _, provenance = source.lingbot_target(current)
+    backend = source.sys.modules[provenance["module"] + ".backends.alias"]
+    scratch = SimpleNamespace(assets={"upstream": "/test/upstream"})
+    with patch.dict(source.sys.modules, probe_rope_external=external), \
+         patch.object(source.importlib, "import_module", return_value=external), \
+         patch.object(source.sys, "path", list(source.sys.path)):
+        engine = backend.make_wrappers(scratch)
+        assert engine["vision"]() == "cached"
+        assert external.apply_rope is official
+        assert engine["prefix"]() == "cached"
+        assert external.apply_rope is official

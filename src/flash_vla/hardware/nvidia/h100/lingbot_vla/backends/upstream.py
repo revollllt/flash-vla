@@ -47,7 +47,6 @@ _VISION_PARAMS = tuple(
     param for param, name in zip(WEIGHT_PARAMS, WEIGHT_NAMES)
     if name in set(VISION_WEIGHT_NAMES)
 )
-_ORIGINAL_APPLY_ROPE = None
 
 
 def _nbytes(shape, itemsize: int) -> int:
@@ -178,11 +177,9 @@ def _patch_vision_attention(visual) -> None:
 def _configure_rope_frequency(enabled: bool, cache_rope_tables: bool = False):
     from lingbotvla.models.vla.pi0 import modeling_lingbot_vla as lingbot
 
-    global _ORIGINAL_APPLY_ROPE
-    if _ORIGINAL_APPLY_ROPE is None:
-        _ORIGINAL_APPLY_ROPE = lingbot.apply_rope
     if not enabled:
-        lingbot.apply_rope = _ORIGINAL_APPLY_ROPE
+        from lingbotvla.models.vla.pi0.utils import apply_rope as original_apply_rope
+        lingbot.apply_rope = original_apply_rope
         return
 
     inverse_timescales = {}

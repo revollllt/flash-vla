@@ -19,3 +19,5 @@ Reject on registered correctness failure, stale results after a new forward,
 or no meaningful same-context uninstrumented A/B/A gain. Full-model validation
 uses the currently accepted patch-linear source d915154 as incumbent.
 Probe: artifacts/optimization/lingbot-rope-table-probe/result.json.
+
+Real qualification 610771 stopped during reference construction after 238\nallocated GPU seconds: a prebound route factory bypassed per-engine isolation,\nleaking the candidate 51-token table into the 264-token reference. Iter-002 is\nretained as invalid and the incumbent remains iter-001. The controller now\nwraps every distinct registered backend factory, including prebound aliases.\nThe reference route restores utils.apply_rope directly. The affected source\nengine regression file passes all 7 tests (3.53 s), including this alias path.\nA corrected source revision will receive a new iteration; no failed numerical\nor performance evidence is relabeled as a pass.\n
