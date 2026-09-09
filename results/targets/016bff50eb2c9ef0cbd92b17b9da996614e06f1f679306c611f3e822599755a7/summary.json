@@ -52,11 +52,11 @@
   "lineage_id": "016bff50eb2c9ef0cbd92b17b9da996614e06f1f679306c611f3e822599755a7",
   "representative_context": "sha256:bda8df25ed1b0d9792ea69c9fb3bdda3a5d277aa23237059fc2f029e3a858765",
   "validated_context_count": 1,
-  "latest_iteration": 2,
+  "latest_iteration": 3,
   "current_performance": {
     "anchor_ms": 105.40860705077648,
-    "best_ms": 96.2009783834219,
-    "speedup": 1.0957124222859391,
-    "best_iteration": 1
+    "best_ms": 79.65395599603653,
+    "speedup": 1.3233317257465713,
+    "best_iteration": 3
   }
 }

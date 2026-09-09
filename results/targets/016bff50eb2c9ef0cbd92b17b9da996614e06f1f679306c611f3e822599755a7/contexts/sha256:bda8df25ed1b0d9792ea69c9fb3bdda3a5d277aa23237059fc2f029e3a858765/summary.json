@@ -46,15 +46,15 @@
   },
   "latest_segment": 0,
   "segment_anchor_ms": 105.40860705077648,
-  "best_validated_ms": 96.2009783834219,
+  "best_validated_ms": 79.65395599603653,
   "validated_incumbent": {
-    "iteration": 1,
-    "engine_revision": "d915154e2202bb8490aeb216a262d202cc23249f",
+    "iteration": 3,
+    "engine_revision": "9f7b55c457ef54423703cd94671adf7cc6c85aa5",
     "plan": {
-      "lingbot_vision": "patch-linear",
-      "lingbot_prefix": "patch-linear",
-      "lingbot_action": "patch-linear"
+      "lingbot_vision": "rope-table",
+      "lingbot_prefix": "rope-table",
+      "lingbot_action": "rope-table"
     }
   },
-  "last_validated_iteration": 1
+  "last_validated_iteration": 3
 }
