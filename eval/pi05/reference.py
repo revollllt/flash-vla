@@ -15,9 +15,10 @@ Its output is `prefix_k` / `prefix_v`, which is exactly what OpenPI's
 so the two are directly comparable.
 
 Running this on randomly initialized weights is deliberate. Both sides consume
-the same tensors, so any difference is an implementation difference; a
-`pi05_base` checkpoint would additionally test the conversion of trained values
-but says nothing extra about the code. Use `--checkpoint` for that.
+the same tensors, so any difference is an implementation difference. A trained
+checkpoint additionally exercises converted trained values. Supply both
+`--checkpoint` and `--openpi-config` for that. These generated input fixtures
+do not establish robot policy quality.
 
 Two things make the comparison less trivial than it looks.
 
@@ -79,6 +80,7 @@ directly.
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 import os
 
@@ -133,7 +135,8 @@ def _checkpoint_id(checkpoint: str | None, checkpoint_id: str | None,
 def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = None,
         prompt: str = DEFAULT_PROMPT, layers: int = 18, seed: int = 0,
         device: str = "cuda", exact_rope: bool = True,
-        plan: str | None = None, checkpoint_id: str | None = None) -> dict[str, object]:
+        plan: str | None = None, checkpoint_id: str | None = None,
+        openpi_config: str | None = None) -> dict[str, object]:
     """Run both implementations on identical inputs and report per-layer error.
 
     `plan` names the call-site plan the runner is built with; the default is
@@ -142,6 +145,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
     not exercise its CUDA kernel.
     """
     revision = _checkpoint_id(checkpoint, checkpoint_id, seed)
+    config = openpi05.resolve_config(checkpoint, openpi_config)
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
 
@@ -161,7 +165,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
     n_valid = 3 * VISION_TOKENS + n_tokens
 
     baseline = openpi05.build_model(checkpoint, torch_device, seed=seed,
-                                    exact_rope=exact_rope)
+                                    exact_rope=exact_rope, config=config)
     rope_freqs = baseline.paligemma_with_expert.paligemma.model.language_model.rotary_emb.inv_freq
     past_key_values, _, _ = openpi05.prefix_kv_cache(
         baseline, images, state,
@@ -174,7 +178,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
 
     engine = ModelRunner(TARGET, target_weights, checkpoint_id=revision, checkpoint_digest=revision,
                          plan=plan or "reference", device=device,
-                         num_views=3, chunk_size=50, layers=layers, tokenizer=tokenizer,
+                         num_views=3, chunk_size=config.action_horizon, layers=layers, tokenizer=tokenizer,
                          prompt=prompt)
     del target_weights
     torch.cuda.empty_cache()
@@ -193,6 +197,8 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
         "prefix_len": prefix_len,
         "layers_compared": min(layers, len(reference)),
         "checkpoint": checkpoint or "random",
+        "openpi_config": openpi_config,
+        "reference_model_config": asdict(config),
         "plan": engine.plan,
         "exact_rope": exact_rope,
         "reference_inv_freq": [round(float(v), 7) for v in rope_freqs[:4]],
@@ -247,8 +253,6 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
     return report
 
 
-CHUNK = 50
-
 # One step on random weights is a direct reading of the wiring, so it is held
 # to the registry's shallow pair. Ten steps is the chaotic regime and is
 # reported, not gated.
@@ -265,9 +269,10 @@ def _transplant(engine, reference_cache, seq_len: int) -> None:
 def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
         prompt: str = DEFAULT_PROMPT, steps: int = 1, layers: int = 18, seed: int = 0,
         full: bool = False, device: str = "cuda",
-        checkpoint_id: str | None = None) -> dict[str, object]:
+        checkpoint_id: str | None = None, openpi_config: str | None = None) -> dict[str, object]:
     """Run both decoders on identical inputs and report the action-chunk error."""
     revision = _checkpoint_id(checkpoint, checkpoint_id, seed)
+    config = openpi05.resolve_config(checkpoint, openpi_config)
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
 
@@ -279,7 +284,7 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
     images = torch.rand((3, 224, 224, 3), generator=generator, device=torch_device,
                         dtype=torch.float32) * 2.0 - 1.0
     state = torch.randn((32,), generator=generator, device=torch_device, dtype=torch.float32)
-    noise = torch.randn((CHUNK, 32), generator=generator, device=torch_device,
+    noise = torch.randn((config.action_horizon, 32), generator=generator, device=torch_device,
                         dtype=torch.float32)
 
     tokenizer = Pi05Tokenizer(tokenizer_path)
@@ -287,7 +292,7 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
     tokens, mask = tokenizer.encode(state.cpu().numpy())
     n_valid = 3 * VISION_TOKENS + int(mask.sum())
 
-    baseline = openpi05.build_model(checkpoint, torch_device, seed=seed)
+    baseline = openpi05.build_model(checkpoint, torch_device, seed=seed, config=config)
     # Both sides must run the same depth; our engine takes `layers`, the
     # reference has to be cut. The prefix is a different module and stays whole.
     reference_layers = openpi05.truncate_expert(baseline, layers)
@@ -304,7 +309,7 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
 
     engine = ModelRunner(TARGET, target_weights, checkpoint_id=revision, checkpoint_digest=revision,
                          plan="reference", device=device, num_views=3,
-                         chunk_size=CHUNK, steps=steps, layers=layers, tokenizer=tokenizer,
+                         chunk_size=config.action_horizon, steps=steps, layers=layers, tokenizer=tokenizer,
                          prompt=prompt)
     del target_weights
     torch.cuda.empty_cache()
@@ -328,6 +333,8 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
         "n_valid_prefix": n_valid,
         "n_valid_engine": engine_n_valid,
         "checkpoint": checkpoint or "random",
+        "openpi_config": openpi_config,
+        "reference_model_config": asdict(config),
         "metrics": error_metrics(reference, output),
     }
     shallow = tolerances(engine.identity.precision)["shallow"]
@@ -351,6 +358,8 @@ def main(argv=None) -> int:
                         help="OpenPI pi05 model.safetensors or its directory (default: random)")
     parser.add_argument("--checkpoint-id", default=None,
                         help="immutable checkpoint ID; required with --checkpoint")
+    parser.add_argument("--openpi-config", default=None,
+                        help="upstream training config name; required with --checkpoint")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
     parser.add_argument("--layers", type=int, default=18, help="depth of the checked stage, for bisection")
     parser.add_argument("--seed", type=int, default=0)
@@ -369,11 +378,12 @@ def main(argv=None) -> int:
     if args.stage in ("llm_backbone", "all"):
         passed &= run_backbone(args.tokenizer, args.checkpoint, args.prompt, args.layers, args.seed,
                                args.device, exact_rope=not args.openpi_rope_bf16,
-                               plan=args.plan, checkpoint_id=args.checkpoint_id)["passed"]
+                               plan=args.plan, checkpoint_id=args.checkpoint_id,
+                               openpi_config=args.openpi_config)["passed"]
     if args.stage in ("action_expert", "all"):
         passed &= run_expert(args.tokenizer, args.checkpoint, args.prompt, args.steps, args.layers,
                              args.seed, args.full, args.device,
-                             checkpoint_id=args.checkpoint_id)["passed"]
+                             checkpoint_id=args.checkpoint_id, openpi_config=args.openpi_config)["passed"]
     return 0 if passed else 1
 
 

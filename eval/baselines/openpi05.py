@@ -20,6 +20,7 @@ what the engine loads.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import torch
@@ -81,20 +82,53 @@ def restore_rope_precision(model) -> int:
     return fixed
 
 
+def _validate_config(config) -> None:
+    expected = dict(pi05=True, discrete_state_input=True, action_dim=32,
+                    max_token_len=200, paligemma_variant="gemma_2b",
+                    action_expert_variant="gemma_300m")
+    mismatches = {name: {"expected": value, "observed": getattr(config, name)}
+                  for name, value in expected.items() if getattr(config, name) != value}
+    if mismatches:
+        raise ValueError(f"OpenPI config is incompatible with the Pi0.5 adapter: {mismatches}")
+
+
+def resolve_config(checkpoint: str | Path | None, config_name: str | None):
+    """Resolve the reference's actual model config before allocating any weights.
+
+    A real checkpoint requires its upstream training config name. This checks
+    this adapter's supported semantics; it does not establish asset provenance
+    or replace inspection of the checkpoint's tensor ABI.
+    """
+    if checkpoint is not None and config_name is None:
+        raise ValueError("a real checkpoint requires an explicit OpenPI config")
+    if config_name is None:
+        from openpi.models.pi0_config import Pi0Config
+        config = Pi0Config(pi05=True, pytorch_compile_mode=None)
+    else:
+        from openpi.training.config import get_config
+        config = replace(get_config(config_name).model, pytorch_compile_mode=None)
+    _validate_config(config)
+    return config
+
+
 def build_model(checkpoint: str | Path | None = None,
                 device: str | torch.device = "cuda", seed: int = 0,
-                exact_rope: bool = True):
+                exact_rope: bool = True, *, config=None):
     """Load a Pi0.5 model, or construct one with random weights if no path is given.
 
     Random weights are enough for an implementation gate: both sides run the same
-    tensors, so any difference is ours. They are not enough for a policy-quality
-    claim, which needs `pi05_base`.
+    tensors, so any difference is ours. They do not establish trained-policy
+    correctness or quality. Real weights require their explicit upstream config.
 
     `exact_rope` restores the rotary frequencies to float32; see
     `restore_rope_precision` for why that is the honest default.
     """
+    if config is None:
+        config = resolve_config(checkpoint, None)
+    config = replace(config, pytorch_compile_mode=None)
+    _validate_config(config)
+
     try:
-        from openpi.models.pi0_config import Pi0Config
         from openpi.models_pytorch.pi0_pytorch import PI0Pytorch
     except ImportError as error:
         raise RuntimeError(
@@ -103,7 +137,7 @@ def build_model(checkpoint: str | Path | None = None,
         ) from error
 
     torch.manual_seed(seed)
-    model = PI0Pytorch(Pi0Config(pi05=True, pytorch_compile_mode=None))
+    model = PI0Pytorch(config)
 
     if checkpoint is not None:
         from safetensors.torch import load_model as load_safetensors_model

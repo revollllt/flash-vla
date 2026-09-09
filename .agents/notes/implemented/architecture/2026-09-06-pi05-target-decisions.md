@@ -67,6 +67,14 @@ Checkpoint-dependent shape profiles: `pi05_base` and `pi05_aloha` have horizon
 `discrete_state_input=False`, so that model consumes no state at all and is not
 a usable baseline for the state path.
 
+Real-checkpoint reference runs require an explicit upstream training configuration.
+The adapter rejects Pi0, state-free Pi0.5, unmerged LoRA variants, and incompatible
+action dimensions or prompt padding before allocating the model. The selected
+action horizon is the shape used by both implementations, and the resolved
+configuration remains reference provenance in the report. Configuration checks
+do not prove the checkpoint's origin, tensor ABI, robot preprocessing, numerical
+correctness or policy quality; those still require their own observed evidence.
+
 **AdaRMSNorm, exactly.** A modulation dense layer maps the condition (1024) to
 3072 with bias and zero init; the result splits into `scale`, `shift` and
 `gate`; the site computes `rms(x) * (1 + scale) + shift` and the residual
