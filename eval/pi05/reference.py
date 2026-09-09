@@ -198,6 +198,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
     prefix_len = engine.derived["prefix_len"]
 
     report: dict[str, object] = {
+        "stage": "llm_backbone",
         "identity": engine.identity.as_dict(),
         "measurement_context": engine.measurement_context,
         "prompt_tokens": n_tokens,
@@ -333,6 +334,7 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
     output = engine.buffers["actions"].float().clone()
 
     report: dict[str, object] = {
+        "stage": "action_expert",
         "identity": engine.identity.as_dict(),
         "measurement_context": engine.measurement_context,
         "mode": "full pass" if full else "transplanted KV cache",

@@ -207,6 +207,10 @@ TARGETS: dict[str, dict[str, Any]] = {
             "in_engine_reference": "eval.correctness",
             "official_baseline": ("eval.pi05.reference",),
         },
+        # The expert wiring check uses one flow step; its identity must say so.
+        "baseline_report_shapes": {
+            "eval.pi05.reference": {"llm_backbone": {}, "action_expert": {"steps": 1}},
+        },
         "baseline_python": OPENPI_PYTHON,
         "capabilities": ("baseline_adapter",),
         "overrides": {},
@@ -256,6 +260,7 @@ def for_target(name: str) -> dict[str, Any]:
     merged["scripts"] = deepcopy(entry.get("scripts", {}))
     merged["baseline_python"] = entry.get("baseline_python")
     merged["capabilities"] = tuple(entry.get("capabilities", ()))
+    merged["baseline_report_shapes"] = deepcopy(entry.get("baseline_report_shapes", {}))
     merged["overrides"] = {}
     for path, value in entry.get("overrides", {}).items():
         node = merged
@@ -267,6 +272,27 @@ def for_target(name: str) -> dict[str, Any]:
         node[leaf] = value["value"] if isinstance(value, dict) and "value" in value else value
         merged["overrides"][path] = value
     return merged
+
+
+def validate_baseline_workloads(script, identities, expected, stages=()) -> None:
+    """Match every registered adapter stage, allowing only its declared depth."""
+    from dataclasses import replace
+    from flash_vla.runtime.identity import Identity
+
+    shapes = for_target(expected.target)["baseline_report_shapes"].get(script)
+    if not identities:
+        raise ValueError("official adapter emitted no workload identities")
+    if shapes is not None:
+        if (len(stages) != len(identities) or len(stages) != len(shapes)
+                or set(stages) != set(shapes)):
+            raise ValueError("official adapter stage coverage differs from acceptance")
+        expected_reports = [replace(expected, shape={**expected.shape, **shapes[stage]})
+                            for stage in stages]
+    else:
+        expected_reports = [expected] * len(identities)
+    for value, wanted in zip(identities, expected_reports):
+        if not wanted.same_workload(Identity.from_dict(value)):
+            raise ValueError("official correctness adapter checked another workload")
 
 
 __all__ = ["CALIBRATION_SOURCE", "CORRECTNESS_METRICS", "DEFAULTS", "LATENCY_METRICS",

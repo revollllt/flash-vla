@@ -74,6 +74,12 @@ which cannot import OpenPI, so every gate ended `blocked`.
    shallow depths remain fixed; "full" depths use the declared workload.
    Unsupported official-adapter options fail explicitly. These controls do not
    replace the adapter's required workload, checkpoint or numerical evidence.
+   Pi0.5's two official reports explicitly identify the full-prefix and
+   single-step expert checks. Both the gate and Campaign import require these
+   stages exactly once and compare their actual identities against the
+   registered depths; only the expert's flow-step axis differs from the full
+   workload. Other shape fields, architecture and ExecutionVariant still match.
+
 7. **Thresholds are keys.** A registry check's `threshold` names a key of the
    precision policy's tolerances; `eval/correctness.py` reads that key, for the
    precision the reference runner reports, rather than one hard-coded name.

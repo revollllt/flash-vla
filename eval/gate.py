@@ -144,7 +144,7 @@ def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
     """The official-baseline tier: the Target's scripts as subprocesses, or not run.
 
     Each script runs once under the registry's interpreter; a baseline check
-    passes when every script passed with the expected workload Identity, is
+    passes when every script passed with its registered stage workload Identities, is
     mismatched when an adapter used a different checkpoint/shape/precision,
     and is unavailable when the interpreter is
     missing, a script could not import its adapter, or a script reported
@@ -183,13 +183,21 @@ def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
             try:
                 reports = _json_reports(proc.stdout)
                 identities = [report["identity"] for report in reports]
-                parsed = [Identity.from_dict(value) for value in identities]
             except (KeyError, TypeError, ValueError) as error:
                 result["identity_error"] = str(error)
                 if status == "passed":
                     result["status"] = "failed"
             else:
                 result["identities"] = identities
+                result["stages"] = [report.get("stage") for report in reports]
+                try:
+                    acceptance.validate_baseline_workloads(
+                        script, identities, expected, result["stages"])
+                except (KeyError, TypeError, ValueError) as error:
+                    result["identity_error"] = str(error)
+                    if status == "passed":
+                        result["status"] = "mismatched"
+
                 weights_match = True
                 if expected.schema_version == 3:
                     reported_weights = [
@@ -202,8 +210,7 @@ def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
                             and weights.get(key) == expected_weights[key]
                             for key in ("checkpoint_id", "checkpoint_digest"))
                         for weights in reported_weights))
-                if status == "passed" and (not weights_match or not parsed or not all(
-                        expected.same_workload(value) for value in parsed)):
+                if status == "passed" and not weights_match:
                     result["status"] = "mismatched"
         elif status == "passed":
             result["status"] = "failed"

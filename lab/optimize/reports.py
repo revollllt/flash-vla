@@ -136,9 +136,10 @@ def correctness(record):
                 raise ValueError("official correctness adapter did not pass")
             if len(script["identities"]) != len(script["weights"]):
                 raise ValueError("official adapter provenance is incomplete")
-            for identity, weights in zip(script["identities"], script["weights"]):
-                if not Identity.from_dict(identity).same_workload(Identity.from_dict(expected)):
-                    raise ValueError("official correctness adapter checked another workload")
+            acceptance.validate_baseline_workloads(
+                script["script"], script["identities"], Identity.from_dict(expected),
+                script.get("stages", ()))
+            for weights in script["weights"]:
                 if any(weights.get(key) != observed["weights"][key]
                        for key in ("checkpoint_id", "checkpoint_digest")):
                     raise ValueError("official correctness adapter checked another checkpoint")

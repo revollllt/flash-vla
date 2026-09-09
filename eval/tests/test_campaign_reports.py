@@ -65,8 +65,12 @@ def harness(monkeypatch):
 
     def official(scripts, checks, run, python, expected, seed, expected_weights=None, options=None):
         assert run is True
+        expert = expected.as_dict()
+        expert["shape"] = {**expert["shape"], "steps": 1}
         evidence = [dict(script=name, status="passed", returncode=0,
-                         identities=[expected.as_dict()], weights=[deepcopy(expected_weights)])
+                         stages=["llm_backbone", "action_expert"],
+                         identities=[expected.as_dict(), expert],
+                         weights=[deepcopy(expected_weights), deepcopy(expected_weights)])
                     for name in scripts]
         return [dict(check=c["check"], mode=c["mode"], status="passed", scripts=evidence)
                 for c in checks if c.get("oracle") == "official_baseline"]
@@ -287,3 +291,21 @@ def test_correctness_only_cli_success_cannot_qualify_promotion(harness, tmp_path
                                      [record["target"]])
     assert result["applicable"] is False
     assert result["reasons"] == ["existing gate has not passed"]
+
+
+@pytest.mark.parametrize("change", ["missing", "duplicate", "wrong_depth", "wrong_chunk"])
+def test_campaign_import_requires_actual_official_stage_coverage(harness, tmp_path, change):
+    raw = checked(harness, tmp_path)
+    check = next(c for c in raw["checks"] if c["check"] == "baseline_layer0")
+    script = check["scripts"][0]
+    if change == "missing":
+        script["identities"].pop()
+        script["weights"].pop()
+        script["stages"].pop()
+    elif change == "duplicate":
+        script["stages"][1] = "llm_backbone"
+    else:
+        key = "steps" if change == "wrong_depth" else "chunk"
+        script["identities"][1]["shape"][key] += 1
+    with pytest.raises(ValueError):
+        reports.correctness(raw)
