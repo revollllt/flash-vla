@@ -12,7 +12,7 @@ def main(argv=None):
     parser.add_argument('command', choices=('preflight', 'start', 'run', 'reconcile', 'context', 'related',
                                             'campaign-create', 'campaign-status', 'campaign-resume',
                                             'campaign-validate', 'campaign-finalize',
-                                            'campaign-render', 'campaign-reanchor',
+                                            'campaign-render', 'campaign-reanchor', 'campaign-materialize',
                                             'campaign-migrate-legacy'))
     parser.add_argument('path', type=Path, help='spec JSON for preflight/start; run directory otherwise')
     parser.add_argument('--root', type=Path, default=Path.cwd())
@@ -24,6 +24,7 @@ def main(argv=None):
     parser.add_argument('--objective')
     parser.add_argument('--protocol')
     parser.add_argument('--fixture')
+    parser.add_argument('--source-input', action='append', default=[])
     parser.add_argument('--iteration', type=int)
     parser.add_argument('--result', type=Path)
     parser.add_argument('--png', action='store_true')
@@ -34,9 +35,12 @@ def main(argv=None):
         if any(value is None for value in required):
             parser.error('campaign-create requires --baseline-evidence, --objective, --protocol and --fixture')
         result = campaign.create(args.path, store.read(args.baseline_evidence), args.objective,
-                                 args.protocol, args.fixture)
+                                 args.protocol, args.fixture,
+                                 root=args.root if args.source_input else None, inputs=args.source_input)
     elif args.command in ('campaign-status', 'campaign-validate'):
         result = campaign.rebuild(args.path)
+    elif args.command == 'campaign-materialize':
+        result = campaign.materialize_incumbent(args.root, args.path)
     elif args.command == 'campaign-resume':
         result = campaign.resume(args.path, args.until, args.recovered_seconds)
     elif args.command == 'campaign-finalize':

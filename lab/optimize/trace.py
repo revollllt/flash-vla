@@ -130,7 +130,9 @@ def normalize(directory):
         if verdict in ('accepted', 'no_benefit') and iteration and (
                 candidate_ms is None or parent_ms is None):
             raise ValueError(f'iter-{iteration:03d} performance verdict needs candidate and parent latency')
-        if verdict == 'accepted' and iteration:
+        applicability = record.get('spec', {}).get('applicability')
+        portable = (applicability or {}).get('weight_dependency') != 'checkpoint_specific'
+        if verdict == 'accepted' and iteration and portable:
             incumbent = candidate_ms
         delta_parent = (None if candidate_ms is None or parent_ms is None
                         else _pct(candidate_ms, parent_ms))
@@ -143,6 +145,9 @@ def normalize(directory):
             candidate_id=record['candidate_id'], parent_incumbent=record['parent_incumbent'],
             engine_revision=record['change'].get('engine_revision'),
             hypothesis=record['hypothesis'], change_summary=record['change']['summary'],
+            applicability=applicability,
+            artifact_recipe=record.get('spec', {}).get('artifact_recipe'),
+            retune_recipe=record.get('spec', {}).get('retune_recipe'),
             correctness=record['correctness'], measurement_validity=validity,
             candidate_latency_ms=candidate_ms, parent_incumbent_latency_ms=parent_ms,
             current_incumbent_latency_ms=incumbent,
@@ -152,7 +157,8 @@ def normalize(directory):
             qualification=record['qualification'], verdict=verdict,
             reanchor=measurement.get('reanchor', False),
             promotion=('reanchor' if measurement.get('reanchor') else
-                       'promoted' if verdict == 'accepted' else 'not_promoted'),
+                       ('promoted' if portable else 'context_only')
+                       if verdict == 'accepted' else 'not_promoted'),
             diagnostic_artifacts=record['diagnostics'], experiment_cost=record['cost'])
         entries.append(entry)
     return dict(schema_version=1, campaign_id=metadata['id'], metadata=trace_metadata,

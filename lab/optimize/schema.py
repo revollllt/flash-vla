@@ -4,6 +4,33 @@ from eval import acceptance
 
 STAGES = ('preflight', 'probe', 'check', 'measure', 'qualify')
 KINDS = ('performance', 'refactor', 'diagnostic_probe', 'control')
+WEIGHT_DEPENDENCIES = ('invariant', 'rebuild', 'retune', 'checkpoint_specific')
+
+
+def validate_applicability(spec):
+    """Require executable recovery recipes for weight-dependent v3 candidates."""
+    dependency = spec.get('applicability', {}).get('weight_dependency')
+    if dependency not in WEIGHT_DEPENDENCIES:
+        raise ValueError('applicability.weight_dependency must be invariant, rebuild, '
+                         'retune or checkpoint_specific')
+    recipe_name = {'rebuild': 'artifact_recipe', 'retune': 'retune_recipe'}.get(dependency)
+    if recipe_name:
+        recipe = spec.get(recipe_name)
+        if not isinstance(recipe, dict):
+            raise ValueError(f'{dependency} requires {recipe_name}')
+        validate_command(recipe_name, recipe)
+    return dependency
+
+
+def validate_command(name, command):
+    """Validate a recorded CPU/GPU command before allocating any work."""
+    argv = command.get('argv')
+    if not isinstance(argv, list) or not argv or not all(isinstance(v, str) for v in argv):
+        raise ValueError(f'{name}: argv must be a nonempty string list')
+    if type(command.get('timeout_s')) is not int or command['timeout_s'] < 1:
+        raise ValueError(f'{name}: positive timeout_s required')
+    if command.get('resource') not in ('cpu', 'gpu'):
+        raise ValueError(f'{name}: resource must be cpu or gpu')
 
 
 def relative_path(value):
@@ -25,6 +52,8 @@ def validate(spec):
     for key in ('mechanism', 'alternative', 'falsifier', 'cheapest_probe'):
         if not spec['hypothesis'].get(key):
             raise ValueError(f'missing hypothesis.{key}')
+    if spec.get('identity', {}).get('schema_version') == 3 and spec['kind'] == 'performance':
+        validate_applicability(spec)
     policy = acceptance.for_target(spec['target'])
     if policy['budget'] is None:
         raise ValueError(f'no acceptance budget for {spec["target"]}')
@@ -52,10 +81,5 @@ def validate(spec):
     for name, stage in stages.items():
         if name == 'qualify':
             continue
-        if not stage.get('argv') or not all(isinstance(v, str) for v in stage['argv']):
-            raise ValueError(f'{name}: argv must be a nonempty string list')
-        if type(stage.get('timeout_s')) is not int or stage['timeout_s'] < 1:
-            raise ValueError(f'{name}: positive timeout_s required')
-        if stage.get('resource') not in ('cpu', 'gpu'):
-            raise ValueError(f'{name}: resource must be cpu or gpu')
+        validate_command(name, stage)
     return policy, budget

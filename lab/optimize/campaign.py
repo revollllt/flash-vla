@@ -1,11 +1,12 @@
 """Persistent campaign ledger built from immutable metadata and run evidence."""
 import fcntl
+import shutil
 from pathlib import Path
 import time
 
 from . import runner, store
 from eval import acceptance
-from .schema import STAGES, validate as validate_experiment
+from .schema import STAGES, validate as validate_experiment, validate_applicability
 
 
 VERDICTS = ('accepted', 'no_benefit', 'correctness_failed', 'invalid', 'blocked')
@@ -51,7 +52,7 @@ def _records(directory):
     return [(path, store.read(path)) for path in paths]
 
 
-def create(directory, baseline_evidence, objective, protocol, fixture):
+def create(directory, baseline_evidence, objective, protocol, fixture, *, root=None, inputs=()):
     directory = Path(directory).resolve()
     identity = baseline_evidence['identity']
     target = target_key(identity)
@@ -76,6 +77,10 @@ def create(directory, baseline_evidence, objective, protocol, fixture):
                     diagnostics={}, cost=baseline_evidence.get(
                         'cost', {'cpu_seconds': 0.0, 'gpu_seconds': 0.0, 'jobs': []}),
                     verdict='accepted')
+    if root is not None:
+        if not inputs:
+            raise ValueError('baseline source capture requires explicit inputs')
+        baseline['source'] = store.capture(root, inputs, directory / 'runs/iter-000-baseline/inputs')
     store.write(directory / 'campaign.json', metadata)
     store.write(directory / 'runs/iter-000-baseline/evidence.json', baseline)
     rebuild(directory)
@@ -97,6 +102,9 @@ def _validate_record(metadata, record, expected_iteration, incumbent):
         raise ValueError(f'unknown verdict {record.get("verdict")!r}')
     if not same_workload(metadata, record['campaign_identity']):
         raise ValueError(f'iter-{expected_iteration:03d} has a different TargetKey')
+    if (record['campaign_identity'].get('schema_version') == 3
+            and record.get('kind') == 'performance'):
+        validate_applicability(record['spec'])
     if record['spec'].get('protocol') != metadata['protocol']:
         raise ValueError(f'iter-{expected_iteration:03d} has a different protocol')
     if record['spec'].get('fixture') != metadata['fixture']:
@@ -144,7 +152,9 @@ def rebuild(directory):
         if expected:
             has_reanchor |= record.get('kind') == 'reanchor'
             candidates += record.get('kind') == 'performance'
-            if verdict == 'accepted':
+            portable = record['spec'].get('applicability', {}).get(
+                'weight_dependency') != 'checkpoint_specific'
+            if verdict == 'accepted' and portable:
                 incumbent = label
                 non_improving = 0
             elif verdict == 'no_benefit':
@@ -219,8 +229,83 @@ def rebuild(directory):
                  budget=dict(limit=budget, used=used, remaining=remaining), cost=cost,
                  reanchor_required=reanchor_required,
                  next_action=next_action, iterations=len(records))
+    if 'execution_variant' in metadata:
+        state['portable_incumbent'] = incumbent
     store.write(directory / 'state.json', state)
     return state
+
+
+def portable_optimizations(directory):
+    """Return accepted portable lineage, retaining recipes for checkpoint transfer."""
+    metadata = store.read(Path(directory) / 'campaign.json')
+    if 'execution_variant' not in metadata:
+        raise ValueError('portable inheritance requires an explicitly migrated v3 campaign')
+    rebuild(directory)
+    return [record for _, record in _records(directory)
+            if record.get('kind') == 'performance' and record.get('verdict') == 'accepted'
+            and validate_applicability(record['spec']) != 'checkpoint_specific']
+
+
+def materialize_incumbent(root, directory):
+    """Restore declared portable source inputs before editing the next candidate.
+
+    Only the last candidate's recorded edits may be overwritten. Unrecorded edits
+    and inputs outside the incumbent snapshot require explicit resolution.
+    The returned identity supplies the portable plan for the next experiment.
+    """
+    root, directory = Path(root).resolve(), Path(directory).resolve()
+    with (directory / 'campaign.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = rebuild(directory)
+        if state['current_stage'] != 'candidate_selection':
+            raise RuntimeError('cannot materialize while a candidate is active')
+        records = [record for _, record in _records(directory)]
+        incumbent = records[int(state['current_incumbent'].split('-')[1])]
+        if 'source' not in incumbent:
+            raise ValueError('incumbent source snapshot is missing; supply its declared inputs')
+        source = incumbent['source']
+        latest = records[-1]
+        previous = latest.get('source', source)
+        uncovered = set(previous['inputs']) - set(source['inputs'])
+        if uncovered:
+            raise ValueError(f'incumbent snapshot does not cover candidate inputs: {sorted(uncovered)}')
+        copies = []
+        for name in source['inputs']:
+            saved = (Path(source['root']) / name).read_bytes()
+            destination = root / name
+            current = destination.read_bytes() if destination.exists() else None
+            if current == saved:
+                continue
+            if (name not in previous['inputs'] or current is None
+                    or current != (Path(previous['root']) / name).read_bytes()):
+                raise ValueError(f'unrecorded edit must be preserved before materialization: {name}')
+            copies.append((Path(source['root']) / name, destination))
+        identity = (incumbent['measurement']['evidence']['identity']
+                    if incumbent['iteration'] == 0 else incumbent['campaign_identity'])
+        for saved, destination in copies:
+            shutil.copyfile(saved, destination)
+        receipt = dict(after_iteration=latest['iteration'], incumbent=state['current_incumbent'],
+                       repository=str(root), source=source, identity=identity, timestamp=time.time())
+        store.write(directory / 'materializations' / f'after-iter-{latest["iteration"]:03d}.json',
+                    receipt)
+        return receipt
+
+
+def _parent_materialization(root, directory, spec, state):
+    latest = _records(directory)[-1][1]
+    if latest.get('spec', {}).get('applicability', {}).get(
+            'weight_dependency') != 'checkpoint_specific':
+        return None
+    path = directory / 'materializations' / f'after-iter-{latest["iteration"]:03d}.json'
+    if not path.exists():
+        raise RuntimeError('materialize the portable incumbent before editing the next candidate')
+    receipt = store.read(path)
+    if (receipt['incumbent'] != state['current_incumbent']
+            or receipt['repository'] != str(Path(root).resolve())):
+        raise RuntimeError('portable materialization does not match this incumbent and checkout')
+    if spec.get('parent_plan') != receipt['identity']['plan']:
+        raise ValueError('candidate parent_plan must match the materialized portable plan')
+    return receipt
 
 
 def validate(directory):
@@ -257,6 +342,7 @@ def start(root, spec, directory):
             raise RuntimeError('campaign already has an active candidate')
         if any(value == 0 for value in state['budget']['remaining'].values()):
             raise RuntimeError('campaign budget exhausted')
+        materialization = _parent_materialization(root, directory, spec, state)
         iteration = state['iterations']
         label = f'iter-{iteration:03d}'
         run_dir = directory / 'runs' / f'{label}-{spec["id"]}'
@@ -267,6 +353,8 @@ def start(root, spec, directory):
                                hypothesis=spec['hypothesis'],
                                change=dict(summary=spec['change']['summary'], scope=spec['scope']),
                                measurement={}, qualification={}, diagnostics={}, verdict=None)
+        if materialization is not None:
+            metadata_fields['parent_materialization'] = materialization
         record = runner.start(root, spec, run_dir, metadata=metadata_fields)
         record['change']['engine_revision'] = record['source']['revision']
         store.write(run_dir / 'evidence.json', record)
@@ -280,6 +368,9 @@ def reanchor(directory, evidence):
     with (directory / 'campaign.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         metadata = store.read(directory / 'campaign.json')
+        if 'execution_variant' in metadata:
+            raise ValueError('Identity v3 requires context transition; legacy reanchor consumes '
+                             'optimization iterations and cannot activate a v3 context')
         state = rebuild(directory)
         if state['current_stage'] != 'candidate_selection':
             raise RuntimeError('campaign already has an active candidate')

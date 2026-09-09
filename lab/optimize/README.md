@@ -8,7 +8,7 @@ A long-running campaign adds lineage around these same experiments. Create one
 from an existing baseline report with `campaign-create CAMPAIGN
 --baseline-evidence REPORT --objective NAME --protocol NAME --fixture NAME`,
 then allocate candidates with `start SPEC --campaign CAMPAIGN`. The spec must
-declare the baseline's Identity v2, protocol and fixture. `campaign-status` and
+declare the baseline's Identity v2 or v3, protocol and fixture. `campaign-status` and
 `campaign-validate` rebuild `state.json`; `campaign-resume` continues a clean
 stage or requires explicit reconciliation for an interrupted one. Record a
 terminal result with `campaign-finalize CAMPAIGN --iteration N --result
@@ -20,7 +20,25 @@ iteration's evidence.
 view. The campaign identity is created once and has no update operation.
 Accepted evidence advances the incumbent only after
 correctness, valid measurement, qualification and gate results all pass;
-other verdicts stay in the lineage without changing it.
+other verdicts stay in the lineage without changing it. V3 performance candidates
+must declare applicability as invariant, rebuild, retune, or checkpoint_specific.
+Rebuild and retune require executable artifact_recipe and retune_recipe commands,
+respectively. An accepted checkpoint-specific result remains context-only; it
+cannot replace the portable incumbent or its plotted latency.
+
+Before editing the next candidate after a checkpoint-specific experiment, use
+`campaign-materialize CAMPAIGN --root CHECKOUT`. It restores the recorded portable
+source inputs and returns its plan; the next spec declares that plan as
+`parent_plan`. Unrecorded checkout edits are preserved by refusing restoration.
+Baseline source coverage is explicit through repeatable `--source-input PATH`
+arguments to campaign-create. Missing source coverage must be resolved before
+materialization; declared-input copies are not a full repository snapshot.
+
+These declarations preserve dependency and recipe evidence. Executing recipes
+during checkpoint transition and creating re-anchors outside optimization
+iteration numbering remain pending in the checkpoint-independent architecture
+proposal. The legacy re-anchor command rejects v3 campaigns before writing
+evidence; v3 activation requires the forthcoming context transition API.
 
 `campaign-render CAMPAIGN` normalizes ledger evidence once into
 `optimization_trace.json`, writes `progress.md`, and sends only that normalized

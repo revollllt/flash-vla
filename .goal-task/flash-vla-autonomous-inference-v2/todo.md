@@ -8,8 +8,8 @@ Source plan (initiating Mac): `/Users/zou/Downloads/Flash-VLA Autonomous Inferen
 - Worktree: `/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2`; branch `codex/autonomous-inference-v2`, starting at `91d5f32`.
 - Preserve main's pre-existing `.gitignore` addition and old task files.
 - Python: `/data/user/jzou521/codes/cuda/flash-vla/.venv/bin/python`. Set `PYTHONPATH=$PWD/src:$PWD`, `OPENBLAS_NUM_THREADS=1`, `OMP_NUM_THREADS=1` in the worktree; its source must precede the main editable installation.
-- Phase: P0-C. Next: implement checkpoint transition, applicability/rebuild/retune, context registration and re-anchor without consuming optimization iteration IDs; then Campaign Registry in P0-D.
-- Checkbox progress: 25/277 verified (P0-A and P0-B evidence, including overlapping identity/runner requirements). The previous plan's completed status is unrelated.
+- Phase: P0-C in progress. Applicability declarations, portable ancestor selection and actual source preparation are implemented. Next: first-class context transition with recipe execution, correctness and re-anchor outside optimization iterations; then Campaign Registry in P0-D.
+- Checkbox progress: 26/277 verified (P0-A/B plus CPU FI-9 portable exclusion; real checkpoint transfer remains pending). The previous plan's completed status is unrelated.
 - Environment: SSH, writable checkout and Slurm available; no user jobs at preflight. Project venv lacks Matplotlib. GPU execution and two real compatible Pi0.5 fine-tuned checkpoints remain unverified. Remote rg absent; use `git -c grep.threads=1 grep` after default git grep hit a thread limit.
 
 ## Execution
@@ -27,6 +27,11 @@ Follow P0 then P1/P2 dependencies. Keep minimal changes and use cheapest discrim
 
 ## Evidence log
 
+- P0-C applicability/source preparation: v3 candidates declare all four dependency classes; rebuild/retune require executable command recipes. Accepted checkpoint-specific results stay context-only in state and trace, while subsequent candidates must materialize the portable source and declare its parent plan. Actual temporary file tests verify restoration and preservation of unrecorded edits. Recipe execution during transfer is NOT implemented yet.
+- Runner/schema regression: test_optimize.py and test_optimize_recovery.py passed 18 tests in 1.75 s; artifacts/optimization/p0c-runner-regression.log.
+- Scoped tests: 37 passed, 12 subtests passed, 1 existing Matplotlib-dependent skip (4.62 s); artifacts/optimization/p0c-applicability.log. No GPU measurements or real checkpoint transition were run.
+- Independent scoped review resolved source/plan carryover and the legacy reanchor bypass. The old reanchor API now rejects v3 before any ledger write; actual v3 context transition must be implemented next. Final targeted review found no remaining major issue in applicability/source preparation.
+
 - P0-B final constructor delta: default Identity construction now requires v3 architecture metadata; v1/v2 are explicit legacy reads/constructions. Affected identity/gate suites passed 69 tests and 12 subtests in 14.71 s after this change. Log: artifacts/optimization/p0b-final-delta.log. The preceding full CPU run and smoke apply to the rest of this milestone.
 - P0-A test-first commit: 7896fa8. P0-B is the following implementation milestone on codex/autonomous-inference-v2. Main remains unchanged by this work.
 
@@ -35,13 +40,13 @@ Follow P0 then P1/P2 dependencies. Keep minimal changes and use cheapest discrim
 - Pi0 source ABI: read 129424 header bytes from the existing pi0_libero_pytorch/model.safetensors, compared all 777 parameter names/shapes with the independently declared source_weight_shapes; exact match. No tensor data read or file hash computed.
 - P0-B independent targeted review: fixed Pi0 CLI extra argument, official adapter checkpoint matching, profile cross-context deltas and Pi0 source/runtime ABI coupling. Second targeted review passed with no new major finding in that scope.
 - ExecutionVariant remains a high-level identity; only the existing BF16 runtime kernels are executable. FP8/cache separation tests do not claim those algorithms are implemented.
-- Current known follow-up: report_context records missing power policy as null rather than inventing it. Before real measurement/transition acceptance, collect actual environment/power provenance and reject incomplete evidence. Old campaign reanchor still consumes an iteration and splits on measured drift; P0-C must replace those semantics. No real A/B transfer or context registry has been implemented.
+- Current known follow-up: report_context records missing power policy as null rather than inventing it. Before real measurement/transition acceptance, collect actual environment/power provenance and reject incomplete evidence. Legacy v2 campaign reanchor still consumes an iteration and splits on measured drift; v3 now rejects that entrypoint pending the new transition API. No real A/B transfer or context registry has been implemented.
 - Real checkpoint assets: located pi0_libero_pytorch and pi05_libero_pytorch plus one LingBot checkpoint. Two inference-compatible real Pi0.5 fine-tuned checkpoints are not yet established; existing Pi0.5 Libero architecture compatibility is not assumed. Optional user asset-source question sent; independent P0 work continues.
 
-- P0-A: 36 expected semantic failures (13.58 s), with no collection/environment failure. Controls before edit: 27 passed / 17 subtests. Raw red run: artifacts/optimization/identity-v3-contract-red.log. Tests deliberately remain failing in the test-first checkpoint commit; P0-B is not accepted yet.
+- P0-A: 36 expected semantic failures (13.58 s), with no collection/environment failure. Controls before edit: 27 passed / 17 subtests. Raw red run: artifacts/optimization/identity-v3-contract-red.log. Tests deliberately remain failing in the test-first checkpoint commit; P0-B was not accepted at that test-first checkpoint; it is now accepted above.
 - P0-A independent read-only review identified two gaps (actual weight ABI mismatch and producer-to-context wiring); both were added and the reviewer confirmed the targeted follow-up resolved them.
 
-- Current source: Identity v2, caller-supplied checkpoint model revision, Campaign fixture equality; results/ and .github/workflows/ absent.
+- Initial source before P0-A (historical): Identity v2, caller-supplied checkpoint model revision, Campaign fixture equality; results/ and .github/workflows/ absent.
 - Control before changes: project Python with worktree PYTHONPATH, pytest eval/tests/test_identity.py eval/tests/test_campaign.py: 27 passed and 17 subtests passed, 18.55 seconds. No GPU run.
 - Initialization attempt writing this file over SSH stdin failed with source encoding error before file creation. Retry uses ASCII JSON transport.
 
@@ -190,7 +195,7 @@ Follow P0 then P1/P2 dependencies. Keep minimal changes and use cheapest discrim
 - [ ] C141 lock 保证 atomicity — 45. Failure Injection Suite / FI-7 Duplicate Agent (source L2292); evidence: pending
 - [ ] C142 不出现 duplicate iter — 45. Failure Injection Suite / FI-7 Duplicate Agent (source L2293); evidence: pending
 - [ ] C143 CI fail — 45. Failure Injection Suite / FI-8 Stale results (source L2299); evidence: pending
-- [ ] C144 不进入 portable incumbent — 45. Failure Injection Suite / FI-9 checkpoint-specific optimization (source L2303); evidence: pending
+- [x] C144 不进入 portable incumbent — 45. Failure Injection Suite / FI-9 checkpoint-specific optimization (source L2303); evidence: test_weight_dependency.py CPU injection preserves accepted context-only evidence, portable incumbent/source/plan and trace curve; independent scoped review passed. New-checkpoint inheritance itself remains C145 pending.
 - [ ] C145 新 checkpoint 不错误继承 — 45. Failure Injection Suite / FI-9 checkpoint-specific optimization (source L2304); evidence: pending
 - [x] C146 所有预期 semantics 都有 test — 49. 实施阶段 / P0-A — Semantic contract tests / Gate (source L2451); evidence: eval/tests/test_identity_v3.py, 36 expected failures against unchanged v2; control 27 passed; independent targeted review and follow-up passed
 - [x] C147 当前实现应出现预期 failing tests — 49. 实施阶段 / P0-A — Semantic contract tests / Gate (source L2452); evidence: eval/tests/test_identity_v3.py, 36 expected failures against unchanged v2; control 27 passed; independent targeted review and follow-up passed
