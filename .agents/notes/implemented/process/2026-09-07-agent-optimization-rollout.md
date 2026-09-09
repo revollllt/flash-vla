@@ -20,8 +20,9 @@ recovery after confirmed termination.
 Qualification uses the experiment's recorded construction options and seed.
 Checkpoint, reference configuration and fixture selection must reach the evaluator
 unchanged; otherwise an explicit real-asset experiment can silently evaluate the
-factory defaults. Options belong to experiment conditions so recovery and
-duplicate detection retain the same selection. Passing them as separate argv
+factory defaults. Preflight and qualification share spec.options; the experiment index retains
+those options alongside conditions so recovery and duplicate detection retain
+the same selection. Passing them as separate argv
 values preserves paths and prompts without shell interpretation.
 
 Separate numerical oracle from performance incumbent. Existing required-check
@@ -35,6 +36,14 @@ run is not a negative mechanism result; missing artifacts leave identity unknown
 Latest-source review follows a gate pass, and promotion never edits shipped.
 Qualification of distinct source versions remains unsupported through the
 existing evaluator; its supported mode is route variants in one source tree.
+
+Agent continuation begins with canonical discovery and compact published facts,
+then current Campaign state and unresolved hypotheses. Raw profiles and historical
+stdout are read only for a specific unresolved question. Compatible checkpoint
+changes reuse the lineage and portable implementation, then rebuild/retune,
+validate and re-anchor before another iteration. Agent instructions must preserve
+the evaluator's actual supported source-loading boundary; they cannot turn
+unsupported source-version qualification into an acceptance claim.
 
 ## Alternatives considered
 

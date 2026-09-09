@@ -62,6 +62,7 @@ def index(root, record):
                                        'correctness', 'conclusion', 'promotion', 'cost')}
     item.update(evidence=str(Path(record['directory']) / 'evidence.json'),
                 hypothesis=record['spec']['hypothesis'], conditions=record['spec'].get('conditions', {}),
+                options=record['spec'].get('options', {}),
                 reopen_when=record['spec'].get('reopen_when', []),
                 source=record.get('source'), task_id=record['spec'].get('task_id', record['id']),
                 protocol=record['spec'].get('protocol'))
@@ -77,7 +78,8 @@ def related(root, spec):
 
 def duplicate_status(item, spec, source):
     """A missing large artifact leaves identity unknown, not a permanent rejection."""
-    if item['conditions'] != spec.get('conditions', {}):
+    if (item['conditions'] != spec.get('conditions', {})
+            or item.get('options', {}) != spec.get('options', {})):
         return 'reopen_changed_conditions'
     if spec.get('replication_of') == item['id']:
         return 'deliberate_replication'

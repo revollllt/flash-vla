@@ -62,4 +62,6 @@ The workflow is ready for autonomous optimization only when
 checkpoint, and matching published trace/snapshot/context summary and discovery.
 Use the handoff command in the workflow; a textual Campaign path is insufficient.
 Publication failures are recoverable without rerunning experiments. At readiness,
-the Campaign owns candidate selection and optimization evidence.
+the Campaign owns candidate selection and optimization evidence. Continue with
+[optimization-campaign](../optimization-campaign/SKILL.md) for discovery, checkpoint
+transitions and subsequent experiments.

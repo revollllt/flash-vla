@@ -137,12 +137,13 @@ shapes. QKV diagnostics support the installed TileLang TVM-FFI adapter. Other
 backend/loading protocols are unsupported until separately exercised.
 
 Qualification takes Target construction options from the experiment's
-conditions.options mapping and seed from conditions.seed. Real-checkpoint runs
+spec.options mapping, shared with preflight, and seed from conditions.seed. Real-checkpoint runs
 must record checkpoint location, immutable ID/digest and required reference
 configuration there, together with tokenizer or fixture overrides. Option values
 use the existing gate CLI's string, integer and boolean types; Target and official
-adapter support still applies. These conditions survive resume and participate
-in duplicate-experiment comparison.
+adapter support still applies. These options survive resume and participate
+in duplicate-experiment comparison. Records using the obsolete conditions.options
+field must move it to spec.options before preflight or resume; it is not silently ignored.
 
 Qualification currently supports route variants within one checked source tree.
 It requires explicit incumbent/candidate source evidence, affected Targets and

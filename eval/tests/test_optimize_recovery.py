@@ -107,10 +107,20 @@ class RecoveryTests(unittest.TestCase):
         options = dict(
             checkpoint="/assets/checkpoint A/model.safetensors",
             checkpoint_id="trained-a", checkpoint_digest="publisher-revision-a",
-            openpi_config="pi05_aloha", tokenizer_path="/assets/tokenizer model",
+            openpi_config="pi05_droid", tokenizer_path="/assets/tokenizer model",
             prompt="pick = cup; $(not-a-command)\nthen place it",
         )
-        s['conditions'] = dict(seed=42, options=options)
+        s['conditions'] = dict(seed=42)
+        s['options'] = options
+        from types import SimpleNamespace
+        from lab.optimize import preflight
+        from eval.baselines import openpi05
+        with patch.object(openpi05, 'resolve_config',
+                          return_value=SimpleNamespace(action_horizon=15, max_token_len=200)), \
+             patch.object(preflight, 'declare', wraps=preflight.declare) as declare:
+            prepared = preflight.inspect(s)
+        self.assertEqual(prepared['workload']['shape']['chunk'], 15)
+        self.assertEqual([call.kwargs['seed'] for call in declare.call_args_list], [42, 42])
         record = runner.start(self.root, s, self.out)
         record['spec']['qualification_sources'] = dict(
             incumbent=record['source'], candidate=record['source'],
@@ -136,6 +146,21 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual({key: received['kwargs'].get(key) for key in options}, options)
         item = store.read(self.root / 'index' / 'probe.json')
         self.assertEqual(item['conditions'], s['conditions'])
+        self.assertEqual(item.get('options'), options)
+        changed = dict(s, options=dict(options, checkpoint_id='trained-b'))
+        self.assertEqual(store.duplicate_status(item, changed, record['source']),
+                         'reopen_changed_conditions')
+
+    def test_resume_does_not_drop_obsolete_asset_selection(self):
+        record = runner.start(self.root, spec(), self.out)
+        record['spec']['conditions'] = {'options': {'checkpoint': '/assets/trained-a'}}
+        store.write(self.out / 'evidence.json', record)
+        saved = (self.out / 'evidence.json').read_text()
+        with patch.object(runner, 'run_stage') as launch:
+            with self.assertRaisesRegex(ValueError, 'move conditions.options to spec.options'):
+                runner.run(self.out)
+        launch.assert_not_called()
+        self.assertEqual((self.out / 'evidence.json').read_text(), saved)
 
     def test_simultaneous_starts_share_candidate_budget(self):
         from concurrent.futures import ThreadPoolExecutor

@@ -45,6 +45,8 @@ def validate(spec):
     missing = [key for key in required if key not in spec]
     if missing:
         raise ValueError(f'missing experiment fields: {missing}')
+    if 'options' in spec.get('conditions', {}):
+        raise ValueError('move conditions.options to spec.options before starting or resuming')
     if spec['version'] != 1 or spec['kind'] not in KINDS:
         raise ValueError('unsupported experiment version or kind')
     if not spec['id'] or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in spec['id']):

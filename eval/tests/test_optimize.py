@@ -32,6 +32,12 @@ class SchemaTests(unittest.TestCase):
         s = spec(); del s['stages']['check']
         with self.assertRaises(ValueError): validate(s)
 
+    def test_obsolete_asset_options_require_explicit_migration(self):
+        s = spec()
+        s['conditions'] = {'options': {'checkpoint': '/assets/trained-a'}}
+        with self.assertRaisesRegex(ValueError, 'move conditions.options to spec.options'):
+            validate(s)
+
     def test_readonly_policy(self):
         policy, _ = validate(spec())
         policy['latency']['promotion_bar_ms'] = 0

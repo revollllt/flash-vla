@@ -48,7 +48,7 @@ def _command(record, name):
             live = dict(sources[role], root=record['repository'])
             if store.changed_inputs(sources[role], live):
                 raise ValueError('qualification source changed before launch; remeasure affected evidence')
-        options = record['spec'].get('conditions', {}).get('options', {})
+        options = record['spec'].get('options', {})
         option_args = [arg for key, value in options.items()
                        for arg in ('--option', f'{key}={value}')]
         return [sys.executable, '-m', 'eval.gate', '--target', record['target'],
