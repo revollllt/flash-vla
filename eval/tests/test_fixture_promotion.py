@@ -25,6 +25,10 @@ class FixtureTests(unittest.TestCase):
             a=dict(root=str(root/'a'),inputs=['kernel']); b=dict(root=str(root/'b'),inputs=['kernel'])
             evidence=dict(incumbent_source=a,candidate_source=b,acceptance={'bar':1},qualified_targets=['pi05'],gate_verdict='pass')
             self.assertTrue(promotion.applicability(evidence,a,b,{'bar':1},['pi05'])['applicable'])
+            evidence['acceptance']={'values':['a', 'b']}
+            self.assertTrue(promotion.applicability(
+                evidence,a,b,{'values':('a', 'b')},['pi05'])['applicable'])
+            evidence['acceptance']={'bar':1}
             self.assertFalse(promotion.applicability(evidence,b,b,{'bar':1},['pi05'])['applicable'])
             self.assertFalse(promotion.applicability(evidence,a,b,{'bar':1},['pi0','pi05'])['applicable'])
             self.assertFalse(promotion.applicability(evidence,a,b,{'bar':2},['pi05'])['applicable'])

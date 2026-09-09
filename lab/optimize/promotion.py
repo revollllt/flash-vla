@@ -1,4 +1,5 @@
 """Evidence applicability checks; the existing eval.gate remains the only verdict."""
+import json
 from pathlib import Path
 from .store import changed_inputs
 
@@ -11,7 +12,9 @@ def applicability(evidence, incumbent, candidate, acceptance, required_targets):
             reasons.append(f'{role} source evidence missing; remeasure affected candidate')
         elif changed_inputs(previous, current):
             reasons.append(f'{role} changed; repeat affected correctness and measurement')
-    if evidence.get('acceptance')!=acceptance:
+    recorded_acceptance = json.loads(json.dumps(evidence.get('acceptance')))
+    current_acceptance = json.loads(json.dumps(acceptance))
+    if recorded_acceptance != current_acceptance:
         reasons.append('acceptance changed; existing evidence is not applicable')
     missing=set(required_targets)-set(evidence.get('qualified_targets',[]))
     if missing:
