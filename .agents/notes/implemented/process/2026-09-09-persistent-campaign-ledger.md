@@ -30,6 +30,20 @@ at each ladder depth. A shallow graph may omit full-depth call sites; active
 routes and the measured engine revision still match exactly. When importing
 older reports, use the corresponding Target graph source.
 
+LingBot backend changes can be qualified against a clean older checkout in one
+process. Each source loads its own Target package and backend module globals;
+the remaining inference source must match the controller revision. The factory
+records the actual loaded source revision separately from the controller and
+binds it before measurement. CUDA/kernel loaders and other Targets remain
+unsupported by this path. This bounded loader avoids pretending that changing
+sys.path alone isolates implementations.
+
+Latency builds and identifies controls by both plan and construction options,
+with their actual implementation identities. The gate's incumbent options apply
+only to its two performance-control legs; candidate correctness continues
+against its registered reference. Source changes outside the isolated backend
+package require a supported loader before qualification.
+
 An alternative lineage requires an explicit fork reason and retains parent
 Campaign and iteration provenance. Forking is limited to terminal ledgers and
 preserves iteration genealogy, failed hypotheses and independent declared source
@@ -302,3 +316,12 @@ These fixtures do not establish real Pi0.5/LingBot checkpoint transfer or GPU
 performance.
 
 Related: [the original optimization campaign](../performance/2026-09-06-optimization-campaign-plan.md).
+
+
+Source qualification scopes the external LingBot `apply_rope` global around
+each sequential engine call (including eager calls and graph capture), restoring
+the previous function even on failure. Separate Python package names alone do
+not isolate that upstream global. Official parity receives the same source
+checkout for its reference engine and continues reading the recorded official
+oracle; its report retains both engine identity and implementation source.
+Explicit source options must match the candidate source receipt in every route.

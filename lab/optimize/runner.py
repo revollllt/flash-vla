@@ -40,22 +40,31 @@ def _command(record, name):
         if not record['spec'].get('qualification_sources'):
             raise ValueError('qualification requires explicit incumbent and candidate source records')
         sources = record['spec']['qualification_sources']
-        if store.changed_inputs(sources['incumbent'], sources['candidate']):
-            raise ValueError('unsupported_protocol: eval.gate supports route variants in one source tree; source-version qualification is not implemented')
+        source_variant = bool(store.changed_inputs(sources['incumbent'], sources['candidate'])) or any(
+            Path(sources[role + '_checkout']).resolve() != Path(record['repository']).resolve()
+            for role in ('incumbent', 'candidate'))
+        if source_variant and record['target'] != 'hardware/nvidia/h100/lingbot_vla':
+            raise ValueError('unsupported_protocol: source-version qualification currently supports LingBot backends only')
         for role in ('incumbent', 'candidate'):
-            if Path(sources[role + '_checkout']).resolve() != Path(record['repository']).resolve():
-                raise ValueError('eval.gate must load both route variants from the recorded live checkout')
-            live = dict(sources[role], root=record['repository'])
+            live = dict(sources[role], root=sources[role + '_checkout'])
             if store.changed_inputs(sources[role], live):
                 raise ValueError('qualification source changed before launch; remeasure affected evidence')
-        options = record['spec'].get('options', {})
+        options = dict(record['spec'].get('options', {}))
+        candidate_checkout = str(Path(sources['candidate_checkout']).resolve())
+        if ('source_checkout' in options
+                and str(Path(options['source_checkout']).resolve()) != candidate_checkout):
+            raise ValueError('candidate source option differs from qualification source')
+        source_args = []
+        if source_variant:
+            options['source_checkout'] = candidate_checkout
+            source_args = ['--incumbent-option', 'source_checkout=' + str(Path(sources['incumbent_checkout']).resolve())]
         option_args = [arg for key, value in options.items()
                        for arg in ('--option', f'{key}={value}')]
         return [sys.executable, '-m', 'eval.gate', '--target', record['target'],
                 '--candidate', record['spec'].get('candidate', 'shipped'),
                 '--incumbent', record['spec'].get('incumbent', 'shipped'),
                 '--seed', str(record['spec'].get('conditions', {}).get('seed', 0)),
-                '--baseline', '--out-dir', str(Path(record['directory']) / 'qualify'), *option_args]
+                '--baseline', '--out-dir', str(Path(record['directory']) / 'qualify'), *option_args, *source_args]
     return [part.replace('{python}', sys.executable).replace('{out}', record['directory'])
             .replace('{inputs}', record['source']['root'])
             for part in record['spec']['stages'][name]['argv']]

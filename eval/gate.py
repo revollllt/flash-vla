@@ -311,7 +311,7 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
         mode: str | None = None, reps: int | None = None, seed: int = 0,
         baseline: bool = False, out_dir: str | None = None,
         include_floor: bool = False, correctness_only: bool = False,
-        **overrides) -> dict[str, Any]:
+        incumbent_options: dict[str, Any] | None = None, **overrides) -> dict[str, Any]:
     """Qualify against the existing incumbent; stop before timing on failed evidence."""
     target = resolve(target)
     candidate = candidate or "shipped"
@@ -325,7 +325,8 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
         "identity": identity, "target": target, "construction_options": dict(overrides),
         "candidate": {"plan": candidate}, "reference": {"plan": reference},
         "mode": mode, "acceptance_version": _registry_version(), "acceptance": spec,
-        "numerical_oracle": {"plan": "reference"}, "performance_incumbent": {"plan": reference},
+        "numerical_oracle": {"plan": "reference"},
+        "performance_incumbent": {"plan": reference, "options": dict(incumbent_options or {})},
         "correctness_coverage": {"candidate_to_in_engine_reference": "not_run",
                                  "candidate_to_official": "not_run",
                                  "official_adapter": "not_run"},
@@ -366,7 +367,9 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
     lat = spec["latency"]
     plans = [reference, candidate, reference]
     latency_report = latency.run(target, plans, reps=reps or lat["reps"], warmup=lat["warmup"],
-                                 seed=seed, attribution=False, **overrides)
+                                 seed=seed, attribution=False,
+                                 leg_options=[incumbent_options or {}, {}, incumbent_options or {}],
+                                 **overrides)
     record["latency"] = {"report": latency_report,
                          "rule": _latency_verdict(latency_report, lat, mode)}
     record["deployment"] = _deployment_verdict(latency_report, spec["deployment"])
@@ -459,12 +462,15 @@ def main(argv=None) -> int:
     parser.add_argument("--floor", action="store_true", help="also collect the optional diagnostic floor")
     parser.add_argument("--option", action="append", default=[],
                         help="target construction option as key=value, including official adapters")
+    parser.add_argument("--incumbent-option", action="append", default=[],
+                        help="override a construction option for the two performance control legs")
     parser.add_argument("--out-dir", default=None)
     args = parser.parse_args(argv)
     mode = args.mode.replace("-", "_") if args.mode else None
     record = run(args.target, args.candidate, reference=args.reference, mode=mode,
                  reps=args.reps, seed=args.seed, baseline=args.baseline, out_dir=args.out_dir,
                  include_floor=args.floor, correctness_only=args.correctness_only,
+                 incumbent_options=latency.parse_options(args.incumbent_option),
                  **latency.parse_options(args.option))
     print(summary(record))
     return {"pass": 0, "correctness_pass": 0, "fail": 1, "blocked": 2}[record["verdict"]]

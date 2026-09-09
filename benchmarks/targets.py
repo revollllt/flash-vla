@@ -106,11 +106,16 @@ def _lingbot(plan: Any = "shipped", *, seed: int = 42, steps: int = 10, layers: 
              checkpoint: str | None = None, fixture: str | None = None,
              checkpoint_id: str | None = None, checkpoint_digest: str | None = None,
              fixture_id: str | None = None, fixture_digest: str | None = None,
-             asset_config: str | None = None):
+             asset_config: str | None = None, source_checkout: str | None = None):
     from pathlib import Path
     from benchmarks.assets import resolve_assets
     from flash_vla.hardware.nvidia.h100.lingbot_vla import TARGET
     from flash_vla.models.lingbot import load_checkpoint
+
+    source = None
+    if source_checkout is not None:
+        from benchmarks.source import lingbot_target
+        TARGET, source = lingbot_target(source_checkout)
 
     if checkpoint_id is None:
         if checkpoint is not None or checkpoint_digest is not None:
@@ -138,6 +143,10 @@ def _lingbot(plan: Any = "shipped", *, seed: int = 42, steps: int = 10, layers: 
                          plan=plan, device="cpu" if declare else device,
                          capture=not declare, assets=assets, steps=steps, layers=layers)
     runner.measurement_context["fixture"] = {"id": fixture_id, "digest": fixture_digest}
+    if source is not None:
+        from dataclasses import replace
+        runner.identity = replace(runner.identity, engine_revision=source["revision"])
+        runner.implementation_source = source
     return runner
 
 

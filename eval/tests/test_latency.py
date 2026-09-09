@@ -58,6 +58,37 @@ class LatencyRunTests(unittest.TestCase):
         self.assertEqual([leg["plan"] for leg in report["legs"]], ["a", "b", "a"])
 
 
+    def test_same_plan_source_variants_build_separately_and_keep_two_controls(self):
+        built, measured = [], []
+        def build(target, plan, **options):
+            engine = _Engine(plan)
+            engine.source = options["source_checkout"]
+            built.append(engine.source)
+            return engine
+        def measure(engine, *args, **kwargs):
+            measured.append(engine.source)
+            value = 1.0 if engine.source == "old" else 0.5
+            stats = dict(min=value, median=value, p99=value)
+            return dict(chunk_latency=stats)
+        with patch.object(latency.torch.cuda, "device", return_value=nullcontext()), \
+             patch.object(latency, "require_cuda"), \
+             patch.object(latency.torch.cuda, "init"), \
+             patch.object(latency.torch.cuda, "empty_cache"), \
+             patch.object(latency, "resolve", side_effect=lambda value: value), \
+             patch.object(latency, "build", side_effect=build), \
+             patch.object(latency, "measure", side_effect=measure), \
+             patch.object(latency, "_env", return_value={}):
+            report = latency.run(
+                "test", ["shipped"] * 3, reps=1, warmup=0, attribution=False,
+                source_checkout="new",
+                leg_options=[{"source_checkout": "old"}, {}, {"source_checkout": "old"}],
+            )
+        self.assertEqual(built, ["old", "new"])
+        self.assertEqual(measured, ["old", "new", "old"])
+        self.assertEqual(report["deltas"]["control_legs"], 1)
+        self.assertEqual(report["deltas"]["control_spread_ms"], 0)
+        self.assertFalse(report["deltas"]["legs"][0]["same_as_reference"])
+
     def test_context_change_rejects_candidate_before_measurement(self):
         for changed in ("weights", "fixture", "environment"):
             with self.subTest(changed=changed):

@@ -201,7 +201,9 @@ def _deltas(legs: list[dict[str, Any]]) -> dict[str, Any]:
     first = _flatten(legs[0]["metrics"])
 
     def same(leg):
-        return leg["plan"] == legs[0]["plan"]
+        return (leg["plan"] == legs[0]["plan"]
+                and leg.get("identity", {}) == legs[0].get("identity", {})
+                and leg.get("options", {}) == legs[0].get("options", {}))
 
     control = [leg for leg in legs[1:] if same(leg)]
     spread: dict[str, float] = {}
@@ -289,7 +291,8 @@ def device_selector(device=None) -> str:
 
 def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         warmup: int = _LAT["warmup"], seed: int = 0, calibrate: bool = False,
-        attribution: bool = True, **overrides) -> dict[str, Any]:
+        attribution: bool = True, leg_options: list[dict[str, Any]] | None = None,
+        **overrides) -> dict[str, Any]:
     """Build one runner per leg, measure it, and report legs, deltas and calibration.
 
     A leg whose plan equals the first leg's is a control leg. Each leg also
@@ -300,26 +303,30 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
     torch.cuda.init()
     target = resolve(target)
     plans = [plan or "shipped" for plan in plans]
+    options = list(leg_options or [{} for _ in plans])
+    if len(options) != len(plans):
+        raise ValueError("leg_options must match the number of plans")
     if calibrate:
         plans = [plans[0]] * 3
+        options = [options[0]] * 3
     legs = []
     built = []
     reference_context = None
     reference_identity: Identity | None = None
-    for plan in plans:
-        if any(item["plan"] == plan for item in built):
+    for plan, option in zip(plans, options):
+        if any(item["plan"] == plan and item["options"] == option for item in built):
             continue
-        engine = build(target, plan, seed=seed, **overrides)
+        engine = build(target, plan, seed=seed, **{**overrides, **option})
         if reference_identity is None:
             reference_identity = engine.identity
         elif not reference_identity.same_workload(engine.identity):
             raise ValueError("plans in one run may differ in implementation only")
         inputs = engine.sample_inputs(seed)
-        built.append({"plan": plan, "engine": engine, "inputs": inputs})
+        built.append({"plan": plan, "options": option, "engine": engine, "inputs": inputs})
     try:
-        for index, plan in enumerate(plans):
+        for index, (plan, option) in enumerate(zip(plans, options)):
             print(f"== leg {index}: {target} plan={plan}", flush=True)
-            item = next(item for item in built if item["plan"] == plan)
+            item = next(item for item in built if item["plan"] == plan and item["options"] == option)
             engine, inputs = item["engine"], item["inputs"]
             environment = _env(engine.device)
             context = report_context(engine, environment)
@@ -344,7 +351,9 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
             if after.segment_key != current_context.segment_key:
                 raise ValueError("A/B/A measurement context changed during a leg; require re-anchor")
             legs.append({"leg": index, "plan": plan, "identity": engine.identity.as_dict(),
-                         "measurement_context": context, "metrics": metrics, "attribution": evidence})
+                         "measurement_context": context, "metrics": metrics, "attribution": evidence,
+                         "options": {**overrides, **option},
+                         "implementation_source": getattr(engine, "implementation_source", None)})
             print(json.dumps(legs[-1]["metrics"]), flush=True)
             if evidence is not None:
                 print(attribution_summary(evidence), flush=True)
@@ -365,7 +374,7 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
                    "soak_s": _LAT["soak_s"],
                    "promotion_bar_ms": _LAT["promotion_bar_ms"],
                    "control_spread_max_ms": _LAT["control_spread_max_ms"],
-                   "attribution": attribution},
+                   "attribution": attribution, "leg_options": options},
         "legs": legs,
         "deltas": _deltas(legs) if len(legs) > 1 else None,
     }

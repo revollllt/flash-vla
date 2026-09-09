@@ -53,12 +53,12 @@ def _physical_actions(actions: torch.Tensor, fixture: dict[str, torch.Tensor], a
 
 def run(plan: str = "reference", oracle: Path | None = None,
         seed: int = 42, layers: int = 36, steps: int = 10, *,
-        asset_config: str | None = None) -> dict[str, object]:
+        asset_config: str | None = None, source_checkout: str | None = None) -> dict[str, object]:
     if oracle is None:
         oracle = resolve_assets({"oracle": ORACLE_ASSET}, asset_config)["oracle"]
     expected = load_file(oracle / "official-eager.safetensors")
     fixture = load_file(oracle / "fixture.safetensors")
-    engine = build("h100/lingbot_vla", plan, seed=seed, layers=layers, steps=steps, asset_config=asset_config)
+    engine = build("h100/lingbot_vla", plan, seed=seed, layers=layers, steps=steps, asset_config=asset_config, source_checkout=source_checkout)
     inputs = engine.sample_inputs(seed)
     engine.stage(**inputs)
     for step in engine.program:
@@ -88,6 +88,7 @@ def run(plan: str = "reference", oracle: Path | None = None,
     ) and torch.equal(first, second)
     return {
         "identity": engine.identity.as_dict(),
+        "implementation_source": getattr(engine, "implementation_source", None),
         "measurement_context": engine.measurement_context,
         "oracle": str(oracle / "official-eager.safetensors"),
         "seed": seed,
@@ -105,7 +106,7 @@ def main(argv=None) -> int:
     parser.add_argument("--oracle", type=Path)
     parser.add_argument("--asset-config")
     parser.add_argument("--option", action="append", default=[],
-                        help="construction options forwarded by eval.gate; currently asset_config")
+                        help="construction options forwarded by eval.gate; asset_config and source_checkout")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--layers", type=int, default=36)
     parser.add_argument("--steps", type=int, default=10)
@@ -113,13 +114,13 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     from benchmarks.latency import parse_options
     options = parse_options(args.option)
-    unknown = set(options) - {"asset_config"}
+    unknown = set(options) - {"asset_config", "source_checkout"}
     if unknown:
         parser.error(f"unsupported official LingBot construction options: {sorted(unknown)}")
     asset_config = options.get("asset_config", args.asset_config)
     with redirect_stdout(sys.stderr):
         report = run(args.plan, args.oracle, args.seed, args.layers, args.steps,
-                     asset_config=asset_config)
+                     asset_config=asset_config, source_checkout=options.get("source_checkout"))
     text = json.dumps(report, indent=2) + "\n"
     print(text, end="")
     if args.out:
