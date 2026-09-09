@@ -17,6 +17,13 @@ Slurm state, not an expiring timestamp. Budget related trials together and retai
 confirmation resources. A worker lost before accounting requires explicit cost
 recovery after confirmed termination.
 
+Qualification uses the experiment's recorded construction options and seed.
+Checkpoint, reference configuration and fixture selection must reach the evaluator
+unchanged; otherwise an explicit real-asset experiment can silently evaluate the
+factory defaults. Options belong to experiment conditions so recovery and
+duplicate detection retain the same selection. Passing them as separate argv
+values preserves paths and prompts without shell interpretation.
+
 Separate numerical oracle from performance incumbent. Existing required-check
 failure or missing official evidence stops qualification before latency work;
 floor is optional diagnostic work. Preserve same-trace intervals, sums, unions

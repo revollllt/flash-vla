@@ -96,6 +96,47 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(record['promotion'],'blocked')
         self.assertFalse(record['promotion_review']['applicable'])
 
+
+    def test_qualification_preserves_asset_options_through_gate_cli(self):
+        import json
+        import subprocess
+        import sys
+
+        s = spec()
+        s['stages']['qualify'] = {}
+        options = dict(
+            checkpoint="/assets/checkpoint A/model.safetensors",
+            checkpoint_id="trained-a", checkpoint_digest="publisher-revision-a",
+            openpi_config="pi05_aloha", tokenizer_path="/assets/tokenizer model",
+            prompt="pick = cup; $(not-a-command)\nthen place it",
+        )
+        s['conditions'] = dict(seed=42, options=options)
+        record = runner.start(self.root, s, self.out)
+        record['spec']['qualification_sources'] = dict(
+            incumbent=record['source'], candidate=record['source'],
+            incumbent_checkout=str(self.root), candidate_checkout=str(self.root),
+            affected_targets=[record['target']])
+        store.write(self.out / 'evidence.json', record)
+        command = runner._command(store.read(self.out / 'evidence.json'), 'qualify')
+        # Exercise the real gate CLI parser in a fresh interpreter, replacing
+        # only the GPU work with a recorder.
+        script = (
+            "import json, sys; from eval import gate; "
+            "gate.run = lambda *args, **kwargs: dict(verdict='pass', args=args, kwargs=kwargs); "
+            "gate.summary = json.dumps; raise SystemExit(gate.main(sys.argv[1:]))"
+        )
+        result = subprocess.run(
+            [sys.executable, '-c', script, *command[3:]],
+            cwd=Path(__file__).resolve().parents[2],
+            check=True, text=True, capture_output=True)
+        received = json.loads(result.stdout)
+        self.assertEqual(received['args'][0], s['target'])
+        self.assertEqual(received['kwargs']['seed'], 42)
+        self.assertTrue(received['kwargs']['baseline'])
+        self.assertEqual({key: received['kwargs'].get(key) for key in options}, options)
+        item = store.read(self.root / 'index' / 'probe.json')
+        self.assertEqual(item['conditions'], s['conditions'])
+
     def test_simultaneous_starts_share_candidate_budget(self):
         from concurrent.futures import ThreadPoolExecutor
         def start(index):
