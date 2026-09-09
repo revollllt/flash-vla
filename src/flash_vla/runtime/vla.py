@@ -146,8 +146,12 @@ class VLA:
                     raise KeyError(f"stage output {buffer!r} of {stage!r} is not declared")
         return g
 
-    def sample_inputs(self, shape: Mapping[str, int], seed: int, device) -> dict[str, torch.Tensor]:
+    def sample_inputs(self, shape: Mapping[str, int], seed: int, device, *,
+                      assets: Mapping[str, Any] | None = None) -> dict[str, torch.Tensor]:
         """Seeded random inputs at `shape`, drawn in `INPUTS` order from one generator.
+
+        File-backed overrides consume the runner's read-only assets mapping;
+        the random-input default does not use it.
 
         Inputs a host slot consumes (`Input.buffer is None`) are returned in
         pinned host memory, as deployment delivers them: a device-resident copy

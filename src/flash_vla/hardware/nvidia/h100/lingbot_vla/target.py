@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -11,6 +10,7 @@ import torch
 
 from flash_vla.models.lingbot.spec import (
     ACTION_DIM,
+    CHECKPOINT_REVISION,
     MODEL_REVISION,
     INFERENCE_SIGNATURE,
     BACKBONE_DIM,
@@ -45,12 +45,6 @@ from flash_vla.runtime.graph import Graph
 from . import pipeline
 from .backends import REGISTRY
 
-DEFAULT_FIXTURE = (
-    "/data/user/jzou521/codes/cuda/flash-vla/artifacts/onboarding/"
-    "lingbot-vla-4b-h100-bf16/official/fixture.safetensors"
-)
-
-
 @dataclass(frozen=True)
 class LingBotConfig:
     steps: int = 10
@@ -64,6 +58,12 @@ class LingBotConfig:
 
 
 class LingBotVLA(VLA):
+    ASSETS = {
+        "checkpoint": CHECKPOINT_REVISION,
+        "fixture": "lingbot-robotwin-canonical-v1/seed-42",
+        "upstream": "lingbot-vla@4eb34b7693a0565c67433f8fac9c59a2e67eb60b",
+        "qwen": "qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+    }
     name = "hardware/nvidia/h100/lingbot_vla"
     hardware = "h100-sxm5-80gb"
     model = "lingbot-vla"
@@ -156,10 +156,10 @@ class LingBotVLA(VLA):
         pipeline.build(g, shape)
 
     def sample_inputs(self, shape: Mapping[str, int], seed: int,
-                      device) -> dict[str, torch.Tensor]:
+                      device, *, assets: Mapping[str, Any]) -> dict[str, torch.Tensor]:
         if seed != 42:
             raise ValueError("the frozen LingBot fixture uses seed 42")
-        fixture = Path(os.environ.get("LINGBOT_FIXTURE", DEFAULT_FIXTURE))
+        fixture = Path(assets["fixture"])
         values = load_file(fixture)
         return {inp.name: values[inp.name].to(device=device) for inp in self.INPUTS}
 

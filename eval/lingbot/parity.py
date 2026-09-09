@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 from contextlib import redirect_stdout
 import json
-import os
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -13,34 +12,22 @@ from safetensors.torch import load_file
 import torch
 import yaml
 
+from benchmarks.assets import resolve_assets
 from benchmarks.targets import build
 from eval.acceptance import tolerances
 from eval.metrics import error_metrics
 
-DEFAULT_ORACLE = Path(
-    "/data/user/jzou521/codes/cuda/flash-vla/artifacts/onboarding/"
-    "lingbot-vla-4b-h100-bf16/official"
-)
+ORACLE_ASSET = "lingbot-robotwin-canonical-v1/seed-42/oracle"
 
 
-def _physical_actions(actions: torch.Tensor, fixture: dict[str, torch.Tensor]) -> torch.Tensor:
-    upstream = Path(os.environ.get(
-        "LINGBOT_UPSTREAM",
-        "/data/user/jzou521/codes/cuda/flash-vla/artifacts/upstreams/lingbot-vla",
-    )).resolve()
-    qwen = Path(os.environ.get(
-        "LINGBOT_QWEN",
-        "/data/user/jzou521/codes/cuda/flash-vla/artifacts/upstreams/qwen2.5-vl-3b-instruct",
-    )).resolve()
+def _physical_actions(actions: torch.Tensor, fixture: dict[str, torch.Tensor], assets) -> torch.Tensor:
+    upstream, qwen = (Path(assets[role]) for role in ("upstream", "qwen"))
     if str(upstream) not in sys.path:
         sys.path.insert(0, str(upstream))
     from lingbotvla.data.vla_data.utils import FeatureTransform
     from lingbotvla.models import build_processor
 
-    with Path(os.environ.get(
-        "LINGBOT_CHECKPOINT",
-        "/data/user/jzou521/models/lingbot-vla-4b-posttrain-robotwin-fb71a2c",
-    )).joinpath("lingbotvla_cli.yaml").open() as source:
+    with (Path(assets["checkpoint"]) / "lingbotvla_cli.yaml").open() as source:
         training = yaml.safe_load(source)
     data = SimpleNamespace(**training["data"])
     data.max_state_dim = 75
@@ -64,11 +51,14 @@ def _physical_actions(actions: torch.Tensor, fixture: dict[str, torch.Tensor]) -
     return transform.unapply(inverse)["action"].contiguous()
 
 
-def run(plan: str = "reference", oracle: Path = DEFAULT_ORACLE,
-        seed: int = 42, layers: int = 36, steps: int = 10) -> dict[str, object]:
+def run(plan: str = "reference", oracle: Path | None = None,
+        seed: int = 42, layers: int = 36, steps: int = 10, *,
+        asset_config: str | None = None) -> dict[str, object]:
+    if oracle is None:
+        oracle = resolve_assets({"oracle": ORACLE_ASSET}, asset_config)["oracle"]
     expected = load_file(oracle / "official-eager.safetensors")
     fixture = load_file(oracle / "fixture.safetensors")
-    engine = build("h100/lingbot_vla", plan, seed=seed, layers=layers, steps=steps)
+    engine = build("h100/lingbot_vla", plan, seed=seed, layers=layers, steps=steps, asset_config=asset_config)
     inputs = engine.sample_inputs(seed)
     engine.stage(**inputs)
     for step in engine.program:
@@ -84,7 +74,7 @@ def run(plan: str = "reference", oracle: Path = DEFAULT_ORACLE,
         "velocity_step_0": engine.buffers["velocity_step_0"].detach().cpu(),
         "actions": engine.buffers["actions"].detach().cpu(),
     }
-    actual["physical_actions"] = _physical_actions(actual["actions"], fixture)
+    actual["physical_actions"] = _physical_actions(actual["actions"], fixture, engine.assets)
     metrics = {name: error_metrics(expected[name], value) for name, value in actual.items()}
     equal = {name: torch.equal(expected[name], value) for name, value in actual.items()}
     first = engine.forward(**inputs).clone()
@@ -98,6 +88,7 @@ def run(plan: str = "reference", oracle: Path = DEFAULT_ORACLE,
     ) and torch.equal(first, second)
     return {
         "identity": engine.identity.as_dict(),
+        "measurement_context": engine.measurement_context,
         "oracle": str(oracle / "official-eager.safetensors"),
         "seed": seed,
         "metrics": metrics,
@@ -111,14 +102,24 @@ def run(plan: str = "reference", oracle: Path = DEFAULT_ORACLE,
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", default="reference")
-    parser.add_argument("--oracle", type=Path, default=DEFAULT_ORACLE)
+    parser.add_argument("--oracle", type=Path)
+    parser.add_argument("--asset-config")
+    parser.add_argument("--option", action="append", default=[],
+                        help="construction options forwarded by eval.gate; currently asset_config")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--layers", type=int, default=36)
     parser.add_argument("--steps", type=int, default=10)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
+    from benchmarks.latency import parse_options
+    options = parse_options(args.option)
+    unknown = set(options) - {"asset_config"}
+    if unknown:
+        parser.error(f"unsupported official LingBot construction options: {sorted(unknown)}")
+    asset_config = options.get("asset_config", args.asset_config)
     with redirect_stdout(sys.stderr):
-        report = run(args.plan, args.oracle, args.seed, args.layers, args.steps)
+        report = run(args.plan, args.oracle, args.seed, args.layers, args.steps,
+                     asset_config=asset_config)
     text = json.dumps(report, indent=2) + "\n"
     print(text, end="")
     if args.out:

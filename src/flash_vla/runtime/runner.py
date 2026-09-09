@@ -24,7 +24,7 @@ import warnings
 from contextlib import contextmanager
 from dataclasses import replace
 from functools import partial
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from typing import Any, Callable, Iterator, Mapping
 
 import torch
@@ -47,8 +47,9 @@ class Scratch:
     instead of allocating during graph capture.
     """
 
-    def __init__(self, device: torch.device) -> None:
+    def __init__(self, device: torch.device, *, assets: Mapping[str, Any] | None = None) -> None:
         self.device = device
+        self.assets = MappingProxyType(dict(assets or {}))
         self._buffers: dict[tuple, torch.Tensor] = {}
         self.owners: dict[tuple, int | None] = {}
         self.current: int | None = None
@@ -80,6 +81,10 @@ class Scratch:
 class ModelRunner:
     """One constructed Target: graph built, plan bound, buffers allocated, stages captured.
 
+    assets is a construction-time role-to-local-path mapping, copied read-only
+    for this runner's input sampler and backend factories. It is not part of
+    configuration, shape, graph arguments or identity.
+
     Python's cyclic collector is disabled while the stages are captured (a
     collection inside a capture frees device memory and invalidates the
     capture) and run once afterwards. That is preparation, not a deployment
@@ -93,7 +98,7 @@ class ModelRunner:
                  checkpoint_id: str | None = None, checkpoint_digest: str | None = None,
                  checkpoint_signature: str | None = None, model_revision: str | None = None,
                  plan: Any = "shipped", device: str = "cuda", capture: bool = True,
-                 warmup: int = 3, **config: Any) -> None:
+                 warmup: int = 3, assets: Mapping[str, Any] | None = None, **config: Any) -> None:
         self.target = target
         if model_revision is not None:
             warnings.warn("model_revision is owned by Target; use checkpoint_id for weights",
@@ -123,7 +128,8 @@ class ModelRunner:
                               for stage, outputs in target.STAGE_OUTPUTS.items()}
         self.derived: dict[str, int] = dict(self.graph.derived)
         self.device = torch.device(device)
-        self.scratch = Scratch(self.device)
+        self.scratch = Scratch(self.device, assets=assets)
+        self.assets = self.scratch.assets
         self._ops = target.registry.op_table(routes, self.scratch)
 
         self.weights: dict[str, torch.Tensor] = {}
@@ -236,7 +242,7 @@ class ModelRunner:
 
     def sample_inputs(self, seed: int = 0) -> dict[str, torch.Tensor]:
         """Seeded inputs at this runner's shapes."""
-        return self.target.sample_inputs(self.shape, seed, self.device)
+        return self.target.sample_inputs(self.shape, seed, self.device, assets=self.assets)
 
     def stage(self, **inputs: Any) -> None:
         """Copy the device inputs into their static addresses; run nothing."""

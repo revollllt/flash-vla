@@ -74,6 +74,28 @@ that never reached the identity.
    Weight names are unchanged: they are the model contract and the checkpoint
    converters' keys.
 
+### Construction assets
+
+The runner owns a read-only copy of resolved local asset paths, separate from
+Target configuration, graph arguments and identity. Backend initialization reads
+that mapping from its runner-provided scratch object, and file-backed input
+sampling receives the same mapping explicitly. Runtime knows no asset IDs,
+machine configuration files or model-specific loading rules.
+
+LingBot names its default checkpoint, fixture, source and Qwen configuration
+as logical assets. The benchmark factory resolves them through machine
+configuration; explicit weight and fixture locations require separate provenance.
+The original sampler API had no construction context, so per-run file ownership
+could not be expressed there without the small shared asset argument. Mutable
+environment selection would let constructing B change A's later input or lazy
+backend load. Passing paths as graph scalars would instead put machine details
+inside an inference graph.
+
+CPU verification covers interleaved fixture sampling, delayed backend loading,
+unchanged identity under different filesystem layouts, unchanged process
+environment and declaration without local assets. It does not establish real
+GPU numerical parity after relocation.
+
 ## Alternatives considered
 
 - Keep the hand-written buffer plans and cost tables and only lift the

@@ -138,6 +138,15 @@ constraints; the package owns the kernels.
 
 ## Deployment configuration
 
+Targets name logical assets. Machine configuration maps those identifiers to local
+paths; paths never enter shape, inference signature or Target identity.
+For file-backed LingBot construction, set FLASH_VLA_ASSETS to a JSON mapping
+of logical IDs to paths, or pass asset_config to its factory. Relative asset
+paths resolve beside that JSON file. Explicit checkpoint/fixture paths still
+require their separate immutable identities. The runner copies resolved assets
+read-only for its sampler and backend initialization, so another runner cannot
+change its assets through process environment variables.
+
 Each Target carries exactly one shipped plan and one reference plan (its
 correctness oracle route). Everything else — candidate plans, ablations,
 per-kernel trials — lives in `lab/`, the optimization workspace, which is

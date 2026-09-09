@@ -7,7 +7,9 @@ any object) with this contract:
     make_wrappers(scratch, selected_names=None) -> {call_site: callable}
                        build the wrappers; `scratch(role, shape, dtype, device)`
                        is the runner's workspace allocator, which the backend
-                       must use for any device memory that outlives one call
+                       must use for any device memory that outlives one call.
+                       The runner's scratch.assets is its read-only mapping of
+                       asset roles to local paths for backend initialization.
     ROUTE_CONSTRAINTS  optional `RouteConstraint`s (`runtime/binding.py`)
     graph_contract(routes) -> {"forbid": [...], "require_one": [...]}
                        optional kernel-name patterns the captured program must

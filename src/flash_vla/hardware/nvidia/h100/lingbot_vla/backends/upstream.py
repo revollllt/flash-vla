@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import gc
 from math import prod
-import os
 from pathlib import Path
 import sys
 from types import MethodType
@@ -141,22 +140,6 @@ ROUTE_CONSTRAINTS = (
 )
 
 
-def _upstream_paths() -> tuple[Path, Path, Path]:
-    upstream = Path(os.environ.get(
-        "LINGBOT_UPSTREAM",
-        "/data/user/jzou521/codes/cuda/flash-vla/artifacts/upstreams/lingbot-vla",
-    )).resolve()
-    checkpoint = Path(os.environ.get(
-        "LINGBOT_CHECKPOINT",
-        "/data/user/jzou521/models/lingbot-vla-4b-posttrain-robotwin-fb71a2c",
-    )).resolve()
-    qwen = Path(os.environ.get(
-        "LINGBOT_QWEN",
-        "/data/user/jzou521/codes/cuda/flash-vla/artifacts/upstreams/qwen2.5-vl-3b-instruct",
-    )).resolve()
-    return upstream, checkpoint, qwen
-
-
 def _patch_vision_attention(visual) -> None:
     from lingbotvla.models.vla.pi0 import qwenvl_in_vla as qwen
 
@@ -228,12 +211,12 @@ def _configure_rope_frequency(enabled: bool) -> None:
     lingbot.apply_rope = apply_rope
 
 
-def _build_policy(weight_values, layers: int, cache_rope_frequency: bool):
+def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets):
     import yaml
     from lerobot.configs.policies import PreTrainedConfig
     from transformers import AutoConfig
 
-    upstream, checkpoint, qwen_path = _upstream_paths()
+    upstream, checkpoint, qwen_path = (Path(assets[role]) for role in ("upstream", "checkpoint", "qwen"))
     if str(upstream) not in sys.path:
         sys.path.insert(0, str(upstream))
     from deploy.lingbot_vla_policy import LingBotVlaInferencePolicy, merge_qwen_config
@@ -265,20 +248,21 @@ def _build_policy(weight_values, layers: int, cache_rope_frequency: bool):
 
 
 class _State:
-    def __init__(self, cache_rope_frequency: bool) -> None:
+    def __init__(self, cache_rope_frequency: bool, assets) -> None:
         self.core = None
         self.vision_metadata = None
         self.action_constants = None
         self.cache_rope_frequency = cache_rope_frequency
+        self.assets = assets
 
     def ensure(self, weights, layers: int):
         if self.core is None:
-            self.core = _build_policy(weights, layers, self.cache_rope_frequency)
+            self.core = _build_policy(weights, layers, self.cache_rope_frequency, self.assets)
         return self.core
 
 
 def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False):
-    state = _State(cache_rope_frequency)
+    state = _State(cache_rope_frequency, scratch.assets)
 
     @torch.no_grad()
     def vision(pixel_values, out, layers, *weights):

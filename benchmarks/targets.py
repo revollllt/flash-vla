@@ -16,17 +16,10 @@ JSON file (the candidate plans of the optimization workspace, `lab/plans/`).
 """
 from __future__ import annotations
 
-import os
 from typing import Any, Callable
 
 from flash_vla.runtime import ModelRunner
 from flash_vla.runtime.identity import canonical_digest
-
-DEFAULT_LINGBOT_CHECKPOINT = "/data/user/jzou521/models/lingbot-vla-4b-posttrain-robotwin-fb71a2c"
-DEFAULT_LINGBOT_FIXTURE = (
-    "/data/user/jzou521/codes/cuda/flash-vla/artifacts/onboarding/"
-    "lingbot-vla-4b-h100-bf16/official/fixture.safetensors"
-)
 
 DEFAULT_PROMPT = "pick up the plate and put it in the sink"
 
@@ -110,38 +103,42 @@ def _pi0(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_size
 
 def _lingbot(plan: Any = "shipped", *, seed: int = 42, steps: int = 10, layers: int = 36,
              device: str = "cuda", declare: bool = False,
-             checkpoint: str = DEFAULT_LINGBOT_CHECKPOINT,
-             fixture: str = DEFAULT_LINGBOT_FIXTURE,
+             checkpoint: str | None = None, fixture: str | None = None,
              checkpoint_id: str | None = None, checkpoint_digest: str | None = None,
-             fixture_id: str | None = None, fixture_digest: str | None = None):
+             fixture_id: str | None = None, fixture_digest: str | None = None,
+             asset_config: str | None = None):
+    from pathlib import Path
+    from benchmarks.assets import resolve_assets
     from flash_vla.hardware.nvidia.h100.lingbot_vla import TARGET
-    from flash_vla.models.lingbot import CHECKPOINT_REVISION, load_checkpoint
+    from flash_vla.models.lingbot import load_checkpoint
 
     if checkpoint_id is None:
-        if checkpoint != DEFAULT_LINGBOT_CHECKPOINT:
+        if checkpoint is not None or checkpoint_digest is not None:
             raise ValueError("checkpoint override needs checkpoint_id and checkpoint_digest")
-        checkpoint_id = CHECKPOINT_REVISION
-        checkpoint_digest = CHECKPOINT_REVISION
+        checkpoint_id = checkpoint_digest = TARGET.ASSETS["checkpoint"]
     if not checkpoint_digest:
         raise ValueError("checkpoint_digest must identify the immutable weights manifest")
     if fixture_id is None:
-        if fixture != DEFAULT_LINGBOT_FIXTURE:
+        if fixture is not None or fixture_digest is not None:
             raise ValueError("fixture override needs fixture_id and fixture_digest")
-        fixture_id = "lingbot-robotwin-canonical-v1/seed-42"
-        fixture_digest = fixture_id
+        fixture_id = fixture_digest = TARGET.ASSETS["fixture"]
     if not fixture_digest:
         raise ValueError("fixture_digest must identify the immutable fixture")
-    config = dict(steps=steps, layers=layers)
+    assets = {}
     if not declare:
-        os.environ["LINGBOT_CHECKPOINT"] = checkpoint
-        os.environ["LINGBOT_FIXTURE"] = fixture
-    runner = ModelRunner(TARGET, None if declare else load_checkpoint(checkpoint),
+        identifiers = dict(TARGET.ASSETS, checkpoint=checkpoint_id, fixture=fixture_id)
+        explicit = {role: Path(path).expanduser().resolve()
+                    for role, path in (("checkpoint", checkpoint), ("fixture", fixture))
+                    if path is not None}
+        assets = resolve_assets({role: value for role, value in identifiers.items()
+                                 if role not in explicit}, asset_config)
+        assets.update(explicit)
+    runner = ModelRunner(TARGET, None if declare else load_checkpoint(assets["checkpoint"]),
                          checkpoint_id=checkpoint_id, checkpoint_digest=checkpoint_digest,
                          plan=plan, device="cpu" if declare else device,
-                         capture=not declare, **config)
+                         capture=not declare, assets=assets, steps=steps, layers=layers)
     runner.measurement_context["fixture"] = {"id": fixture_id, "digest": fixture_digest}
     return runner
-
 
 
 #: Target name -> factory. Short aliases resolve through `resolve`.
