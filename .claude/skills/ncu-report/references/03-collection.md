@@ -62,7 +62,7 @@ Notes on the wrapper:
 
 - `sbatch/_common.sh` is what makes the job survive both driver generations on the partition and points nvcc at the module GCC; do not bypass it.
 - `--target-processes=all` is needed because the engine may spawn workers.
-- Do not call `pin_gpu_clocks` here (the generic `run.sbatch` does): it is denied and would only add noise to the log.
+- Do not request clock changes here; repository job scripts inherit device state, and NCU uses `--clock-control=none`.
 - Export `details.txt` / `raw.csv` in the same job: the login node's ncu differs from the one that wrote the report.
 - `gpu-profiler-analysis`'s `run_local_profile.py --backend ncu` is the alternative when a manifest (git commit, driver, node) should be recorded automatically; pass ncu flags through its `--tool-arg`.
 

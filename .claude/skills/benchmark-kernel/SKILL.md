@@ -264,10 +264,16 @@ matching FlashInfer's `attention_flops` / `attention_tb_per_sec` semantics.
   agree to within noise. Resubmit with `sbatch -w ACD1-1 ...` or
   `--exclude=<bad node>`, and always check the `[job] node=` line in the log
   before comparing numbers across runs.
-- **Numbers not comparable between runs**: GPU clocks were not locked (this
-  cluster denies `nvidia-smi -lgc` without privileges — watch for the
-  `[warn] could not lock GPU clocks` line in the job log). Treat cross-run
-  deltas > ~5% as suspicious until clocks are pinned.
+- **Numbers not comparable between runs**: the benchmark and its job scripts
+  inherit device state without requesting clock changes. Record the benchmark
+  execution policy, any explicit Slurm frequency request, and observed
+  application clocks; effective administrative locked-clock bounds remain
+  unobserved. This is not a certificate that the GPU is globally unlocked.
+  Formal comparisons require the unchanged protocol, per-leg environment
+  checks, soak and same-process uninstrumented A/B/A with the registry's
+  control-spread limit. Observed policy or environment changes require a new
+  segment and re-anchor. Do not replace these checks with a cross-run percentage
+  threshold or a permission-dependent clock-setting attempt.
 - **Shapes differ**: a case is timed at the Target's shape profile; the report
   identity names it, and numbers from other shapes are not comparable.
 

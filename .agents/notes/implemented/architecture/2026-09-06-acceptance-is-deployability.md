@@ -52,6 +52,21 @@ which cannot import OpenPI, so every gate ended `blocked`.
    leg soaks for `soak_s` seconds before its warmup so an unlocked GPU's
    clocks settle before anything is read. The mode is recorded in the
    evidence.
+
+   The protocol's legacy "unlocked" label means the benchmark and repository
+   job scripts inherit device state without requesting clock changes. It does
+   not certify administrator-level locked-clock bounds. Reports distinguish
+   this execution policy and the explicit Slurm GPU frequency request from
+   application-clock observations and unobserved effective locked-clock bounds.
+   Policy and observed environment changes are already part of segment identity
+   and are checked before and after each leg. A/B/A, soak and the control-spread
+   limit remain required; unobserved constraints limit attribution and cannot
+   be converted into a claim of globally unlocked hardware. Recording only an
+   always-missing hardware-lock certificate would prevent the actual execution
+   policy from being represented; recording "unlocked verified" from application
+   clocks would invent evidence. Neither alternative is accepted.
+   Slurm's request variable is documented in
+   [sbatch output environment](https://slurm.schedmd.com/sbatch.html#SECTION_OUTPUT-ENVIRONMENT-VARIABLES).
 5. **A stop condition as data.** `stop.headroom_pct` (10): a Target's
    optimization stops when the deployment bound holds and no candidate is
    left, when the budget is spent, or when every call site measures within

@@ -19,7 +19,6 @@ LD_LIBRARY_PATH="$(echo "${LD_LIBRARY_PATH:-}" | tr ':' '\n' | grep -v '/compat'
 export LD_LIBRARY_PATH
 
 require_cuda
-pin_gpu_clocks
 report_env
 
 MODE="${MODE:-both}"

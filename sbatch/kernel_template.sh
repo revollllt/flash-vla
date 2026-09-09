@@ -43,8 +43,6 @@ BIN="${OUT_DIR}/${STEM}_${SLURM_JOB_ID:-local}"
 
 echo "[job] node=$(hostname) job=${SLURM_JOB_ID:-local} driver=${_DRV}"
 echo "[job] gpu=$(nvidia-smi --query-gpu=name,clocks.sm,clocks.max.sm --format=csv,noheader)"
-nvidia-smi -lgc "$(nvidia-smi --query-gpu=clocks.max.graphics --format=csv,noheader | tr -d ' MHz')" \
-    2>/dev/null || echo "[warn] could not lock GPU clocks" >&2
 echo "[job] nvcc=$(nvcc --version | tail -1)"
 echo "[job] template=${TEMPLATE} defines='${DEFINES:-}' run_args='${RUN_ARGS:-}'"
 

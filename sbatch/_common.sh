@@ -57,15 +57,6 @@ export TILELANG_CACHE_DIR="${REPO_DIR}/.cache/tilelang/${SLURM_JOB_ID:-local}_${
 export TORCH_EXTENSIONS_DIR="${REPO_DIR}/.cache/torch_ext/${SLURM_JOB_ID:-local}_${SLURM_ARRAY_TASK_ID:-0}"
 mkdir -p "${TILELANG_CACHE_DIR}" "${TORCH_EXTENSIONS_DIR}"
 
-pin_gpu_clocks() {
-    # Benchmarks are only comparable at a fixed clock. Skipped without permission.
-    local gpu_id="${CUDA_VISIBLE_DEVICES:-0}"
-    local max_clk
-    max_clk=$(nvidia-smi -i "${gpu_id}" --query-gpu=clocks.max.graphics --format=csv,noheader | tr -d ' MHz')
-    nvidia-smi -i "${gpu_id}" -lgc "${max_clk}" 2>/dev/null || \
-        echo "[warn] could not lock GPU clocks" >&2
-}
-
 require_cuda() {
     # Part of the acd_u partition runs a driver this torch build refuses with
     # CUDA error 803, and nvidia-smi still reports a healthy H100, so the job
@@ -79,6 +70,7 @@ require_cuda() {
 }
 
 report_env() {
+    echo "[job] benchmark_clock_control=inherit slurm_gpu_freq_request=${SLURM_GPU_FREQ:-unset} effective_locked_clocks=unobserved"
     echo "[job] node=$(hostname) job=${SLURM_JOB_ID:-local} gpu=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null)"
     echo "[job] python=$("${PYTHON}" --version 2>&1)"
     echo "[job] torch=$("${PYTHON}" -c 'import torch; print(torch.__version__)' 2>/dev/null)"

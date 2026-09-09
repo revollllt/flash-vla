@@ -158,12 +158,14 @@ fixtures. The QKV pilot rotates 100 MiB of weights across ten calls per graph.
 Isolated latency and profiled software ranges cannot substitute for E2E
 qualification. See `docs/optimization-results.md` for evidence and limitations.
 
-Production environment reports distinguish the requested clock protocol from
-observed policy. GPU UUID, driver and requested/enforced power limits refer to
-the runner's device. Application clock readings alone do not certify locked
-clocks: until the actual policy is established, clock_policy remains null and
-the complete-context check rejects formal acceptance. Environment probes do not
-substitute for model correctness, re-anchor or A/B/A evidence.
+Production environment reports distinguish the benchmark's inherited-device
+execution policy and explicit Slurm frequency request from application-clock
+observations. GPU UUID, driver and requested/enforced power limits refer to the
+runner's device. Effective administrative locked-clock bounds remain unobserved;
+the execution policy is not a certificate of globally unlocked hardware.
+Policy and observed environment changes invalidate the existing segment.
+Environment probes do not substitute for model correctness, re-anchor or A/B/A
+evidence.
 
 The existing evaluator can run its registered correctness ladder separately via
 `python -m eval.gate --target TARGET --baseline --correctness-only`. Required

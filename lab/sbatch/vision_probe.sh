@@ -15,7 +15,6 @@ export PALIGEMMA_TOKENIZER="${PALIGEMMA_TOKENIZER:-/data/user/jzou521/models/ope
 export CUTLASS_DIR="${CUTLASS_DIR:-${REPO_DIR}/third_party/cutlass}"
 require_cuda
 report_env
-pin_gpu_clocks
 echo "[job] started $(date): $*"
 "${PYTHON}" -u "$@"
 echo "[job] finished $(date)"

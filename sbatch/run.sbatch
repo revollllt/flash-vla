@@ -23,7 +23,6 @@ set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$PWD}/sbatch/_common.sh"
 
 require_cuda
-pin_gpu_clocks
 report_env
 
 if [[ -z "${CMD:-}" ]]; then

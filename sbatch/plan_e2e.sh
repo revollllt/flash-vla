@@ -25,7 +25,6 @@ E2E_PLANS="${E2E_PLANS:-reference ${PLAN} reference}"
 
 require_cuda
 report_env
-pin_gpu_clocks
 echo "[job] started $(date) plan=${PLAN}"
 echo "== in-engine correctness: 1 step, 1 layer (gate)"
 "${PYTHON}" -u -m eval.correctness --target "${TARGET}" --plan "${PLAN}" --steps 1 --layers 1

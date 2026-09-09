@@ -18,7 +18,6 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export PYTHONPATH="${SLURM_SUBMIT_DIR:-$PWD}/src:${SLURM_SUBMIT_DIR:-$PWD}"
 
 require_cuda
-pin_gpu_clocks
 report_env
 
 ROOT="/data/user/jzou521/codes/cuda/flash-vla"

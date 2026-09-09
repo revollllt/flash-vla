@@ -31,7 +31,6 @@ export FLASH_VLA_BUILD_VERBOSE="${FLASH_VLA_BUILD_VERBOSE:-1}"
 
 require_cuda
 report_env
-pin_gpu_clocks
 echo "[job] running: ${PYTHON} -u $*"
 echo "[job] started $(date)"
 "${PYTHON}" -u "$@"

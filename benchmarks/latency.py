@@ -4,7 +4,7 @@
     python -m benchmarks latency --target h100/pi05 --plan reference --plan shipped --plan reference
     python -m benchmarks latency --target h100/pi05 --plan shipped --calibrate   # shipped x3
 
-One request, batch 1, the Target's fixed shapes, clocks unlocked. Every
+One request, batch 1, the Target's fixed shapes, inherited device clock state. Every
 metric the acceptance registry names (`eval/acceptance.py`) is reported with
 `min`, `median` and `p99`:
 
@@ -254,9 +254,13 @@ def _env(device=None) -> dict[str, Any]:
         "job": os.environ.get("SLURM_JOB_ID"),
         "driver": driver,
         "clocks": _LAT["clocks"],
-        # Application clocks do not reveal GPU locked clocks. Preserve the
-        # requested protocol above, but do not certify it as observed policy.
-        "clock_policy": None,
+        # This is the benchmark's execution policy, not a global hardware-lock
+        # certificate. Application clocks remain separate observations.
+        "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": os.environ.get("SLURM_GPU_FREQ"),
+            "effective_locked_clocks": "unobserved",
+        },
         "clock_observation": {"application_graphics_mhz": graphics,
                               "application_memory_mhz": memory},
         "power_policy": {"requested_limit_w": float(requested),

@@ -88,10 +88,13 @@ Measurement environment queries select the actual CUDA device by UUID, including
 visibility remapping. Requested and enforced power limits are distinct measured
 values. Query failures remain errors. Environment snapshots bracket every latency
 leg, including the final control, so a boundary change invalidates the run.
-Application clocks are observations; they do not establish the GPU locked-clock
-policy. The protocol request remains separate, and an unverified clock policy is
-null and cannot satisfy the existing complete-context requirement. A policy change
-that happens and reverses entirely between snapshots is not detected by this
+Application clocks are observations; they do not establish effective hardware
+locked-clock bounds. The recorded execution policy names the benchmark's
+inherited-device control and any explicit Slurm frequency request, while
+effective administrative bounds remain unobserved. The existing context check
+still rejects missing execution policy. Policy and application-clock observations
+both participate in segment identity. A policy change that happens and reverses
+entirely between snapshots is not detected by this
 boundary check; continuous diagnostic sampling is a separate source of evidence.
 
 The registered Pi histories import the original job 600566 latency JSON and

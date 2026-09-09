@@ -20,7 +20,11 @@ def test_selector_uses_current_cuda_device_not_first_visible(uuid, monkeypatch):
     props.assert_called_once_with(1)
 
 
-def test_environment_stamps_selected_device_power_without_claiming_clock_lock():
+@pytest.mark.parametrize("frequency_request", [None, "high,memory=high"])
+def test_environment_stamps_selected_device_power_without_claiming_clock_lock(frequency_request, monkeypatch):
+    monkeypatch.delenv("SLURM_GPU_FREQ", raising=False)
+    if frequency_request is not None:
+        monkeypatch.setenv("SLURM_GPU_FREQ", frequency_request)
     with patch.object(latency, "device_selector", return_value="GPU-selected"), \
          patch.object(latency, "env_block", return_value={"gpu": "H100"}), \
          patch.object(latency.subprocess, "run", return_value=SimpleNamespace(
@@ -31,13 +35,17 @@ def test_environment_stamps_selected_device_power_without_claiming_clock_lock():
     assert query.call_args.kwargs["check"] is True
     assert env["driver"] == "570.86.10"
     assert env["power_policy"] == {"requested_limit_w": 700.0, "enforced_limit_w": 650.0}
-    assert env["clock_policy"] is None
+    assert env["clock_policy"] == {
+        "benchmark_control": "inherit",
+        "slurm_gpu_freq_request": frequency_request,
+        "effective_locked_clocks": "unobserved",
+    }
     engine = SimpleNamespace(measurement_context={
         "weights": {"checkpoint_id": "a", "checkpoint_digest": "a"},
         "fixture": {"id": "inputs", "digest": "inputs"},
     })
     context = metrics.report_context(engine, env)
-    assert context["environment"]["clock_policy"] is None
+    assert context["environment"]["clock_policy"] == env["clock_policy"]
     assert context["environment"]["power_policy"] == env["power_policy"]
     other = metrics.report_context(engine, dict(env, power_policy={
         "requested_limit_w": 700.0, "enforced_limit_w": 700.0}))
@@ -68,6 +76,8 @@ def test_environment_query_error_propagates():
 
 @pytest.mark.parametrize("field,before,after", [
     ("power_policy", {"enforced_limit_w": 700}, {"enforced_limit_w": 650}),
+    ("clock_policy", {"benchmark_control": "inherit", "slurm_gpu_freq_request": None},
+     {"benchmark_control": "inherit", "slurm_gpu_freq_request": "high"}),
     ("clock_observation", {"application_graphics_mhz": "1980"}, {"application_graphics_mhz": "1800"}),
 ])
 def test_last_leg_environment_drift_rejects_complete_run(field, before, after):
@@ -126,3 +136,30 @@ def test_explicit_device_is_used_for_every_latency_leg_and_collector():
     device.assert_called_once_with("cuda:1")
     selector.assert_called_once_with("cuda:1")
     collector.assert_called_once_with(device_index="GPU-other")
+
+
+@pytest.mark.parametrize("script", ["sbatch/run.sbatch", "lab/sbatch/vision_probe.sh"])
+def test_formal_sbatch_runner_never_requests_clock_changes(tmp_path, monkeypatch, script):
+    from pathlib import Path
+    import os
+    import sys
+
+    shared = tmp_path / "sbatch"
+    shared.mkdir()
+    writes = tmp_path / "clock-writes"
+    (shared / "_common.sh").write_text(
+        "require_cuda() { :; }\n"
+        "pin_gpu_clocks() { echo requested > \"$CLOCK_WRITES\"; }\n"
+        "report_env() { :; }\n")
+    monkeypatch.setenv("SLURM_SUBMIT_DIR", str(tmp_path))
+    monkeypatch.setenv("CLOCK_WRITES", str(writes))
+    completed = tmp_path / "completed"
+    command = tmp_path / "command.py"
+    command.write_text(f"from pathlib import Path; Path({str(completed)!r}).touch()")
+    monkeypatch.setenv("REPO_DIR", str(tmp_path))
+    monkeypatch.setenv("PYTHON", sys.executable)
+    monkeypatch.setenv("CMD", str(command))
+    runner = Path(__file__).resolve().parents[2] / script
+    subprocess.run(["bash", str(runner), str(command)], env=os.environ, check=True)
+    assert completed.exists()
+    assert not writes.exists()
