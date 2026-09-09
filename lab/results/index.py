@@ -12,10 +12,14 @@ def _cell(value):
     return str(value).replace("|", "\\|").replace("\n", " ")
 
 
+def trace_paths(root):
+    return sorted([*root.glob("targets/*/trace.json"),
+                   *root.glob("targets/*/forks/*/trace.json")])
+
+
 def rebuild(root):
     root = Path(root)
-    paths = sorted([*root.glob("targets/*/trace.json"),
-                    *root.glob("targets/*/forks/*/trace.json")])
+    paths = trace_paths(root)
     entries = []
     lines = ["# Flash-VLA results", "",
              "Performance comparisons are local to the representative checkpoint/fixture segment.", "",

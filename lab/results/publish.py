@@ -4,10 +4,10 @@ from pathlib import Path
 import tempfile
 import os
 
-from lab.optimize import campaign, render, store, trace, transition
+from lab.optimize import campaign, store, trace, transition
 from lab.optimize.registry import key_digest
 
-from . import index, schema
+from . import index, render, schema
 
 
 def publish(root, directory):
@@ -27,7 +27,7 @@ def publish(root, directory):
         if "fork" in metadata:
             value["fork"] = {key: metadata["fork"][key]
                               for key in ("parent_campaign", "parent_iteration", "reason")}
-        summary, contexts = schema.summaries(value)
+        summary, _ = schema.summaries(value)
         relative = Path("targets") / key_digest(summary["campaign_key"])
         if "fork" in metadata:
             relative /= Path("forks") / metadata["id"]
@@ -55,30 +55,11 @@ def publish(root, directory):
                 raise ValueError("published files have no trace owner; reconcile before publishing")
             with tempfile.TemporaryDirectory(dir=scratch, prefix="publish-") as temporary:
                 staged = Path(temporary)
-                for context_id, context in contexts.items():
-                    store.write(staged / "contexts" / context_id / "summary.json", context)
                 store.write(staged / "trace.json", schema.compact_trace(value))
-                plot_metadata, points = render.from_trace(value)
-                render.render_optimization_progress(
-                    metadata=plot_metadata, points=points, output_svg=staged / "progress.svg")
-                performance = summary["current_performance"]
-                text = (
-                    f'# {plot_metadata.hardware} | {plot_metadata.model_revision}\n\n'
-                    f'Objective: {plot_metadata.objective}; protocol: {plot_metadata.protocol}.\n\n'
-                    f'Representative context: [{summary["representative_context"]}]'
-                    f'(contexts/{summary["representative_context"]}/summary.json). '
-                    f'Anchor {performance["anchor_ms"]:.3f} ms; '
-                    f'current portable incumbent {performance["best_ms"]:.3f} ms '
-                    f'({performance["speedup"]:.3f}× within this segment).\n\n'
-                    '[Summary](summary.json) · [Trace](trace.json)\n\n'
-                    '![Optimization progress](progress.svg)\n')
-                (staged / "README.md").write_text(text)
-                store.write(staged / "summary.json", summary)
+                views = render.write(staged, value)
                 # Trace is the atomic ownership/history boundary. Remaining
                 # views may be stale after interruption and must be republished.
-                paths = [staged / "trace.json", staged / "progress.svg", staged / "README.md"]
-                paths.extend(sorted((staged / "contexts").rglob("summary.json")))
-                paths.append(staged / "summary.json")
+                paths = [staged / "trace.json", *views]
                 for source in paths:
                     target = destination / source.relative_to(staged)
                     target.parent.mkdir(parents=True, exist_ok=True)

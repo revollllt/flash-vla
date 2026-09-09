@@ -135,8 +135,22 @@ Missing summary does not release the trace's ownership. Index rebuilding refuses
 summary/context views that disagree with trace facts, and unresolved files
 without a trace owner cannot be overwritten. Published terminal history cannot
 be rewritten or truncated by a later publish.
-Fresh-clone resume snapshots and rebuild/integrity CI remain separate unfinished
-requirements; a publication view alone is not a continuation ledger.
+Published facts must be internally consistent before summary generation or
+offline reconstruction: Target and variant, contiguous iterations/segments,
+anchor implementation, complete context provenance, portable parent lineage,
+terminal verdicts and numerical deltas are checked independently of generated
+summaries. This verifies retained facts, not the unavailable raw correctness
+or A/B/A receipts. Rebuild must never manufacture those receipts.
+
+Offline validation checks JSON facts and views. Rebuild checks all generated
+bytes using the same canonical renderer as publication; check mode does not
+modify results. Repair stages every view before replacement, preserves trace
+bytes, and shares publication's explicit view-before-summary-before-index
+replacement order. Published forks must bind their parent to the canonical
+CampaignKey directory and use the Registry's canonical UUID child identity. Unowned files are reported rather than deleted. The renderer
+environment is part of reproducibility: current SVG evidence uses Matplotlib
+3.10.8. Fresh-clone resume snapshots and CI wiring remain unfinished; a rebuilt
+publication view alone is not a continuation ledger.
 
 ## Alternatives considered
 
@@ -185,6 +199,11 @@ Publication tests exercise actual ledger-to-file output, context-local summaries
 deterministic repeated generation, failure trace retention, lineage ownership,
 fork-first publication and render/replacement failure recovery. A same-number
 environment transition cannot index an old SVG after replacement is interrupted.
+Offline rebuild tests inject stale SVG, summaries and global views, invalid
+identity/context/arithmetic, and a trace edit without plot regeneration.
+They also remove the original ledger and rebuild published views in another
+filesystem layout. Check mode preserves damaged files for inspection; repair
+produces the expected bytes without running an experiment.
 These fixtures do not establish real Pi0.5/LingBot checkpoint transfer or GPU
 performance.
 

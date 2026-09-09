@@ -183,4 +183,12 @@ context's performance. Each Campaign has a compact trace, per-context summaries
 and the canonical progress.svg; checkpoint changes retain the same Target
 directory. A failed publication can be retried without rerunning the experiment.
 These views do not yet supply fresh-clone resume snapshots or automatic
-publication after finalize; results rebuild/integrity CI is still pending.
+publication after finalize. `python -m lab.results validate --root REPOSITORY`
+checks published facts and JSON views.
+`python -m lab.results rebuild --check --root REPOSITORY` checks generated files
+without modifying results; omit
+`--check` to repair derived views from valid traces. Rebuild needs Matplotlib
+(the current SVG evidence uses 3.10.8) but no old Campaign artifacts or GPU
+measurement. Invalid trace facts and unowned files require explicit
+reconciliation; rebuild does not invent missing measurement evidence.
+Published resume snapshots and CI wiring remain pending.

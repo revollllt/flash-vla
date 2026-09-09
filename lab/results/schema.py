@@ -1,10 +1,12 @@
 """Context-local summaries; cross-context minima are never compared."""
 from flash_vla.runtime.identity import MeasurementContext
 from lab.optimize import store
+from . import validate
 
 
 def summaries(value):
     """Summarize the latest validated segment for each activated context."""
+    validate.trace(value)
     contexts = {}
     for segment in value["segments"]:
         context = segment["measurement_context"]
