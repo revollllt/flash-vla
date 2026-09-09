@@ -30,3 +30,6 @@ third_party/sglang/
 # kernel-wiki carries SHA-pinned upstream bundles; they are content, not
 # build output.
 !.claude/skills/kernel-wiki/artifacts/
+
+# Validated publication views; raw reports remain under artifacts/.
+!results/**/*.json

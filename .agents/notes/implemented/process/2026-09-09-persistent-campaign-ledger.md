@@ -114,6 +114,30 @@ covers declared inputs only and preserves unrecorded checkout changes by refusin
 to overwrite them. A materialization receipt records this source preparation;
 labeling a candidate's parent alone does not establish implementation inheritance.
 
+Published results use the existing canonical CampaignKey digest as their Target
+directory, so checkpoint changes do not split lineage. Explicit forks have
+separate child directories. The representative performance is the active
+context's latest segment; each other context retains its own latest segment
+summary. No cross-context minimum or speedup is defined.
+
+Publication accepts terminal, validated v3 ledgers, including failed experiments,
+and refuses pending transitions or missing re-anchors. Compact trace retains
+iteration/segment/context, plans, hypotheses, applicability and verdicts; raw
+diagnostics, command receipts and profiling files remain local. Context summaries,
+canonical Matplotlib SVG and Markdown are staged before replacing the published
+view. The trace is replaced first as the atomic ownership/history boundary;
+SVG/Markdown precede context summaries; Target summary and global discovery
+are written last. Segment and iteration changes therefore expose an interrupted
+replacement even when headline latency is unchanged. Local publication is
+serialized. Multi-file replacement is not a filesystem-wide transaction: an
+interruption requires the same lineage to republish before the view is used.
+Missing summary does not release the trace's ownership. Index rebuilding refuses
+summary/context views that disagree with trace facts, and unresolved files
+without a trace owner cannot be overwritten. Published terminal history cannot
+be rewritten or truncated by a later publish.
+Fresh-clone resume snapshots and rebuild/integrity CI remain separate unfinished
+requirements; a publication view alone is not a continuation ledger.
+
 ## Alternatives considered
 
 - Reconstructing missing A/B/A values from notes was rejected because summaries
@@ -157,6 +181,10 @@ They do not certify real model numerical parity or GPU measurement provenance.
 Registry tests use separate Python processes contending on the same key, real
 temporary Git source snapshots, corrupt authoritative files and stale derived
 state. CLI tests resolve Campaign paths without human directory naming.
+Publication tests exercise actual ledger-to-file output, context-local summaries,
+deterministic repeated generation, failure trace retention, lineage ownership,
+fork-first publication and render/replacement failure recovery. A same-number
+environment transition cannot index an old SVG after replacement is interrupted.
 These fixtures do not establish real Pi0.5/LingBot checkpoint transfer or GPU
 performance.
 

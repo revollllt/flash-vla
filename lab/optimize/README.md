@@ -174,3 +174,13 @@ valid control spread, complete uninstrumented statistics, and bound correctness
 evidence. A faster numerical failure cannot become acceptable through this
 format conversion. Compatibility command production, actual checkpoint loading
 and verifiable clock policy remain necessary for the real transfer drill.
+
+
+Terminal v3 Campaign views can be published with
+`python -m lab.results publish CAMPAIGN --root REPOSITORY`. The generated
+results/index.json provides discovery and results/README.md presents the active
+context's performance. Each Campaign has a compact trace, per-context summaries
+and the canonical progress.svg; checkpoint changes retain the same Target
+directory. A failed publication can be retried without rerunning the experiment.
+These views do not yet supply fresh-clone resume snapshots or automatic
+publication after finalize; results rebuild/integrity CI is still pending.

@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from . import campaign, store, transition
+from flash_vla.runtime.identity import MeasurementContext
 
 
 ENVIRONMENT_FIELDS = campaign.MEASUREMENT_ENVIRONMENT_FIELDS
@@ -92,17 +93,16 @@ def normalize(directory):
             validity = measurement['validity']
         elif record['verdict'] is None and not measurement:
             segment = previous_segment
-            context = {}
+            context = dict(record['spec'].get('measurement_context', {}))
             candidate_ms = None
             parent_ms = None
             validity = 'incomplete'
         elif verdict in ('invalid', 'blocked', 'correctness_failed') and 'identity' not in measurement:
-            identity = record['campaign_identity']
-            if (not campaign.same_workload(metadata, identity)
-                    or identity.get('engine_revision') != record['change'].get('engine_revision')):
+            identity = campaign.implementation_identity(record)
+            if not campaign.same_workload(metadata, identity) or not identity.get('engine_revision'):
                 raise ValueError(f'iter-{iteration:03d} campaign identity does not match its change')
             segment = previous_segment
-            context = dict(measurement.get('measurement_context', {}))
+            context = dict(measurement.get('measurement_context', record['spec'].get('measurement_context', {})))
             candidate_ms = measurement.get('candidate_ms')
             candidate_ms = None if candidate_ms is None else float(candidate_ms)
             parent_ms = measurement.get('parent_incumbent_ms')
@@ -170,6 +170,10 @@ def normalize(directory):
                        ('promoted' if portable else 'context_only')
                        if verdict == 'accepted' else 'not_promoted'),
             diagnostic_artifacts=record['diagnostics'], experiment_cost=record['cost'])
+        entry['plan'] = (baseline_source['identity']['plan'] if iteration == 0
+                         else record['campaign_identity']['plan'])
+        if 'execution_variant' in metadata:
+            entry['context_id'] = MeasurementContext.from_dict(context).context_id
         entries.append(entry)
     anchors = [dict(id=segment['id'], before_iteration=segment['before_iteration'],
                     incumbent=segment['incumbent'],
