@@ -56,6 +56,7 @@ def run(plan: str = "reference", oracle: Path | None = None,
         asset_config: str | None = None, source_checkout: str | None = None) -> dict[str, object]:
     if oracle is None:
         oracle = resolve_assets({"oracle": ORACLE_ASSET}, asset_config)["oracle"]
+    oracle_metadata = json.loads((oracle / "official-eager.json").read_text())
     expected = load_file(oracle / "official-eager.safetensors")
     fixture = load_file(oracle / "fixture.safetensors")
     engine = build("h100/lingbot_vla", plan, seed=seed, layers=layers, steps=steps, asset_config=asset_config, source_checkout=source_checkout)
@@ -91,6 +92,7 @@ def run(plan: str = "reference", oracle: Path | None = None,
         "implementation_source": getattr(engine, "implementation_source", None),
         "measurement_context": engine.measurement_context,
         "oracle": str(oracle / "official-eager.safetensors"),
+        "reference_provenance": oracle_metadata["identity"],
         "seed": seed,
         "metrics": metrics,
         "bitwise_equal": equal,

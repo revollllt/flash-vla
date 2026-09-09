@@ -189,6 +189,8 @@ def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
                     result["status"] = "failed"
             else:
                 result["identities"] = identities
+                result["reference_provenance"] = [report.get("reference_provenance", {})
+                                                  for report in reports]
                 result["stages"] = [report.get("stage") for report in reports]
                 try:
                     acceptance.validate_baseline_workloads(

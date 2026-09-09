@@ -160,6 +160,9 @@ def correctness(record):
             acceptance.validate_baseline_workloads(
                 script["script"], script["identities"], Identity.from_dict(expected),
                 script.get("stages", ()))
+            provenance = script.get("reference_provenance", [])
+            if any(provenance):
+                observed["reference_provenance"].setdefault("official_baselines", {})[script["script"]] = provenance
             for weights in script["weights"]:
                 if any(weights.get(key) != observed["weights"][key]
                        for key in ("checkpoint_id", "checkpoint_digest")):

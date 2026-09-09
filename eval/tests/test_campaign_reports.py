@@ -354,3 +354,34 @@ def test_pi05_shallow_evidence_uses_actual_depth_graph(mutation):
     else:
         with pytest.raises(ValueError, match="implementation"):
             reports._in_engine(dict(report=report), full, policy)
+
+
+def test_gate_preserves_official_adapter_provenance(monkeypatch):
+    expected = Engine("reference").identity
+    full = expected.as_dict()
+    expert = deepcopy(full)
+    expert["shape"]["steps"] = 1
+    provenance = {"upstream_commit": "actual-oracle-commit", "adapter_revision": "oracle-adapter"}
+    output = [dict(identity=identity, stage=stage, measurement_context=deepcopy(ASSETS),
+                   reference_provenance=provenance)
+              for identity, stage in [(full, "llm_backbone"), (expert, "action_expert")]]
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: SimpleNamespace(
+        returncode=0, stderr="", stdout=" ".join(json.dumps(item) for item in output)))
+    policy = acceptance.for_target(expected.target)
+    result = gate._run_baseline_checks(
+        tuple(policy["scripts"]["official_baseline"]), policy["correctness"]["checks"],
+        True, sys.executable, expected, 0, expected_weights=ASSETS["weights"])
+    assert result[0]["status"] == "passed"
+    assert result[0]["scripts"][0]["reference_provenance"] == [provenance, provenance]
+
+
+def test_campaign_retains_oracle_provenance_without_changing_identity(harness, tmp_path):
+    raw = checked(harness, tmp_path)
+    before = reports.correctness(raw)
+    check = next(c for c in raw["checks"] if c["check"] == "baseline_layer0")
+    script = check["scripts"][0]
+    script["reference_provenance"] = [{"upstream_commit": "oracle-a"}, {"upstream_commit": "oracle-a"}]
+    after = reports.correctness(raw)
+    assert after["identity"] == before["identity"]
+    assert after["measurement_context"]["weights"] == before["measurement_context"]["weights"]
+    assert after["measurement_context"]["reference_provenance"]["official_baselines"][script["script"]] == script["reference_provenance"]

@@ -205,3 +205,25 @@ def test_explicit_pi0_asset_keeps_checkpoint_id(tmp_path, monkeypatch):
                            "--checkpoint-id", "checkpoint-a"]) == 0
     assert received == [(str(checkpoint), dict(checkpoint_id="checkpoint-a", seed=0,
                                               device="cuda", plan="reference"))]
+
+
+def test_lingbot_parity_reports_the_cached_oracle_producer(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from eval.lingbot import parity
+    provenance = {"upstream_commit": "oracle-source", "adapter_revision": "oracle-producer",
+                  "checkpoint_revision": "oracle-weights"}
+    (tmp_path / "official-eager.json").write_text(json.dumps({"identity": provenance}))
+    names = ["vision_embeddings", "prefix_k", "prefix_v", "velocity_step_0", "actions", "physical_actions"]
+    values = {name: torch.ones(1) for name in names}
+    monkeypatch.setattr(parity, "load_file", lambda path: values)
+    engine = SimpleNamespace(identity=SimpleNamespace(as_dict=lambda: {"engine_revision": "candidate-source"}),
+                             buffers=values, program=(), measurement_context={"weights": {}}, assets={},
+                             sample_inputs=lambda seed: {}, stage=lambda **kw: None,
+                             forward=lambda **kw: torch.ones(1))
+    monkeypatch.setattr(parity, "build", lambda *a, **kw: engine)
+    monkeypatch.setattr(parity, "_physical_actions", lambda *a: torch.ones(1))
+    monkeypatch.setattr(torch.cuda, "synchronize", lambda: None)
+    report = parity.run(oracle=tmp_path)
+    assert report["passed"]
+    assert report["reference_provenance"] == provenance
+    assert report["identity"]["engine_revision"] == "candidate-source"

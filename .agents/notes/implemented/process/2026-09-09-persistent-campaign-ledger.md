@@ -97,6 +97,12 @@ In-engine checks at different ladder depths must describe the same checkpoint,
 fixture and stable environment, with candidate implementation and prescribed
 depths bound to the report. Finite and replay-identical outputs remain required.
 A diagnostic deep comparison does not acquire a numerical gate by conversion.
+Official adapter producer metadata travels with each script's reports and is
+retained under correctness measurement_context.reference_provenance. LingBot
+takes this information from the cached oracle producer's official-eager.json,
+not from the candidate checkout or a current configured upstream path. Historical
+reports lacking this field remain unknown; conversion does not invent provenance.
+Pure latency measurements without an oracle may legitimately leave the field empty.
 Unknown quality contracts cannot authorize nondefault ExecutionVariants.
 The reference route and engine revision must match the producer's declared
 numerical oracle; required official scripts must exactly cover the registered
