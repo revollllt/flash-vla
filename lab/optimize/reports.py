@@ -5,11 +5,26 @@ import math
 from pathlib import Path
 
 from eval import acceptance
-from flash_vla.runtime.identity import Identity
+from flash_vla.runtime.identity import Identity, inference_signature
 
 from . import measurement, store
 
 OBJECTIVES = {"e2e_chunk_latency_ms": "chunk_latency", "device_latency_ms": "device_latency"}
+
+
+def compatibility(record, *, context):
+    """Bind an observed checkpoint contract to the requested transition assets."""
+    if record.get("status") != "passed":
+        raise ValueError("checkpoint structural compatibility did not pass")
+    identity = Identity.from_dict(record["identity"])
+    if inference_signature(**record["contract"]) != identity.inference_signature:
+        raise ValueError("observed checkpoint inference signature differs from Target")
+    observed = measurement.context(context).as_dict()
+    for group, keys in (("weights", ("checkpoint_id", "checkpoint_digest")),
+                        ("fixture", ("id", "digest"))):
+        if any(record[group][key] != observed[group][key] for key in keys):
+            raise ValueError(f"compatibility checked different {group}")
+    return dict(record, status="pass", measurement_context=observed)
 
 
 def latency(report, *, objective, anchor=False, segment=None):
@@ -149,17 +164,22 @@ def correctness(record):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("kind", choices=("correctness", "anchor", "comparison"))
+    parser.add_argument("kind", choices=("compatibility", "correctness", "anchor", "comparison"))
     parser.add_argument("report", type=Path)
     parser.add_argument("--objective", choices=tuple(OBJECTIVES), default="e2e_chunk_latency_ms")
     parser.add_argument("--segment", type=int)
     parser.add_argument("--correctness", type=Path, help="normalized correctness evidence for an anchor")
+    parser.add_argument("--context", type=Path, help="requested measurement context for compatibility")
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
     record = store.read(args.report)
     if args.kind == "anchor" and "legs" in record and args.correctness is None:
         parser.error("a raw latency anchor requires --correctness with normalized evidence")
-    if args.kind == "correctness":
+    if args.kind == "compatibility":
+        if args.context is None:
+            parser.error("compatibility requires --context")
+        result = compatibility(record, context=store.read(args.context))
+    elif args.kind == "correctness":
         result = correctness(record)
     else:
         raw = record if "legs" in record else record["latency"]["report"]

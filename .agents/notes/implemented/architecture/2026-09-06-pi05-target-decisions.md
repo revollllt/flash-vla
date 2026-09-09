@@ -86,6 +86,19 @@ relabeled through real-checkpoint provenance options. Weight-free declaration
 checks configuration and supplies workload identity; it does not certify a
 checkpoint tensor schema or establish correctness.
 
+Checkpoint compatibility evidence inspects stored safetensors names and shapes
+against an OpenPI model on meta, validates shared-parameter aliases against
+actual reference parameter identity, and checks the existing normalized layout
+against the Target schema. The explicit supported reference configuration owns
+the inference semantics; its resolution and the observed normalized shapes
+produce the onboarding contract. No tensor values are loaded or hashed.
+This establishes structural compatibility under that configuration, not the
+checkpoint's training origin, numerical correctness or robot policy quality.
+Transition receipts additionally bind the observed weight and fixture identities
+to the requested measurement context; that context's environment comes from
+the caller's recorded measurement setup, not this CPU structural inspection.
+
+
 **AdaRMSNorm, exactly.** A modulation dense layer maps the condition (1024) to
 3072 with bias and zero init; the result splits into `scale`, `shift` and
 `gate`; the site computes `rms(x) * (1 + scale) + shift` and the residual

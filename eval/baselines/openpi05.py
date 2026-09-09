@@ -134,6 +134,46 @@ def resolve_config(checkpoint: str | Path | None, config_name: str | None):
     return config
 
 
+def checkpoint_contract(checkpoint: str | Path, config) -> dict:
+    """Inspect stored tensor headers against the supported reference and Target ABI.
+
+    The reference is allocated on meta, and normalization also runs on meta.
+    No weight values are read or hashed. Supported configuration semantics plus
+    tensor compatibility do not establish numerical correctness or policy quality.
+    """
+    from safetensors import safe_open
+    from flash_vla.models.pi05 import spec
+    from flash_vla.runtime.identity import validate_weight_schema
+
+    _validate_config(config)
+    _validate_checkpoint_config(checkpoint, config)
+    path = Path(checkpoint)
+    if path.is_dir():
+        path = path / "model.safetensors"
+    from openpi.models_pytorch.pi0_pytorch import PI0Pytorch
+    with torch.device("meta"):
+        model = PI0Pytorch(replace(config, pytorch_compile_mode=None))
+    expected = {name: tuple(value.shape) for name, value in model.state_dict().items()}
+    parameters = dict(model.named_parameters(remove_duplicate=False))
+    with safe_open(str(path), framework="pt", device="cpu") as source:
+        observed = {name: tuple(source.get_slice(name).get_shape()) for name in source.keys()}
+        aliases = {name: value for name, value in (source.metadata() or {}).items() if name in expected}
+    stored_tensors = len(observed)
+    for name, original in aliases.items():
+        if (name in observed or original not in observed or name not in parameters
+                or original not in parameters or parameters[name] is not parameters[original]):
+            raise ValueError(f"checkpoint tied-parameter alias does not match the reference: {name}")
+        observed[name] = observed[original]
+    validate_weight_schema(observed, expected)
+    normalized = {name: tuple(value.shape) for name, value in target_checkpoint(model).items()}
+    validate_weight_schema(normalized, spec.weight_shapes())
+    return {
+        "contract": {**spec.INFERENCE_CONTRACT, "parameter_shapes": normalized},
+        "checkpoint_schema": {"stored_tensors": stored_tensors, "aliases": aliases,
+                              "reference_tensors": len(expected), "normalized_tensors": len(normalized)},
+    }
+
+
 def build_model(checkpoint: str | Path | None = None,
                 device: str | torch.device = "cuda", seed: int = 0,
                 exact_rope: bool = True, *, config=None):
