@@ -34,6 +34,7 @@ class PlotPoint:
     reanchor: bool = False
     position: float | None = None
     promotion: str | None = None
+    parent_ms: float | None = None
 
     @property
     def x(self):
@@ -51,7 +52,8 @@ def from_trace(value):
                         delta_parent_pct=item['delta_vs_parent_pct'],
                         delta_baseline_pct=item['delta_vs_baseline_pct'],
                         summary=item['change_summary'], reanchor=item.get('reanchor', False),
-                        promotion=item.get('promotion'))
+                        promotion=item.get('promotion'),
+                        parent_ms=item.get('parent_incumbent_latency_ms'))
               for item in value['iterations']]
     for segment in value.get('segments', [])[1:]:
         context = segment['measurement_context']
@@ -79,8 +81,21 @@ def render_optimization_progress(*, metadata: PlotMetadata, points: Sequence[Plo
         group = [point for point in points if point.segment == segment]
         ax.plot([point.x for point in group], [point.incumbent_ms for point in group],
                 marker='o', linewidth=1.8, color='C0',
-                label='portable incumbent' if index == 0 else None)
+                label='recorded portable incumbent' if index == 0 else None)
+    paired_label = True
     for point in points:
+        if point.parent_ms is not None and point.verdict in {'accepted', 'no_benefit'}:
+            ax.plot([point.x, point.x], [point.parent_ms, point.candidate_ms],
+                    linestyle=':', color='C1', linewidth=1.2)
+            ax.scatter(point.x, point.parent_ms, marker='D', facecolors='none',
+                       edgecolors='C1', s=45, zorder=5,
+                       label='same-run parent control' if paired_label else None)
+            paired_label = False
+            ax.annotate(f'paired control\n{point.parent_ms:.3f} ms',
+                        xy=(point.x, point.parent_ms),
+                        xytext=(-8 if point.x == points[-1].x else 8, 8),
+                        horizontalalignment='right' if point.x == points[-1].x else 'left',
+                        textcoords='offset points', fontsize=8)
         if point.verdict == 'no_benefit':
             ax.scatter(point.x, point.candidate_ms, marker='x', color='0.25',
                        alpha=0.85, s=65, linewidths=1.5, zorder=4)
@@ -99,7 +114,7 @@ def render_optimization_progress(*, metadata: PlotMetadata, points: Sequence[Plo
     for point in points:
         segment_changed = point.segment != previous_segment
         near_right_edge = point.x >= points[-1].x - 0.5
-        below = previous_was_anchor and not point.reanchor
+        below = (previous_was_anchor or point.parent_ms is not None) and not point.reanchor
         offset = (-8 if near_right_edge else 8, -16 if below else 16)
         alignment = 'right' if near_right_edge else 'left'
         vertical = 'top' if below else 'bottom'
@@ -139,7 +154,7 @@ def render_optimization_progress(*, metadata: PlotMetadata, points: Sequence[Plo
     ax.xaxis.set_major_locator(MaxNLocator(integer=True, min_n_ticks=1))
     ax.set_xlabel('Optimization iteration (re-anchors do not consume an iteration)')
     ax.set_ylabel('Latency (ms)')
-    ax.margins(y=0.22)
+    ax.margins(y=0.35)
     ax.grid(alpha=0.25)
     ax.legend()
     fig.tight_layout()

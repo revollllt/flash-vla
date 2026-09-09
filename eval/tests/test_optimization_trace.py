@@ -109,6 +109,19 @@ class OptimizationTraceTests(unittest.TestCase):
         self.assertEqual(points[1].incumbent_ms, 16.0)
         self.assertEqual(points[4].incumbent_ms, 15.8)
 
+    @unittest.skipUnless(importlib.util.find_spec('matplotlib'), 'Matplotlib optional dependency absent')
+    def test_plot_preserves_same_run_control_distinct_from_historical_incumbent(self):
+        self.add(1, 'accepted', measured(SEGMENT0, 15.0, 15.2))
+        metadata, points = render.from_trace(trace.normalize(self.directory))
+        self.assertEqual(points[0].incumbent_ms, 16.0)
+        self.assertEqual(points[1].parent_ms, 15.2)
+        output = self.base / 'paired.svg'
+        render.render_optimization_progress(metadata=metadata, points=points, output_svg=output)
+        svg = output.read_text()
+        self.assertIn('same-run parent control', svg)
+        self.assertIn('15.200 ms', svg)
+        self.assertIn('15.000 ms', svg)
+
     def test_materialization_is_semantically_deterministic_from_ledger(self):
         self.populate()
         first = trace.materialize(self.directory)
