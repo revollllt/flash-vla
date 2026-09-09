@@ -1,14 +1,14 @@
 """Runner factories by Target name, for the generic harnesses.
 
-The one place a harness learns how to construct a Target: random weights at a
-stated seed, the tokenizer the model needs, a default task. Everything after
+The one place a harness learns how to construct a Target: a named checkpoint or
+random weights at a stated seed, the required tokenizer, and a task. Everything after
 construction goes through the engine protocol (`flash_vla.runtime.engine`),
 so the latency, profile, kernel, floor and correctness runners contain no
 model names; this registry is where they enter.
 
-Weights are seeded so two runners built with the same seed share them
-bit-for-bit, which is what makes an in-engine comparison an implementation
-difference and nothing else.
+Synthetic weights are seeded. Real Pi0.5 weights use an explicit upstream config
+and immutable checkpoint ID/digest; the seed selects their input fixture. Every
+construction rebuilds checkpoint-dependent folded tensors for its step schedule.
 
 A plan is `"shipped"` (the Target's one deployed plan, the default),
 `"reference"` (its correctness oracle route), a JSON object, or a path to a
@@ -31,28 +31,49 @@ DEFAULT_LINGBOT_FIXTURE = (
 DEFAULT_PROMPT = "pick up the plate and put it in the sink"
 
 
-def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_size: int = 50,
+def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_size: int | None = None,
           steps: int = 10, layers: int = 18, prompt_len: int | None = None,
           device: str = "cuda", prompt: str = DEFAULT_PROMPT, tokenizer_path: str | None = None,
-          declare: bool = False):
+          declare: bool = False, checkpoint: str | None = None,
+          checkpoint_id: str | None = None, checkpoint_digest: str | None = None,
+          openpi_config: str | None = None):
     from flash_vla.hardware.nvidia.h100.pi05 import TARGET
-    from flash_vla.models.pi05.spec import MAX_TOKEN_LEN
-    from flash_vla.models.pi05.spec import random_checkpoint_revision
+    from flash_vla.models.pi05.spec import MAX_TOKEN_LEN, random_checkpoint_revision
     from flash_vla.models.pi05.tokenize import Pi05Tokenizer
     from flash_vla.models.pi05.weights import fold, random_checkpoint
 
+    if checkpoint is None:
+        if any(value is not None for value in (checkpoint_id, checkpoint_digest, openpi_config)):
+            raise ValueError("checkpoint provenance/config requires a real checkpoint path")
+        checkpoint_id = checkpoint_digest = random_checkpoint_revision(seed)
+        chunk_size = 50 if chunk_size is None else chunk_size
+    else:
+        if not all((checkpoint_id, checkpoint_digest, openpi_config)):
+            raise ValueError("real checkpoint requires checkpoint_id, checkpoint_digest and openpi_config")
+        from eval.baselines import openpi05
+        reference_config = openpi05.resolve_config(checkpoint, openpi_config)
+        if chunk_size is not None and chunk_size != reference_config.action_horizon:
+            raise ValueError("chunk_size differs from the checkpoint's explicit OpenPI config")
+        if prompt_len is not None and prompt_len != reference_config.max_token_len:
+            raise ValueError("prompt_len differs from the checkpoint's explicit OpenPI config")
+        chunk_size = reference_config.action_horizon
+
     config = dict(num_views=num_views, chunk_size=chunk_size, steps=steps, layers=layers,
                   prompt_len=prompt_len or MAX_TOKEN_LEN, prompt=prompt)
-    checkpoint_id = random_checkpoint_revision(seed)
     if declare:
         runner = ModelRunner(TARGET, None, checkpoint_id=checkpoint_id,
-                             checkpoint_digest=checkpoint_id, plan=plan,
-                           device=device, capture=False, **config)
+                             checkpoint_digest=checkpoint_digest, plan=plan,
+                             device=device, capture=False, **config)
     else:
-        checkpoint = fold(random_checkpoint(seed=seed, device=device), steps=steps)
-        runner = ModelRunner(TARGET, checkpoint, checkpoint_id=checkpoint_id,
-                             checkpoint_digest=checkpoint_id, plan=plan, device=device,
-                           tokenizer=Pi05Tokenizer(tokenizer_path), **config)
+        if checkpoint is None:
+            source = random_checkpoint(seed=seed, device=device)
+        else:
+            model = openpi05.build_model(checkpoint, device, seed=seed, config=reference_config)
+            source = openpi05.target_checkpoint(model)
+            del model
+        runner = ModelRunner(TARGET, fold(source, steps=steps), checkpoint_id=checkpoint_id,
+                             checkpoint_digest=checkpoint_digest, plan=plan, device=device,
+                             tokenizer=Pi05Tokenizer(tokenizer_path), **config)
     fixture = {"producer": "flash-vla/pi05-inputs-v1", "seed": seed, "prompt": prompt}
     runner.measurement_context["fixture"] = {
         "id": fixture["producer"] + "/seed-" + str(seed), "digest": canonical_digest(fixture),

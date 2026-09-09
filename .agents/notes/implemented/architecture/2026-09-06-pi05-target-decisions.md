@@ -74,6 +74,17 @@ action horizon is the shape used by both implementations, and the resolved
 configuration remains reference provenance in the report. Configuration checks
 do not prove the checkpoint's origin, tensor ABI, robot preprocessing, numerical
 correctness or policy quality; those still require their own observed evidence.
+An available conversion config.json must agree with the selected reference
+configuration on its recorded model fields. A contradiction is an error before
+model allocation.
+
+Production Pi0.5 construction accepts the original OpenPI PyTorch checkpoint
+with a separate immutable ID and digest. The existing adapter normalizes its
+weights; schedule-dependent folds are rebuilt for every construction. Input
+seed changes do not replace real weights, and synthetic weights cannot be
+relabeled through real-checkpoint provenance options. Weight-free declaration
+checks configuration and supplies workload identity; it does not certify a
+checkpoint tensor schema or establish correctness.
 
 **AdaRMSNorm, exactly.** A modulation dense layer maps the condition (1024) to
 3072 with bias and zero init; the result splits into `scale`, `shift` and

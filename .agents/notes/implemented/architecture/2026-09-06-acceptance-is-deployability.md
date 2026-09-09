@@ -60,13 +60,20 @@ which cannot import OpenPI, so every gate ended `blocked`.
 6. **The baseline tier runs under its own interpreter.** Each Target entry
    names `baseline_python` (the OpenPI environment, `OPENPI_PYTHON` to
    override); the gate runs the official-baseline scripts under it with the
-   repository on the path, with no arguments, and records `unavailable` when
+   repository on the path, the requested input seed and construction options,
+   and records `unavailable` when
    that interpreter does not exist or a script reports itself unavailable.
    Each tier judges the Target's reference route, the oracle every candidate
    is compared against in-engine. Pi0's tier builds that route from the
    OpenPI checkpoint's weights (`OPENPI_PI0_CHECKPOINT`, the Libero Pi0
    checkpoint on this machine, env-overridable) and reports a missing
-   checkpoint as unavailable; Pi0.5's builds random weights.
+   checkpoint as unavailable. Pi0.5 accepts an explicit checkpoint/configuration
+   and separate ID/digest, or uses deterministic random weights when no
+   checkpoint is requested. Construction options apply to declarations, all
+   numerical comparisons, timing legs and optional floor work. Registered
+   shallow depths remain fixed; "full" depths use the declared workload.
+   Unsupported official-adapter options fail explicitly. These controls do not
+   replace the adapter's required workload, checkpoint or numerical evidence.
 7. **Thresholds are keys.** A registry check's `threshold` names a key of the
    precision policy's tolerances; `eval/correctness.py` reads that key, for the
    precision the reference runner reports, rather than one hard-coded name.

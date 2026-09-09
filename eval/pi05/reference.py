@@ -132,11 +132,19 @@ def _checkpoint_id(checkpoint: str | None, checkpoint_id: str | None,
     return checkpoint_id
 
 
+def _checkpoint_digest(checkpoint: str | None, checkpoint_id: str, digest: str | None) -> str:
+    if checkpoint is None:
+        return checkpoint_id
+    if not digest:
+        raise ValueError("a real checkpoint needs an immutable checkpoint_digest")
+    return digest
+
+
 def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = None,
         prompt: str = DEFAULT_PROMPT, layers: int = 18, seed: int = 0,
         device: str = "cuda", exact_rope: bool = True,
         plan: str | None = None, checkpoint_id: str | None = None,
-        openpi_config: str | None = None) -> dict[str, object]:
+        openpi_config: str | None = None, checkpoint_digest: str | None = None) -> dict[str, object]:
     """Run both implementations on identical inputs and report per-layer error.
 
     `plan` names the call-site plan the runner is built with; the default is
@@ -145,6 +153,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
     not exercise its CUDA kernel.
     """
     revision = _checkpoint_id(checkpoint, checkpoint_id, seed)
+    digest = _checkpoint_digest(checkpoint, revision, checkpoint_digest)
     config = openpi05.resolve_config(checkpoint, openpi_config)
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
@@ -176,7 +185,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
     del baseline, past_key_values
     torch.cuda.empty_cache()
 
-    engine = ModelRunner(TARGET, target_weights, checkpoint_id=revision, checkpoint_digest=revision,
+    engine = ModelRunner(TARGET, target_weights, checkpoint_id=revision, checkpoint_digest=digest,
                          plan=plan or "reference", device=device,
                          num_views=3, chunk_size=config.action_horizon, layers=layers, tokenizer=tokenizer,
                          prompt=prompt)
@@ -269,9 +278,10 @@ def _transplant(engine, reference_cache, seq_len: int) -> None:
 def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
         prompt: str = DEFAULT_PROMPT, steps: int = 1, layers: int = 18, seed: int = 0,
         full: bool = False, device: str = "cuda",
-        checkpoint_id: str | None = None, openpi_config: str | None = None) -> dict[str, object]:
+        checkpoint_id: str | None = None, openpi_config: str | None = None, checkpoint_digest: str | None = None) -> dict[str, object]:
     """Run both decoders on identical inputs and report the action-chunk error."""
     revision = _checkpoint_id(checkpoint, checkpoint_id, seed)
+    digest = _checkpoint_digest(checkpoint, revision, checkpoint_digest)
     config = openpi05.resolve_config(checkpoint, openpi_config)
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
@@ -307,7 +317,7 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
     del baseline, past_key_values
     torch.cuda.empty_cache()
 
-    engine = ModelRunner(TARGET, target_weights, checkpoint_id=revision, checkpoint_digest=revision,
+    engine = ModelRunner(TARGET, target_weights, checkpoint_id=revision, checkpoint_digest=digest,
                          plan="reference", device=device, num_views=3,
                          chunk_size=config.action_horizon, steps=steps, layers=layers, tokenizer=tokenizer,
                          prompt=prompt)
@@ -358,6 +368,10 @@ def main(argv=None) -> int:
                         help="OpenPI pi05 model.safetensors or its directory (default: random)")
     parser.add_argument("--checkpoint-id", default=None,
                         help="immutable checkpoint ID; required with --checkpoint")
+    parser.add_argument("--checkpoint-digest", default=None,
+                        help="immutable weights digest; required with --checkpoint")
+    parser.add_argument("--option", action="append", default=[],
+                        help="construction option forwarded by eval.gate")
     parser.add_argument("--openpi-config", default=None,
                         help="upstream training config name; required with --checkpoint")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
@@ -374,16 +388,24 @@ def main(argv=None) -> int:
     parser.add_argument("--full", action="store_true",
                         help="action_expert only: run end to end instead of transplanting the cache")
     args = parser.parse_args(argv)
+    from benchmarks.latency import parse_options
+    options = parse_options(args.option)
+    supported = {"checkpoint", "checkpoint_id", "checkpoint_digest", "openpi_config", "prompt", "tokenizer_path"}
+    unknown = set(options) - supported
+    if unknown:
+        parser.error(f"unsupported official reference construction options: {sorted(unknown)}")
+    for key, value in options.items():
+        setattr(args, "tokenizer" if key == "tokenizer_path" else key, value)
     passed = True
     if args.stage in ("llm_backbone", "all"):
         passed &= run_backbone(args.tokenizer, args.checkpoint, args.prompt, args.layers, args.seed,
                                args.device, exact_rope=not args.openpi_rope_bf16,
                                plan=args.plan, checkpoint_id=args.checkpoint_id,
-                               openpi_config=args.openpi_config)["passed"]
+                               openpi_config=args.openpi_config, checkpoint_digest=args.checkpoint_digest)["passed"]
     if args.stage in ("action_expert", "all"):
         passed &= run_expert(args.tokenizer, args.checkpoint, args.prompt, args.steps, args.layers,
                              args.seed, args.full, args.device,
-                             checkpoint_id=args.checkpoint_id, openpi_config=args.openpi_config)["passed"]
+                             checkpoint_id=args.checkpoint_id, openpi_config=args.openpi_config, checkpoint_digest=args.checkpoint_digest)["passed"]
     return 0 if passed else 1
 
 

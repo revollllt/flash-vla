@@ -81,8 +81,9 @@ def _depth(config: dict[str, Any] | None) -> dict[str, int | None]:
 
 
 def _run_in_engine_checks(target: str, candidate: str, checks: list[dict[str, Any]],
-                          seed: int) -> list[dict[str, Any]]:
+                          seed: int, **overrides) -> list[dict[str, Any]]:
     """The in-engine tier: one lockstep comparison per registry check."""
+    full_depth = {name: overrides.pop(name) for name in ("steps", "layers") if name in overrides}
     results = []
     for check in checks:
         if check.get("oracle") not in (None, "in_engine_reference"):
@@ -91,9 +92,10 @@ def _run_in_engine_checks(target: str, candidate: str, checks: list[dict[str, An
         if name in ("replay_determinism", "finiteness"):
             # Folded into every in-engine comparison; read from the shallow one.
             continue
-        depth = _depth(check.get("config"))
+        depth = {name: full_depth.get(name) if value is None else value
+                 for name, value in _depth(check.get("config")).items()}
         threshold_key = check.get("threshold", "shallow")
-        report = in_engine.run(target, candidate, seed=seed, threshold=threshold_key, **depth)
+        report = in_engine.run(target, candidate, seed=seed, threshold=threshold_key, **depth, **overrides)
         gated = check["mode"] == "gate" and check.get("threshold") is not None
         passed = report["replay_identical"] and report["finite"] and (
             not gated or report["within_tolerance"])
@@ -137,7 +139,8 @@ def _json_reports(text: str) -> list[dict[str, Any]]:
 
 def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
                          run: bool, python: str | None, expected: Identity,
-                         seed: int, expected_weights: dict | None = None) -> list[dict[str, Any]]:
+                         seed: int, expected_weights: dict | None = None,
+                         options: dict | None = None) -> list[dict[str, Any]]:
     """The official-baseline tier: the Target's scripts as subprocesses, or not run.
 
     Each script runs once under the registry's interpreter; a baseline check
@@ -164,9 +167,11 @@ def _run_baseline_checks(scripts: tuple[str, ...], checks: list[dict[str, Any]],
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(p for p in (str(REPO), str(REPO / "src"),
                                                     env.get("PYTHONPATH", "")) if p)
+    option_args = [arg for key, value in (options or {}).items()
+                   for arg in ("--option", f"{key}={value}")]
     runs = []
     for script in scripts:
-        proc = subprocess.run([python, "-m", script, "--seed", str(seed)],
+        proc = subprocess.run([python, "-m", script, "--seed", str(seed), *option_args],
                               capture_output=True, text=True,
                               cwd=REPO, env=env)
         status = "passed" if proc.returncode == 0 else "failed"
@@ -298,18 +303,19 @@ def _deployment_verdict(report: dict[str, Any], dep: dict[str, Any]) -> dict[str
 def run(target: str, candidate: str = "shipped", reference: str = "shipped",
         mode: str | None = None, reps: int | None = None, seed: int = 0,
         baseline: bool = False, out_dir: str | None = None,
-        include_floor: bool = False, correctness_only: bool = False) -> dict[str, Any]:
+        include_floor: bool = False, correctness_only: bool = False,
+        **overrides) -> dict[str, Any]:
     """Qualify against the existing incumbent; stop before timing on failed evidence."""
     target = resolve(target)
     candidate = candidate or "shipped"
     reference = reference or "shipped"
     spec = acceptance.for_target(target)
     mode = mode or spec["latency"]["candidate_rule"]["default_mode"]
-    declaration = declare(target, candidate, seed=seed)
+    declaration = declare(target, candidate, seed=seed, **overrides)
     declared_identity = declaration.identity
     identity = declared_identity.as_dict()
     record: dict[str, Any] = {
-        "identity": identity, "target": target,
+        "identity": identity, "target": target, "construction_options": dict(overrides),
         "candidate": {"plan": candidate}, "reference": {"plan": reference},
         "mode": mode, "acceptance_version": _registry_version(), "acceptance": spec,
         "numerical_oracle": {"plan": "reference"}, "performance_incumbent": {"plan": reference},
@@ -325,7 +331,7 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
         return _finish(record, out_dir)
 
     checks = list(spec["correctness"]["checks"])
-    record["checks"] += _run_in_engine_checks(target, candidate, checks, seed)
+    record["checks"] += _run_in_engine_checks(target, candidate, checks, seed, **overrides)
     record["correctness_coverage"]["candidate_to_in_engine_reference"] = "executed"
     failed = [c["check"] for c in record["checks"] if c["mode"] == "gate" and c["status"] == "failed"]
     if failed:
@@ -335,7 +341,8 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
     if "baseline_adapter" in spec["capabilities"]:
         record["checks"] += _run_baseline_checks(baseline_scripts, checks, baseline,
                                                  spec["baseline_python"], declared_identity,
-                                                 seed, expected_weights=declaration.measurement_context["weights"])
+                                                 seed, expected_weights=declaration.measurement_context["weights"],
+                                                 options=overrides)
         record["correctness_coverage"]["official_adapter"] = "requested" if baseline else "not_run"
     failed = [c["check"] for c in record["checks"] if c["mode"] == "gate" and c["status"] == "failed"]
     blocked = [c["check"] for c in record["checks"] if c["mode"] == "gate"
@@ -352,12 +359,12 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
     lat = spec["latency"]
     plans = [reference, candidate, reference]
     latency_report = latency.run(target, plans, reps=reps or lat["reps"], warmup=lat["warmup"],
-                                 seed=seed, attribution=False)
+                                 seed=seed, attribution=False, **overrides)
     record["latency"] = {"report": latency_report,
                          "rule": _latency_verdict(latency_report, lat, mode)}
     record["deployment"] = _deployment_verdict(latency_report, spec["deployment"])
     if include_floor:
-        record["floor"] = floor_model.run(target, candidate, seed=seed)
+        record["floor"] = floor_model.run(target, candidate, seed=seed, **overrides)
 
     gates = [c for c in record["checks"] if c["mode"] == "gate"]
     failed = [c["check"] for c in gates if c["status"] == "failed"]
@@ -443,12 +450,15 @@ def main(argv=None) -> int:
     parser.add_argument("--correctness-only", action="store_true",
                         help="run the existing correctness ladder without latency or floor work")
     parser.add_argument("--floor", action="store_true", help="also collect the optional diagnostic floor")
+    parser.add_argument("--option", action="append", default=[],
+                        help="target construction option as key=value, including official adapters")
     parser.add_argument("--out-dir", default=None)
     args = parser.parse_args(argv)
     mode = args.mode.replace("-", "_") if args.mode else None
     record = run(args.target, args.candidate, reference=args.reference, mode=mode,
                  reps=args.reps, seed=args.seed, baseline=args.baseline, out_dir=args.out_dir,
-                 include_floor=args.floor, correctness_only=args.correctness_only)
+                 include_floor=args.floor, correctness_only=args.correctness_only,
+                 **latency.parse_options(args.option))
     print(summary(record))
     return {"pass": 0, "correctness_pass": 0, "fail": 1, "blocked": 2}[record["verdict"]]
 

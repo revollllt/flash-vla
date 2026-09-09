@@ -197,9 +197,15 @@ def main(argv=None) -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--isolate", action="store_true",
                         help="inject the reference's stage outputs into the candidate")
+    parser.add_argument("--option", action="append", default=[],
+                        help="target construction option as key=value, both implementations")
     args = parser.parse_args(argv)
+    from benchmarks.latency import parse_options
+    options = parse_options(args.option)
+    if {"steps", "layers"} & options.keys():
+        parser.error("set check depth with --steps/--layers; --option is for other construction parameters")
     report = run(args.target, args.plan, steps=args.steps or None, layers=args.layers or None,
-                 seed=args.seed, isolate=args.isolate)
+                 seed=args.seed, isolate=args.isolate, **options)
     print(json.dumps(report, indent=2))
     return 0 if report["passed"] else 1
 

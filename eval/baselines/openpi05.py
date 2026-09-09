@@ -21,6 +21,7 @@ what the engine loads.
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 
 import torch
@@ -92,6 +93,27 @@ def _validate_config(config) -> None:
         raise ValueError(f"OpenPI config is incompatible with the Pi0.5 adapter: {mismatches}")
 
 
+def _validate_checkpoint_config(checkpoint: str | Path | None, config) -> None:
+    """Reject contradictions in an available OpenPI conversion config.json."""
+    if checkpoint is None:
+        return
+    checkpoint = Path(checkpoint)
+    metadata_path = (checkpoint if checkpoint.is_dir() else checkpoint.parent) / "config.json"
+    if not metadata_path.is_file():
+        return
+    metadata = json.loads(metadata_path.read_text())
+    fields = ("pi05", "discrete_state_input", "action_dim", "action_horizon",
+              "max_token_len", "paligemma_variant", "action_expert_variant", "dtype", "precision")
+    mismatches = {
+        name: {"config": getattr(config, "dtype" if name == "precision" else name),
+               "checkpoint": metadata[name]}
+        for name in fields if name in metadata
+        and metadata[name] != getattr(config, "dtype" if name == "precision" else name)
+    }
+    if mismatches:
+        raise ValueError(f"checkpoint config.json contradicts the reference config: {mismatches}")
+
+
 def resolve_config(checkpoint: str | Path | None, config_name: str | None):
     """Resolve the reference's actual model config before allocating any weights.
 
@@ -108,6 +130,7 @@ def resolve_config(checkpoint: str | Path | None, config_name: str | None):
         from openpi.training.config import get_config
         config = replace(get_config(config_name).model, pytorch_compile_mode=None)
     _validate_config(config)
+    _validate_checkpoint_config(checkpoint, config)
     return config
 
 
@@ -128,6 +151,13 @@ def build_model(checkpoint: str | Path | None = None,
     config = replace(config, pytorch_compile_mode=None)
     _validate_config(config)
 
+    _validate_checkpoint_config(checkpoint, config)
+    if checkpoint is not None:
+        checkpoint = Path(checkpoint)
+        if checkpoint.is_dir():
+            checkpoint = checkpoint / "model.safetensors"
+        if not checkpoint.is_file():
+            raise FileNotFoundError(checkpoint)
     try:
         from openpi.models_pytorch.pi0_pytorch import PI0Pytorch
     except ImportError as error:
@@ -138,15 +168,8 @@ def build_model(checkpoint: str | Path | None = None,
 
     torch.manual_seed(seed)
     model = PI0Pytorch(config)
-
     if checkpoint is not None:
         from safetensors.torch import load_model as load_safetensors_model
-
-        checkpoint = Path(checkpoint)
-        if checkpoint.is_dir():
-            checkpoint = checkpoint / "model.safetensors"
-        if not checkpoint.is_file():
-            raise FileNotFoundError(checkpoint)
         load_safetensors_model(model, str(checkpoint), strict=True)
 
     model = model.to(device).eval()

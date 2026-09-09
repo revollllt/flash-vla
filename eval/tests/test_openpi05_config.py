@@ -12,6 +12,7 @@ from eval.baselines import openpi05
 
 @dataclass(frozen=True)
 class Config:
+    dtype: str = "bfloat16"
     pi05: bool = True
     discrete_state_input: bool = True
     action_dim: int = 32

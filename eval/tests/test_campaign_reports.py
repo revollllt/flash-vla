@@ -63,7 +63,7 @@ def harness(monkeypatch):
     monkeypatch.setattr(gate, "declare", lambda target, plan, **kw: Engine(plan, **kw))
     monkeypatch.setattr(gate, "_registry_version", lambda: "fixture registry")
 
-    def official(scripts, checks, run, python, expected, seed, expected_weights=None):
+    def official(scripts, checks, run, python, expected, seed, expected_weights=None, options=None):
         assert run is True
         evidence = [dict(script=name, status="passed", returncode=0,
                          identities=[expected.as_dict()], weights=[deepcopy(expected_weights)])
