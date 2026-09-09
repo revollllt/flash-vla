@@ -28,6 +28,7 @@ The runner contains no model or stage names.
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 from typing import Any
 
@@ -158,6 +159,9 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
                    if c.get("oracle") in (None, "in_engine_reference")],
     }
     report["passed"] = bool(replay_identical and finite and (not shallow or within))
+    del reference, candidate, inputs, first, second, ref_out
+    gc.collect()
+    torch.cuda.empty_cache()
     return report
 
 
