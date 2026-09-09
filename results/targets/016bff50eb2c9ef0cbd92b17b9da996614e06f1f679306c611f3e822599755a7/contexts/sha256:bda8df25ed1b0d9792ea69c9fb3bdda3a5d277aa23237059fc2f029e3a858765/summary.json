@@ -39,22 +39,22 @@
         "application_memory_mhz": "2619"
       }
     },
-    "hostname": "ACD1-12",
-    "slurm_job_id": "609959",
-    "timestamp": 1788970636.6924608,
+    "hostname": "ACD1-1",
+    "slurm_job_id": "610984",
+    "timestamp": 1788993740.4003696,
     "reference_provenance": {}
   },
-  "latest_segment": 0,
-  "segment_anchor_ms": 105.40860705077648,
-  "best_validated_ms": 79.65395599603653,
+  "latest_segment": 1,
+  "segment_anchor_ms": 90.37934616208076,
+  "best_validated_ms": 85.21087095141411,
   "validated_incumbent": {
-    "iteration": 3,
-    "engine_revision": "9f7b55c457ef54423703cd94671adf7cc6c85aa5",
+    "iteration": 5,
+    "engine_revision": "c516eb2026a44af537b21263f1e2d002e91c5186",
     "plan": {
-      "lingbot_vision": "rope-table",
-      "lingbot_prefix": "rope-table",
-      "lingbot_action": "rope-table"
+      "lingbot_vision": "time-modulation",
+      "lingbot_prefix": "time-modulation",
+      "lingbot_action": "time-modulation"
     }
   },
-  "last_validated_iteration": 3
+  "last_validated_iteration": 5
 }

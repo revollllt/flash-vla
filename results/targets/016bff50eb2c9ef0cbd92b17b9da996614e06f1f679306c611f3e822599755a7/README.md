@@ -2,7 +2,7 @@
 
 Objective: e2e_chunk_latency_ms; protocol: latency-v2.
 
-Representative context: [sha256:bda8df25ed1b0d9792ea69c9fb3bdda3a5d277aa23237059fc2f029e3a858765](contexts/sha256:bda8df25ed1b0d9792ea69c9fb3bdda3a5d277aa23237059fc2f029e3a858765/summary.json). Anchor 105.409 ms; current portable incumbent 79.654 ms (1.323× within this segment).
+Representative context: [sha256:bda8df25ed1b0d9792ea69c9fb3bdda3a5d277aa23237059fc2f029e3a858765](contexts/sha256:bda8df25ed1b0d9792ea69c9fb3bdda3a5d277aa23237059fc2f029e3a858765/summary.json). Anchor 90.379 ms; current portable incumbent 85.211 ms (1.061× within this segment).
 
 [Summary](summary.json) · [Trace](trace.json)
 
