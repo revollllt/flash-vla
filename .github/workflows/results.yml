@@ -55,6 +55,7 @@ jobs:
         run: |
           python -m pytest -q \
             eval/tests/test_identity_v3.py \
+            eval/tests/test_legacy_migration.py \
             eval/tests/test_weight_dependency.py \
             eval/tests/test_context_transition.py \
             eval/tests/test_campaign_registry.py \
