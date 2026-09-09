@@ -97,9 +97,11 @@ fixture and benchmark protocol throughout uninstrumented A/B/A. Required
 correctness failure vetoes promotion. Exclude environment drift and control noise
 before attributing a gain. Instrumented timings are diagnostic only.
 
-Qualification currently supports route variants in one checked source tree;
-distinct source versions remain unsupported by that evaluator. Do not present a
-route comparison as validation of changed source code. Use the relevant
+Qualification supports route variants in one checked source tree and LingBot
+backend source variants through explicit candidate `source_checkout` and incumbent
+construction options. These comparisons load and record each actual committed
+source revision; shared inference code must remain identical. Other Targets do
+not yet support distinct-source qualification. Use the relevant
 [benchmark skill](../benchmark-kernel/SKILL.md),
 [profiler skill](../gpu-profiler-analysis/SKILL.md), or
 [kernel skill](../kernel-design/SKILL.md) only when that work is reached.
