@@ -175,7 +175,7 @@ def _patch_vision_attention(visual) -> None:
         block.attn.forward = MethodType(make_forward(256 if index in full else 64), block.attn)
 
 
-def _configure_rope_frequency(enabled: bool) -> None:
+def _configure_rope_frequency(enabled: bool, cache_rope_tables: bool = False):
     from lingbotvla.models.vla.pi0 import modeling_lingbot_vla as lingbot
 
     global _ORIGINAL_APPLY_ROPE
@@ -186,6 +186,7 @@ def _configure_rope_frequency(enabled: bool) -> None:
         return
 
     inverse_timescales = {}
+    rotary_tables = {}
 
     def apply_rope(x, positions, max_wavelength=10_000.0, dtype=torch.float32):
         original_dtype = x.dtype
@@ -199,16 +200,22 @@ def _configure_rope_frequency(enabled: bool) -> None:
             )
             inverse_timescale = 1.0 / (max_wavelength ** exponents)
             inverse_timescales[key] = inverse_timescale
-        radians = torch.einsum(
-            "bl,h->blh", positions.to(dtype), inverse_timescale,
-        )[..., None, :]
-        sin, cos = torch.sin(radians), torch.cos(radians)
+        table = rotary_tables.get(key) if cache_rope_tables else None
+        if table is None:
+            radians = torch.einsum(
+                "bl,h->blh", positions.to(dtype), inverse_timescale,
+            )[..., None, :]
+            table = torch.sin(radians), torch.cos(radians)
+            if cache_rope_tables:
+                rotary_tables[key] = table
+        sin, cos = table
         first, second = x.to(dtype).split(half, dim=-1)
         return torch.cat(
             (first * cos - second * sin, second * cos + first * sin), dim=-1,
         ).to(original_dtype)
 
     lingbot.apply_rope = apply_rope
+    return rotary_tables.clear
 
 
 def _linear_patch_embedding(self, hidden_states):
@@ -219,7 +226,7 @@ def _linear_patch_embedding(self, hidden_states):
 
 
 def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets,
-                  linear_patch_embedding: bool = False):
+                  linear_patch_embedding: bool = False, cache_rope_tables: bool = False):
     import yaml
     from lerobot.configs.policies import PreTrainedConfig
     from transformers import AutoConfig
@@ -253,30 +260,44 @@ def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets
     _patch_vision_attention(visual)
     if linear_patch_embedding:
         visual.patch_embed.forward = MethodType(_linear_patch_embedding, visual.patch_embed)
-    _configure_rope_frequency(cache_rope_frequency)
+    clear_rope_tables = _configure_rope_frequency(cache_rope_frequency, cache_rope_tables)
+    if cache_rope_tables:
+        original_forward = core.qwenvl_with_expert.forward
+
+        def forward_with_rope_tables(*args, **kwargs):
+            # One forward shares position_ids across Q/K and all layers.
+            # Recompute on every invocation, including each graph capture.
+            clear_rope_tables()
+            return original_forward(*args, **kwargs)
+
+        core.qwenvl_with_expert.forward = forward_with_rope_tables
     gc.collect()
     return core
 
 
 class _State:
-    def __init__(self, cache_rope_frequency: bool, assets, linear_patch_embedding: bool) -> None:
+    def __init__(self, cache_rope_frequency: bool, assets, linear_patch_embedding: bool,
+                 cache_rope_tables: bool) -> None:
         self.core = None
         self.vision_metadata = None
         self.action_constants = None
         self.cache_rope_frequency = cache_rope_frequency
         self.linear_patch_embedding = linear_patch_embedding
+        self.cache_rope_tables = cache_rope_tables
         self.assets = assets
 
     def ensure(self, weights, layers: int):
         if self.core is None:
             self.core = _build_policy(weights, layers, self.cache_rope_frequency, self.assets,
-                                      linear_patch_embedding=self.linear_patch_embedding)
+                                      linear_patch_embedding=self.linear_patch_embedding,
+                                      cache_rope_tables=self.cache_rope_tables)
         return self.core
 
 
 def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
-                  linear_patch_embedding=False):
-    state = _State(cache_rope_frequency, scratch.assets, linear_patch_embedding)
+                  linear_patch_embedding=False, cache_rope_tables=False):
+    state = _State(cache_rope_frequency, scratch.assets, linear_patch_embedding,
+                   cache_rope_tables)
 
     @torch.no_grad()
     def vision(pixel_values, out, layers, *weights):
