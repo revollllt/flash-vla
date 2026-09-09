@@ -300,7 +300,11 @@ checkpoint/context drift, weak official evidence and changed latency sampling.
 They do not certify real model numerical parity or GPU measurement provenance.
 Registry tests use separate Python processes contending on the same key, real
 temporary Git source snapshots, corrupt authoritative files and stale derived
-state. CLI tests resolve Campaign paths without human directory naming.
+state. A real SIGINT during a CPU measurement terminates the worker and child;
+a separate process discovers the Campaign by semantic key, observes the explicit
+reconcile requirement, resumes once and preserves monotonic iteration numbering.
+This is process-interruption evidence, not SIGKILL/power-loss or fresh-agent
+model-optimization acceptance. CLI tests resolve Campaign paths without human directory naming.
 Publication tests exercise actual ledger-to-file output, context-local summaries,
 deterministic repeated generation, failure trace retention, lineage ownership,
 fork-first publication and render/replacement failure recovery. Automatic

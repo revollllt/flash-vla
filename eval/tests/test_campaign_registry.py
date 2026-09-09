@@ -303,3 +303,80 @@ else:
             if process.poll() is None:
                 process.kill()
                 process.wait()
+
+
+def test_measurement_interrupt_is_discovered_and_explicitly_resumed(setup):
+    import signal
+    import time
+
+    root, registry, key, baseline = setup
+    directory = registry.create(key, baseline=baseline, inputs=["src/kernel.cu"])
+    marker = root / "measurement-starts"
+    measurement = """
+from pathlib import Path
+import sys, time
+marker = Path(sys.argv[1])
+with marker.open("a") as output:
+    print("started", file=output)
+if len(marker.read_text().splitlines()) == 1:
+    time.sleep(30)
+"""
+    spec = candidate("interrupted")
+    spec["stages"] = {
+        "check": dict(argv=[sys.executable, "-c", "print('pass')"],
+                      resource="cpu", timeout_s=10),
+        "measure": dict(argv=[sys.executable, "-c", measurement, str(marker)],
+                        resource="cpu", timeout_s=40),
+    }
+    record = campaign.start(root, spec, directory)
+    worker = subprocess.Popen(
+        [sys.executable, "-c",
+         "import sys; from lab.optimize import campaign; campaign.resume(sys.argv[1])",
+         str(directory)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        deadline = time.monotonic() + 15
+        while not marker.exists() and worker.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert marker.exists(), "measurement did not start"
+        worker.send_signal(signal.SIGINT)
+        _, stderr = worker.communicate(timeout=10)
+        assert worker.returncode != 0 and "KeyboardInterrupt" in stderr
+    finally:
+        if worker.poll() is None:
+            worker.kill()
+            worker.wait()
+    interrupted = store.read(Path(record["directory"]) / "evidence.json")
+    assert interrupted["stages"]["measure"]["status"] == "interrupted"
+    recovery = """
+import json, sys
+from pathlib import Path
+from lab.optimize import campaign, store
+from lab.optimize.registry import CampaignRegistry
+from eval.tests.test_weight_dependency import candidate, finalize
+root, key = Path(sys.argv[1]), json.loads(sys.argv[2])
+directory = CampaignRegistry(root).open(key)
+marker = root / "measurement-starts"
+try:
+    campaign.resume(directory)
+except RuntimeError as error:
+    assert "explicit reconcile" in str(error)
+else:
+    raise AssertionError("silently resumed interrupted measurement")
+assert len(marker.read_text().splitlines()) == 1
+state = campaign.resume(directory, recovered_seconds=0)
+assert len(marker.read_text().splitlines()) == 2
+record = store.read(next((directory / "runs").glob("iter-001-*/evidence.json")))
+assert len(record["attempts"]) == 1
+assert record["stages"]["check"]["status"] == "completed"
+assert record["stages"]["measure"]["status"] == "completed"
+finalize(directory, 1, "no_benefit",
+         result={"validity": "valid", "candidate_ms": 16.0})
+assert campaign.start(root, candidate("next"), directory)["iteration"] == 2
+print(json.dumps({"directory": str(directory), "archived_attempts": len(record["attempts"]),
+                  "measurement_starts": 2, "next_iteration": 2}))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", recovery, str(root), json.dumps(key)],
+        capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["directory"] == str(directory)
