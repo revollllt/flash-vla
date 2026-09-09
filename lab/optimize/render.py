@@ -115,19 +115,17 @@ def render_optimization_progress(*, metadata: PlotMetadata, points: Sequence[Plo
         segment_changed = point.segment != previous_segment
         near_right_edge = point.x >= points[-1].x - 0.5
         below = (previous_was_anchor or point.parent_ms is not None) and not point.reanchor
-        offset = (-8 if near_right_edge else 8, -16 if below else 16)
+        offset = (-8 if near_right_edge else 8, 48 if point.reanchor else (-16 if below else 16))
         alignment = 'right' if near_right_edge else 'left'
         vertical = 'top' if below else 'bottom'
         if segment_changed or point.reanchor:
             label = f'segment {point.segment} re-anchor\n{point.incumbent_ms:.3f} ms'
-            if point.reanchor:
-                label += f'\n{point.summary}'
             if point.verdict == 'accepted' and not point.reanchor:
                 parent_delta = ('n/a' if point.delta_parent_pct is None
                                 else f'{point.delta_parent_pct:+.2f}%')
                 baseline_delta = ('n/a' if point.delta_baseline_pct is None
                                   else f'{point.delta_baseline_pct:+.2f}%')
-                label += (f'\niter {point.iteration}: {point.summary}'
+                label += (f'\niter {point.iteration}: accepted'
                           f'\n{parent_delta} vs parent\n{baseline_delta} vs baseline')
             ax.annotate(label,
                         xy=(point.x, point.incumbent_ms), xytext=offset,
@@ -138,7 +136,7 @@ def render_optimization_progress(*, metadata: PlotMetadata, points: Sequence[Plo
                             else f'{point.delta_parent_pct:+.2f}%')
             baseline_delta = ('n/a' if point.delta_baseline_pct is None
                               else f'{point.delta_baseline_pct:+.2f}%')
-            label = (f'iter {point.iteration}: {point.summary}\n{point.incumbent_ms:.3f} ms'
+            label = (f'iter {point.iteration}: {"baseline" if point.iteration == 0 else "accepted"}\n{point.incumbent_ms:.3f} ms'
                      f'\n{parent_delta} vs parent\n{baseline_delta} vs baseline')
             ax.annotate(label, xy=(point.x, point.incumbent_ms), xytext=offset,
                         textcoords='offset points', fontsize=8, horizontalalignment=alignment,
