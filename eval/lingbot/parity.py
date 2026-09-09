@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import redirect_stdout
 import json
 import os
 from pathlib import Path
@@ -116,7 +117,8 @@ def main(argv=None) -> int:
     parser.add_argument("--steps", type=int, default=10)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
-    report = run(args.plan, args.oracle, args.seed, args.layers, args.steps)
+    with redirect_stdout(sys.stderr):
+        report = run(args.plan, args.oracle, args.seed, args.layers, args.steps)
     text = json.dumps(report, indent=2) + "\n"
     print(text, end="")
     if args.out:
