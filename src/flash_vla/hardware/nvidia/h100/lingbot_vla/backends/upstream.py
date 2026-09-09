@@ -48,6 +48,7 @@ _VISION_PARAMS = tuple(
     param for param, name in zip(WEIGHT_PARAMS, WEIGHT_NAMES)
     if name in set(VISION_WEIGHT_NAMES)
 )
+_ORIGINAL_APPLY_ROPE = None
 
 
 def _nbytes(shape, itemsize: int) -> int:
@@ -191,7 +192,43 @@ def _patch_vision_attention(visual) -> None:
         block.attn.forward = MethodType(make_forward(256 if index in full else 64), block.attn)
 
 
-def _build_policy(weight_values, layers: int):
+def _configure_rope_frequency(enabled: bool) -> None:
+    from lingbotvla.models.vla.pi0 import modeling_lingbot_vla as lingbot
+
+    global _ORIGINAL_APPLY_ROPE
+    if _ORIGINAL_APPLY_ROPE is None:
+        _ORIGINAL_APPLY_ROPE = lingbot.apply_rope
+    if not enabled:
+        lingbot.apply_rope = _ORIGINAL_APPLY_ROPE
+        return
+
+    inverse_timescales = {}
+
+    def apply_rope(x, positions, max_wavelength=10_000.0, dtype=torch.float32):
+        original_dtype = x.dtype
+        width = x.shape[-1]
+        half = width // 2
+        key = (width, dtype, x.device, max_wavelength)
+        inverse_timescale = inverse_timescales.get(key)
+        if inverse_timescale is None:
+            exponents = (2.0 / width) * torch.arange(
+                half, dtype=dtype, device=x.device,
+            )
+            inverse_timescale = 1.0 / (max_wavelength ** exponents)
+            inverse_timescales[key] = inverse_timescale
+        radians = torch.einsum(
+            "bl,h->blh", positions.to(dtype), inverse_timescale,
+        )[..., None, :]
+        sin, cos = torch.sin(radians), torch.cos(radians)
+        first, second = x.to(dtype).split(half, dim=-1)
+        return torch.cat(
+            (first * cos - second * sin, second * cos + first * sin), dim=-1,
+        ).to(original_dtype)
+
+    lingbot.apply_rope = apply_rope
+
+
+def _build_policy(weight_values, layers: int, cache_rope_frequency: bool):
     import yaml
     from lerobot.configs.policies import PreTrainedConfig
     from transformers import AutoConfig
@@ -222,24 +259,26 @@ def _build_policy(weight_values, layers: int):
     core = policy.model
     core.qwenvl_with_expert.qwenvl.config.num_hidden_layers = layers
     _patch_vision_attention(core.qwenvl_with_expert.qwenvl.visual)
+    _configure_rope_frequency(cache_rope_frequency)
     gc.collect()
     return core
 
 
 class _State:
-    def __init__(self) -> None:
+    def __init__(self, cache_rope_frequency: bool) -> None:
         self.core = None
         self.vision_metadata = None
         self.action_constants = None
+        self.cache_rope_frequency = cache_rope_frequency
 
     def ensure(self, weights, layers: int):
         if self.core is None:
-            self.core = _build_policy(weights, layers)
+            self.core = _build_policy(weights, layers, self.cache_rope_frequency)
         return self.core
 
 
-def make_wrappers(scratch, selected_names=None):
-    state = _State()
+def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False):
+    state = _State(cache_rope_frequency)
 
     @torch.no_grad()
     def vision(pixel_values, out, layers, *weights):
