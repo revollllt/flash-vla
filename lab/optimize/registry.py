@@ -113,6 +113,53 @@ class CampaignRegistry:
                 raise FileNotFoundError("no local Campaign; supply validated baseline evidence")
             return self._create(key, baseline, inputs)
 
+    def open_or_seed(self, key, *, baseline=None, inputs=()):
+        """Prefer the local ledger, then one published lineage, then a new baseline."""
+        from lab.results import resume, schema
+
+        path = self._path(key)
+        with self._lock():
+            if path.exists():
+                return self._open(key)
+            results = self.root / "results"
+            index_path = results / "index.json"
+            if not index_path.exists():
+                if results.exists() and any(p.name in ("trace.json", "resume.json") for p in results.rglob("*.json")):
+                    raise ValueError("published discovery index is missing; rebuild results")
+                if baseline is None:
+                    raise FileNotFoundError("no Campaign or snapshot; supply validated baseline evidence")
+                return self._create(key, baseline, inputs)
+            index_value = store.read(index_path)
+            if index_value["schema_version"] != 1:
+                raise ValueError("unsupported published index version")
+            entries = index_value["campaigns"]
+            relative = (Path("targets") / key_digest(key) / "summary.json").as_posix()
+            related = [item for item in entries if item["campaign_key"] == key]
+            for item in related:
+                location = Path(item["summary"])
+                if item["summary"] != relative and not (
+                        len(location.parts) == 5 and location.parts[:3] == ("targets", key_digest(key), "forks")
+                        and location.name == "summary.json"
+                        and str(uuid.UUID(location.parts[3])) == location.parts[3]):
+                    raise ValueError("published index has a noncanonical Campaign location")
+            matches = [item for item in related if item["summary"] == relative]
+            if len(matches) > 1:
+                raise ValueError("published index has duplicate canonical lineages")
+            if not matches:
+                if (results / relative).parent.exists():
+                    raise ValueError("published lineage is absent from its index; rebuild results")
+                if baseline is None:
+                    raise FileNotFoundError("no published Campaign for this key; supply validated baseline evidence")
+                return self._create(key, baseline, inputs)
+            published = (results / relative).parent
+            summary = schema.check_views(published)
+            if (matches[0]["lineage_id"] != summary["lineage_id"]
+                    or summary["campaign_key"] != key):
+                raise ValueError("published index does not match its Campaign summary")
+            snapshot = store.read(published / "resume.json")
+            resume.seed(self.root, path, snapshot, store.read(published / "trace.json"))
+            return self._open(key)
+
     def fork(self, key, *, reason):
         """Explicit local branch of a terminal ledger; no measurement or worker is rerun."""
         if not reason.strip():

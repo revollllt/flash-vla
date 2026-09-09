@@ -73,4 +73,6 @@ def check_views(directory):
     for name in ("progress.svg", "README.md"):
         if not (directory / name).is_file():
             raise FileNotFoundError(directory / name)
+    from . import resume
+    resume.check(store.read(directory / "resume.json"), value)
     return summary

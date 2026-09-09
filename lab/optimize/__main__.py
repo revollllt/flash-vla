@@ -15,7 +15,7 @@ def main(argv=None):
                                             'campaign-validate', 'campaign-finalize',
                                             'campaign-render', 'campaign-reanchor', 'campaign-materialize',
                                             'campaign-migrate-legacy', 'campaign-transition', 'campaign-transition-abort',
-                                            'campaign-find', 'campaign-open', 'campaign-open-or-create', 'campaign-fork'))
+                                            'campaign-find', 'campaign-open', 'campaign-open-or-create', 'campaign-open-or-seed', 'campaign-fork'))
     parser.add_argument('path', type=Path, nargs='?',
                         help='key JSON for registry commands; spec or run directory otherwise')
     parser.add_argument('--root', type=Path, default=Path.cwd())
@@ -37,7 +37,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.path is None and args.command != 'campaign-create':
         parser.error('this command requires a path')
-    if args.command in ('campaign-find', 'campaign-open', 'campaign-open-or-create', 'campaign-fork'):
+    if args.command in ('campaign-find', 'campaign-open', 'campaign-open-or-create', 'campaign-open-or-seed', 'campaign-fork'):
         registry = CampaignRegistry(args.root)
         key = store.read(args.path)
         if args.command == 'campaign-find':
@@ -50,7 +50,8 @@ def main(argv=None):
             location = registry.fork(key, reason=args.reason)
         else:
             baseline = store.read(args.baseline_evidence) if args.baseline_evidence else None
-            location = registry.open_or_create(key, baseline=baseline, inputs=args.source_input)
+            opener = registry.open_or_seed if args.command == 'campaign-open-or-seed' else registry.open_or_create
+            location = opener(key, baseline=baseline, inputs=args.source_input)
         result = dict(directory=str(location) if location else None,
                       state=store.read(location / 'state.json') if location else None)
     elif args.command == 'campaign-create':

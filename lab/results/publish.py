@@ -7,7 +7,7 @@ import os
 from lab.optimize import campaign, store, trace, transition
 from lab.optimize.registry import key_digest
 
-from . import index, render, schema
+from . import index, render, resume, schema
 
 
 def publish(root, directory):
@@ -28,6 +28,7 @@ def publish(root, directory):
             value["fork"] = {key: metadata["fork"][key]
                               for key in ("parent_campaign", "parent_iteration", "reason")}
         summary, _ = schema.summaries(value)
+        snapshot = resume.build(root, directory, value)
         relative = Path("targets") / key_digest(summary["campaign_key"])
         if "fork" in metadata:
             relative /= Path("forks") / metadata["id"]
@@ -56,10 +57,11 @@ def publish(root, directory):
             with tempfile.TemporaryDirectory(dir=scratch, prefix="publish-") as temporary:
                 staged = Path(temporary)
                 store.write(staged / "trace.json", schema.compact_trace(value))
+                store.write(staged / "resume.json", snapshot)
                 views = render.write(staged, value)
                 # Trace is the atomic ownership/history boundary. Remaining
                 # views may be stale after interruption and must be republished.
-                paths = [staged / "trace.json", *views]
+                paths = [staged / "trace.json", staged / "resume.json", *views]
                 for source in paths:
                     target = destination / source.relative_to(staged)
                     target.parent.mkdir(parents=True, exist_ok=True)

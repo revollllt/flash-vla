@@ -290,6 +290,10 @@ def rebuild(directory):
     has_reanchor |= len(context_segments) > 1
     reanchor_required = ((imported_reanchor_required and not has_reanchor)
                          or bool(transition_records and transition_records[-1][1]['status'] == 'aborted'))
+    imported = metadata.get('published_import')
+    if imported:
+        # Historical segments cannot clear the fresh-clone validation requirement.
+        reanchor_required |= current_measurement_segment <= imported['last_segment']
     stage, next_action = 'candidate_selection', 'start the next candidate from the incumbent'
     campaign_status = 'BASELINED' if len(records) == 1 else 'ACTIVE'
     if active:

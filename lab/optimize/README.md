@@ -182,8 +182,16 @@ results/index.json provides discovery and results/README.md presents the active
 context's performance. Each Campaign has a compact trace, per-context summaries
 and the canonical progress.svg; checkpoint changes retain the same Target
 directory. A failed publication can be retried without rerunning the experiment.
-These views do not yet supply fresh-clone resume snapshots or automatic
-publication after finalize. `python -m lab.results validate --root REPOSITORY`
+Publication includes a compact resume snapshot. A fresh checkout can run
+`python -m lab.optimize campaign-open-or-seed KEY.json --root REPOSITORY`.
+It prefers a local Campaign, otherwise discovers the canonical published
+lineage; only an absent lineage may use `--baseline-evidence` to create one.
+The incumbent Git commit and declared source inputs must exist locally.
+Imported history retains iteration IDs, failed/open hypotheses and portable
+recipes. A fresh context transition is mandatory before candidate allocation
+or publication, even when the checkpoint and old environment metadata match.
+Automatic publication after finalize is still pending.
+`python -m lab.results validate --root REPOSITORY`
 checks published facts and JSON views.
 `python -m lab.results rebuild --check --root REPOSITORY` checks generated files
 without modifying results; omit
@@ -191,4 +199,7 @@ without modifying results; omit
 (the current SVG evidence uses 3.10.8) but no old Campaign artifacts or GPU
 measurement. Invalid trace facts and unowned files require explicit
 reconciliation; rebuild does not invent missing measurement evidence.
-Published resume snapshots and CI wiring remain pending.
+A missing trace or stale derived snapshot state can be rebuilt from retained
+snapshot facts. Missing normalized receipts cannot be inferred from a trace:
+republish from the original ledger if resume.json is absent. Hosted CI wiring
+remains pending.

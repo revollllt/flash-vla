@@ -149,8 +149,46 @@ bytes, and shares publication's explicit view-before-summary-before-index
 replacement order. Published forks must bind their parent to the canonical
 CampaignKey directory and use the Registry's canonical UUID child identity. Unowned files are reported rather than deleted. The renderer
 environment is part of reproducibility: current SVG evidence uses Matplotlib
-3.10.8. Fresh-clone resume snapshots and CI wiring remain unfinished; a rebuilt
-publication view alone is not a continuation ledger.
+3.10.8. Hosted CI wiring remains unfinished.
+
+A resume snapshot retains terminal normalized measurement/correctness receipts,
+the accepted portable recipes, compact legacy knowledge, open hypotheses and
+the Campaign metadata. Raw logs, profiler output, command execution stages and
+source bytes remain outside the snapshot. Existing A/B/A leg observations are
+retained; missing legs are never inferred from a headline latency. Snapshot
+state and its matching compact trace must be reconstructable through the
+existing ledger validators. This is validated continuation evidence, not the
+original raw experiment archive.
+
+The local ledger is preferred over published state. Seeding is allowed only
+from the canonical index entry and a mutually consistent summary, trace and
+snapshot. Missing index/trace with an existing snapshot requires offline repair;
+it cannot fall back to a new baseline. An interrupted local seed remains an
+explicit incomplete directory. The Campaign metadata becomes discoverable only
+after its history and portable source have been written.
+
+Portable source is recovered from an exact available Git commit, using its
+declared input set. Export compares that input snapshot with the recorded
+commit. Historical candidate snapshots are not needed or copied. Source commit
+availability and portable rebuild/retune recipes are required for continuation;
+a shallow clone missing the incumbent commit fails explicitly. Recipes should
+use committed relative code paths and the existing interpreter/output tokens;
+old machine paths are not guessed or silently rewritten.
+
+An imported ledger records the last published segment boundary. All historical
+latencies, including prior re-anchors, remain history until a newer transition
+validates compatibility, rebuild/retune, correctness and a fresh incumbent
+anchor. Import consumes no iteration and never resumes historical commands.
+Checkpoint-specific records remain in history but cannot supply portable
+source. A new transition supplies the execution checkout and materialization
+receipt needed by subsequent candidates.
+
+A missing trace can be rebuilt from retained snapshot receipts. Stale derived
+snapshot fields can also be regenerated; conflicting trace/snapshot facts
+require reconciliation. A missing snapshot cannot be invented from a trace
+that lacks normalized receipts and source provenance: republish from the local
+ledger. Published history may extend, but its existing trace prefix cannot be
+rewritten by continuation.
 
 ## Alternatives considered
 
@@ -204,6 +242,12 @@ identity/context/arithmetic, and a trace edit without plot regeneration.
 They also remove the original ledger and rebuild published views in another
 filesystem layout. Check mode preserves damaged files for inspection; repair
 produces the expected bytes without running an experiment.
+Fresh-clone tests use actual Git repositories and delete the original checkout
+before importing the snapshot. CPU toy checkpoint transitions execute inherited
+recipes and checks, then continue and publish on the same lineage. Tests cover
+pre-existing segments, a second clone, checkpoint-specific exclusion, missing
+commits, corrupted receipts, missing discovery files and interrupted metadata
+publication. Legacy rejected and open hypotheses survive the import.
 These fixtures do not establish real Pi0.5/LingBot checkpoint transfer or GPU
 performance.
 

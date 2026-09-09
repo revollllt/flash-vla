@@ -122,12 +122,12 @@ def test_trace_changes_without_plot_rebuild_fail_check(published):
     trace = store.read(destination / "trace.json")
     trace["iterations"][0]["change_summary"] = "corrected baseline annotation"
     store.write(destination / "trace.json", trace)
-    # Valid facts can still have stale generated plots.
-    assert validate_results(root)["campaigns"] == 1
-    with pytest.raises(ValueError, match="progress.svg"):
+    before = files(root / "results")
+    with pytest.raises(ValueError, match="snapshot differs"):
+        validate_results(root)
+    with pytest.raises(ValueError, match="snapshot differs"):
         rebuild(root, check=True)
-    rebuild(root)
-    assert "corrected baseline annotation" in (destination / "progress.svg").read_text()
+    assert files(root / "results") == before
 
 
 def test_bad_trace_cannot_be_laundered_by_rebuild(published):

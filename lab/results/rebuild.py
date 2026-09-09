@@ -8,13 +8,23 @@ import uuid
 
 from lab.optimize import store
 from lab.optimize.registry import key_digest
-from . import index, render, schema, validate
+from . import index, render, resume, schema, validate
 
 
 def _sources(results):
-    paths = index.trace_paths(results)
+    paths = sorted(set(index.trace_paths(results)) | {
+        p.with_name("trace.json") for p in [*results.glob("targets/*/resume.json"),
+                                           *results.glob("targets/*/forks/*/resume.json")]})
     for path in paths:
-        value = store.read(path)
+        if path.with_name("resume.json").exists():
+            _, value = resume.reconstruct(store.read(path.with_name("resume.json")))
+            if path.exists():
+                actual = store.read(path)
+                validate.trace(actual)
+                if actual != value:
+                    raise ValueError("resume snapshot differs from published trace; republish the lineage")
+        else:
+            value = store.read(path)
         key = validate.trace(value)
         expected = Path("targets") / key_digest(key)
         if "fork" in value:
@@ -68,8 +78,15 @@ def rebuild(root, *, check=False):
             for path, value in sources:
                 destination = staged / path.parent.relative_to(results)
                 destination.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(path, destination / "trace.json")
+                if path.exists():
+                    shutil.copyfile(path, destination / "trace.json")
+                else:
+                    store.write(destination / "trace.json", value)
                 ordered.append(destination / "trace.json")
+                if path.with_name("resume.json").exists():
+                    snapshot, _ = resume.reconstruct(store.read(path.with_name("resume.json")))
+                    store.write(destination / "resume.json", snapshot)
+                    ordered.append(destination / "resume.json")
                 ordered.extend(render.write(destination, value))
             index.rebuild(staged)
             ordered.extend([staged / "index.json", staged / "README.md"])
