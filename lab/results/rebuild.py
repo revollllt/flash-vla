@@ -89,7 +89,7 @@ def rebuild(root, *, check=False):
                     ordered.append(destination / "resume.json")
                 ordered.extend(render.write(destination, value))
             index.rebuild(staged)
-            ordered.extend([staged / "index.json", staged / "README.md"])
+            ordered.extend([staged / "index.json", staged / "README.md", staged / "index.html"])
             expected = {path.relative_to(staged): path for path in ordered}
             actual = {path.relative_to(results) for path in results.rglob("*") if path.is_file()}
             unexpected = actual - expected.keys()

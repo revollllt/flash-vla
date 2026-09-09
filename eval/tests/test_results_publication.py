@@ -257,3 +257,45 @@ def test_equal_anchor_environment_change_cannot_index_a_stale_plot(workspace, mo
     result = publish(root, directory)
     assert result["summary"] == initial["summary"]
     assert "segment 1 re-anchor" in (destination / "progress.svg").read_text()
+
+
+def test_html_retains_each_checkpoint_context_and_its_own_anchor(workspace):
+    from html.parser import HTMLParser
+    root, directory = workspace
+    inherited_recipes(root, directory)
+    campaign.transition_context(root, directory, request(root, directory, latency=20.))
+    publish(root, directory)
+    class Rows(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.rows = []
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag == "tr" and "data-context" in attrs:
+                self.rows.append(attrs)
+    content = (root / "results/index.html").read_text()
+    parser = Rows()
+    parser.feed(content)
+    assert len(parser.rows) == 2
+    assert {row["data-context"] for row in parser.rows} == {campaign._records(directory)[0][1]["measurement"]["evidence"]["measurement_context"]["weights"]["checkpoint_id"], "task-b"}
+    assert "20.000" in content and "14.000" in content
+    assert "1.000×" in content and "1.143×" in content
+    for field in ("hardware", "model", "revision", "shape", "variant", "context", "objective"):
+        assert f'data-filter="{field}"' in content
+
+
+def test_dashboard_treats_metadata_as_text():
+    from lab.results import html
+    hostile = '<script>alert("fixture")</script>'
+    key = dict(target=dict(hardware="h100", model="pi05", model_revision=hostile,
+                           shape={"chunk": 50}), execution_variant={"quantization": {"mode": "bf16"}, "cache": {"mode": "none"}},
+               objective="latency", benchmark_protocol="test")
+    summary = dict(campaign_key=key, lineage_id="test", representative_context="a")
+    contexts = {"a": dict(weights={"checkpoint_id": hostile}, fixture={"id": hostile},
+                         latest_segment=0, segment_anchor_ms=20., best_validated_ms=20.,
+                         last_validated_iteration=0)}
+    output = html.render([(summary, contexts, "targets/test")])
+    assert hostile not in output
+    assert "&lt;script&gt;" in output
+    assert output.count("<script>") == 1
+    assert "1.000×" in output

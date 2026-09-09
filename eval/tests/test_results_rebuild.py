@@ -96,7 +96,7 @@ def test_offline_rebuild_detects_and_repairs_views_without_remeasurement(publish
     assert rebuild(root, check=True)["changed"] == []
 
 
-@pytest.mark.parametrize("relative", ["index.json", "README.md"])
+@pytest.mark.parametrize("relative", ["index.json", "README.md", "index.html"])
 def test_global_views_are_checked_and_rebuilt(published, relative):
     root, _, _ = published
     expected = files(root / "results")

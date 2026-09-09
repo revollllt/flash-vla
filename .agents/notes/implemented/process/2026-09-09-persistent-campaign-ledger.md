@@ -120,6 +120,18 @@ separate child directories. The representative performance is the active
 context's latest segment; each other context retains its own latest segment
 summary. No cross-context minimum or speedup is defined.
 
+The static HTML dashboard includes every published checkpoint/fixture context,
+using its latest segment's anchor and validated incumbent. Hardware, model,
+architecture revision, shape, ExecutionVariant, checkpoint and objective filters
+select rows without changing their arithmetic or merging contexts. Representative
+context is a label, not an exclusion of historical contexts. Evidence links retain
+the common lineage and per-context summary. The page needs only HTML, CSS and
+local filtering JavaScript, works without network requests, and is regenerated
+with the existing index and Markdown views. Existing rebuild checking detects
+missing or stale HTML; publishing an empty inventory supplies no performance
+evidence.
+
+
 Publication accepts terminal, validated v3 ledgers, including failed experiments,
 and refuses pending transitions or missing re-anchors. Compact trace retains
 iteration/segment/context, plans, hypotheses, applicability and verdicts; raw
