@@ -65,12 +65,29 @@ def test_refuses_unisolated_shared_source_change(checkouts):
             source.lingbot_target(old)
 
 
-def test_refuses_dirty_source(checkouts):
+@pytest.mark.parametrize('role', ['source', 'controller'])
+def test_refuses_dirty_source(checkouts, role):
     current, old = checkouts
-    (old / "src/flash_vla/runtime/identity.py").write_text("# uncommitted\n")
+    dirty_root = old if role == "source" else current
+    (dirty_root / "src/flash_vla/runtime/identity.py").write_text("# uncommitted\n")
     with patch.object(source, "ROOT", current):
         with pytest.raises(ValueError, match="clean committed"):
             source.lingbot_target(old)
+
+
+def test_recovery_records_and_notes_do_not_invalidate_committed_execution(checkouts):
+    current, old = checkouts
+    for root in (current, old):
+        for name in (".goal-task/task/todo.md", ".agents/notes/progress.md"):
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("updated recovery state")
+    with patch.object(source, "ROOT", current):
+        target, provenance = source.lingbot_target(old)
+    assert target.marker == "old"
+    assert provenance["revision"] == git(old, "rev-parse", "HEAD")
+    assert provenance["controller_revision"] == git(current, "rev-parse", "HEAD")
+
 
 def test_source_wrappers_restore_rope_between_engines_and_after_error():
     official = lambda: "official"

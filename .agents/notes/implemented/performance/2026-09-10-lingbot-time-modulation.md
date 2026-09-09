@@ -30,3 +30,5 @@ Falsifier: reject on any full-model correctness failure or same-context paired
 latency without meaningful gain. Interleaving and cache residency may change
 the isolated savings. Full-model comparison must use accepted RoPE source
 9f7b55c, not a historical latency from another job.
+
+Full qualification 610911 completed in 667 s: all gates pass, in-engine relative RMS zero, A/B/A 80.493691377/76.115327887/80.493620597 ms. Conservative same-job reduction 5.43930%. Publication remains pending because the observed driver 610.43.02 differs from the existing 570.86.10 segment. Iter-004 is retained as invalid for the requested old-driver segment, with the successful new-driver report linked in diagnostics. transition-000 is pending the old incumbent numerical check (610937); no incumbent change or cross-environment speedup claim.

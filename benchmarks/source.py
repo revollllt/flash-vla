@@ -7,8 +7,6 @@ import subprocess
 import sys
 import uuid
 
-from flash_vla.runtime.identity import git_revision
-
 ROOT = Path(__file__).resolve().parent.parent
 BACKENDS = Path("src/flash_vla/hardware/nvidia/h100/lingbot_vla/backends")
 
@@ -47,10 +45,20 @@ def isolate_rope(upstream):
 def lingbot_target(checkout):
     """Keep shared inference code identical and isolate backend modules and their shared RoPE function."""
     source = Path(checkout).resolve()
-    revision = git_revision(source / "src/flash_vla/runtime/identity.py")
-    controller_revision = git_revision(ROOT / "src/flash_vla/runtime/identity.py")
-    if revision is None or controller_revision is None:
-        raise ValueError("source qualification requires clean committed checkouts")
+    revisions = {}
+    for checkout_root in dict.fromkeys((source, ROOT)):
+        # Recovery records and agent notes are not executed by the evaluator.
+        dirty = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=all", "--", ".",
+             ":(exclude).goal-task/**", ":(exclude).agents/notes/**"],
+            cwd=checkout_root, text=True,
+        )
+        if dirty:
+            raise ValueError("source qualification requires clean committed execution files")
+        revisions[checkout_root] = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=checkout_root, text=True,
+        ).strip()
+    revision, controller_revision = revisions[source], revisions[ROOT]
     changed = subprocess.run(
         ["git", "diff", "--name-only", revision, controller_revision, "--", "src/flash_vla"],
         cwd=ROOT, check=True, capture_output=True, text=True,
