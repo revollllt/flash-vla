@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 15
     env:
       PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
-      MPLCONFIGDIR: ${{ runner.temp }}/flash-vla-matplotlib
+      MPLCONFIGDIR: ${{ github.workspace }}/.cache/flash-vla-matplotlib
       OPENBLAS_NUM_THREADS: "1"
       OMP_NUM_THREADS: "1"
     steps:
