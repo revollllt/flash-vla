@@ -52,7 +52,7 @@
   "lineage_id": "c1091dd42d1dbb818ea69e14605ed706d88b5ead4dae33e75cb7e0ff9bb3e494",
   "representative_context": "sha256:f58cabb57de61b72208987a58b764ee68ae69ada194ff9bc2349927a3cbb0f99",
   "validated_context_count": 2,
-  "latest_iteration": 0,
+  "latest_iteration": 1,
   "current_performance": {
     "anchor_ms": 15.863576903939247,
     "best_ms": 15.863576903939247,

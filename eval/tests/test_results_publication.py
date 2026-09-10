@@ -68,9 +68,10 @@ def test_checkpoint_publication_uses_new_anchor_without_cross_context_best(works
 
 def test_faster_correctness_failure_is_visible_without_changing_incumbent(workspace):
     root, directory = workspace
-    campaign.start(root, candidate("bad"), directory)
+    record = campaign.start(root, candidate("bad"), directory)
     campaign.finalize(directory, 1, "correctness_failed", {"status": "failed"},
-                      {"validity": "incomplete", "candidate_ms": 1.}, {"status": "not_run"},
+                      {"validity": "incomplete", "candidate_ms": 1.,
+                       "identity": campaign.implementation_identity(record)}, {"status": "not_run"},
                       diagnostics={"stderr": "raw sentinel"})
     result = publish(root, directory)
     assert result["summary"]["current_performance"]["best_ms"] == 16.

@@ -87,7 +87,8 @@ ensure deterministic output. Full shape titles wrap within the figure, and the
 iteration axis retains integer ticks even for a baseline-only trace. The title
 includes the full recorded ExecutionVariant, so cache/quantization policies
 remain distinguishable even when they share a precision label. Failed
-candidates have explicit status markers; missing latencies appear at the bottom
+candidates without a completed measurement inherit their allocated segment;
+any supplied implementation identity still must match. Failed candidates have explicit status markers; missing latencies appear at the bottom
 of the axes, labeled as unavailable, rather than borrowing incumbent latency.
 
 Campaign report conversion consumes the existing evaluator and latency outputs.

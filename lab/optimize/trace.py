@@ -97,8 +97,11 @@ def normalize(directory):
             candidate_ms = None
             parent_ms = None
             validity = 'incomplete'
-        elif verdict in ('invalid', 'blocked', 'correctness_failed') and 'identity' not in measurement:
+        elif verdict in ('invalid', 'blocked', 'correctness_failed') and 'measurement_segment' not in measurement:
             identity = campaign.implementation_identity(record)
+            if 'identity' in measurement:
+                from .measurement import identity as validate_identity
+                validate_identity(measurement['identity'], identity)
             if not campaign.same_workload(metadata, identity) or not identity.get('engine_revision'):
                 raise ValueError(f'iter-{iteration:03d} campaign identity does not match its change')
             segment = previous_segment
