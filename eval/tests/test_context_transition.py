@@ -414,6 +414,7 @@ def test_render_draws_separate_latency_lines_for_context_segments(workspace, tmp
     assert any(("fixture fixture-b" if change == "fixture" else "checkpoint task-b")
                in point.summary for point in points if point.reanchor)
     assert "segment 1 re-anchor" in svg
+    assert 'variant={"cache":{"mode":"none"},"quantization":{"mode":"bf16"}}' in svg
     assert "iter None" not in svg
     render.render_optimization_progress(metadata=metadata, points=points,
                                          output_svg=tmp_path / "repeated.svg")

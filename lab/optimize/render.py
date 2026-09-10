@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from html import escape
+import json
 from pathlib import Path
 from textwrap import fill
 from typing import Sequence
@@ -17,6 +18,7 @@ class PlotMetadata:
     precision: str
     objective: str
     protocol: str
+    execution_variant: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -43,7 +45,9 @@ class PlotPoint:
 
 def from_trace(value):
     metadata = value['metadata']
-    plot_metadata = PlotMetadata(**{key: metadata[key] for key in PlotMetadata.__annotations__})
+    plot_metadata = PlotMetadata(
+        **{key: metadata[key] for key in PlotMetadata.__annotations__ if key != 'execution_variant'},
+        execution_variant=metadata.get('execution_variant'))
     points = [PlotPoint(iteration=item['iteration'], candidate_id=item['candidate_id'],
                         verdict=item['verdict'], segment=item['measurement_segment']['id'],
                         candidate_ms=item['candidate_latency_ms'],
@@ -156,6 +160,9 @@ def render_optimization_progress(*, metadata: PlotMetadata, points: Sequence[Plo
     title = (f'{metadata.hardware} | {metadata.model} @ {metadata.model_revision}\n'
              f'{shape_title}')
     subtitle = f'objective={metadata.objective} | protocol={metadata.protocol}'
+    if metadata.execution_variant is not None:
+        variant = json.dumps(metadata.execution_variant, sort_keys=True, separators=(',', ':'))
+        subtitle += '\n' + fill('variant=' + variant, width=100)
     ax.set_title(f'{title}\n{subtitle}')
     from matplotlib.ticker import MaxNLocator
     ax.xaxis.set_major_locator(MaxNLocator(integer=True, min_n_ticks=1))

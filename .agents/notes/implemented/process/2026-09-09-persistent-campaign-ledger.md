@@ -84,7 +84,9 @@ validated same-context A/B/A legs, including the fixed sampling protocol and
 control spread policy. The canonical Matplotlib plot contains separate latency
 lines per segment and independent anchor annotations; reproducible SVG IDs
 ensure deterministic output. Full shape titles wrap within the figure, and the
-iteration axis retains integer ticks even for a baseline-only trace. Failed
+iteration axis retains integer ticks even for a baseline-only trace. The title
+includes the full recorded ExecutionVariant, so cache/quantization policies
+remain distinguishable even when they share a precision label. Failed
 candidates have explicit status markers; missing latencies appear at the bottom
 of the axes, labeled as unavailable, rather than borrowing incumbent latency.
 
