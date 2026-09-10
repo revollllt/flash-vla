@@ -34,7 +34,11 @@ read the relevant section when preparing a command or receipt, not all historica
    directory is the discovery result; do not ask the human for an old Campaign path.
 4. Read the returned state: current stage, active context/segment, incumbent,
    remaining budget, unresolved hypotheses, next action and execution repository.
-   Follow that execution repository when present. A fresh clone can recover
+   Follow that execution repository when present. For missing construction inputs,
+   inspect the context-matching history record's `spec.options` in `resume.json`
+   before loading raw logs. Resolve asset paths locally; a historical
+   `source_checkout` does not override the returned execution repository.
+   A fresh clone can recover
    history but must validate and re-anchor before allocating another candidate.
    Missing required source commits or corrupt publication remain unresolved;
    they do not justify a replacement lineage or invented history.

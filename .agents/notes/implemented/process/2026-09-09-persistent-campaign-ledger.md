@@ -345,3 +345,8 @@ not isolate that upstream global. Official parity receives the same source
 checkout for its reference engine and continues reading the recorded official
 oracle; its report retains both engine identity and implementation source.
 Explicit source options must match the candidate source receipt in every route.
+
+Compact recovery retains experiment construction options alongside its context.
+Dropping these inputs loses reference configuration needed for real checkpoint
+recovery. Recorded paths remain historical locations, not portable asset IDs;
+execution still resolves current assets and performs required context validation.

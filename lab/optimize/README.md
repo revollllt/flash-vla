@@ -205,7 +205,11 @@ results/index.json provides discovery and results/README.md presents the active
 context's performance. Each Campaign has a compact trace, per-context summaries
 and the canonical progress.svg; checkpoint changes retain the same Target
 directory. A failed publication can be retried without rerunning the experiment.
-Publication includes a compact resume snapshot. A fresh checkout can run
+Publication includes a compact resume snapshot retaining each experiment's explicit
+construction options. These are historical inputs: preserve semantic settings such
+as `openpi_config`, but resolve checkpoint/fixture paths on the current machine
+and match the recorded context before executing. Historical options do not
+authorize reusing old paths or activating a different checkpoint. A fresh checkout can run
 `python -m lab.optimize campaign-open-or-seed KEY.json --root REPOSITORY`.
 It prefers a local Campaign, otherwise discovers the canonical published
 lineage; only an absent lineage may use `--baseline-evidence` to create one.

@@ -56,7 +56,7 @@ def _history(directory):
             row["measurement"]["evidence"] = _measurement(record["measurement"]["evidence"])
         else:
             row["spec"] = _pick(record["spec"], "protocol fixture measurement_context measurement_segment "
-                                               "applicability artifact_recipe retune_recipe")
+                                               "applicability artifact_recipe retune_recipe options")
         row["diagnostics"] = {}
         records.append(row)
     transitions = []

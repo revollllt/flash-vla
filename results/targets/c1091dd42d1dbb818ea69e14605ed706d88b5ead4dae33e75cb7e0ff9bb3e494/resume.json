@@ -1452,6 +1452,13 @@
           "measurement_segment": 1,
           "applicability": {
             "weight_dependency": "invariant"
+          },
+          "options": {
+            "checkpoint": "/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2/artifacts/optimization/pi05-public-50000-pytorch",
+            "checkpoint_id": "pravsels/pi05-build-block-tower-baseline@c02537599ca0577dcf8081018a49978e9129be64/checkpoints/50000",
+            "checkpoint_digest": "pravsels/pi05-build-block-tower-baseline@c02537599ca0577dcf8081018a49978e9129be64/checkpoints/50000",
+            "openpi_config": "pi05_aloha",
+            "tokenizer_path": "/data/user/jzou521/models/openpi/big_vision/paligemma_tokenizer.model"
           }
         },
         "diagnostics": {}

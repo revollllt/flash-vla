@@ -44,6 +44,7 @@ def portable(workspace):
         (root / "src/kernel.cu").write_text(f"implementation {iteration}")
         commit(root, f"candidate {iteration}")
         spec = candidate(f"step{iteration}", dependency)
+        spec["options"] = {"checkpoint": "weights-A.json", "openpi_config": "fixture-config"}
         spec["identity"]["plan"] = {"attention": f"route-{iteration}"}
         spec["inputs"].append("adapter.py")
         if dependency == "rebuild":
@@ -86,6 +87,8 @@ def test_fresh_clone_preserves_history_requires_new_anchor_and_continues(portabl
     state = campaign.rebuild(restored)
     assert state["reanchor_required"] and state["iterations"] == 4
     assert state["portable_incumbent"] == "iter-003"
+    assert campaign.incumbent_record(restored, state)["spec"]["options"] == {
+        "checkpoint": "weights-A.json", "openpi_config": "fixture-config"}
     assert campaign.implementation_identity(campaign.incumbent_record(restored, state))["plan"] == {"attention": "route-3"}
     assert state["failed_hypotheses"] == original_state["failed_hypotheses"]
     assert state["highest_value_unresolved_hypotheses"] == [{"mechanism": "next portable fusion"}]
