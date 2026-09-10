@@ -70,11 +70,10 @@ constraint; there is no runtime fallback.
   CTA per case through g2s, s2r, gemm, r2s and s2g against a float32 torch
   reference (SS/RS wgmma bf16 with K- and MN-major B, fp8 wgmma including a
   mixed pair, two stacked warpgroups, mma.sync bf16 and fp8 through cp.async
-  and ldmatrix). Run on a GPU node with
-  `sbatch sbatch/pi05_cuda.sh -m tests.tile_sm90`.
+  and ldmatrix). Run this command on a supported GPU.
 - Production kernels: the FFN task loop, the decoder attention task loop and
   the encoder attention kernel build on these headers. Their parity scripts
-  are the regression gate for any change here, and all three must pass:
+  cover these consumers; run the ones affected by a header change:
   `lab/pi05/ffn_taskloop.py --modes gu,dr,full`,
   `lab/pi05/attention_block.py --impl standalone`, and
   `lab/pi05/enc_attn.py`. The build wrappers hash these headers, the nvcc

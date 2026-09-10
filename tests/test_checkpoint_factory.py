@@ -83,7 +83,6 @@ def test_real_values_are_converted_and_folded_for_each_construction(checkpoint_o
     assert a.measurement_context["fixture"] != b.measurement_context["fixture"]
 
 
-
 def test_conversion_metadata_cannot_be_overridden_by_a_different_config(tmp_path, upstream):
     from tests.test_openpi05_config import Config
     checkpoint = tmp_path / "model.safetensors"
@@ -126,8 +125,6 @@ def test_reference_options_reach_both_stages_without_relabeling(monkeypatch):
         assert kwargs["openpi_config"] == "pi05_droid"
 
 
-
-
 def test_correctness_cli_forwards_checkpoint_options(monkeypatch, capsys):
     from eval import correctness
     seen = {}
@@ -139,7 +136,6 @@ def test_correctness_cli_forwards_checkpoint_options(monkeypatch, capsys):
                              "--option", "checkpoint_digest=revision-a"]) == 0
     assert seen["checkpoint"] == "real-weights"
     assert seen["checkpoint_digest"] == "revision-a"
-
 
 
 @pytest.mark.parametrize("axis", ["steps", "layers"])

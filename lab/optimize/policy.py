@@ -139,7 +139,6 @@ TARGETS: dict[str, dict[str, Any]] = {
 }
 
 
-
 def for_target(name: str) -> dict[str, Any]:
     """The framework defaults merged with `name`'s entry.
 

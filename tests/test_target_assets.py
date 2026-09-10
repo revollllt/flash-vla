@@ -144,8 +144,6 @@ def test_random_input_targets_accept_the_shared_asset_argument(name):
         torch.testing.assert_close(left[key], right[key])
 
 
-
-
 def test_missing_pi0_asset_is_unavailable_before_model_loading(monkeypatch, capsys):
     from eval.pi0 import reference
 

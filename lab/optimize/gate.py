@@ -62,7 +62,7 @@ from lab.optimize import policy as acceptance
 from eval import correctness as in_engine
 from flash_vla.runtime.identity import Identity
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]
 
 
 def _registry_version() -> str | None:

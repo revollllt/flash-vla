@@ -119,6 +119,7 @@ def test_explicit_runner_device_controls_selector_and_gpu_name():
 
 def test_explicit_device_is_used_for_every_latency_leg_and_collector():
     from tests.test_latency import _Engine
+    from tools.profiling import attribution
 
     engine = _Engine("a")
     engine.device = "cuda:1"
@@ -135,9 +136,9 @@ def test_explicit_device_is_used_for_every_latency_leg_and_collector():
          patch.object(latency, "build", return_value=engine), \
          patch.object(latency, "_env", return_value={}) as environment, \
          patch.object(latency, "measure", return_value=result), \
-         patch.object(metrics, "device_selector", return_value="GPU-other") as selector, \
-         patch.object(latency, "attribution_summary", return_value=""), \
-         patch.object(latency, "Attribution") as collector:
+         patch.object(latency, "device_selector", return_value="GPU-other") as selector, \
+         patch.object(attribution, "summary", return_value=""), \
+         patch.object(attribution, "Attribution") as collector:
         collector.return_value.as_dict.return_value = {}
         latency.run("test", ["a"], reps=1, warmup=0, attribution=True, device="cuda:1")
     assert [call.args for call in environment.call_args_list] == [("cuda:1",), ("cuda:1",)]

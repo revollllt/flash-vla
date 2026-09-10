@@ -237,12 +237,6 @@ def _deltas(legs: list[dict[str, Any]], control_spread_max_ms: float | None = No
     return out
 
 
-
-
-
-
-
-
 def _measure_leg(target, plan, *, reps, warmup, seed, soak_s, attribution, options, breakdown=False):
     """Build once and measure the initial capture in a fresh worker process."""
     require_cuda()
