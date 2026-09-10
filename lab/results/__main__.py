@@ -1,29 +1,27 @@
-"""Publish, validate or rebuild Campaign results."""
+"""Plot a saved trace or rebuild historical result pages."""
 import argparse
 import json
 from pathlib import Path
 
-from .publish import publish
-from .rebuild import rebuild, validate_results
+from . import plot, read_json
+from .rebuild import rebuild
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    publishing = commands.add_parser("publish")
-    publishing.add_argument("campaign", type=Path)
-    rebuilding = commands.add_parser("rebuild")
-    rebuilding.add_argument("--check", action="store_true")
-    validating = commands.add_parser("validate")
-    for command in (publishing, rebuilding, validating):
-        command.add_argument("--root", type=Path, default=Path.cwd())
+    rebuilding = commands.add_parser("rebuild", help="regenerate views under results/")
+    rebuilding.add_argument("--root", type=Path, default=Path.cwd())
+    plotting = commands.add_parser("plot", help="plot one saved trace")
+    plotting.add_argument("trace", type=Path)
+    plotting.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
-    if args.command == "publish":
-        result = publish(args.root, args.campaign)
-    elif args.command == "rebuild":
-        result = rebuild(args.root, check=args.check)
+    if args.command == "rebuild":
+        result = rebuild(args.root)
     else:
-        result = validate_results(args.root)
+        metadata, points = plot.from_trace(read_json(args.trace))
+        plot.render_optimization_progress(metadata=metadata, points=points, output_svg=args.out)
+        result = {"plot": str(args.out)}
     print(json.dumps(result, indent=2))
 
 

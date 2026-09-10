@@ -3,7 +3,7 @@
 For optimization, start with [docs/optimization.md](docs/optimization.md). Use its
 direct commands and load only the skill needed for the current step.
 [ARCHITECTURE.md](ARCHITECTURE.md) owns module boundaries; source owns API details.
-Historical plans, Campaign procedures and Agent Notes do not override this path.
+Historical plans and Agent Notes do not override this path.
 
 - State one testable hypothesis and use the cheapest informative check first.
 - Control workload, environment and noise before attributing a performance change.

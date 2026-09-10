@@ -1,4 +1,4 @@
-"""Defaults for direct measurements; qualification policy is owned by eval."""
+"""Defaults for direct model and kernel measurements."""
 
 LATENCY_METRICS = ("chunk_latency", "device_latency", "host_time", "segment_latency", "overhead")
 STATISTICS = ("min", "median", "p99")

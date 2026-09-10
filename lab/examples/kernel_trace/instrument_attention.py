@@ -2,7 +2,7 @@
 from pathlib import Path
 import shutil
 import uuid
-from lab.optimize import store
+import json
 
 KERNEL='src/flash_vla/hardware/nvidia/h100/gemma_backbone/backends/cuda/kernels/enc_attn.cu'
 
@@ -40,8 +40,8 @@ def instrument(source,destination):
             raise ValueError(f'instrumentation anchor changed: {old[:80]}')
         code=code.replace(old,new)
     path.write_text(code)
-    manifest=store.read(destination/'source.json')
+    manifest=json.loads((destination/'source.json').read_text())
     manifest.update(id=uuid.uuid4().hex,root=str(destination.resolve()),
                     variant='diagnostic attention ranges at existing boundaries',parent=manifest['id'])
-    store.write(destination/'source.json',manifest)
+    (destination/'source.json').write_text(json.dumps(manifest, indent=2) + '\n')
     return destination

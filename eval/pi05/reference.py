@@ -378,7 +378,7 @@ def main(argv=None) -> int:
     parser.add_argument("--checkpoint-digest", default=None,
                         help="immutable weights digest; required with --checkpoint")
     parser.add_argument("--option", action="append", default=[],
-                        help="construction option forwarded by lab.optimize.gate")
+                        help="model construction option (KEY=VALUE)")
     parser.add_argument("--openpi-config", default=None,
                         help="upstream training config name; required with --checkpoint")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)

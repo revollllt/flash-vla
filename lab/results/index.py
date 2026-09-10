@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from lab.optimize import store
+from . import read_json, write_json
 from . import html, schema
 
 
@@ -27,13 +27,13 @@ def rebuild(root):
              "|---|---|---|---|---|---:|---:|---:|---:|"]
     for trace_path in paths:
         path = trace_path.parent / "summary.json"
-        summary = schema.check_views(trace_path.parent)
-        _, contexts = schema.summaries(store.read(trace_path))
+        summary = read_json(path)
+        _, contexts = schema.summaries(read_json(trace_path))
         dashboards.append((summary, contexts, trace_path.parent.relative_to(root).as_posix()))
         key, performance = summary["campaign_key"], summary["current_performance"]
         relative = path.relative_to(root).as_posix()
         entries.append(dict(campaign_key=key, lineage_id=summary["lineage_id"], summary=relative))
-        context = store.read(path.parent / "contexts" / summary["representative_context"] / "summary.json")
+        context = read_json(path.parent / "contexts" / summary["representative_context"] / "summary.json")
         target = key["target"]
         label = _cell(target["model_revision"])
         cells = [_cell(target["hardware"]), f"[{label}]({path.parent.relative_to(root).as_posix()}/README.md)",
@@ -42,7 +42,7 @@ def rebuild(root):
                  f'{performance["speedup"]:.3f}×', str(summary["latest_iteration"])]
         lines.append("| " + " | ".join(cells) + " |")
     value = dict(schema_version=1, campaigns=entries)
-    store.write(root / "index.json", value)
+    write_json(root / "index.json", value)
     (root / "README.md").write_text("\n".join(lines) + "\n")
     (root / "index.html").write_text(html.render(dashboards))
     return value

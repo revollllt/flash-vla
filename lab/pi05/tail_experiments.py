@@ -50,9 +50,8 @@ from tools.profiling.attribution import Attribution
 from tools.profiling.attribution import summary as attribution_summary
 from benchmarks.latency import device_selector, measure
 from flash_vla.inference import build, resolve
-from lab.optimize.policy import DEFAULTS
+from benchmarks.config import LATENCY_DEFAULTS as _LAT
 
-_LAT = DEFAULTS["latency"]
 #: The four buffers Pi0.5's host slot writes every inference, and the pinned
 #: staging tensors they are copied from (`hardware/nvidia/h100/pi05/prefix.py`).
 _STAGED = (("prompt_ids", "token_ids"), ("prompt_scale", "embed_scale"),
@@ -187,7 +186,7 @@ def run(target: str, plans: list[str], experiments: list[str], *, reps: int, leg
                 "clocks": _LAT["clocks"]},
         "config": {"plans": plans, "experiments": experiments, "reps": reps, "legs": legs,
                    "seed": seed, "warmup": _LAT["warmup"], "soak_s": _LAT["soak_s"],
-                   "jitter_ms": DEFAULTS["deployment"]["jitter_ms"]},
+                   "jitter_ms": 0.5},
         "identity": {}, "parity": [], "legs": [],
     }
     for plan in plans:
@@ -212,7 +211,7 @@ def run(target: str, plans: list[str], experiments: list[str], *, reps: int, leg
                 print(attribution_summary(leg["attribution"]), flush=True)
         del engine
         torch.cuda.empty_cache()
-    out["summary"] = summarize(out["legs"], DEFAULTS["deployment"]["jitter_ms"])
+    out["summary"] = summarize(out["legs"], 0.5)
     return out
 
 

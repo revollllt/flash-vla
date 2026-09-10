@@ -36,10 +36,9 @@ from typing import Any, Callable
 import torch
 
 from flash_vla.inference import build, resolve
-from lab.optimize.policy import DEFAULTS
+from benchmarks.config import LATENCY_DEFAULTS as _LAT
 
-_LAT = DEFAULTS["latency"]
-_JITTER = DEFAULTS["deployment"]["jitter_ms"]
+_JITTER = 0.5
 
 
 def _host_halves(engine, inputs: dict[str, Any], name: str):

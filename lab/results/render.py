@@ -1,16 +1,16 @@
-"""Derived publication views, shared by publish and offline rebuild."""
-from lab.optimize import render, store
+"""Derived views of saved optimization traces."""
+from . import plot, write_json
 
 from . import schema
 
 
 def write(directory, value):
-    """Render one validated compact trace without reading its old machine's artifacts."""
+    """Render one saved compact trace without reading its old machine's artifacts."""
     summary, contexts = schema.summaries(value)
     for context_id, context in contexts.items():
-        store.write(directory / "contexts" / context_id / "summary.json", context)
-    plot_metadata, points = render.from_trace(value)
-    render.render_optimization_progress(
+        write_json(directory / "contexts" / context_id / "summary.json", context)
+    plot_metadata, points = plot.from_trace(value)
+    plot.render_optimization_progress(
         metadata=plot_metadata, points=points, output_svg=directory / "progress.svg")
     performance = summary["current_performance"]
     text = (
@@ -24,7 +24,7 @@ def write(directory, value):
         '[Summary](summary.json) · [Trace](trace.json)\n\n'
         '![Optimization progress](progress.svg)\n')
     (directory / "README.md").write_text(text)
-    store.write(directory / "summary.json", summary)
+    write_json(directory / "summary.json", summary)
     return ([directory / "progress.svg", directory / "README.md"]
             + [directory / "contexts" / name / "summary.json" for name in sorted(contexts)]
             + [directory / "summary.json"])

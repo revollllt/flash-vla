@@ -1,12 +1,9 @@
 """Context-local summaries; cross-context minima are never compared."""
 from flash_vla.runtime.identity import MeasurementContext
-from lab.optimize import store
-from . import validate
 
 
 def summaries(value):
     """Summarize the latest validated segment for each activated context."""
-    validate.trace(value)
     contexts = {}
     for segment in value["segments"]:
         context = segment["measurement_context"]
@@ -45,34 +42,3 @@ def summaries(value):
     if "fork" in value:
         summary["fork"] = value["fork"]
     return summary, contexts
-
-
-def compact_trace(value):
-    """Publish small facts; raw profiler output, logs and command receipts stay local."""
-    rows = []
-    for row in value["iterations"]:
-        row = dict(row)
-        row.pop("diagnostic_artifacts")
-        row["correctness"] = {key: row["correctness"][key]
-                              for key in ("status", "checks") if key in row["correctness"]}
-        row["qualification"] = {key: row["qualification"][key]
-                                for key in ("status", "gate_verdict") if key in row["qualification"]}
-        rows.append(row)
-    return dict(value, iterations=rows)
-
-
-def check_views(directory):
-    """Refuse incomplete/mixed publication views before indexing their performance."""
-    value = store.read(directory / "trace.json")
-    summary, contexts = summaries(value)
-    if store.read(directory / "summary.json") != summary:
-        raise ValueError("published summary is stale relative to trace; republish this lineage")
-    for context_id, expected in contexts.items():
-        if store.read(directory / "contexts" / context_id / "summary.json") != expected:
-            raise ValueError("published context summary is stale relative to trace; republish this lineage")
-    for name in ("progress.svg", "README.md"):
-        if not (directory / name).is_file():
-            raise FileNotFoundError(directory / name)
-    from . import resume
-    resume.check(store.read(directory / "resume.json"), value)
-    return summary

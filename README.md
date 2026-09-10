@@ -60,8 +60,8 @@ end-to-end timing after deployment. It can reuse applicable measurements.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) owns the dependency and execution boundaries.
 Use [eval](eval/README.md) for accuracy and [tests](tests/README.md) for scoped engineering checks. Published measurements
-live in [results](results/README.md); [historical plans](docs/history/README.md)
-and [legacy tools](lab/optimize/README.md) are available when explicitly needed.
+live in [results](results/README.md). [Result tools](lab/results/README.md) rebuild
+those views from saved traces; [historical plans](docs/history/README.md) remain for reference.
 
 ## License
 

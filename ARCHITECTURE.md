@@ -20,7 +20,7 @@ runtime/                      graph, buffers, execution and plan binding
 hardware/<vendor>/<device>/   Targets and reusable component kernels
 eval/, benchmarks/           accuracy and latency consumers
 tools/, tests/                diagnostics and engineering checks
-lab/                          experiments and optional historical tooling
+lab/                          experiments and saved-result rendering
 ```
 
 - Models have no hardware dependencies. Runtime imports no model, backend or Target.
@@ -89,9 +89,9 @@ checkpoint.
 links the relevant skills. Hardware rooflines and measured primitive limits
 guide hypotheses; deployed end-to-end measurements decide whether a change helps.
 
-Current reports use Identity v3. Legacy schemas remain readable for existing
-results; migration and Campaign qualification belong to the optional legacy
-tools. Ordinary benchmarks do not require those workflows.
+Current reports use Identity v3. Existing reports and traces remain readable.
+[Result tools](lab/results/README.md) render saved traces independently of inference;
+the retired Campaign controller is no longer part of the project.
 
 [Agent Notes](.agents/notes/README.md) explain durable decisions. Historical notes
 and plans are context, not additional requirements for the current workflow.

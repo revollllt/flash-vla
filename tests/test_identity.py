@@ -1,163 +1,311 @@
+"""Workload identity and measurement-context comparisons."""
 import copy
-import csv
 from dataclasses import replace
+import csv
 import json
 import subprocess
-import tempfile
-import unittest
-from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+from flash_vla.runtime import identity as identity_module
+from flash_vla.runtime.identity import Identity, MeasurementContext, git_revision
 from flash_vla.bench import KernelResult, write_csv
-from flash_vla.runtime.identity import IDENTITY_SCHEMA_VERSION, Identity, git_revision
 
 
-def identity(**overrides):
-    values = {
+def payload(**changes):
+    value = {
+        "schema_version": 3,
         "target": "hardware/nvidia/h100/pi05",
         "hardware": "h100-sxm5-80gb",
         "model": "pi05",
         "model_revision": "pi05-r1",
         "inference_signature": "sha256:pi05-architecture",
         "shape": {"chunk": 50, "steps": 10},
-        "plan": {"site": "reference"},
-        "precision": "bf16",
-        "engine_revision": "aaaaaaa",
+        "execution_variant": {"quantization": {"mode": "bf16"}, "cache": {"mode": "none"}},
+        "plan": {"attention": "reference"},
+        "engine_revision": "engine-a",
     }
-    values.update(overrides)
-    return Identity(**values)
+    value.update(changes)
+    return value
 
 
-class WorkloadIdentityTests(unittest.TestCase):
-    def test_different_plan_is_the_same_workload(self):
-        self.assertTrue(identity().same_workload(identity(plan={"site": "candidate"})))
-
-    def test_different_engine_revision_is_the_same_workload(self):
-        self.assertTrue(identity().same_workload(identity(engine_revision="bbbbbbb")))
-
-    def test_different_model_revision_is_not_the_same_workload(self):
-        self.assertFalse(identity().same_workload(identity(model_revision="openpi@other:pi05")))
-
-    def test_different_hardware_is_not_the_same_workload(self):
-        self.assertFalse(identity().same_workload(identity(hardware="h100-pcie-80gb")))
-
-    def test_different_chunk_is_not_the_same_workload(self):
-        self.assertFalse(identity().same_workload(
-            identity(shape={"chunk": 32, "steps": 10})))
-
-    def test_different_denoise_steps_is_not_the_same_workload(self):
-        self.assertFalse(identity().same_workload(
-            identity(shape={"chunk": 50, "steps": 5})))
-
-    def test_different_precision_is_not_the_same_workload(self):
-        other = replace(identity(), execution_variant={
-            "quantization": {"mode": "fp16"}, "cache": {"mode": "none"}})
-        self.assertFalse(identity().same_workload(other))
+def context(**changes):
+    value = {
+        "weights": {"checkpoint_id": "task-a", "checkpoint_digest": "manifest-a"},
+        "fixture": {"id": "fixture-a", "digest": "fixture-manifest-a"},
+        "environment": {
+            "gpu_sku": "h100-sxm5-80gb", "driver": "driver-a",
+            "cuda_runtime": "13.1", "pytorch": "torch-a", "tilelang": "tilelang-a",
+            "clock_policy": "unlocked", "power_policy": "default",
+            "capture_regime": "cuda-graph",
+        },
+        "hostname": "node-a", "slurm_job_id": "1", "timestamp": 1,
+        "reference_provenance": {"repository": "openpi", "commit": "upstream-a"},
+    }
+    value.update(changes)
+    return value
 
 
-class IdentitySerializationTests(unittest.TestCase):
-    def test_v3_uses_unambiguous_revision_fields(self):
-        payload = identity().as_dict()
-        self.assertEqual(payload["schema_version"], IDENTITY_SCHEMA_VERSION)
-        self.assertEqual(payload["model_revision"], "pi05-r1")
-        self.assertEqual(payload["engine_revision"], "aaaaaaa")
-        self.assertNotIn("revision", payload)
-        self.assertEqual(Identity.from_dict(payload), identity())
-
-    def test_v1_report_remains_readable_but_is_not_comparable(self):
-        payload = identity().as_dict()
-        payload.pop("schema_version")
-        payload.pop("model_revision")
-        payload["revision"] = payload.pop("engine_revision")
-        legacy = Identity.from_dict(payload)
-        self.assertIsNone(legacy.model_revision)
-        self.assertEqual(legacy.engine_revision, "aaaaaaa")
-        self.assertFalse(legacy.same_workload(legacy))
-
-    def test_v1_ignores_fields_that_only_exist_in_v2(self):
-        payload = identity().as_dict()
-        payload.pop("schema_version")
-        payload["revision"] = payload.pop("engine_revision")
-        legacy = Identity.from_dict(payload)
-        self.assertIsNone(legacy.model_revision)
-        self.assertFalse(legacy.same_workload(legacy))
-
-    def test_unknown_schema_version_is_rejected(self):
-        payload = identity().as_dict()
-        payload["schema_version"] = 4
-        with self.assertRaises(ValueError):
-            Identity.from_dict(payload)
-
-    def test_mutable_model_revision_labels_are_rejected(self):
-        for value in ("", " ", " latest ", "latest", "main", "current", "unknown"):
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                identity(model_revision=value)
+def context_value(**changes):
+    return MeasurementContext.from_dict(context(**changes))
 
 
-class ProducerIdentityTests(unittest.TestCase):
-    def test_random_checkpoint_seed_changes_provenance_only(self):
-        from flash_vla.inference import declare
-        from eval.pi05.reference import _checkpoint_id
-
-        for target in ("h100/pi0", "h100/pi05"):
-            with self.subTest(target=target):
-                first = declare(target, seed=0).identity
-                repeat = declare(target, "reference", seed=0).identity
-                other = declare(target, seed=1).identity
-                self.assertTrue(first.same_workload(repeat))
-                self.assertTrue(first.same_workload(other))
-        self.assertNotEqual(declare("h100/pi05", seed=0).measurement_context["weights"]["checkpoint_id"],
-                            _checkpoint_id(None, None, 0))
-
-    def test_kernel_csv_carries_complete_identity(self):
-        expected = identity().as_dict()
-        result = KernelResult("site", [1.0], identity=expected)
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "kernels.csv"
-            write_csv(str(path), [result])
-            with path.open(newline="") as handle:
-                row = next(csv.DictReader(handle))
-        self.assertEqual(json.loads(row["identity"]), expected)
-
-    def test_kernel_csv_rejects_legacy_header_before_append(self):
-        result = KernelResult("site", [1.0], identity=identity().as_dict())
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "kernels.csv"
-            path.write_text("label,median_ms,min_ms,mean_ms,std_ms,p99_ms,"
-                            "tflops,tb_per_sec,num_samples\n")
-            with self.assertRaisesRegex(ValueError, "CSV schema mismatch"):
-                write_csv(str(path), [result])
-
-    def test_pi0_checkpoint_override_requires_its_own_revision(self):
-        from eval.pi0 import reference
-
-        with tempfile.TemporaryDirectory() as directory:
-            checkpoint = Path(directory) / "model.safetensors"
-            checkpoint.touch()
-            with patch.object(reference, "run") as run:
-                status = reference.main(["--checkpoint", str(checkpoint)])
-        self.assertEqual(status, reference.UNAVAILABLE)
-        run.assert_not_called()
+def test_variant_round_trip_and_workload_comparison():
+    first = Identity.from_dict(payload())
+    other = Identity.from_dict(payload(execution_variant={
+        "quantization": {"mode": "bf16"}, "cache": {"mode": "dit_cache"},
+    }))
+    assert Identity.from_dict(first.as_dict()) == first
+    assert first.as_dict()["execution_variant"] == payload()["execution_variant"]
+    assert "precision" not in first.as_dict()
+    assert not first.same_workload(other)
+    assert first.same_workload(replace(first, plan={"attention": "candidate"}))
 
 
-class EngineRevisionTests(unittest.TestCase):
-    def test_dirty_checkout_has_no_engine_revision(self):
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory)
-            source = repo / "source.py"
-            subprocess.run(["git", "init", "-q", str(repo)], check=True)
-            source.write_text("value = 1\n")
-            subprocess.run(["git", "-C", str(repo), "add", "source.py"], check=True)
-            subprocess.run([
-                "git", "-C", str(repo), "-c", "user.name=Test",
-                "-c", "user.email=test@example.com", "commit", "-qm", "baseline",
-            ], check=True)
-            head = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
-                                  check=True, capture_output=True, text=True).stdout.strip()
-            self.assertEqual(git_revision(source), head)
-            source.write_text("value = 2\n")
-            self.assertIsNone(git_revision(source))
+@pytest.mark.parametrize("field", [
+    "gpu_sku", "driver", "cuda_runtime", "pytorch", "tilelang",
+    "clock_policy", "power_policy", "capture_regime",
+])
+def test_environment_changes_segment_but_not_context_id(field):
+    first = context_value()
+    environment = context()["environment"]
+    environment[field] += "-changed"
+    other = context_value(environment=environment)
+    assert first.context_id == other.context_id
+    assert first.segment_key != other.segment_key
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_observation_and_oracle_provenance_do_not_split_compatible_context():
+    first = context_value()
+    other = context_value(
+        hostname="node-b", slurm_job_id="2", timestamp=2,
+        reference_provenance={"repository": "openpi", "commit": "upstream-b"},
+    )
+    assert first.context_id == other.context_id
+    assert first.segment_key == other.segment_key
+    assert other.as_dict()["reference_provenance"]["commit"] == "upstream-b"
+
+
+def test_checkpoint_location_is_provenance_only():
+    first = context_value(weights={**context()["weights"], "location": "/machine-a/model"})
+    other = context_value(weights={**context()["weights"], "location": "/machine-b/model"})
+    assert first.context_id == other.context_id
+    assert first.segment_key == other.segment_key
+
+
+@pytest.mark.parametrize("target", ["h100/pi0", "h100/pi05"])
+def test_random_seed_keeps_target_and_architecture_revision(target):
+    from flash_vla.inference import declare
+    first = declare(target, seed=0)
+    other = declare(target, seed=1)
+    assert first.identity.model_revision == other.identity.model_revision
+    assert first.identity.same_workload(other.identity)
+    assert first.measurement_context["weights"] != other.measurement_context["weights"]
+    first_context = context_value(weights=first.measurement_context["weights"])
+    other_context = context_value(weights=other.measurement_context["weights"])
+    assert first_context.context_id != other_context.context_id
+    assert first_context.segment_key != other_context.segment_key
+    assert first.identity.inference_signature == other.identity.inference_signature
+
+
+@pytest.mark.parametrize("target,revision", [
+    ("h100/pi0", "pi0-r1"), ("h100/pi05", "pi05-r1"),
+    ("h100/lingbot_vla", "lingbot-vla-r1"),
+])
+def test_target_owns_architecture_metadata(target, revision):
+    from flash_vla.inference import declare
+    runner = declare(target)
+    assert runner.identity.model_revision == revision
+    assert runner.target.model_revision == revision
+    assert runner.identity.inference_signature == runner.target.inference_signature
+
+
+def test_signature_canonicalization_and_semantic_sensitivity():
+    fn = identity_module.inference_signature
+    contract = dict(
+        architecture={"layers": 2, "heads": 2, "hidden_dim": 8},
+        parameter_shapes={"q.weight": (8, 8), "v.weight": (4, 8)},
+        weight_layout="out-in",
+        io_contract={"input": ["batch", 8], "output": ["batch", 4]},
+        control_flow={"state": "discrete-tokens", "denoising": "euler"},
+    )
+    first = fn(**contract)
+    reordered = copy.deepcopy(contract)
+    reordered["parameter_shapes"] = dict(reversed(list(contract["parameter_shapes"].items())))
+    assert fn(**reordered) == first
+    for name, value in (
+        ("architecture", {**contract["architecture"], "heads": 4}),
+        ("parameter_shapes", {"q.weight": (16, 8), "v.weight": (4, 8)}),
+        ("weight_layout", "in-out"),
+        ("io_contract", {"input": ["batch", 8], "output": ["batch", 8]}),
+        ("control_flow", {"state": "continuous-projection", "denoising": "euler"}),
+    ):
+        assert fn(**{**contract, name: value}) != first
+
+
+@pytest.mark.parametrize("target", ["h100/pi0", "h100/pi05"])
+def test_signature_excludes_shape_profile_and_candidate_plan(target):
+    from flash_vla.inference import declare
+    first = declare(target, "reference", steps=10, chunk_size=50)
+    other = declare(target, "shipped", steps=5, chunk_size=32)
+    assert first.identity.inference_signature == other.identity.inference_signature
+    assert not first.identity.same_workload(other.identity)
+
+
+def test_legacy_report_remains_explicitly_unmigrated():
+    value = payload(schema_version=2, model_revision="checkpoint-a", precision="bf16")
+    value.pop("inference_signature")
+    value.pop("execution_variant")
+    legacy = Identity.from_dict(value)
+    assert legacy.model_revision == "checkpoint-a"
+    assert legacy.inference_signature is None
+    assert legacy.as_dict()["schema_version"] == 2
+    assert not legacy.same_workload(Identity.from_dict(payload()))
+
+
+@pytest.mark.parametrize("target", ["h100/pi0", "h100/pi05", "h100/lingbot_vla"])
+def test_runner_rejects_incompatible_weight_schema_before_allocation(target):
+    import torch
+    from flash_vla.inference import declare
+    from flash_vla.runtime import ModelRunner
+
+    declaration = declare(target)
+    weights = {
+        name: torch.empty(shape, device="meta")
+        for name, shape in declaration.graph.weight_shapes.items()
+    }
+    name = next(iter(weights))
+    weights[name] = torch.empty((1,), device="meta")
+    config = {"prompt_len": 0} if target == "h100/pi0" else {}
+    with patch.object(torch, "empty", side_effect=AssertionError("allocated before ABI check")):
+        with pytest.raises(ValueError, match="inference signature mismatch"):
+            ModelRunner(declaration.target, weights, checkpoint_id="incompatible",
+                        device="cpu", capture=False, **config)
+
+
+def test_runner_rejects_same_shapes_with_incompatible_semantic_signature():
+    from flash_vla.inference import declare
+    from flash_vla.runtime import ModelRunner
+    target = declare("h100/pi05").target
+    with pytest.raises(ValueError, match="inference signature mismatch"):
+        ModelRunner(target, None, checkpoint_id="other-architecture",
+                    checkpoint_signature="sha256:changed-attention-semantics",
+                    device="cpu", capture=False)
+
+
+def test_runner_legacy_revision_is_architecture_only():
+    from flash_vla.inference import declare
+    from flash_vla.runtime import ModelRunner
+    target = declare("h100/pi05").target
+    with pytest.warns(DeprecationWarning):
+        runner = ModelRunner(target, None, model_revision=target.model_revision,
+                             device="cpu", capture=False)
+    assert runner.identity.model_revision == target.model_revision
+    with pytest.warns(DeprecationWarning):
+        with pytest.raises(ValueError, match="checkpoint_id"):
+            ModelRunner(target, None, model_revision="checkpoint-a",
+                        device="cpu", capture=False)
+
+
+def test_pi0_runtime_layout_changes_do_not_redefine_source_abi():
+    from flash_vla.models.pi0 import spec
+    before = identity_module.inference_signature(**spec.INFERENCE_CONTRACT)
+    with patch.object(spec, "weight_shapes", return_value={"candidate-packed-table": (5, 7)}):
+        assert spec.source_weight_shapes() == spec.INFERENCE_CONTRACT["parameter_shapes"]
+        assert identity_module.inference_signature(**spec.INFERENCE_CONTRACT) == before
+    assert not any("fused" in name or "language_embeds" in name
+                   for name in spec.INFERENCE_CONTRACT["parameter_shapes"])
+
+
+def test_pi0_reference_cli_passes_the_checkpoint_id(tmp_path):
+    from eval.pi0 import reference
+    checkpoint = tmp_path / "model.safetensors"
+    checkpoint.touch()
+    with patch.object(reference, "run", autospec=True, return_value={"passed": True}) as run:
+        assert reference.main(["--checkpoint", str(checkpoint),
+                               "--checkpoint-id", "manifest-a"]) == 0
+    assert run.call_args.kwargs["checkpoint_id"] == "manifest-a"
+
+
+@pytest.mark.parametrize("field", ["weights", "fixture"])
+def test_profile_rejects_cross_context_delta(field):
+    from types import SimpleNamespace
+    from tools.profiling import model as profile
+
+    observed = []
+    def build(target, plan, **options):
+        provenance = context()
+        if plan == "b":
+            provenance[field]["checkpoint_digest" if field == "weights" else "digest"] = "changed"
+        return SimpleNamespace(
+            identity=Identity.from_dict(payload()), measurement_context=provenance,
+            sample_inputs=lambda seed: {}, forward=lambda **kwargs: observed.append(plan),
+            graph_contract={},
+        )
+    with patch.object(profile, "require_cuda"), \
+         patch.object(profile.torch.cuda, "init"), \
+         patch.object(profile.torch.cuda, "synchronize"), \
+         patch.object(profile.torch.cuda, "empty_cache"), \
+         patch.object(profile.torch.cuda, "get_device_properties",
+                      return_value=SimpleNamespace(multi_processor_count=132)), \
+         patch.object(profile, "resolve", side_effect=lambda name: name), \
+         patch.object(profile, "build", side_effect=build), \
+         patch.object(profile, "_env", return_value={}), \
+         patch.object(profile, "segments", return_value=()), \
+         patch.object(profile, "_deltas") as deltas:
+        with pytest.raises(ValueError, match="measurement context changed"):
+            profile.run("test", ["a", "b"])
+    assert observed == ["a"]
+    deltas.assert_not_called()
+
+
+def test_new_identity_cannot_silently_emit_v2_without_signature():
+    value = payload()
+    value.pop("schema_version")
+    value.pop("inference_signature")
+    with pytest.raises(ValueError, match="requires architecture revision and inference signature"):
+        Identity(**value)
+
+
+@pytest.mark.parametrize("change,same", [
+    ({"engine_revision": "other-engine"}, True),
+    ({"model_revision": "other-model"}, False),
+    ({"hardware": "other-device"}, False),
+    ({"shape": {"chunk": 32, "steps": 10}}, False),
+    ({"shape": {"chunk": 50, "steps": 5}}, False),
+])
+def test_workload_axes(change, same):
+    assert Identity.from_dict(payload()).same_workload(Identity.from_dict(payload(**change))) == same
+
+
+def test_old_report_is_readable_without_claiming_comparability():
+    old = Identity.from_dict(payload(schema_version=1, revision="old-engine"))
+    assert old.engine_revision == "old-engine"
+    assert not old.same_workload(old)
+    with pytest.raises(ValueError):
+        Identity.from_dict(payload(schema_version=99))
+
+
+def test_kernel_csv_preserves_identity_and_rejects_old_columns(tmp_path):
+    expected = Identity.from_dict(payload()).as_dict()
+    path = tmp_path / "kernels.csv"
+    result = KernelResult("site", [1.0], identity=expected)
+    write_csv(str(path), [result])
+    with path.open() as stream:
+        assert json.loads(next(csv.DictReader(stream))["identity"]) == expected
+    path.write_text("label,median_ms\n")
+    with pytest.raises(ValueError, match="CSV schema mismatch"):
+        write_csv(str(path), [result])
+
+
+def test_git_revision_reports_dirty_source(tmp_path):
+    source = tmp_path / "source.py"
+    source.write_text("value = 1\n")
+    for args in (("init", "-q"), ("add", "source.py"),
+                 ("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "source")):
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True)
+    assert git_revision(source) == subprocess.check_output(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"], text=True).strip()
+    source.write_text("value = 2\n")
+    assert git_revision(source) is None

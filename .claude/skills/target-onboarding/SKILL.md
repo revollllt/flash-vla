@@ -28,6 +28,3 @@ loop begins after that model's semantics and correctness reference are understoo
 
 Use the existing [numerical tolerances](../../../eval/tolerances.py) for numerical
 requirements and [runtime architecture](../../../ARCHITECTURE.md) for graph mapping.
-The [recorded onboarding procedure](references/workflow.md) and its schema apply
-when a legacy `lab.onboarding` ledger/handoff is explicitly requested; creating
-that ledger is not a prerequisite for ordinary Target work.

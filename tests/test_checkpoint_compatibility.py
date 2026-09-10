@@ -9,7 +9,7 @@ from safetensors import safe_open
 from safetensors.torch import load_file, save_file, save_model
 
 from flash_vla.models.pi05 import openpi as openpi05
-from tests.test_openpi05_config import Config
+from tests.test_checkpoint import Config
 from flash_vla.models.pi05 import spec
 
 
@@ -77,15 +77,3 @@ def test_normalized_adapter_layout_must_match_target(checkpoint, monkeypatch):
                         lambda model: {"normalized": torch.empty(3, 2, device="meta")})
     with pytest.raises(ValueError, match="weight ABI"):
         openpi05.checkpoint_contract(checkpoint, Config())
-
-
-@pytest.fixture
-def producer_report(monkeypatch, tmp_path):
-    from tools import check_checkpoint as compatibility
-    monkeypatch.setattr(openpi05, "resolve_config", lambda *args: Config())
-    monkeypatch.setattr(openpi05, "checkpoint_contract", lambda *args: {
-        "contract": deepcopy(spec.INFERENCE_CONTRACT),
-        "checkpoint_schema": {"stored_tensors": 2, "aliases": {}, "normalized_tensors": 1},
-    })
-    return compatibility.run(str(tmp_path / "weights"), checkpoint_id="fine-tuned-a",
-                             checkpoint_digest="publisher-a", openpi_config="explicit-model-config")

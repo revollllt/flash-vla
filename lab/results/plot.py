@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from html import escape
 import json
 from pathlib import Path
 from textwrap import fill
@@ -180,22 +179,3 @@ def render_optimization_progress(*, metadata: PlotMetadata, points: Sequence[Plo
     if output_png is not None:
         fig.savefig(output_png, format='png', dpi=160, bbox_inches='tight')
     plt.close(fig)
-
-
-def render_html(metadata: PlotMetadata, points: Sequence[PlotPoint], output_html: Path):
-    """Optional static view of PlotPoint values; it performs no attribution."""
-    rows = []
-    for point in points:
-        candidate = '—' if point.candidate_ms is None else f'{point.candidate_ms:.3f}'
-        label = 're-anchor' if point.iteration is None else point.iteration
-        rows.append(f'<tr><td>{label}</td><td>{point.segment}</td>'
-                    f'<td>{escape(point.candidate_id)}</td><td>{escape(point.verdict or "active")}</td>'
-                    f'<td>{candidate}</td><td>{point.incumbent_ms:.3f}</td>'
-                    f'<td>{escape(point.summary)}</td></tr>')
-    title = escape(f'{metadata.hardware} | {metadata.model} @ {metadata.model_revision}')
-    subtitle = escape(f'objective={metadata.objective} | protocol={metadata.protocol}')
-    html = (f'<!doctype html><meta charset="utf-8"><title>{title}</title><h1>{title}</h1>'
-            f'<p>{subtitle}</p><table><thead><tr><th>Iteration</th><th>Segment</th>'
-            '<th>Candidate</th><th>Verdict</th><th>Candidate ms</th><th>Incumbent ms</th>'
-            f'<th>Summary</th></tr></thead><tbody>{"".join(rows)}</tbody></table>')
-    Path(output_html).write_text(html)

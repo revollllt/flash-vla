@@ -110,7 +110,7 @@ def main(argv=None) -> int:
     parser.add_argument("--oracle", type=Path)
     parser.add_argument("--asset-config")
     parser.add_argument("--option", action="append", default=[],
-                        help="construction options forwarded by lab.optimize.gate; asset_config and source_checkout")
+                        help="construction options, including asset_config and source_checkout")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--layers", type=int, default=36)
     parser.add_argument("--steps", type=int, default=10)

@@ -9,7 +9,7 @@ on:
       - "eval/**"
       - "tools/**"
       - "tests/**"
-      - "!tests/legacy/**"
+      - "lab/results/**"
       - "pyproject.toml"
       - "requirements.txt"
   push:
@@ -20,7 +20,7 @@ on:
       - "eval/**"
       - "tools/**"
       - "tests/**"
-      - "!tests/legacy/**"
+      - "lab/results/**"
       - "pyproject.toml"
       - "requirements.txt"
   workflow_dispatch:

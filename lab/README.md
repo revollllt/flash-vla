@@ -8,9 +8,6 @@ A candidate enters deployment only through its Target's plan and backend.
 `stage_dump.py` compares declared stage outputs. `examples/` contains diagnostic
 examples. Experiment outputs belong under ignored `artifacts/` directories.
 
-## Optional legacy tools
-
-`optimize/`, `onboarding.py` and `results/` retain their existing command interfaces
-for historical Campaigns and publication consumers. Their
-[procedure](optimize/README.md) and `tests/legacy/` apply only to that work.
-New kernel experiments do not need a Campaign, receipt or publication step.
+[Result tools](results/README.md) render saved traces and dashboards.
+Campaign creation, onboarding ledgers, qualification and automatic publication
+have been retired; their code remains available in Git history.

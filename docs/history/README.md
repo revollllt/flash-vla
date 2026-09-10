@@ -10,3 +10,7 @@ commands and environment observations are historical; follow the current
 
 Local task execution state is kept in ignored `.goal-task/` directories. Earlier
 committed task logs remain recoverable from Git history.
+
+The Campaign/onboarding controller and its commands have been retired. These
+records retain their historical commands; use the corresponding Git revision
+when reproducing that tooling. Saved result traces remain readable today.
