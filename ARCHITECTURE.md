@@ -169,8 +169,8 @@ tracked in git, may import the deployment path, and is never imported by it.
 [docs/optimization.md](docs/optimization.md) owns the default agent workflow:
 
 ```text
-Kernel: Profile -> Analyze -> Design -> Implement -> Validate -> Profile
-Model:  Profile -> Analyze -> Design -> Implement -> Validate -> Deploy -> Profile
+Kernel (parallel agents): Profile -> Analyze -> Design -> Implement -> Validate -> Profile
+Model (serial): Profile -> Analyze -> Design -> Implement -> Validate -> Deploy -> Profile
 ```
 
 Start with the complete forward, then focus on its costly modules and kernels.
@@ -188,7 +188,19 @@ correct candidate with demonstrated local gain proceeds to model integration;
 failed or uncertain candidates stay in the inner loop. A winning kernel can
 advance without exhausting every possible kernel improvement.
 
-Model Design/Implement integrates that candidate into the model and plan.
+Independent kernel or fused-chain tasks can run in parallel agents with separate
+branches/worktrees. Each returns its candidate and experiment record; the model
+loop alone updates the best accepted plan. Performance measurements sharing one
+physical GPU are serialized, and deployed model timing has no concurrent agent
+work on that GPU. Separate GPUs can run independent local comparisons.
+
+The model loop processes one candidate at a time against the latest accepted
+deployment: after accepting K1, evaluate K2 as M+K1 versus M+K1+K2. Do not bundle
+independent candidates into one end-to-end comparison. Finish model validation,
+deployment timing and retention or rollback before integrating the next candidate.
+Model Design/Implement applies the candidate to the current model and plan;
+recheck affected kernel behavior if intervening changes alter its interfaces,
+shapes or execution conditions.
 Model Validate checks the affected model outputs and integration behavior.
 Deploy runs the validated model through its actual inference path on the target
 GPU. Then measure the deployed complete model using its actual entry point,

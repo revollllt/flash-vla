@@ -82,6 +82,13 @@ form, so the model could not apply them.
    assets and execution settings. This evidence determines retention or rollback,
    feeds back cases where local gains do not transfer, and selects the next
    kernel optimization task.
+   Independent kernel tasks may run in parallel agents using separate worktrees;
+   performance measurements on a shared physical GPU remain serial. The model
+   loop alone integrates candidates, one at a time against the latest accepted
+   deployment, and finishes validation, deployment timing and retention/rollback
+   before the next candidate. This measures each candidate's incremental model
+   gain. Candidates developed against an older version are adapted to the current
+   model, with affected kernel checks repeated only when their conditions change.
 
 ## Alternatives considered
 

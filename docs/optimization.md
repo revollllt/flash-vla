@@ -4,8 +4,8 @@
 
 | 层级 | 循环 | 产出 |
 | --- | --- | --- |
-| Kernel 内循环 | Profile → Analyze → Design → Implement → Validate，按结果继续迭代 | 正确且有局部性能收益的 kernel 或融合算子链 |
-| Model 外循环 | Profile → Analyze → Design → Implement → Validate → Deploy → Profile | 部署后确认有端到端收益的模型版本，以及下一轮瓶颈 |
+| Kernel 内循环：多 agent 并行 | Profile → Analyze → Design → Implement → Validate，按结果继续迭代 | 正确且有局部性能收益的 kernel 或融合算子链 |
+| Model 外循环：串行 | Profile → Analyze → Design → Implement → Validate → Deploy → Profile | 逐个确认候选的部署端到端增益，以及下一轮瓶颈 |
 
 外循环确定要优化的热点，内循环负责 kernel 优化。**只有内循环确认正确且有局部收益的候选，才进入 model 集成、验证和部署测试。** Kernel 的 Validate 检查局部正确性与速度；Model 的 Validate 检查集成后的模型正确性，Deploy 后再测实际端到端性能。已有本轮同代码、同条件的测量、正确性结果和 profile 可以复用。
 
@@ -37,11 +37,15 @@
 
 6. **Kernel 内循环：手写 kernel，验证局部收益并迭代。** 对选定热点执行 Profile → Analyze → Design → Implement → Validate。优先复用或适配已有 CUDA/TileLang 实现；融合优化通过手写融合 kernel 完成，不把 `torch.compile` 自动融合当作交付方案。现有编译融合路径可以作为替换前的数值和性能对照。
 
+   **不同 kernel 可分给多个 agent 并行优化。** 每个 agent 在独立分支/worktree 中负责一个 kernel 或独立融合链，提交候选改动和对应实验记录；model 当前最佳 plan 由外循环统一串行更新。设计和实现可并行，同一物理 GPU 上的性能测量要串行；model 正式计时期间，该 GPU 不运行其他 agent 的任务。有多张 GPU 时，各 agent 在各自 GPU 上完成同条件前后对比。
+
    计算瓶颈重点研究 tile 形状、Tensor Core 利用率和 warp/CTA 分工；访存瓶颈重点研究数据布局、合并访问、shared memory/寄存器复用及异步搬运；流水线瓶颈重点研究计算与搬运重叠、同步和资源占用。同时考虑将 normalization、activation、residual、epilogue 等相邻计算手工融合，消除中间张量、reshape/shuffle 和重复计算。根据瓶颈选择设计，不逐项机械尝试。
 
    每次先用最小改动验证一个假设。Validate 对比候选与当前实现的数值结果及 kernel/融合算子链耗时，计时对齐实际 shape、数据布局、缓存和执行条件。正确性失败、没有收益或收益仍不确定时，留在内循环分析和调整；需要定位原因时更新局部 profile 或采集 NCU 证据。**确认正确且有局部收益后，即可将候选交给 Model 外循环**，无需先穷尽所有 kernel 优化。内循环没有值得尝试的方案时，将结论反馈给外循环，重新选择热点。
 
-7. **Model 外循环：集成胜出的 kernel，验证、部署并测量端到端收益。** 外层 Design / Implement 将内循环胜出的候选接入模型和 plan。Model Validate 沿用现有参考和容差，检查集成后受影响的模型输出，覆盖相关真实 shape，并按需要补充独立输入。共享 runtime / 同步改动做相关 GPU 集成检查，近似或语义改动补充任务质量评估。只验证本次改动涉及的部分，不放宽精度要求。
+7. **Model 外循环：串行集成，逐个验证 kernel 的端到端增益。** 每次以当前已接受的最佳部署版本为 A，只加入一个通过内循环的候选作为 B；融合链作为一个完整候选。不捆绑多个独立候选测一次总收益。完成本候选的模型验证、部署计时和保留/回退后，再处理下一个。接受 K1 后，K2 比较的是 `M+K1` 与 `M+K1+K2`，因此每次得到该候选在当前模型上的增量收益。
+
+   外层 Design / Implement 将候选接入最新已接受的模型版本和 plan。候选开发期间模型已更新的，先适配当前版本；若相关接口、shape 或执行条件变化，补做受影响的 kernel 验证。Model Validate 沿用现有参考和容差，检查集成后受影响的模型输出，覆盖相关真实 shape，并按需要补充独立输入。共享 runtime / 同步改动做相关 GPU 集成检查，近似或语义改动补充任务质量评估。只验证本次改动涉及的部分，不放宽精度要求。
 
    验证通过后执行 Deploy：将该模型版本及其 plan 部署到目标 GPU，通过实际推理入口运行，再测完整模型的端到端延迟。测量使用实际部署的入口、checkpoint、输入、shape、精度和 CUDA Graph 配置，包含实际路径中的 host 工作与同步。重复第 2 步命令，`--plan` 使用部署实际加载的 plan，结果另存为 `artifacts/after.json`。部署后的测量才是判断实际性能收益的依据。
 
