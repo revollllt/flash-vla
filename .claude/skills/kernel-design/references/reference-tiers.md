@@ -9,8 +9,8 @@ are measured implementations) and it never runs under CUDA-graph capture.
 | Tier | Lives | Answers | Required |
 |---|---|---|---|
 | T1 algorithm | `src/flash_vla/models/<model>/reference.py` | what the model computes — hardware-free, no padding, no ABI | exists once per model; link it, never fork it |
-| T2 ABI mirror | beside the kernel, `backends/cuda/<kernel>_reference.py` | does the kernel compute the right function — same tensors, same buffers, same in-place mutation, deliberately untiled | every kernel task |
-| T3 decomposition | same directory | which stage or task inside the kernel is wrong — mirrors the kernel's own split structure | fusion spanning >= 2 pipeline stages |
+| T2 ABI mirror | beside the kernel, `backends/cuda/<kernel>_reference.py` | does the kernel compute the right function — same tensors, same buffers, same in-place mutation, deliberately untiled | reuse an existing oracle; add only when missing |
+| T3 decomposition | same directory | which stage or task inside the kernel is wrong — mirrors the kernel's own split structure | when needed to localize a fusion mismatch |
 
 The simplest possible reference and the ABI mirror pull in opposite directions
 (purity vs padding-and-mutation); the tiers exist so neither file does both

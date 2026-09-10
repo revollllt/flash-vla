@@ -1,6 +1,6 @@
 ---
 name: target-onboarding
-description: Integrate a model that does not yet exist in flash-vla as a Target, from immutable upstream and oracle evidence through compatibility, bring-up, correctness, baselines, floor/profile, and Campaign creation. Use when asked to add, port, onboard, or bring up a new VLA model or a new model/hardware Target. Do not use for optimizing an already registered Target or for writing one isolated kernel.
+description: Integrate a model that does not yet exist in flash-vla as a Target, from immutable upstream and oracle evidence through compatibility, bring-up, correctness, baselines, floor/profile, and optional legacy Campaign creation. Use when asked to add, port, onboard, or bring up a new VLA model or a new model/hardware Target. Do not use for optimizing an already registered Target or for writing one isolated kernel.
 ---
 
 # Target onboarding
@@ -30,8 +30,9 @@ the official oracle and compatibility report exist.
 
 The v2 spec separates the Target's architecture revision/signature and shape
 from initial checkpoint provenance, ExecutionVariant and reference repository/commit.
-A compatible fine-tuned checkpoint reuses the existing Target and Campaign.
-Its new correctness and latency anchor belong to a new measurement segment.
+A compatible fine-tuned checkpoint reuses the existing Target. Record its new
+correctness and latency measurements; Campaign transitions apply only to an
+explicit legacy-controller workflow.
 Legacy v1 records remain readable but require explicit v2 revalidation.
 
 ## Boundary rules
@@ -56,12 +57,9 @@ Legacy v1 records remain readable but require explicit v2 revalidation.
 
 ## Finish
 
-The workflow is ready for autonomous optimization only when
-`python -m lab.onboarding validate <workspace>` reports
-`READY_FOR_OPTIMIZATION`. Readiness requires a real canonical Campaign, a validated anchor for the initial
-checkpoint, and matching published trace/snapshot/context summary and discovery.
-Use the handoff command in the workflow; a textual Campaign path is insufficient.
-Publication failures are recoverable without rerunning experiments. At readiness,
-the Campaign owns candidate selection and optimization evidence. Continue with
-[optimization-campaign](../optimization-campaign/SKILL.md) for discovery, checkpoint
-transitions and subsequent experiments.
+A registered Target with usable assets, relevant correctness evidence and a
+working benchmark can continue through [the direct optimization workflow](../../../docs/optimization.md).
+Campaign publication is not a prerequisite for daily optimization. The existing
+`lab.onboarding validate` / handoff state machine and its Campaign readiness
+checks remain available when an explicit legacy-controller handoff is requested;
+they are not a second optimization entry requirement.

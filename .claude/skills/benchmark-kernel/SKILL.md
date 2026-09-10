@@ -269,11 +269,10 @@ matching FlashInfer's `attention_flops` / `attention_tb_per_sec` semantics.
   execution policy, any explicit Slurm frequency request, and observed
   application clocks; effective administrative locked-clock bounds remain
   unobserved. This is not a certificate that the GPU is globally unlocked.
-  Formal comparisons require the unchanged protocol, per-leg environment
-  checks, soak and same-process uninstrumented A/B/A with the registry's
-  control-spread limit. Observed policy or environment changes require a new
-  segment and re-anchor. Do not replace these checks with a cross-run percentage
-  threshold or a permission-dependent clock-setting attempt.
+  Follow [the default workflow](../../../docs/optimization.md) for model-level
+  comparisons: independent first captures, warmup, no mandatory soak or A/B/A.
+  Record environment changes and measure under the new conditions; ordinary
+  experiments do not require a Campaign segment or re-anchor.
 - **Shapes differ**: a case is timed at the Target's shape profile; the report
   identity names it, and numbers from other shapes are not comparable.
 

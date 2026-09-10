@@ -16,8 +16,8 @@ Warmup remains required before every timed loop. Fixed-time soak is optional and
 defaults to zero; explicit soak duration remains in each report. This partially
 supersedes the mandatory-soak decision in
 [acceptance is deployability](2026-09-06-acceptance-is-deployability.md).
-The ten-second historical reports remain valid inputs. The other sampling,
-correctness, A/B/A and noise requirements are unchanged.
+The ten-second historical reports remain valid inputs. Numerical tolerances remain unchanged. The daily workflow now uses independent
+versions with optional controls; legacy qualification keeps its historical rules.
 
 Uninstrumented reports retain the already-collected latency samples in temporal
 order, with device-state observations at each leg's boundaries. These observations
@@ -31,10 +31,16 @@ Each CUDA graph is now permanently paired with its own capture stream. Replay
 orders the caller's producer and consumer work around that stream using reusable
 events; changing the caller does not move the graph. The shared graph mechanism
 covers inference, runtime timing, and the existing kernel-timing entry points.
-Each A/B/A leg uses a fresh process and only its initial capture. Models are
+Each measured version uses a fresh process and only its initial capture. Models are
 loaded independently; loading and capture remain outside timed inference.
 Same-process recapture is excluded from the comparison protocol. No new gate
 or content hash is introduced.
+
+Daily optimization follows [docs/optimization.md](../../../../docs/optimization.md).
+Median chunk latency is primary; detailed timing and attribution are opt-in.
+Without a repeated control, noise remains unknown but the measurement is usable.
+Campaign activation, re-anchor and publication are optional historical tooling.
+The existing runtime, numerical references and historical reports remain intact.
 
 ## Alternatives considered
 
@@ -125,3 +131,17 @@ root-cause repair or a cross-driver performance claim. A1/A2 p99 spread was
 0.902705 ms, so tail stability is not established. The affected CPU tests
 passed 52 tests and three subtests. Evidence:
 `artifacts/latency-drift/first-capture-aba-611889.json`.
+
+
+Simplified-workflow verification: job 613351 completed in 5m21s on ACD1-21,
+GPU-10ed5597-0ce0-5b89-3fc5-e20fd2d51398, with the real LingBot checkpoint and
+seed-42 fixture. The latency CLI used exactly two distinct worker processes,
+first captures, five warmups, 100 samples, no soak, attribution or breakdown.
+A/B median chunk times were 80.380837 / 76.124611 ms; both reports contained
+only chunk latency and the comparison retained unknown control noise as null.
+These are existing RoPE-table/time-modulation implementations, not new kernel
+optimizations. A separate overview process exported the whole-forward CPU/GPU
+trace; its timing is diagnostic only. The affected CPU suite passed 91 tests
+and six subtests (88 tests plus six subtests in the combined run, then all three
+profile-scope tests after correcting their fixture). Evidence remains under
+`artifacts/simplification/613351/` with CPU logs in `artifacts/simplification/`.

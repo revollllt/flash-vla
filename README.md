@@ -70,15 +70,20 @@ The Target owns its architecture revision and inference signature. Benchmark
 factories record their deterministic producer version and seed as checkpoint
 provenance, so changing a seed does not create a new Target.
 
+## Optimization
+
+Follow [the optimization workflow](docs/optimization.md): profile the complete
+forward, investigate its bottleneck, reuse existing kernels, then validate and
+measure a small change. Campaigns and full qualification are optional tools.
+
 ## Benchmarks and checks
 
 ```
-python -m benchmarks latency  --target h100/pi05 --plan reference --plan shipped --plan reference
-python -m benchmarks profile  --target h100/pi05 --plan shipped
+python -m benchmarks latency  --target h100/pi05 --plan reference --plan shipped
+python -m benchmarks profile  --target h100/pi05 --plan shipped --overview
 python -m benchmarks kernels  --target h100/pi05
 python -m benchmarks floor    --target h100/pi05
 python -m eval.correctness --target h100/pi05 --steps 1 --layers 1
-python -m eval.gate        --target h100/pi05 --candidate shipped --reference reference
 python -m eval.smoke
 ```
 
@@ -118,10 +123,10 @@ policy, resolved plan and engine revision. Workload comparison ignores the
 last two and rejects any mismatch in the Target axes. The checkpoint producer
 supplies `model_revision`; deterministic benchmark fixtures derive it from
 their fixture version and seed. `engine_revision` is the full commit of a clean
-checkout and is unresolved for dirty source. `eval/acceptance.py` is
-the registry of what gates: the correctness checks and their tolerances, the
-latency statistics and repetition policy, each Target's budget. `python -m
-eval.gate` turns a run into one verdict.
+checkout and is unresolved for dirty source; keep the working diff for such
+experiments. `eval/acceptance.py` owns numerical tolerances and timing defaults.
+Its historical promotion and deployment rules apply only to explicit complete
+qualification through `python -m eval.gate`, not daily optimization.
 
 ## Requirements
 

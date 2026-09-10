@@ -1,9 +1,14 @@
 ---
 name: optimization-campaign
-description: Continue optimization of a registered Flash-VLA Target, discover or resume its Campaign, transfer portable optimizations to compatible checkpoints, and record validated experiments and published results. Use for existing-Target optimization, checkpoint changes, and interrupted Campaigns; use target-onboarding for a missing or incompatible Target.
+description: Inspect or explicitly resume a legacy Flash-VLA Campaign, including historical context transitions and publication recovery. Use only for an explicit Campaign request, not ordinary model optimization or a compatible checkpoint change. Daily optimization follows docs/optimization.md.
 ---
 
-# Optimization Campaign
+# Legacy Optimization Campaign
+
+For ordinary optimization use [the direct workflow](../../../docs/optimization.md).
+The procedures below apply only to an explicitly requested legacy Campaign;
+never impose them on independent benchmark or kernel experiments.
+
 
 Keep optimization lineage separate from checkpoint measurements. Resolve the
 requested workload and recover its incumbent before proposing another experiment.

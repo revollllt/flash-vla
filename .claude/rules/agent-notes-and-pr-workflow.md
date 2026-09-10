@@ -30,7 +30,10 @@ Notes record the problem, decision or proposal, genuine alternatives,
 consequences, and required verification. They do not narrate code or retain PR
 history.
 
-Non-trivial work adds or updates its Agent Note in the same PR. Proposals use
+An optimization experiment needs only the short log in docs/optimization.md.
+Update an owning Agent Note when a durable design or policy changes; do not
+create one for every trial. Non-trivial shipped design changes update their
+owning Agent Note in the same PR. Proposals use
 `.agents/notes/proposed/`; shipped decisions use `.agents/notes/implemented/`; rejected
 proposals use `.agents/notes/rejected/`. Archived notes are frozen: never edit, move,
 or use them as current authority.
@@ -38,7 +41,7 @@ or use them as current authority.
 ## Pull-request workflow
 
 1. Before editing, inspect `git status --short --branch`, identify the PR base,
-   and review the complete diff against it. Preserve unrelated changes.
+   and inspect the files relevant to the change. Preserve unrelated changes.
 2. Keep each PR focused on one decision. Split independent changes; repair the
    introducing PR before changing dependent work.
 3. Run the narrowest validation that can falsify the claim. CUDA changes need

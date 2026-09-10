@@ -1,3 +1,7 @@
+For daily optimization use [the direct workflow](../docs/optimization.md).
+Run correctness checks relevant to the change. `eval.gate` is an explicit
+complete qualification tool, not the default iteration entry point.
+
 # Evaluation
 
 Evaluation is intentionally separate from performance benchmarking, and the

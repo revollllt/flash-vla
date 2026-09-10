@@ -1,4 +1,10 @@
-# Bounded optimization experiments
+# Legacy Campaign tools
+
+For daily optimization, use [the direct workflow](../../docs/optimization.md).
+This page documents the optional historical controller. Its activation, A/B/A,
+qualification and publication requirements apply only when explicitly using
+that controller; they are not prerequisites for new experiments.
+
 
 This controller is for the existing H100 Pi0/Pi0.5 tools. Acceptance remains
 owned by `eval/acceptance.py`; `eval.gate` remains the qualification verdict.

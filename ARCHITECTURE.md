@@ -96,7 +96,7 @@ component share its kernels and diverge only in their plans.
 ## Invariants
 
 - Each CUDA graph owns one dedicated stream for both capture and every replay.
-  Caller-stream input and output dependencies are preserved. Each A/B/A leg
+  Caller-stream input and output dependencies are preserved. Each measured version
   runs in a fresh process and measures only its initial capture; model loading
   and capture remain outside timed inference.
 - A plan is resolved and validated against every route constraint before
@@ -114,7 +114,7 @@ component share its kernels and diverge only in their plans.
   separately. The runner checks weight ABI before allocation. Dirty source
   has no resolved engine revision.
 - MeasurementContext separates weights, fixture and comparable environment
-  from Target identity. A/B/A legs must share a segment key. Checkpoint,
+  from Target identity. Compared versions must share workload/environment conditions. Checkpoint,
   fixture or environment changes cannot be attributed as candidate speedup.
   Reference implementation revisions remain oracle provenance.
 - Legacy Identity v1/v2 remains readable with its original schema. Explicit
@@ -165,45 +165,12 @@ tracked in git, may import the deployment path, and is never imported by it.
 
 ## The optimization loop
 
-The human defines the accuracy requirements, one deployment bound (the chunk
-latency's tail, `deployment.jitter_ms`) and each Target's budget, chooses auto
-or human mode per kernel task, and reviews promotion PRs. The human sets no
-latency objective. Everything else is one loop per Target:
-
-```text
-Profile -> Analyze -> Design -> Implement -> Validate -> Deploy -> Profile
-```
-
-- **Profile.** `benchmarks profile` attributes a captured stage's kernels to
-  call sites in graph-node order; `benchmarks floor` puts the attributed time
-  beside the datasheet roofline and the measured ceiling, per call site and
-  per atomic group (a dependent-launch chain is judged on its sums).
-- **Analyze.** Starts from the floor report: a call site or chain far above
-  its ceiling is where kernel work can recover time; one within the
-  registry's headroom is done. Evidence is gathered in order of cost:
-  arithmetic over the measured constants first, then a same-process A/B/A,
-  then a profile when the A/B needs localizing. Three sources stay
-  independent: correctness reports, latency on the captured workload, and
-  profiler diagnostics. Profilers localize, the latency harness decides, and
-  correctness is overridden by neither.
-- **Design and Implement.** A `kernel-design` task: a one-screen contract
-  that prices the candidate against its ceiling (a gain below the promotion
-  bar is not built), a torch reference, a parity harness, then the candidate
-  loop in `lab/` with every candidate and every rejection logged.
-- **Validate.** `python -m eval.gate` on the candidate plan: the correctness
-  gates, the run's validity (control spread), the deployment bound, the
-  candidate rule (`improve` or `no-regression`) and the baseline tier, in
-  that order, into one verdict: `pass`, `fail`, or `blocked`. A blocked run
-  is rerun, never read as a pass.
-- **Deploy.** The winner becomes the Target's one shipped plan, in a PR that
-  carries the gate's evidence record and its Agent Note; the trial that
-  produced it stays in `lab/`.
-
-Before a change is attributed, the other causes are excluded: node and clock
-drift (the control legs), measurement regime (eager against in-graph), and
-identity mismatch (a different plan or shape). The loop stops when the
-deployment bound holds and no candidate is left, when the budget is spent, or
-when every call site is within the registry's headroom of its ceiling.
+[docs/optimization.md](docs/optimization.md) owns the default agent workflow:
+whole-forward profiling before focused module/kernel analysis, independent
+first-capture measurements, relevant correctness checks and a short result log.
+The benchmark, profiler and numerical checks can run directly without Campaign
+state or publication. Complete qualification and historical Campaign continuation
+remain explicit optional paths; they do not govern routine iteration.
 
 | skill | owns |
 |---|---|

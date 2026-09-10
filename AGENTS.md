@@ -1,5 +1,9 @@
 # Agent Instructions
 
+For model performance optimization, start with [docs/optimization.md](docs/optimization.md).
+That workflow takes precedence over legacy Campaign and kernel-task procedures.
+Use existing tools directly; do not require Campaign activation or publication.
+
 This repository keeps its collaboration rules in [`.claude/rules/`](.claude/rules/).
 Read the rules relevant to the files you will change before editing. In
 particular, all non-trivial work follows the Agent Note and PR workflow in
