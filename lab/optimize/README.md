@@ -4,6 +4,16 @@ This controller is for the existing H100 Pi0/Pi0.5 tools. Acceptance remains
 owned by `eval/acceptance.py`; `eval.gate` remains the qualification verdict.
 The owner requested no new hashes, frozen contracts, baselines or gates.
 
+Real-checkpoint Pi0.5 declarations resolve the upstream OpenPI configuration and
+require the configured `OPENPI_PYTHON`, including its local `openpi-client` package;
+the CPU tooling interpreter is insufficient. In the existing lab-H100 worktree,
+source `artifacts/optimization/reference-runtimes-lab-h100.env` to select the
+reference runtimes. Set `PYTHONPATH=$PWD/src:$PWD` in the intended source checkout
+so its code precedes any editable installation. On a shared login node, bound
+OpenPI/JAX CPU affinity to the assigned CPU set (four available CPUs for a
+declaration probe) and set `OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1` before
+importing. These are machine-local execution settings, not Target identity.
+
 V3 campaigns are located by CampaignKey through CampaignRegistry. Create one
 from validated baseline evidence with `campaign-create --baseline-evidence REPORT
 --objective NAME --protocol NAME --fixture NAME`; the returned directory is
