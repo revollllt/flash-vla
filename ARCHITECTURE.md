@@ -169,7 +169,7 @@ tracked in git, may import the deployment path, and is never imported by it.
 [docs/optimization.md](docs/optimization.md) owns the default agent workflow:
 
 ```text
-Profile -> Analyze -> Design -> Implement -> Validate -> Integrate -> Profile
+Profile -> Analyze -> Design -> Implement -> Validate -> Deploy -> Profile
 ```
 
 Start with the complete forward, then focus on its costly modules and kernels.
@@ -180,9 +180,13 @@ memory traffic, fusion and pipelines toward the hardware's attainable SOL.
 Fusion candidates use explicitly written CUDA/TileLang kernels; existing
 `torch.compile` paths can serve as comparison implementations.
 
-Use relevant correctness checks and kernel measurements to screen hypotheses
-before integrating candidates and measuring the complete model in independent
-first-capture processes. Reassess the bottleneck after an improvement; a local
+Validate uses relevant correctness checks and kernel measurements to screen
+candidates. Deploy places a validated candidate in the actual model inference
+path and plan on the target GPU. Then measure the deployed complete model using
+its actual entry point, assets, inputs and execution settings in independent
+first-capture processes, including host work and synchronization. This deployed
+end-to-end measurement determines whether to retain or roll back the candidate.
+Profile the deployed version for the next iteration; a local
 win or a floor ratio alone does not finish the loop. Reuse applicable evidence,
 refresh profiles when needed, and retain only a short experiment record.
 These tools run directly; Campaign state, complete qualification and publication
@@ -192,7 +196,7 @@ are relative to the project root; machine-specific assets belong in local config
 | skill | owns |
 |---|---|
 | `target-onboarding` | unfamiliar-model integration from frozen upstream/oracle through compatibility, correctness, baselines, floor/profile, and Campaign handoff |
-| `kernel-design` | the entry point for kernel work: hypothesis, design, reference, parity, candidate loop, integration |
+| `kernel-design` | the entry point for kernel work: hypothesis, design, reference, parity, candidate loop, deployment |
 | `kernel-wiki` | the queryable sm90 knowledge base built on KernelWiki: symptom-indexed patterns, techniques, hardware and kernel pages with sources, confidence and reproducibility, and the compile-checked sm90 templates bundle |
 | `benchmark-kernel` | per-kernel timing and the amortized in-graph regime |
 | `hardware-unit-test` | the measured constants under every ceiling, and their probes |
