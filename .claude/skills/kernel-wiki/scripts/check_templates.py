@@ -55,28 +55,27 @@ DIRECTIVE_RE = re.compile(
 GRADES = ("structural", "reference")
 
 
-MODULE_HINT = (
-    "source /usr/share/Modules/init/bash && module load cuda/13.0 gcc/13.3 "
-    "&& export NVCC_PREPEND_FLAGS=\"-ccbin $(command -v g++)\""
+TOOLCHAIN_HINT = (
+    "put nvcc on PATH or use --nvcc; select a compatible host compiler with CXX or --ccbin"
 )
 
 
 def find_nvcc(explicit=None):
-    """PATH only: the toolchain is a module load, not a guess."""
+    """Use the explicit compiler path or the active PATH."""
     if explicit:
         return explicit if Path(explicit).exists() else None
     return shutil.which("nvcc")
 
 
 def find_ccbin(explicit=None):
-    """nvcc's default host compiler here is GCC 8, too old for CUDA 13 headers.
+    """Select the host compiler for the configured CUDA toolchain.
 
     Returns (path, warning).  An explicit flag wins, then $CXX, then g++ on
     PATH; a version below 9 is reported rather than silently accepted.
     """
     candidate = explicit or os.environ.get("CXX") or shutil.which("g++")
     if not candidate:
-        return None, "no g++ found; " + MODULE_HINT
+        return None, "no g++ found; " + TOOLCHAIN_HINT
     try:
         first = subprocess.run(
             [candidate, "-dumpfullversion", "-dumpversion"],
@@ -86,7 +85,7 @@ def find_ccbin(explicit=None):
     except (OSError, ValueError, subprocess.SubprocessError):
         return candidate, None
     if major < 9:
-        return candidate, f"{candidate} is GCC {major}, too old for CUDA 13; " + MODULE_HINT
+        return candidate, f"{candidate} is GCC {major}, too old for CUDA 13; " + TOOLCHAIN_HINT
     return candidate, None
 
 
@@ -202,7 +201,7 @@ def main():
 
     nvcc = find_nvcc(args.nvcc)
     if not nvcc:
-        print("no nvcc on PATH. Run:\n  " + MODULE_HINT, file=sys.stderr)
+        print("no nvcc on PATH: " + TOOLCHAIN_HINT, file=sys.stderr)
         return 2
     ccbin, warning = find_ccbin(args.ccbin)
     if warning:

@@ -17,7 +17,7 @@ from .toolchain import cache_dir, cuda_home, cutlass_include
 _INCLUDE = Path(__file__).resolve().parents[1] / "include"
 
 # Enough samples that the median is not one unlucky launch, few enough that a
-# sweep stays inside a Slurm allocation. Every unit uses this number, so two
+# sweep stays inside the probe time budget. Every unit uses this number, so two
 # units' numbers are comparable without checking how each was taken.
 REPS = 7
 

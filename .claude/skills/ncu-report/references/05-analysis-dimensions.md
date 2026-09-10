@@ -1,6 +1,6 @@
 # Six Analysis Dimensions
 
-Every kernel report is ambiguous until you look at it through specific lenses. These six consistently matter. Walk through all six; don't stop at the first finding — on any one kernel only one or two dominate, but you don't know which until you've looked.
+Every kernel report is ambiguous until you look at it through specific lenses. These six consistently matter. Choose the dimensions relevant to the question and broaden only when the evidence leaves a meaningful alternative unresolved.
 
 For each dimension: **what you're answering**, **which metrics to read** (sm90 / Nsight Compute 2025.4.1 names, all verified on this host's reports — see `08-sm90-metric-names.md`), **how to read them**, and **which helper to run**. **sm90** marks Hopper-specific notes; this repo's kernels are warp-specialized persistent task loops fed by TMA and wgmma, so those notes are not optional here.
 

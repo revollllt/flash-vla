@@ -4,7 +4,7 @@ Usage:
     from ncu_utils import load_action, safe, key_metrics_for, rule_speedups
 
 Design-time only: needs the `ncu_report` module that ships inside any Nsight
-Compute install (no GPU, no torch), so it runs on the login node.  The module
+Compute install (no GPU, no torch), so analysis can run on a CPU-only host.  The module
 is located via NCU_PYTHON_DIR, else by scanning the Nsight Compute installs
 under the roots below, newest first; a report written by a newer ncu than the
 module can fail to load, so `load_report` tries the next candidate rather than
@@ -27,8 +27,7 @@ from pathlib import Path
 # --- Locate ncu_report -------------------------------------------------------
 
 _SEARCH_ROOTS = (
-    "/data/apps/cuda/*/nsight-compute-*",        # this cluster's module tree (cuda/13.1 -> 2025.4.1)
-    "/usr/local/cuda-*/nsight-compute-*",        # newer installs on the login node
+    "/usr/local/cuda-*/nsight-compute-*",
     "/usr/local/cuda/nsight-compute",
     "/opt/nvidia/nsight-compute-*",
     "/opt/nvidia/nsight-compute/*",

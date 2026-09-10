@@ -1,5 +1,8 @@
 # Evidence contract
 
+This reference applies only to explicitly requested legacy `lab.onboarding`
+records/handoffs. Ordinary Target bring-up follows [SKILL.md](../SKILL.md).
+
 All paths below are evidence pointers, not copied artifacts. Do not add hashes.
 Use `python -m lab.onboarding record <workspace> --stage <stage> <evidence.json>`.
 

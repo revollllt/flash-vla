@@ -26,7 +26,7 @@ Three questions, each with the hypothesis it kills:
 Names are the vendor's throughout -- `grid_group`, `grid_sync`, `num_blocks`,
 `cudaLaunchCooperativeKernel`, `max_active_blocks_per_sm`. [vocabulary.md]
 
-    sbatch sbatch/pi05_cuda.sh .claude/skills/hardware-unit-test/probes/units/coop_launch/coop_launch.py \\
+    python .claude/skills/hardware-unit-test/probes/units/coop_launch/coop_launch.py \\
         --json profiles/hardware-unit-test/coop.json
 """
 from __future__ import annotations
@@ -58,7 +58,7 @@ PATH_COOPERATIVE, PATH_RELAUNCH = 0, 1
 ERR_TOO_LARGE = 720
 
 # Enough barriers that the per-launch ramp is a small share of the span, few
-# enough that a 132-block grid still finishes inside a Slurm slot.
+# enough that a 132-block grid still finishes inside the probe time budget.
 N_ITERS = 2000
 
 # Median over this many launches, matching every other unit here. [rule 14]

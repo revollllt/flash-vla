@@ -143,30 +143,3 @@ def test_explicit_device_is_used_for_every_latency_leg_and_collector():
     device.assert_called_once_with("cuda:1")
     selector.assert_called_once_with("cuda:1")
     collector.assert_called_once_with(device_index="GPU-other")
-
-
-@pytest.mark.parametrize("script", ["sbatch/run.sbatch", "lab/sbatch/vision_probe.sh"])
-def test_formal_sbatch_runner_never_requests_clock_changes(tmp_path, monkeypatch, script):
-    from pathlib import Path
-    import os
-    import sys
-
-    shared = tmp_path / "sbatch"
-    shared.mkdir()
-    writes = tmp_path / "clock-writes"
-    (shared / "_common.sh").write_text(
-        "require_cuda() { :; }\n"
-        "pin_gpu_clocks() { echo requested > \"$CLOCK_WRITES\"; }\n"
-        "report_env() { :; }\n")
-    monkeypatch.setenv("SLURM_SUBMIT_DIR", str(tmp_path))
-    monkeypatch.setenv("CLOCK_WRITES", str(writes))
-    completed = tmp_path / "completed"
-    command = tmp_path / "command.py"
-    command.write_text(f"from pathlib import Path; Path({str(completed)!r}).touch()")
-    monkeypatch.setenv("REPO_DIR", str(tmp_path))
-    monkeypatch.setenv("PYTHON", sys.executable)
-    monkeypatch.setenv("CMD", str(command))
-    runner = Path(__file__).resolve().parents[2] / script
-    subprocess.run(["bash", str(runner), str(command)], env=os.environ, check=True)
-    assert completed.exists()
-    assert not writes.exists()

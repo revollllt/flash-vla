@@ -2,7 +2,7 @@
 """Query an Nsight Compute report from the command line, without the GUI.
 
 Design-time tool: needs only the `ncu_report` module that ships inside any
-Nsight Compute install (no GPU, no torch), so it runs on the login node.
+Nsight Compute install (no GPU, no torch), so analysis can run on a CPU-only host.
 
     report_query.py summary  <report.ncu-rep> [--action N]
     report_query.py rules    <report.ncu-rep> [--action N]
@@ -10,8 +10,7 @@ Nsight Compute install (no GPU, no torch), so it runs on the login node.
     report_query.py compare  <a.ncu-rep> <b.ncu-rep> [--action N]
 
 The module is located via NCU_PYTHON_DIR, else by scanning the Nsight Compute
-installs under the host-specific roots below, newest first (NCU_PYTHON_DIR is
-the portable override when porting). A report written by a newer ncu than the
+installs in standard locations, newest first. A report written by a newer ncu than the
 module can fail to load; the scanner tries the next candidate rather than
 giving up.
 """
@@ -19,23 +18,10 @@ from __future__ import annotations
 
 import argparse
 import ast
-import glob
-import os
 import sys
 from collections import defaultdict
 
-_SEARCH_ROOTS = ("/data/apps/cuda/*/nsight-compute-*", "/usr/local/cuda-*/nsight-compute-*")
-
-
-def _module_candidates() -> list[str]:
-    override = os.environ.get("NCU_PYTHON_DIR")
-    if override:
-        return [override]
-    dirs: list[str] = []
-    for pat in _SEARCH_ROOTS:
-        dirs.extend(sorted(glob.glob(pat), reverse=True))
-    return [os.path.join(d, "extras", "python") for d in dirs
-            if os.path.isfile(os.path.join(d, "extras", "python", "ncu_report.py"))]
+from ncu_utils import ncu_python_candidates as _module_candidates
 
 
 def load(path: str):

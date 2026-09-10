@@ -1,5 +1,8 @@
 # Workflow
 
+This reference applies only to explicitly requested legacy `lab.onboarding`
+records/handoffs. Ordinary Target bring-up follows [SKILL.md](../SKILL.md).
+
 The authoritative workspace is onboarding.json plus append-only stage receipts.
 state.json is derived. New work uses the v2 spec; preserve old v1 evidence without
 interpreting its checkpoint-based revision as architecture identity.

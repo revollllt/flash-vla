@@ -56,11 +56,9 @@ template 44 is a port, since DeepGEMM ships Mega MoE for sm100 only. The
 comparison and the rules the five endgame templates share are
 `kernel-megakernel-forms` in `kernel-wiki`.
 
-To run one on this cluster (the login node has no GPU):
-
-```bash
-sbatch --export=ALL,TEMPLATE=42_hazy_llama_megakernel.cu,RUN_ARGS="partials=8" sbatch/kernel_template.sh
-```
+To run a reference template, use the nvcc build command in its header, then
+execute the resulting binary on the intended GPU. For example, template 42
+accepts `partials=8` as a runtime argument.
 
 ## What these are, and what they are not
 
@@ -100,17 +98,15 @@ nothing for it.
 
 Numerical authority for a structural template is a parity harness, per
 `../parity.md`. For a reference template it is the in-file check, which needs a
-GPU node — the login node cannot run one.
+GPU.
 
 ## Checking them
 
 ```bash
-source /usr/share/Modules/init/bash && module load cuda/13.0 gcc/13.3
-export CXX="$(command -v g++)"          # nvcc's default host compiler is GCC 8, too old
 python3 .claude/skills/kernel-wiki/scripts/check_templates.py
 ```
 
-Login node, no GPU. Each template declares its grade and what must appear in
+Use nvcc and a compatible host compiler; no GPU is needed to compile. Each template declares its grade and what must appear in
 its PTX:
 
 ```

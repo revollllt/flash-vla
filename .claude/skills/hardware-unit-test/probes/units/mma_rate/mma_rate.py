@@ -43,8 +43,8 @@ MS  What about the WARP-level `mma.sync.m16n8k16`? M1 finds wgmma useless below
     instruction with a warpgroup one.
 
 Run:
-    sbatch sbatch/pi05_cuda.sh .claude/skills/hardware-unit-test/probes/units/mma_rate/mma_rate.py
-    sbatch sbatch/pi05_cuda.sh .claude/skills/hardware-unit-test/probes/units/mma_rate/mma_rate.py \
+    python .claude/skills/hardware-unit-test/probes/units/mma_rate/mma_rate.py
+    python .claude/skills/hardware-unit-test/probes/units/mma_rate/mma_rate.py \
         --sweeps M1 --json profiles/hardware-unit-test/mma.json
 """
 

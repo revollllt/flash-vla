@@ -33,3 +33,7 @@ third_party/sglang/
 
 # Validated publication views; raw reports remain under artifacts/.
 !results/**/*.json
+
+# Machine-local job launchers live outside version control.
+/sbatch/
+/lab/sbatch/

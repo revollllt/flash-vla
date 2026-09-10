@@ -1,5 +1,8 @@
 # Acceptance contract
 
+This reference applies only to explicitly requested legacy `lab.onboarding`
+records/handoffs. Ordinary Target bring-up follows [SKILL.md](../SKILL.md).
+
 READY_FOR_OPTIMIZATION requires all ordered v2 stage evidence and a verified
 Campaign/publication handoff. Existing acceptance policies own deployability;
 this workflow does not introduce another deployment gate.

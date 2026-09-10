@@ -1,31 +1,21 @@
 # `ncu_report` Python API
 
-Use the Python module, not CLI output, for anything beyond a quick look. It extracts, aggregates, compares and archives cleanly — and on this host it runs on the **login node** (no GPU) with the repo venv. Everything below is verified against full-set sm90 reports written by Nsight Compute **2025.4.1**; where the API shape is version-specific, it says so.
-
----
+The helpers support offline report analysis without a GPU. Examples below use
+Nsight Compute 2025.4.1 report shapes; inspect available metrics on other versions.
 
 ## Module location
 
-The module ships inside every Nsight Compute install; the one matching the writer parses most reliably, newer ones read older reports.
-
-```
-/data/apps/cuda/13.1/nsight-compute-2025.4.1/extras/python    # what the cuda/13.1 module captures with
-/usr/local/cuda-13.3/nsight-compute-2026.2.1/extras/python    # newer; verified to read 2025.4.1 reports
-```
-
-`scripts/ncu_utils.py` scans `/data/apps/cuda/*/nsight-compute-*` and `/usr/local/cuda-*/nsight-compute-*` and falls through on load failure; set `NCU_PYTHON_DIR` to pin one. The `_ncu_report*.so` beside the `.py` is built per python version — if an import fails under one interpreter, use the venv's (3.12).
-
-```bash
-.venv/bin/python -c "import sys; sys.path.insert(0,'/data/apps/cuda/13.1/nsight-compute-2025.4.1/extras/python'); import ncu_report; print('OK')"
-```
-
----
+The module ships in a Nsight Compute installation's `extras/python` directory.
+Set `NCU_PYTHON_DIR` to that directory for a compatible installation. The helper
+also searches standard install locations. Use a Python version supported by the
+module's native extension; a newer parser may read an older report, but verify
+that compatibility rather than assuming it.
 
 ## Basic loading
 
 ```python
-import sys
-sys.path.insert(0, "/data/apps/cuda/13.1/nsight-compute-2025.4.1/extras/python")
+import os, sys
+sys.path.insert(0, os.environ["NCU_PYTHON_DIR"])
 import ncu_report
 
 report = ncu_report.load_report("artifacts/profile/<run>/reports/full_<tag>.ncu-rep")
@@ -201,7 +191,7 @@ def compare(a, b, metrics):
             print(f"{m:<72} {str(va):>12} {str(vb):>12}")
 ```
 
-`report_query.py compare` does this for the headline metrics plus the top stall ratios; `analyze_reports.py` with two tags writes the full curated table. Compare counts and ratios first — unpinned clocks make sub-5 % duration deltas noise.
+`report_query.py compare` does this for the headline metrics plus the top stall ratios; `analyze_reports.py` with two tags writes the full curated table. Compare counts and ratios for diagnosis; determine timing uncertainty with repeated uninstrumented measurements.
 
 ---
 

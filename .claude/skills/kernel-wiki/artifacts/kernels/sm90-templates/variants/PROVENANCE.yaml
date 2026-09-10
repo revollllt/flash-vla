@@ -135,7 +135,7 @@ files:
 - local_path: README.md
   role: approach-notes
   mode: derived
-  sha256: 800492164a684f63fa7d108416b2131a1795b54f3c23e23cbe73ea91faf33527
+  sha256: 4b0b6ec68cf9672ad7e8e3889faa83ba47d52d18e2058c93edb7512c30a5cf25
 - local_path: elementwise_sm90.cuh
   role: derived-source
   mode: derived

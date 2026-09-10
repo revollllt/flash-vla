@@ -1,10 +1,10 @@
 # H100 (sm90) Metric Name Reference
 
-Every name below holds for **full-set (`--set full`) sm90 reports written by Nsight Compute 2025.4.1** (the `cuda/13.1` module on this cluster), verified by enumerating `action.metric_names()` on this repo's own reports (2 320 names each) and reading the values. Names drift between ncu versions and GPU generations: the upstream B200 list (`08-b200-metric-names.md`) is close but not identical, and older docs use names that exist on neither. On any other toolchain, re-run the enumeration before trusting a name:
+Every name below holds for **full-set (`--set full`) sm90 reports written by Nsight Compute 2025.4.1**, verified by enumerating `action.metric_names()` on this repo's own reports (2 320 names each) and reading the values. Names drift between ncu versions and GPU generations: the upstream B200 list (`08-b200-metric-names.md`) is close but not identical, and older docs use names that exist on neither. On another toolchain, check that the metrics needed for the question are available:
 
 ```bash
-.venv/bin/python - <<'EOF'
-import sys; sys.path.insert(0, "/data/apps/cuda/13.1/nsight-compute-2025.4.1/extras/python")
+python - <<'EOF'
+import os, sys; sys.path.insert(0, os.environ["NCU_PYTHON_DIR"])
 import ncu_report
 a = ncu_report.load_report("<rep>").range_by_idx(0).action_by_idx(0)
 print(a.metric_names().__len__())

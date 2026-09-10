@@ -90,9 +90,9 @@ python -m eval.smoke
 The model is an input to every runner. `--plan` takes `shipped` (the one
 deployed plan), `reference` (the correctness oracle route), or a path such as
 `lab/plans/pi05-attn-ffn-cuda.json`. Everything except `eval.smoke` needs a GPU;
-submit them on a Slurm cluster rather than running on a login node, since
-TileLang compiles against the local device and re-reads the source at compile
-time.
+run them in the intended GPU environment. TileLang compiles against the local
+device and re-reads source at compile time. Machine access, job submission and
+local environment fixes belong in user-directory skills or ignored local notes.
 
 ## Layout
 
@@ -109,7 +109,7 @@ time.
 | `.../pi05/backends/` | its TileLang and CUDA backends, the latter also with the PDL chain armed |
 | `benchmarks/` | latency, profile, per-kernel and floor runners, plus the Target registry |
 | `eval/` | acceptance registry, correctness, promotion gate, declaration smoke, baselines |
-| `lab/` | the optimization workspace: candidate plans, kernel trials, their sbatch wrappers |
+| `lab/` | the optimization workspace: candidate plans and kernel trials |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the boundary, dependency rules and
 invariants.

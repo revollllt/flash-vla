@@ -13,7 +13,7 @@ deployment checks here are separate from the trials under `lab/`.
   stage by stage, on the captured runner.
 - `gate.py`: the promotion gate; turns the registry's checks and an A/B/A
   latency run into one verdict and an evidence record.
-- `smoke.py`: every Target's declarations checked on a login node, no device.
+- `smoke.py`: every Target's declarations checked without a GPU.
 - `metrics.py`: the error metrics every check imports.
 - `pi05/`, `pi0/`: the official-baseline tier per model (`reference.py`
   against OpenPI, plus the model-contract checks `fold.py` and `tokenize.py`

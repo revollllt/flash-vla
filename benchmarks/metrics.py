@@ -95,9 +95,9 @@ def env_block(device=None) -> dict[str, Any]:
 
 
 def require_cuda() -> None:
-    """Fail early and loudly off-GPU: on this cluster CUDA only exists inside sbatch."""
+    """Fail early when CUDA is unavailable in the active runtime."""
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is required; submit via sbatch/run_gpu.sbatch")
+        raise RuntimeError("CUDA is required; run with a visible GPU and a compatible PyTorch/CUDA environment")
 
 
 __all__ = ["bench_ms", "capture", "diff_stats", "env_block", "graph_time_cold", "percentile",

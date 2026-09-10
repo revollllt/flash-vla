@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ASCII-plot the sampled timelines of a .ncu-rep (login node, no GPU).
+"""ASCII-plot the sampled timelines of a .ncu-rep (offline, no GPU).
 
 Aggregate metrics average over the whole kernel; only the time series show the
 shape -- tail effects, pipeline bubbles, sawtooth, ramp.  Nsight Compute stores

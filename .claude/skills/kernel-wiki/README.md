@@ -85,7 +85,7 @@ ledger, numeric-claims ledger, corrections, open claims).
 | `scripts/validate.py` | Front matter against schema, vocabulary, confidence and reproducibility rules, sources (including `note-*`), cross-references, relative links, bracketed machine-constant tags, artifact bundles, version-claims registry |
 | `scripts/generate-indices.py` | Regenerate `queries/*.md` |
 | `scripts/scan_numbers.py` | Unit-bearing numbers in prose, the input to the numeric ledger |
-| `scripts/check_templates.py` | Compile every sm90 template on the login node and assert the PTX its header declares (needs `cuda/13.0 gcc/13.3`) |
+| `scripts/check_templates.py` | Compile every sm90 template and assert the PTX its header declares (needs nvcc and a compatible host compiler; no GPU) |
 | `scripts/pin_artifacts.py` | Re-pin a derived bundle's `PROVENANCE.yaml` after editing its files |
 | `scripts/repo_status.py` | Corpus counts |
 

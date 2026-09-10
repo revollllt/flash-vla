@@ -7,7 +7,7 @@ primitive path that is wrong; the tolerances are gates, not reports.
 
 Run on a GPU node::
 
-    sbatch sbatch/pi05_cuda.sh -m eval.tile_sm90
+    python -m eval.tile_sm90
 
 Exit status is non-zero when any case fails.
 """
@@ -50,7 +50,11 @@ def build(verbose: bool = False) -> Path:
     out = _build_dir() / "libtile_sm90_primitives.so"
     if out.exists():
         return out
-    cuda_home = os.environ.get("CUDA_HOME", "/data/apps/cuda/13.1")
+    from torch.utils.cpp_extension import CUDA_HOME
+
+    if CUDA_HOME is None:
+        raise RuntimeError("CUDA toolkit not found; set CUDA_HOME for the build")
+    cuda_home = CUDA_HOME
     nvcc = os.environ.get("NVCC", "nvcc")
     cmd = [
         nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",

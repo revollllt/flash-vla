@@ -1,6 +1,6 @@
 # Harness Guide
 
-A **profiling harness** is whatever process launches the kernel you want to profile, with realistic inputs, built with flags ncu can consume (`-lineinfo` for source-line attribution). On this host there are two kinds, and the first is the default.
+A **profiling harness** is whatever process launches the kernel you want to profile, with realistic inputs, built with flags ncu can consume (`-lineinfo` for source-line attribution). Prefer an existing driver; build a standalone harness when it answers the question more directly.
 
 ---
 
@@ -12,11 +12,11 @@ This repo is fixed-workload: the Target's production shapes are the only ones wo
 |---|---|---|
 | `python -m eval.correctness --target h100/pi05 --plan <plan> [--steps N --layers N]` | the full plan once, reference vs candidate | any shipped or `lab/` kernel at production shape; `--layers 1` keeps the job short |
 | `python -m benchmarks kernels --target h100/pi05 --plan <plan> --site <site> --timer events --reps 1` | one call site, warmup + repeats | isolating one kernel; use `--launch-skip` to reach steady state |
-| `sbatch/kernel_template.sh` (`TEMPLATE=<file.cu>`) | a `kernel-design` template's built-in harness | a mechanism study outside the pipeline |
+| A compiled CUDA template with its built-in harness | one mechanism | a study outside the pipeline |
 
-Getting `-lineinfo` in: the CUDA backends take extra nvcc flags from an environment hook — `ATTN_NVCC_DEFINES`, `FFN_NVCC_DEFINES`, `ENC_ATTN_NVCC_DEFINES` (space-separated). The build cache is hash-keyed on the flag string, so an instrumented `.so` compiles into its own cache entry and never displaces the production build. Export the hook **inside the sbatch job** (the build happens on the compute node). TileLang kernels: pass `-lineinfo` through the TileLang build options of the plan, or profile without source lines (hotspots still resolve to SASS).
+Getting `-lineinfo` in: the CUDA backends take extra nvcc flags from an environment hook — `ATTN_NVCC_DEFINES`, `FFN_NVCC_DEFINES`, `ENC_ATTN_NVCC_DEFINES` (space-separated). The build cache is hash-keyed on the flag string, so an instrumented `.so` compiles into its own cache entry and never displaces the production build. Export the hook in the process environment before the engine builds. TileLang kernels: pass `-lineinfo` through the TileLang build options of the plan, or profile without source lines (hotspots still resolve to SASS).
 
-Sanity-check the driver once *without* ncu (a plain sbatch) before adding the profiler: ncu's errors are far less descriptive than the runtime's.
+Exercise an unfamiliar driver once *without* NCU before adding the profiler: ncu's errors are far less descriptive than the runtime's.
 
 ---
 
@@ -64,23 +64,15 @@ nvcc -ccbin "$(command -v g++)" -gencode arch=compute_90a,code=sm_90a -O3 -std=c
      -I third_party/cutlass/include harness.cu -o harness -lcuda
 ```
 
-`sm_90a` (not `sm_90`) is what unlocks wgmma and TMA; `-lcuda` is needed for `cuTensorMapEncodeTiled`. Build on the compute node inside the sbatch job — the login node has no GPU and a different driver. For another GPU, replace the gencode (check `nvidia-smi --query-gpu=compute_cap --format=csv`).
+`sm_90a` (not `sm_90`) is what unlocks wgmma and TMA; `-lcuda` is needed for `cuTensorMapEncodeTiled`. Compile with a compatible CUDA toolchain; execution requires the intended GPU. For another GPU, replace the gencode (check `nvidia-smi --query-gpu=compute_cap --format=csv`).
 
 ---
 
 ## Real data vs synthetic data
 
-There are three levels of fidelity for harness inputs:
+There are two useful levels of fidelity for harness inputs:
 
-### Level 1: Arbitrary synthetic
-
-`float* x = cudaMalloc(...)` without initialization.
-
-**Use when:** you only care about shape-dependent perf and the kernel has no data-dependent branches (no `if (x > threshold)` paths, no early-exit, no branch-on-NaN).
-
-**Avoid when:** you're not sure, or the user asks for "real" profiling. Uninitialized GPU memory can contain garbage that triggers NaN paths.
-
-### Level 2: Random-but-reasonable synthetic (shape-matched)
+### Shape-matched: Random-but-reasonable synthetic (shape-matched)
 
 `std::uniform_real_distribution` with sensible ranges (e.g., weights in `[-0.5, 0.5]`, probabilities in `[0, 1]`). Set the *exact* shape (all variable axes of the workload) to match a specific real instance from the dataset.
 
@@ -94,7 +86,7 @@ fill_f32_random(h_params, 0x22222ULL, 1.0f);       // parameters — any range t
 for (auto& x : h_params) x = -1.0f - std::fabs(x); // squash into a specific sign/range if the kernel requires it
 ```
 
-### Level 3: Actual dataset tensors (real safetensors)
+### Actual workload: Actual dataset tensors (real safetensors)
 
 Load the exact BF16/F32 bytes from a `.safetensors` file shipped with the workload.
 

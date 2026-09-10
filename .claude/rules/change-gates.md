@@ -16,9 +16,11 @@ gate: add a row only when a stable boundary and a maintained skill exist.
   roofline and a measured ceiling side by side: the ceiling divides only by
   tagged measured constants of the hardware axis's `measured/` table, the
   roofline only by `spec.py` peaks, and neither is an objective.
-- **Profiler capture, trace export, offline analysis, or Nsight wrappers**
+- **Model/module timelines, trace export, or the shared capture runner**
   -> [`gpu-profiler-analysis`](../skills/gpu-profiler-analysis/SKILL.md) and
   its relevant capture-mode reference.
+- **Selected-kernel NCU capture settings, counters or diagnosis**
+  -> [`ncu-report`](../skills/ncu-report/SKILL.md).
 - **Graph, backend, or buffer ownership changes** -> read
   [`ARCHITECTURE.md`](../../ARCHITECTURE.md) and the Target's `target.py` and
   `pipeline.py` before editing.

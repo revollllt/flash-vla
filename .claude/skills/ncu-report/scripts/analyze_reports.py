@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract and compare key metrics from .ncu-rep files (login node, no GPU).
+"""Extract and compare key metrics from .ncu-rep files (offline, no GPU).
 
 Produces in `<run_dir>/analysis/`:
     metrics_all_<tag>.json       every metric, archival (re-analysis needs no .ncu-rep)

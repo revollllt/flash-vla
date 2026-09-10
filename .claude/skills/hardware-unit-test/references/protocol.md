@@ -117,7 +117,7 @@ constant recorded under the other.
 
 **9. A persistent probe hangs rather than fails.** Every wait gets a deadline
 and writes its site to a debug buffer before trapping, or a wrong ring index
-costs an hour of Slurm time and tells you nothing.
+costs an hour of GPU time and tells you nothing.
 
 **10. On an unpinnable machine, measure CYCLES, not rates.** Clocks here move
 1.05–1.58 GHz under load, so a throughput figure carries the clock inside it.

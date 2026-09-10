@@ -1,94 +1,36 @@
 ---
 name: gpu-profiler-analysis
-description: Analyze GPU profiling artifacts and run local Torch Profiler, Nsight Systems, or Nsight Compute captures. Use for offline Chrome trace/JSON.GZ analysis, Perfetto-ready reports, CUDA Graph timeline triage, or targeted H100 kernel diagnosis; do not use it as the source of truth for benchmark latency.
+description: Capture or analyze model/module timelines with Torch Profiler or Nsight Systems to locate costly stages, launch gaps and synchronization. Kernel-counter diagnosis belongs to ncu-report.
 ---
 
-# GPU Profiler Analysis
+# Model and module profiling
 
-## Overview
+Own the timeline: where time goes across the real forward. Use
+[ncu-report](../ncu-report/SKILL.md) after selecting a kernel, and the latency
+harness for uninstrumented end-to-end performance.
 
-Use this skill to capture or analyze one local GPU workload while preserving the
-workload shape, tool configuration, git revision, and host metadata. Keep the
-portable timeline format as Chrome trace JSON or JSON.GZ; keep Nsight's native
-reports native when hardware-counter detail is required.
+1. Reuse an applicable trace. Otherwise capture the full forward with the model's
+   benchmark inputs and execution configuration.
+2. Inspect the GPU timeline for costly modules, host/launch gaps and dependencies.
+   CPU annotations show submission scopes, not GPU duration.
+3. Profile only the selected module in more detail. Without correlation or stack
+   evidence, state that source mapping is unavailable.
+4. Return the dominant cost, supporting trace locations and the next focused
+   question. Profiler time is diagnostic; final timing runs separately.
 
-## Choose the path
+## Example
 
-1. Start from an existing trace or profile directory when one already exists.
-2. Use the local runner when a command or adapter can reproduce the workload.
-3. Use Torch for Perfetto and routine triage, Nsight Systems for graph/stream
-   timelines, and Nsight Compute for a small set of kernels.
-4. Use CUDA-event/CUPTI or CUDA-Graph benchmark results for latency decisions;
-   profiler timings are diagnostic and may include instrumentation or replay cost.
-
-## Analyze an existing artifact
-
-```bash
-python scripts/analyze_trace.py \
-  --input /path/to/trace.json.gz \
-  --output-dir artifacts/profile/run-001
-```
-
-The input may be a Chrome trace file or a directory containing one. The script
-writes `summary.json` and `report.md`; it does not modify the input trace. Read
-`references/trace-schema.md` when a producer uses a non-standard Chrome event
-layout.
-
-The report always separates measured facts from inferred labels. If a trace has
-no CPU/GPU correlation or Python stack, report source mapping as unavailable;
-never guess a source location from a kernel name.
-
-## Capture a local workload
-
-Use `--` to pass a command without shell interpretation:
+From the project root, with the active model environment and assets configured:
 
 ```bash
-python scripts/run_local_profile.py \
-  --backend nsys \
-  --output-dir artifacts/profile/nsys-001 \
-  -- python -m benchmarks profile --target h100/pi05
+python -m benchmarks profile --target h100/lingbot_vla --plan shipped --seed 42 \
+  --overview --trace-dir artifacts/profile/overview
+python .claude/skills/gpu-profiler-analysis/scripts/analyze_trace.py \
+  --input artifacts/profile/overview/overview.json --output-dir artifacts/profile/summary
 ```
 
-For a workload-specific adapter, provide a JSON plan with `command`, `env`,
-`expected_artifacts`, `workload`, and `capture` fields:
-
-```bash
-python scripts/run_local_profile.py \
-  --backend torch \
-  --plan /path/to/pi05-plan.json \
-  --output-dir artifacts/profile/torch-001
-```
-
-The runner writes `manifest.json`, captures stdout/stderr, validates artifacts,
-and returns the workload's exit code. The Torch command or adapter must create
-the Chrome trace itself; the generic runner does not inject a profiler into an
-arbitrary Python process. For the Torch backend it provides
-`GPU_PROFILE_OUTPUT_DIR` as a convention for profile-aware workloads; Nsight
-backends do not set that variable unless the plan explicitly asks for it.
-
-## Backend rules
-
-- Torch: use CPU + CUDA activities for timeline mode, and export Chrome JSON or
-  JSON.GZ. Keep `record_shapes` and `with_stack` opt-in because they add cost.
-- Nsight Systems: capture CUDA Graph, NVTX, and OS runtime events as needed;
-  retain `.nsys-rep` and optionally export SQLite/JSON Lines. See
-  `references/nsys-backend.md`.
-- Nsight Compute: select a small number of kernels and record the exact filter,
-  replay mode, graph mode, and section set in metadata. See
-  `references/ncu-backend.md`. Interpreting the captured report is the
-  `ncu-report` skill's job.
-
-## Reporting contract
-
-Every run should preserve:
-
-- workload shape and stage
-- warmup and active steps
-- profiler activities and expensive flags
-- git revision and dirty state
-- host/GPU/tool versions
-- artifact paths relative to the run directory
-
-Use `references/adapter-contract.md` for adapter design and
-`references/capture-modes.md` to choose between summary, timeline, mapping, and
-kernel-detail captures.
+For a generic command, use [run_local_profile.py](scripts/run_local_profile.py).
+Read [capture modes](references/capture-modes.md),
+[Nsight Systems](references/nsys-backend.md) or
+[trace schema](references/trace-schema.md) only as needed. The shared runner can
+execute NCU, but its capture settings and interpretation are owned by ncu-report.

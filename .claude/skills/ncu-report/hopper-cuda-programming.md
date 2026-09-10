@@ -9,7 +9,7 @@ Machine numbers are cited by their `hardware-unit-test` tag (`python3 .claude/sk
 ## Target platform
 
 - **GPU:** NVIDIA H100 80GB HBM3 (SXM) — Compute Capability 9.0, 132 SMs (66 TPCs), 50 MB L2, 80 GB HBM3.
-- **Toolchain:** CUDA 13.1 (`cuda/13.1` module), Nsight Compute 2025.4.1, GCC 13.3.
+- **Toolchain:** Examples use CUDA 13.1 and Nsight Compute 2025.4.1; select a compatible host compiler.
 - **Compile target:** `sm_90a` — the `a` suffix unlocks wgmma, TMA and the sm90-only PTX; a plain `sm_90` build silently loses them.
 
 ```bash

@@ -296,7 +296,7 @@ Most kernels match 2–4 patterns at once. **Rank by magnitude** using `Est. Spe
 
 **Signals:** kernel under ~20 µs; conclusions swing between captures; ramp visible in `gr__ctas_launched_realtime`.
 
-**Why:** per-launch ramp `[launch.lat.dev.ramp]` and replay perturbation are comparable to the kernel itself; with clocks unpinned here, < 5 % deltas are noise.
+**Why:** per-launch ramp `[launch.lat.dev.ramp]` and replay perturbation are comparable to the kernel itself; the size of timing noise must be measured under the actual clock and workload conditions.
 
 **Move:** judge such kernels by CUPTI medians / mins from `benchmark-kernel` and by *counts* (instructions, sectors, stall mix, TMA bytes) from NCU — never by NCU durations. Fusion decisions at this scale are launch-cost arithmetic (PDL chains, wiki `pdl-placement`, `producer-fusion-pdl`), not microarchitecture.
 

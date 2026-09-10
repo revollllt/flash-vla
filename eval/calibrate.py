@@ -11,7 +11,7 @@ carry every metric per stage output) or a pair of forward dumps, prints the
 per-output `rel_rms` and `cosine_similarity`, and proposes tolerances at ten
 times the worst dispersion (`rel_rms_max = 10 x worst rel_rms`,
 `cosine_min = 1 - 10 x (1 - worst cosine)`). The registry records which run
-produced its numbers. No GPU: reports and dumps are read on a login node.
+produced its numbers. No GPU: reports and dumps are read on a CPU-only host.
 """
 from __future__ import annotations
 

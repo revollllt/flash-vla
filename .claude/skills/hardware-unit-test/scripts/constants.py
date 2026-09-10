@@ -12,7 +12,7 @@ into a number nobody can re-derive.
     python3 constants.py --validate          # what `status: measured` must clear
 
 Design-time only: pure python plus PyYAML, no torch and no CUDA, so it runs on
-a login node.
+a CPU-only host.
 """
 
 from __future__ import print_function
