@@ -40,6 +40,8 @@ from typing import Any, Callable, Optional, Sequence
 
 import torch
 
+from flash_vla.runtime.cuda.graph import StreamGraph
+
 
 # ---------------------------------------------------------------------------
 # L2 helpers (ported from FlashInfer)
@@ -264,8 +266,8 @@ def bench_gpu_time_with_cudagraph(
     torch.cuda.current_stream().wait_stream(side)
     torch.cuda.synchronize()
 
-    graph = torch.cuda.CUDAGraph()
-    with torch.cuda.graph(graph):
+    graph = StreamGraph()
+    with graph.capture():
         for i in range(num_iters_within_graph):
             call(i)
     torch.cuda.synchronize()
@@ -451,8 +453,8 @@ def bench_gpu_time_with_cupti(
                 call_fn()
         torch.cuda.current_stream().wait_stream(side)
         torch.cuda.synchronize()
-        graph = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(graph):
+        graph = StreamGraph()
+        with graph.capture():
             call_fn()
         runner = graph.replay
 

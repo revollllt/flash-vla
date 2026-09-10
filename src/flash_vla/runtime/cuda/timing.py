@@ -24,8 +24,10 @@ from typing import Any, Callable
 
 import torch
 
+from .graph import StreamGraph
 
-def capture(run: Callable[[], Any], warmup: int = 3) -> torch.cuda.CUDAGraph:
+
+def capture(run: Callable[[], Any], warmup: int = 3) -> StreamGraph:
     """Warm up `run` on a side stream, then capture one call into a CUDA graph."""
     side = torch.cuda.Stream()
     side.wait_stream(torch.cuda.current_stream())
@@ -34,8 +36,8 @@ def capture(run: Callable[[], Any], warmup: int = 3) -> torch.cuda.CUDAGraph:
             run()
     torch.cuda.current_stream().wait_stream(side)
     torch.cuda.synchronize()
-    graph = torch.cuda.CUDAGraph()
-    with torch.cuda.graph(graph):
+    graph = StreamGraph()
+    with graph.capture():
         run()
     torch.cuda.synchronize()
     return graph
@@ -56,8 +58,8 @@ def graph_time_cold(invoke: Callable[[int], Any], n_inner: int = 48, reps: int =
     torch.cuda.current_stream().wait_stream(side)
     torch.cuda.synchronize()
 
-    graph = torch.cuda.CUDAGraph()
-    with torch.cuda.graph(graph):
+    graph = StreamGraph()
+    with graph.capture():
         for i in range(n_inner):
             invoke(i)
     torch.cuda.synchronize()

@@ -175,12 +175,9 @@ def _patch_vision_attention(visual) -> None:
 
 
 def _configure_rope_frequency(enabled: bool, cache_rope_tables: bool = False):
-    from lingbotvla.models.vla.pi0 import modeling_lingbot_vla as lingbot
-
     if not enabled:
         from lingbotvla.models.vla.pi0.utils import apply_rope as original_apply_rope
-        lingbot.apply_rope = original_apply_rope
-        return
+        return original_apply_rope, None
 
     inverse_timescales = {}
     rotary_tables = {}
@@ -211,8 +208,7 @@ def _configure_rope_frequency(enabled: bool, cache_rope_tables: bool = False):
             (first * cos - second * sin, second * cos + first * sin), dim=-1,
         ).to(original_dtype)
 
-    lingbot.apply_rope = apply_rope
-    return rotary_tables.clear
+    return apply_rope, rotary_tables.clear
 
 
 def _linear_patch_embedding(self, hidden_states):
@@ -257,17 +253,23 @@ def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets
     _patch_vision_attention(visual)
     if linear_patch_embedding:
         visual.patch_embed.forward = MethodType(_linear_patch_embedding, visual.patch_embed)
-    clear_rope_tables = _configure_rope_frequency(cache_rope_frequency, cache_rope_tables)
-    if cache_rope_tables:
-        original_forward = core.qwenvl_with_expert.forward
+    from lingbotvla.models.vla.pi0 import modeling_lingbot_vla as lingbot
+    apply_rope, clear_rope_tables = _configure_rope_frequency(cache_rope_frequency, cache_rope_tables)
+    original_forward = core.qwenvl_with_expert.forward
 
-        def forward_with_rope_tables(*args, **kwargs):
-            # One forward shares position_ids across Q/K and all layers.
-            # Recompute on every invocation, including each graph capture.
-            clear_rope_tables()
+    def forward_with_rope(*args, **kwargs):
+        # Upstream resolves RoPE through a module global. Bind this policy's
+        # function while constructing its graph, including later recaptures.
+        previous = lingbot.apply_rope
+        lingbot.apply_rope = apply_rope
+        try:
+            if cache_rope_tables:
+                clear_rope_tables()
             return original_forward(*args, **kwargs)
+        finally:
+            lingbot.apply_rope = previous
 
-        core.qwenvl_with_expert.forward = forward_with_rope_tables
+    core.qwenvl_with_expert.forward = forward_with_rope
     gc.collect()
     return core
 

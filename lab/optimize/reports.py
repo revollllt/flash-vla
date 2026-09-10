@@ -30,7 +30,7 @@ def compatibility(record, *, context):
 
 
 def latency(report, *, objective, anchor=False, segment=None):
-    """Retain real A/B/A legs and enforce the producer's fixed latency-v2 sampling."""
+    """Retain real A/B/A legs and enforce latency-v2 sampling with optional soak."""
     if report.get("protocol") != "latency-v2":
         raise ValueError("a supported producer benchmark protocol is required")
     if report.get("instrumented") is not False or report["config"].get("attribution") is not False:
@@ -43,9 +43,12 @@ def latency(report, *, objective, anchor=False, segment=None):
     candidate, parent = legs[1]["identity"], legs[0]["identity"]
     context = legs[1]["measurement_context"]
     policy = acceptance.for_target(candidate["target"])["latency"]
-    for key in ("reps", "warmup", "soak_s", "p99_min_reps"):
+    for key in ("reps", "warmup", "p99_min_reps"):
         if report["config"].get(key) != policy[key]:
             raise ValueError(f"benchmark sampling differs from latency-v2: {key}")
+    soak_s = report["config"].get("soak_s")
+    if not isinstance(soak_s, (int, float)) or not math.isfinite(soak_s) or soak_s < 0:
+        raise ValueError("benchmark sampling requires a finite nonnegative soak_s")
     if report["config"].get("plans") != [leg["plan"] for leg in legs]:
         raise ValueError("reported A/B/A plan order differs from the executed configuration")
     metric = OBJECTIVES[objective]

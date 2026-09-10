@@ -48,10 +48,9 @@ which cannot import OpenPI, so every gate ended `blocked`.
    for a refactor or a correctness fix, which passes when no chunk statistic
    regresses by more than the larger of the bar and that statistic's own
    control spread (the `min` spread is not the median's noise, and a
-   regression below the bar is not one the bar would have promoted). Each
-   leg soaks for `soak_s` seconds before its warmup so an unlocked GPU's
-   clocks settle before anything is read. The mode is recorded in the
-   evidence.
+   regression below the bar is not one the bar would have promoted). Warmup precedes each timed loop. Fixed-time soak is optional and defaults
+   to zero; see [warmup and latency evidence](2026-09-10-warmup-and-latency-evidence.md)
+   for the revised decision. The mode and soak duration are recorded in the evidence.
 
    The protocol's legacy "unlocked" label means the benchmark and repository
    job scripts inherit device state without requesting clock changes. It does
@@ -59,7 +58,7 @@ which cannot import OpenPI, so every gate ended `blocked`.
    this execution policy and the explicit Slurm GPU frequency request from
    application-clock observations and unobserved effective locked-clock bounds.
    Policy and observed environment changes are already part of segment identity
-   and are checked before and after each leg. A/B/A, soak and the control-spread
+   and are checked before and after each leg. A/B/A, warmup and the control-spread
    limit remain required; unobserved constraints limit attribution and cannot
    be converted into a claim of globally unlocked hardware. Recording only an
    always-missing hardware-lock certificate would prevent the actual execution

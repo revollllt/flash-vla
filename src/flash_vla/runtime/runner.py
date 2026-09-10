@@ -153,18 +153,22 @@ class ModelRunner:
         self.host_state = target.host_state(self.config, self.shape)
         self._bind()
         if capture:
-            segments = [Segment(name, partial(self.run_eager, name))
-                        for name in self.graph.segment_names]
-            # A collection during capture invalidated it (CUDA error 901, job
-            # 598959).
-            collector_was_enabled = gc.isenabled()
-            gc.disable()
-            try:
+            self.capture(warmup=warmup)
+
+    def capture(self, *, warmup: int = 3) -> None:
+        """Recapture fresh graph/stream pairs, retaining weights and static buffers."""
+        segments = [Segment(name, partial(self.run_eager, name))
+                    for name in self.graph.segment_names]
+        collector_was_enabled = gc.isenabled()
+        gc.disable()
+        try:
+            with torch.cuda.device(self.device):
+                torch.cuda.synchronize()
                 self.graphs = Program(segments, warmup=warmup, after_warmup=self.scratch.freeze)
-            finally:
-                if collector_was_enabled:
-                    gc.enable()
-            gc.collect()
+        finally:
+            if collector_was_enabled:
+                gc.enable()
+        gc.collect()
 
     # -- binding and execution ---------------------------------------------
 
@@ -211,7 +215,7 @@ class ModelRunner:
             self._ops = original
 
     def replay(self, segment: str) -> None:
-        """Replay one captured stage on the current stream."""
+        """Replay one stage on its capture stream, ordered with the caller."""
         if self.graphs is None:
             raise RuntimeError("this runner was built without capture")
         self.graphs.replay(segment)

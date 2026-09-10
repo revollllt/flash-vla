@@ -22,6 +22,10 @@ below it is reported as indistinguishable, and a chunk `min` spread above the
 registry's `control_spread_max_ms` marks the whole run invalid. `--calibrate`
 runs the first plan three times to measure that spread on its own.
 
+Time-ordered `samples_ms` are retained even without attribution. Device-state
+observations before and after each leg remain separate from stable context
+identity; they are evidence for drift, not a request to change clocks.
+
 Beside each leg's `metrics` sits an additive `attribution` block
 (`benchmarks/attribution.py`): every timed loop's per-forward samples with
 their timestamps, the process's per-forward context-switch and page-fault
@@ -65,7 +69,8 @@ _LAT = DEFAULTS["latency"]
 def _stats(samples: list[float], p99_min_reps: int) -> dict[str, Any]:
     ordered = sorted(samples)
     n = len(ordered)
-    out = {"min": ordered[0], "median": statistics.median(ordered), "n": n}
+    out = {"min": ordered[0], "median": statistics.median(ordered), "n": n,
+           "samples_ms": samples}
     if n >= p99_min_reps:
         out["p99"] = ordered[min(n - 1, int(round(0.99 * (n - 1))))]
     else:
@@ -131,8 +136,8 @@ def measure(engine, inputs: dict[str, Any], reps: int, warmup: int,
             attribution: Attribution | None = None) -> dict[str, Any]:
     """Every latency metric of one engine on `inputs`, min/median/p99 each.
 
-    `soak_s` seconds of forwards run first so an unlocked GPU's clocks and
-    temperature settle before anything is read. An `attribution` collector, if
+    Optional `soak_s` seconds of forwards precede warmup. Fixed-time load
+    does not certify stable device clocks or latency. An `attribution` collector, if
     given, is filled with one record per timed loop, keyed by the same
     `metric.name` the flattened report uses; it is read by its owner after the
     collector's context closes and never appears in `metrics`.
@@ -239,8 +244,11 @@ def _deltas(legs: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _env(device=None) -> dict[str, Any]:
+    observation_fields = ("clocks.sm", "clocks.mem", "pstate", "temperature.gpu",
+                          "power.draw", "clocks_event_reasons.active")
     fields = ("driver_version", "power.limit", "enforced.power.limit",
-              "clocks.applications.graphics", "clocks.applications.memory")
+              "clocks.applications.graphics", "clocks.applications.memory",
+              *observation_fields)
     result = subprocess.run(
         ["nvidia-smi", "-i", device_selector(device), "--query-gpu=" + ",".join(fields),
          "--format=csv,noheader,nounits"],
@@ -249,9 +257,10 @@ def _env(device=None) -> dict[str, Any]:
     rows = list(csv.reader(result.stdout.splitlines(), skipinitialspace=True))
     if len(rows) != 1 or len(rows[0]) != len(fields):
         raise ValueError("expected one complete nvidia-smi row for the current CUDA device")
-    driver, requested, enforced, graphics, memory = rows[0]
+    driver, requested, enforced, graphics, memory, *observations = rows[0]
     env = env_block(device)
     env.update({
+        "runtime_observation": dict(zip(observation_fields, observations)),
         "node": platform.node(),
         "job": os.environ.get("SLURM_JOB_ID"),
         "driver": driver,
@@ -291,9 +300,10 @@ def device_selector(device=None) -> str:
 
 def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         warmup: int = _LAT["warmup"], seed: int = 0, calibrate: bool = False,
+        soak_s: float = _LAT["soak_s"],
         attribution: bool = True, leg_options: list[dict[str, Any]] | None = None,
         **overrides) -> dict[str, Any]:
-    """Build one runner per leg, measure it, and report legs, deltas and calibration.
+    """Reuse model weights, capture fresh pairs per leg, then measure and compare.
 
     A leg whose plan equals the first leg's is a control leg. Each leg also
     carries an `attribution` block unless `attribution=False`; the collector
@@ -328,7 +338,9 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
             print(f"== leg {index}: {target} plan={plan}", flush=True)
             item = next(item for item in built if item["plan"] == plan and item["options"] == option)
             engine, inputs = item["engine"], item["inputs"]
+            engine.capture()
             environment = _env(engine.device)
+            runtime_before = environment.get("runtime_observation")
             context = report_context(engine, environment)
             current_context = MeasurementContext.from_dict(context)
             if reference_context is None:
@@ -339,12 +351,12 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
             with torch.cuda.device(engine.device):
                 if collector is None:
                     metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
-                                      soak_s=_LAT["soak_s"])
+                                      soak_s=soak_s)
                     evidence = None
                 else:
                     with collector:
                         metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
-                                          soak_s=_LAT["soak_s"], attribution=collector)
+                                          soak_s=soak_s, attribution=collector)
                     evidence = collector.as_dict()
             environment = _env(engine.device)
             after = MeasurementContext.from_dict(report_context(engine, environment))
@@ -352,6 +364,8 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
                 raise ValueError("A/B/A measurement context changed during a leg; require re-anchor")
             legs.append({"leg": index, "plan": plan, "identity": engine.identity.as_dict(),
                          "measurement_context": context, "metrics": metrics, "attribution": evidence,
+                         "runtime_observation": {"before": runtime_before,
+                                                 "after": environment.get("runtime_observation")},
                          "options": {**overrides, **option},
                          "implementation_source": getattr(engine, "implementation_source", None)})
             print(json.dumps(legs[-1]["metrics"]), flush=True)
@@ -369,9 +383,10 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         "measurement_context": legs[0]["measurement_context"],
         "env": environment,
         "config": {"reps": reps, "warmup": warmup, "seed": seed, "plans": plans,
-                   "calibration": calibrate, "statistics": list(_LAT["statistics"]),
+                   "calibration": calibrate, "capture_policy": "fresh-graph-stream-per-leg",
+                   "statistics": list(_LAT["statistics"]),
                    "p99_min_reps": _LAT["p99_min_reps"],
-                   "soak_s": _LAT["soak_s"],
+                   "soak_s": soak_s,
                    "promotion_bar_ms": _LAT["promotion_bar_ms"],
                    "control_spread_max_ms": _LAT["control_spread_max_ms"],
                    "attribution": attribution, "leg_options": options},
@@ -392,6 +407,8 @@ def main(argv=None) -> int:
                              "repeat for A/B/A (default: shipped)")
     parser.add_argument("--reps", type=int, default=_LAT["reps"])
     parser.add_argument("--warmup", type=int, default=_LAT["warmup"])
+    parser.add_argument("--soak-seconds", type=float, default=_LAT["soak_s"],
+                        help="optional pre-warmup load period (default: no soak)")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--calibrate", action="store_true",
                         help="run the first plan three times and report the spread")
@@ -400,8 +417,7 @@ def main(argv=None) -> int:
     parser.add_argument("--option", action="append", default=[],
                         help="target-local construction option as key=value, every leg")
     parser.add_argument("--no-attribution", dest="attribution", action="store_false",
-                        help="skip the per-leg attribution record (no nvidia-smi sampler, "
-                             "no per-forward sample list)")
+                        help="skip per-leg CPU/GPU attribution collection")
     parser.add_argument("--out", default=None, help="write the JSON report here")
     args = parser.parse_args(argv)
     overrides = {k: v for k, v in (("steps", args.steps), ("layers", args.layers))
@@ -409,6 +425,7 @@ def main(argv=None) -> int:
     overrides.update(parse_options(args.option))
     report = run(args.target, args.plan or [None], reps=args.reps, warmup=args.warmup,
                  seed=args.seed, calibrate=args.calibrate, attribution=args.attribution,
+                 soak_s=args.soak_seconds,
                  **overrides)
     text = json.dumps(report, indent=2)
     print(text)

@@ -28,7 +28,7 @@ def test_environment_stamps_selected_device_power_without_claiming_clock_lock(fr
     with patch.object(latency, "device_selector", return_value="GPU-selected"), \
          patch.object(latency, "env_block", return_value={"gpu": "H100"}), \
          patch.object(latency.subprocess, "run", return_value=SimpleNamespace(
-             stdout="570.86.10, 700.00, 650.00, 1980, 2619\n")) as query:
+             stdout="570.86.10, 700.00, 650.00, 1980, 2619, 1590, 2619, P0, 45, 350, 0x4\n")) as query:
         env = latency._env()
     argv = query.call_args.args[0]
     assert argv[argv.index("-i") + 1] == "GPU-selected"
@@ -40,11 +40,15 @@ def test_environment_stamps_selected_device_power_without_claiming_clock_lock(fr
         "slurm_gpu_freq_request": frequency_request,
         "effective_locked_clocks": "unobserved",
     }
+    assert env["runtime_observation"]["clocks.sm"] == "1590"
+    assert env["runtime_observation"]["clocks_event_reasons.active"] == "0x4"
     engine = SimpleNamespace(measurement_context={
         "weights": {"checkpoint_id": "a", "checkpoint_digest": "a"},
         "fixture": {"id": "inputs", "digest": "inputs"},
     })
     context = metrics.report_context(engine, env)
+    changed = metrics.report_context(engine, dict(env, runtime_observation={"clocks.sm": "1980"}))
+    assert MeasurementContext.from_dict(context).segment_key == MeasurementContext.from_dict(changed).segment_key
     assert context["environment"]["clock_policy"] == env["clock_policy"]
     assert context["environment"]["power_policy"] == env["power_policy"]
     other = metrics.report_context(engine, dict(env, power_policy={
@@ -53,8 +57,8 @@ def test_environment_stamps_selected_device_power_without_claiming_clock_lock(fr
 
 
 @pytest.mark.parametrize("stdout", [
-    "570.86.10, 700, 700, 1980, 2619\n570.86.10, 500, 500, 1980, 2619\n",
-    "570.86.10, N/A, N/A, 1980, 2619\n",
+    "570.86.10, 700, 700, 1980, 2619, 1590, 2619, P0, 45, 350, 0x4\n570.86.10, 500, 500, 1980, 2619, 1590, 2619, P0, 45, 350, 0x4\n",
+    "570.86.10, N/A, N/A, 1980, 2619, 1590, 2619, P0, 45, 350, 0x4\n",
     "",
 ])
 def test_missing_or_ambiguous_power_evidence_is_not_silently_accepted(stdout):

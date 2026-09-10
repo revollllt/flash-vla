@@ -60,8 +60,11 @@ class Engine(Protocol):
     def forward(self, **inputs: Any) -> torch.Tensor:
         """Stage the inputs, run every step in order, return the output view."""
 
+    def capture(self, *, warmup: int = 3) -> None:
+        """Capture fresh graph/stream pairs without reloading weights."""
+
     def replay(self, segment: str) -> None:
-        """Replay one captured stage on the current stream."""
+        """Replay one stage on its capture stream, ordered with the caller."""
 
     def host(self, slot: str, **inputs: Any) -> None:
         """Run one host slot: the host work that sits between two stages."""

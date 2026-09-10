@@ -37,6 +37,8 @@ from typing import Any, Callable
 
 import torch
 
+from flash_vla.runtime.cuda.graph import StreamGraph
+
 from flash_vla.bench import KernelResult, bench_gpu_time, render_table, write_csv
 from flash_vla.runtime.engine import segments
 
@@ -70,8 +72,8 @@ def _graph_samples(invoke: Callable[[int], Any], n_inner: int, reps: int, warmup
             invoke(i)
     torch.cuda.current_stream().wait_stream(side)
     torch.cuda.synchronize()
-    graph = torch.cuda.CUDAGraph()
-    with torch.cuda.graph(graph):
+    graph = StreamGraph()
+    with graph.capture():
         for i in range(n_inner):
             invoke(i)
     torch.cuda.synchronize()

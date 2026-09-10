@@ -25,6 +25,8 @@ import torch
 
 from typing import Callable as _Callable
 
+from .graph import StreamGraph
+
 
 @dataclass(frozen=True)
 class Segment:
@@ -50,7 +52,7 @@ class Program:
             raise ValueError(f"segment names must be unique, got {names}")
         self.order: tuple[str, ...] = tuple(names)
         self._segments = {s.name: s for s in segments}
-        self.graphs: dict[str, torch.cuda.CUDAGraph] = {}
+        self.graphs: dict[str, StreamGraph] = {}
 
         for _ in range(warmup):
             for segment in segments:
@@ -59,18 +61,15 @@ class Program:
         if after_warmup is not None:
             after_warmup()
 
-        stream = torch.cuda.Stream()
-        with torch.cuda.stream(stream):
-            for segment in segments:
-                graph = torch.cuda.CUDAGraph()
-                graph.capture_begin()
+        for segment in segments:
+            graph = StreamGraph()
+            with graph.capture():
                 segment.run()
-                graph.capture_end()
-                self.graphs[segment.name] = graph
+            self.graphs[segment.name] = graph
         torch.cuda.synchronize()
 
     def replay(self, name: str) -> None:
-        """Replay one segment on the current stream."""
+        """Replay one segment on its capture stream, ordered with the caller."""
         self.graphs[name].replay()
 
     def replay_all(self) -> None:

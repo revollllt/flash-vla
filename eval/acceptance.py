@@ -57,11 +57,8 @@ DEFAULTS: dict[str, Any] = {
         "statistics": STATISTICS,
         "reps": 100,
         "warmup": 5,
-        # Seconds of forwards before each leg's warmup, so clocks and
-        # temperature settle before anything is read: the first run of a job
-        # spread its control legs by 0.17 ms while the later runs of the same
-        # job read 0.004 to 0.05 (job 598975).
-        "soak_s": 10,
+        # Warmup precedes every timed loop; extra fixed-time load is opt-in.
+        "soak_s": 0,
         # Below this many repetitions the 99th percentile is the maximum; it is
         # then reported as insufficient rather than as a tail.
         "p99_min_reps": 100,

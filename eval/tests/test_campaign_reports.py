@@ -39,6 +39,9 @@ class Engine:
                    "layers": 18 if layers is None else layers}))
         self.measurement_context = deepcopy(ASSETS)
 
+    def capture(self):
+        pass
+
     def sample_inputs(self, seed):
         return {}
 
@@ -129,8 +132,10 @@ def test_correctness_producer_rejects_fixture_mismatch(harness):
         in_engine.run("h100/pi05")
 
 
-def test_real_latency_report_converts_without_losing_aba(harness):
+@pytest.mark.parametrize("soak_s", [0, 10])
+def test_real_latency_report_converts_without_losing_aba(harness, soak_s):
     raw = measured(harness)
+    raw["config"]["soak_s"] = soak_s
     result = reports.latency(raw, objective="e2e_chunk_latency_ms", segment=2)
     assert result["parent_incumbent_ms"] == 16.
     assert result["candidate_ms"] == 14.
@@ -140,7 +145,7 @@ def test_real_latency_report_converts_without_losing_aba(harness):
 
 
 @pytest.mark.parametrize("field,value", [
-    ("reps", 5), ("warmup", 0), ("soak_s", 0), ("p99_min_reps", 5),
+    ("reps", 5), ("warmup", 0), ("soak_s", -1), ("p99_min_reps", 5),
 ])
 def test_sampling_overrides_cannot_be_relabelled_as_fixed_protocol(harness, field, value):
     raw = measured(harness)
