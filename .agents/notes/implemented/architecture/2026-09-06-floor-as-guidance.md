@@ -65,18 +65,23 @@ form, so the model could not apply them.
    relative to the measured directory; `probe:` paths stay skill-relative.
 5. **Estimate value before implementing a hypothesis.** The daily loop in
    [docs/optimization.md](../../../../docs/optimization.md) proceeds from whole-model
-   profiling to focused analysis, kernel design, implementation, validation and
-   deployment. Reuse applicable floor reports and hardware measurements; gather
-   new evidence only for the selected bottleneck. Price the likely end-to-end
+   profiling into a nested kernel loop (Profile, Analyze, Design, Implement,
+   Validate). The outer model loop adds model integration, model validation,
+   deployment and profiling of the deployed version. Reuse applicable floor
+   reports and hardware measurements; gather new evidence only for the selected
+   bottleneck. Price the likely end-to-end
    saving before a trial, without a frozen contract or mandatory promotion gate.
    Reuse existing kernels and continue improving them where evidence supports
    headroom. Fusion candidates are explicitly written CUDA/TileLang kernels;
    existing `torch.compile` implementations may serve as comparison paths.
-   Related correctness checks and kernel timing screen candidates before
-   deployment into the actual model inference path and plan. Full-model latency
-   is then measured with the deployed entry point, assets and execution settings.
-   This post-deployment evidence determines retention or rollback and the next
-   optimization hypothesis.
+   Kernel Validate requires correctness and demonstrated local gain for the
+   kernel or fused chain before model integration. Failed or uncertain candidates
+   remain in the inner loop; successful ones can advance without exhausting all
+   kernel improvements. Model Validate checks integration correctness before
+   deployment. Full-model latency is then measured with the deployed entry point,
+   assets and execution settings. This evidence determines retention or rollback,
+   feeds back cases where local gains do not transfer, and selects the next
+   kernel optimization task.
 
 ## Alternatives considered
 

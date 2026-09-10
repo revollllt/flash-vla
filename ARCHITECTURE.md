@@ -169,7 +169,8 @@ tracked in git, may import the deployment path, and is never imported by it.
 [docs/optimization.md](docs/optimization.md) owns the default agent workflow:
 
 ```text
-Profile -> Analyze -> Design -> Implement -> Validate -> Deploy -> Profile
+Kernel: Profile -> Analyze -> Design -> Implement -> Validate -> Profile
+Model:  Profile -> Analyze -> Design -> Implement -> Validate -> Deploy -> Profile
 ```
 
 Start with the complete forward, then focus on its costly modules and kernels.
@@ -180,15 +181,25 @@ memory traffic, fusion and pipelines toward the hardware's attainable SOL.
 Fusion candidates use explicitly written CUDA/TileLang kernels; existing
 `torch.compile` paths can serve as comparison implementations.
 
-Validate uses relevant correctness checks and kernel measurements to screen
-candidates. Deploy places a validated candidate in the actual model inference
-path and plan on the target GPU. Then measure the deployed complete model using
-its actual entry point, assets, inputs and execution settings in independent
+The model loop selects the hotspot and invokes the kernel loop. Kernel Validate
+checks numerical correctness and local performance for the kernel or fused chain
+under representative shapes, layouts, cache and execution conditions. Only a
+correct candidate with demonstrated local gain proceeds to model integration;
+failed or uncertain candidates stay in the inner loop. A winning kernel can
+advance without exhausting every possible kernel improvement.
+
+Model Design/Implement integrates that candidate into the model and plan.
+Model Validate checks the affected model outputs and integration behavior.
+Deploy runs the validated model through its actual inference path on the target
+GPU. Then measure the deployed complete model using its actual entry point,
+assets, inputs and execution settings in independent
 first-capture processes, including host work and synchronization. This deployed
 end-to-end measurement determines whether to retain or roll back the candidate.
-Profile the deployed version for the next iteration; a local
-win or a floor ratio alone does not finish the loop. Reuse applicable evidence,
-refresh profiles when needed, and retain only a short experiment record.
+The outer loop profiles the deployed version to select the next kernel task,
+and feeds integration findings back to the inner loop when local gains do not
+reach the model. A local win or a floor ratio alone does not finish optimization.
+Reuse applicable evidence, refresh profiles when needed, and retain only a short
+experiment record.
 These tools run directly; Campaign state, complete qualification and publication
 are optional and do not govern routine iteration. Repository commands and paths
 are relative to the project root; machine-specific assets belong in local config.
@@ -196,7 +207,7 @@ are relative to the project root; machine-specific assets belong in local config
 | skill | owns |
 |---|---|
 | `target-onboarding` | unfamiliar-model integration from frozen upstream/oracle through compatibility, correctness, baselines, floor/profile, and Campaign handoff |
-| `kernel-design` | the entry point for kernel work: hypothesis, design, reference, parity, candidate loop, deployment |
+| `kernel-design` | the kernel loop: hypothesis, design, reference, parity and local performance; winning candidates feed the model loop |
 | `kernel-wiki` | the queryable sm90 knowledge base built on KernelWiki: symptom-indexed patterns, techniques, hardware and kernel pages with sources, confidence and reproducibility, and the compile-checked sm90 templates bundle |
 | `benchmark-kernel` | per-kernel timing and the amortized in-graph regime |
 | `hardware-unit-test` | the measured constants under every ceiling, and their probes |
