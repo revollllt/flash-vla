@@ -142,6 +142,7 @@ def correctness(record):
     if not contexts or any(item.segment_key != contexts[0].segment_key for item in contexts):
         raise ValueError("correctness ladder changed checkpoint/fixture/environment")
     observed = contexts[0].as_dict()
+    official_sources = []
     # Official adapter evidence certifies the reference/weights relation. Its
     # own engine revision and environment are not the candidate implementation.
     for configuration in policy["checks"]:
@@ -161,12 +162,21 @@ def correctness(record):
                 script["script"], script["identities"], Identity.from_dict(expected),
                 script.get("stages", ()))
             provenance = script.get("reference_provenance", [])
+            official_sources.extend((item.get("repository"), item.get("commit"))
+                                    for item in provenance or [{}])
             if any(provenance):
                 observed["reference_provenance"].setdefault("official_baselines", {})[script["script"]] = provenance
             for weights in script["weights"]:
                 if any(weights.get(key) != observed["weights"][key]
                        for key in ("checkpoint_id", "checkpoint_digest")):
                     raise ValueError("official correctness adapter checked another checkpoint")
+    if any(repository or commit for repository, commit in official_sources):
+        observed["reference_provenance"].pop("repository", None)
+        observed["reference_provenance"].pop("commit", None)
+    if official_sources and all(source == official_sources[0] for source in official_sources):
+        repository, commit = official_sources[0]
+        if repository and commit:
+            observed["reference_provenance"].update(repository=repository, commit=commit)
     return dict(status="pass", identity=expected, measurement_context=observed,
                 checks=[dict(check=c["check"], mode=c["mode"], status=c["status"]) for c in record["checks"]])
 

@@ -225,5 +225,6 @@ def test_lingbot_parity_reports_the_cached_oracle_producer(tmp_path, monkeypatch
     monkeypatch.setattr(torch.cuda, "synchronize", lambda: None)
     report = parity.run(oracle=tmp_path)
     assert report["passed"]
-    assert report["reference_provenance"] == provenance
+    assert report["reference_provenance"] == dict(
+        provenance, repository="https://github.com/Robbyant/lingbot-vla.git", commit="oracle-source")
     assert report["identity"]["engine_revision"] == "candidate-source"

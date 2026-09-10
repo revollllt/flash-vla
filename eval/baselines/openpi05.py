@@ -59,6 +59,8 @@ def reference_provenance(model, config, *, exact_rope=False):
             text=True)
         provenance[role] = dict(commit=commit, dirty=bool(dirty))
     provenance["upstream"]["module"] = type(model).__module__
+    provenance.update(repository="https://github.com/Physical-Intelligence/openpi.git",
+                      commit=provenance["upstream"]["commit"])
     provenance["config"] = asdict(config)
     provenance["exact_rope"] = exact_rope
     return provenance

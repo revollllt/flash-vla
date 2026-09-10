@@ -125,6 +125,8 @@ def test_reference_provenance_tracks_loaded_module_and_dirty_state(tmp_path):
         head = subprocess.check_output(["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
                                        text=True).strip()
         assert observed["upstream"] == dict(commit=head, dirty=False, module=spec.name)
+        assert observed["repository"] == "https://github.com/Physical-Intelligence/openpi.git"
+        assert observed["commit"] == head
         assert observed["config"] == asdict(Config())
         assert observed["exact_rope"] is True
         source.write_text("class Model: pass\n# local implementation edit\n")

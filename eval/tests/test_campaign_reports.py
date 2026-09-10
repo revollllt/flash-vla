@@ -380,8 +380,27 @@ def test_campaign_retains_oracle_provenance_without_changing_identity(harness, t
     before = reports.correctness(raw)
     check = next(c for c in raw["checks"] if c["check"] == "baseline_layer0")
     script = check["scripts"][0]
-    script["reference_provenance"] = [{"upstream_commit": "oracle-a"}, {"upstream_commit": "oracle-a"}]
+    script["reference_provenance"] = [dict(repository="upstream", commit="oracle-a", upstream_commit="oracle-a")] * 2
+    for adapter in check["scripts"]:
+        adapter["reference_provenance"] = script["reference_provenance"]
     after = reports.correctness(raw)
     assert after["identity"] == before["identity"]
     assert after["measurement_context"]["weights"] == before["measurement_context"]["weights"]
     assert after["measurement_context"]["reference_provenance"]["official_baselines"][script["script"]] == script["reference_provenance"]
+
+    from lab import onboarding
+    onboarding._initial_context(
+        dict(initial_weights=after["measurement_context"]["weights"],
+             reference=dict(repository="upstream", commit="oracle-a")),
+        after["measurement_context"])
+
+    script["reference_provenance"] = [
+        dict(repository="upstream", commit="oracle-a"),
+        dict(repository="upstream", commit="oracle-b")]
+    mixed = reports.correctness(raw)
+    assert "commit" not in mixed["measurement_context"]["reference_provenance"]
+    with pytest.raises(ValueError, match="anchor reference provenance"):
+        onboarding._initial_context(
+            dict(initial_weights=mixed["measurement_context"]["weights"],
+                 reference=dict(repository="upstream", commit="oracle-a")),
+            mixed["measurement_context"])

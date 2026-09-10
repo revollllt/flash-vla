@@ -102,7 +102,10 @@ fixture and stable environment, with candidate implementation and prescribed
 depths bound to the report. Finite and replay-identical outputs remain required.
 A diagnostic deep comparison does not acquire a numerical gate by conversion.
 Official adapter producer metadata travels with each script's reports and is
-retained under correctness measurement_context.reference_provenance. LingBot
+retained under correctness measurement_context.reference_provenance. Reports with
+a single observed official repository/commit also expose that pair for onboarding;
+the detailed adapter records remain intact. Historical missing provenance is not
+inferred from a new checkout. LingBot
 takes this information from the cached oracle producer's official-eager.json,
 not from the candidate checkout or a current configured upstream path. Historical
 reports lacking this field remain unknown; conversion does not invent provenance.
