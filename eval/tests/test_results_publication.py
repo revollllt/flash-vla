@@ -62,7 +62,8 @@ def test_checkpoint_publication_uses_new_anchor_without_cross_context_best(works
     value = store.read(destination / "trace.json")
     assert [r["verdict"] for r in value["iterations"]] == ["accepted", "accepted", "no_benefit", "accepted"]
     assert len(value["segments"]) == 2 and value["segments"][1]["before_iteration"] == 4
-    assert "checkpoint task-b" in (destination / "progress.svg").read_text()
+    assert value["segments"][1]["measurement_context"]["weights"]["checkpoint_id"] == "task-b"
+    assert 'segment 1 re-anchor' in (destination / "progress.svg").read_text()
     assert len(store.read(root / "results/index.json")["campaigns"]) == 1
 
 

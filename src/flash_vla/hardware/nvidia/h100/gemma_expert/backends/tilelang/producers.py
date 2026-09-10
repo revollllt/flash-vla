@@ -20,9 +20,6 @@ from __future__ import annotations
 
 import torch
 
-from .kernels import rms as rms_kernels
-from .kernels import xfs as xfs_kernels
-
 #: One 128-byte TMA row of BF16: the row extent every expert buffer pads to,
 #: and the M extent the persistent FFN's K-major activation requires.
 M_PAD = 64
@@ -91,6 +88,8 @@ def rms_factor(x, out, cfg=_RMS, *, trigger_programmatic_launch=False):
     ``trigger_programmatic_launch`` selects the JIT variant that releases the
     PDL dependency at entry; the successor must carry the wait.
     """
+    from .kernels import rms as rms_kernels
+
     M, K = x.shape
     config = dict(cfg)
     config["TRIGGER_PROGRAMMATIC_DEPENDENT_LAUNCH"] = trigger_programmatic_launch
@@ -109,6 +108,8 @@ def rms_xfs(x, scale, hidden_ready, down_ready, out,
     the persistent consumer must be the direct successor on the same stream.
     The producer resets both readiness arrays before publishing XFS.
     """
+    from .kernels import xfs as xfs_kernels
+
     M, K = x.shape
     if (tuple(scale.shape) != (K,) or tuple(out.shape) != (K, M_PAD)):
         raise ValueError(
@@ -137,6 +138,8 @@ def out_proj_residual_rms_xfs(
     dependency at kernel entry instead of after the grid sync; the persistent
     consumer's grid-dependency wait carries correctness either way.
     """
+    from .kernels import xfs as xfs_kernels
+
     M, K = attention.shape
     N = weight.shape[1]
     if (tuple(weight.shape) != (K, N)
