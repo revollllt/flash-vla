@@ -94,6 +94,7 @@ def measured(harness, *, plans=("shipped", "candidate", "shipped"), values=(16.,
                     host_time={}, segment_latency={}, overhead=stats)
 
     harness.setattr(latency, "measure", measure)
+    harness.setattr(latency, "_run_leg", latency._measure_leg)
     return latency.run("h100/pi05", list(plans), attribution=False)
 
 

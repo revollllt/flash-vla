@@ -10,7 +10,9 @@ class _Identity:
         return isinstance(other, _Identity)
 
     def as_dict(self):
-        return {"schema_version": 2, "target": "test"}
+        return {"schema_version": 2, "target": "test", "model": "test",
+                "hardware": "test", "model_revision": "test-revision",
+                "shape": {}, "plan": {}}
 
 
 class _Engine:
@@ -24,20 +26,24 @@ class _Engine:
         }
 
     def capture(self):
-        pass
+        raise AssertionError("measurement must use the initial capture")
 
     def sample_inputs(self, seed):
         return {"seed": seed}
 
 
 class LatencyRunTests(unittest.TestCase):
-    def test_reuses_one_built_engine_for_repeated_control_leg(self):
+    def setUp(self):
+        worker = patch.object(latency, "_run_leg", side_effect=latency._measure_leg)
+        worker.start()
+        self.addCleanup(worker.stop)
+
+    def test_builds_each_leg_once_without_recapture(self):
         events = []
 
         def build(target, plan, **kwargs):
             events.append(("build", plan))
             engine = _Engine(plan)
-            engine.capture = lambda: events.append(("capture", plan))
             return engine
 
         def measure(engine, inputs, *args, **kwargs):
@@ -50,7 +56,6 @@ class LatencyRunTests(unittest.TestCase):
         with patch.object(latency.torch.cuda, "device", return_value=nullcontext()), \
              patch.object(latency, "require_cuda"), \
              patch.object(latency.torch.cuda, "init"), \
-             patch.object(latency.torch.cuda, "empty_cache"), \
              patch.object(latency, "resolve", side_effect=lambda value: value), \
              patch.object(latency, "build", side_effect=build), \
              patch.object(latency, "measure", side_effect=measure), \
@@ -60,11 +65,10 @@ class LatencyRunTests(unittest.TestCase):
             report = latency.run("test", ["a", "b", "a"], reps=1, warmup=0,
                                  attribution=False)
 
-        self.assertEqual(events, [("build", "a"), ("build", "b"),
-                                  ("capture", "a"), ("measure", "a"),
-                                  ("capture", "b"), ("measure", "b"),
-                                  ("capture", "a"), ("measure", "a")])
-        self.assertEqual(report["config"]["capture_policy"], "fresh-graph-stream-per-leg")
+        self.assertEqual(events, [("build", "a"), ("measure", "a"),
+                                  ("build", "b"), ("measure", "b"),
+                                  ("build", "a"), ("measure", "a")])
+        self.assertEqual(report["config"]["capture_policy"], "fresh-process-first-capture-per-leg")
         self.assertEqual([leg["plan"] for leg in report["legs"]], ["a", "b", "a"])
         self.assertEqual(report["legs"][0]["runtime_observation"],
                          {"before": {"clocks.sm": "1590"}, "after": {"clocks.sm": "1980"}})
@@ -87,7 +91,6 @@ class LatencyRunTests(unittest.TestCase):
         with patch.object(latency.torch.cuda, "device", return_value=nullcontext()), \
              patch.object(latency, "require_cuda"), \
              patch.object(latency.torch.cuda, "init"), \
-             patch.object(latency.torch.cuda, "empty_cache"), \
              patch.object(latency, "resolve", side_effect=lambda value: value), \
              patch.object(latency, "build", side_effect=build), \
              patch.object(latency, "measure", side_effect=measure), \
@@ -98,13 +101,13 @@ class LatencyRunTests(unittest.TestCase):
                 leg_options=[{"source_checkout": "old"}, {}, {"source_checkout": "old"}],
             )
         self.assertEqual(report["config"]["soak_s"], 10)
-        self.assertEqual(built, ["old", "new"])
+        self.assertEqual(built, ["old", "new", "old"])
         self.assertEqual(measured, ["old", "new", "old"])
         self.assertEqual(report["deltas"]["control_legs"], 1)
         self.assertEqual(report["deltas"]["control_spread_ms"], 0)
         self.assertFalse(report["deltas"]["legs"][0]["same_as_reference"])
 
-    def test_context_change_rejects_candidate_before_measurement(self):
+    def test_context_change_rejects_comparison(self):
         for changed in ("weights", "fixture", "environment"):
             with self.subTest(changed=changed):
                 measured = []
@@ -132,7 +135,6 @@ class LatencyRunTests(unittest.TestCase):
                 with patch.object(latency.torch.cuda, "device", return_value=nullcontext()), \
                      patch.object(latency, "require_cuda"), \
                      patch.object(latency.torch.cuda, "init"), \
-                     patch.object(latency.torch.cuda, "empty_cache"), \
                      patch.object(latency, "resolve", side_effect=lambda value: value), \
                      patch.object(latency, "build", side_effect=build), \
                      patch.object(latency, "measure", side_effect=measure), \
@@ -140,7 +142,7 @@ class LatencyRunTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "measurement context changed"):
                         latency.run("test", ["a", "b", "a"], reps=1, warmup=0,
                                     attribution=False)
-                self.assertEqual(measured, ["a"])
+                self.assertEqual(measured, ["a"] if changed == "environment" else ["a", "b"])
 
 
 if __name__ == "__main__":

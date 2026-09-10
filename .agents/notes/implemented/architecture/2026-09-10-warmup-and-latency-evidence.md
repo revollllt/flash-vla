@@ -31,8 +31,10 @@ Each CUDA graph is now permanently paired with its own capture stream. Replay
 orders the caller's producer and consumer work around that stream using reusable
 events; changing the caller does not move the graph. The shared graph mechanism
 covers inference, runtime timing, and the existing kernel-timing entry points.
-A/B/A recaptures fresh graph/stream pairs before each leg, retaining model weights
-and static buffers. No stream-affinity gate or content hash is introduced.
+Each A/B/A leg uses a fresh process and only its initial capture. Models are
+loaded independently; loading and capture remain outside timed inference.
+Same-process recapture is excluded from the comparison protocol. No new gate
+or content hash is introduced.
 
 ## Alternatives considered
 
@@ -100,3 +102,26 @@ a second policy replaced the function while the first policy still cleared its
 own tables. Each policy now binds its own RoPE function during eager/capture
 execution and restores the previous binding afterwards. This is required for
 recapture while retaining both models; it does not change RoPE arithmetic.
+
+
+Job 611861 compared legacy/new/legacy runtimes in three independent processes
+on one ACD1-22 H100 (570.86.10), using the same A model, checkpoint and fixture.
+Initial-capture medians were 87.154197 / 87.233378 / 87.075248 ms; same-process
+recapture medians were 98.074668 / 98.087407 / 98.095960 ms. Outputs matched
+exactly, and sampled SM/HBM clocks remained 1980/2619 MHz. Thus fixed stream
+ownership alone does not prevent the slow state after recapture. The user
+selected first-capture-only experiments to avoid it, without further root-cause
+investigation. This costs one model load per leg but avoids CUDA context and
+graph lifecycle carry-over. The precise recapture substep responsible remains
+unresolved. Evidence: `artifacts/latency-drift/611861/analysis.md`.
+
+The production latency CLI completed first-capture-only A/B/A in job 611889
+on one ACD1-21 H100 (610.43.02), real LingBot assets, seed 42, warmup 5,
+100 samples per metric, no soak or attribution. Three distinct worker PIDs
+measured chunk medians 80.605620 / 76.104010 / 80.611823 ms. A1/A2 median
+spread was 0.006203 ms and minimum spread 0.002289 ms; the existing comparison
+criterion passed. This supports the avoidance protocol in this run, not a
+root-cause repair or a cross-driver performance claim. A1/A2 p99 spread was
+0.902705 ms, so tail stability is not established. The affected CPU tests
+passed 52 tests and three subtests. Evidence:
+`artifacts/latency-drift/first-capture-aba-611889.json`.

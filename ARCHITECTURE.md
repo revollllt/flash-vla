@@ -96,8 +96,9 @@ component share its kernels and diverge only in their plans.
 ## Invariants
 
 - Each CUDA graph owns one dedicated stream for both capture and every replay.
-  Caller-stream input and output dependencies are preserved. A/B/A legs capture
-  fresh graph/stream pairs while retaining the already-loaded model weights.
+  Caller-stream input and output dependencies are preserved. Each A/B/A leg
+  runs in a fresh process and measures only its initial capture; model loading
+  and capture remain outside timed inference.
 - A plan is resolved and validated against every route constraint before
   capture, never at the first replay.
 - Nothing allocates after the workspace allocator freezes; a request warmup did

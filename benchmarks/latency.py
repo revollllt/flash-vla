@@ -15,7 +15,8 @@ metric the acceptance registry names (`eval/acceptance.py`) is reported with
   segment_latency   each segment replayed alone, back to back, no host gap
   overhead          chunk latency minus the sum of segment latencies
 
-Deltas are read only within one process. Legs run in the order given; a leg
+Each leg runs in a fresh process and uses only its initial capture. Deltas
+compare sequential legs on the same device and measurement context; a leg
 whose plan repeats the first leg's is a control leg, and the spread between
 control legs is the run's minimum detectable effect per statistic. A delta
 below it is reported as indistinguishable, and a chunk `min` spread above the
@@ -43,13 +44,15 @@ from __future__ import annotations
 
 import argparse
 import csv
-import gc
 import json
 import os
 import platform
 import statistics
 import subprocess
 import time
+import sys
+import tempfile
+from pathlib import Path
 from typing import Any, Callable
 
 import torch
@@ -298,19 +301,61 @@ def device_selector(device=None) -> str:
     return uuid if uuid.startswith(("GPU-", "MIG-")) else f"GPU-{uuid}"
 
 
+def _measure_leg(target, plan, *, reps, warmup, seed, soak_s, attribution, options):
+    """Build once and measure the initial capture in a fresh worker process."""
+    require_cuda()
+    torch.cuda.init()
+    engine = build(target, plan, seed=seed, **options)
+    inputs = engine.sample_inputs(seed)
+    environment = _env(engine.device)
+    runtime_before = environment.get("runtime_observation")
+    context = report_context(engine, environment)
+    collector = Attribution(device_index=device_selector(engine.device)) if attribution else None
+    with torch.cuda.device(engine.device):
+        if collector is None:
+            metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"], soak_s=soak_s)
+            evidence = None
+        else:
+            with collector:
+                metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
+                                  soak_s=soak_s, attribution=collector)
+            evidence = collector.as_dict()
+    environment = _env(engine.device)
+    after = MeasurementContext.from_dict(report_context(engine, environment))
+    if after.segment_key != MeasurementContext.from_dict(context).segment_key:
+        raise ValueError("A/B/A measurement context changed during a leg; require re-anchor")
+    leg = {"plan": plan, "identity": engine.identity.as_dict(),
+           "measurement_context": context, "metrics": metrics, "attribution": evidence,
+           "runtime_observation": {"before": runtime_before,
+                                   "after": environment.get("runtime_observation")},
+           "options": options, "process_id": os.getpid(),
+           "implementation_source": getattr(engine, "implementation_source", None)}
+    if evidence is not None:
+        print(attribution_summary(evidence), flush=True)
+    return leg, environment
+
+
+def _run_leg(target, plan, **kwargs):
+    """Use exec, not fork, so no CUDA context or previous graph survives."""
+    with tempfile.TemporaryDirectory(prefix="flash-vla-latency-") as directory:
+        request = Path(directory) / "request.json"
+        response = Path(directory) / "response.json"
+        request.write_text(json.dumps(dict(target=target, plan=plan, **kwargs)))
+        subprocess.run([sys.executable, "-m", "benchmarks.latency", "--worker",
+                        str(request), str(response)], check=True)
+        return json.loads(response.read_text())
+
+
 def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         warmup: int = _LAT["warmup"], seed: int = 0, calibrate: bool = False,
         soak_s: float = _LAT["soak_s"],
         attribution: bool = True, leg_options: list[dict[str, Any]] | None = None,
         **overrides) -> dict[str, Any]:
-    """Reuse model weights, capture fresh pairs per leg, then measure and compare.
+    """Measure each leg's first capture in a fresh process, then compare.
 
-    A leg whose plan equals the first leg's is a control leg. Each leg also
-    carries an `attribution` block unless `attribution=False`; the collector
-    spans the leg's soak as well as its timed loops.
+    A leg whose plan equals the first leg's is a control leg. Worker startup,
+    loading and capture are outside the measured latency.
     """
-    require_cuda()
-    torch.cuda.init()
     target = resolve(target)
     plans = [plan or "shipped" for plan in plans]
     options = list(leg_options or [{} for _ in plans])
@@ -320,61 +365,20 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         plans = [plans[0]] * 3
         options = [options[0]] * 3
     legs = []
-    built = []
-    reference_context = None
-    reference_identity: Identity | None = None
-    for plan, option in zip(plans, options):
-        if any(item["plan"] == plan and item["options"] == option for item in built):
-            continue
-        engine = build(target, plan, seed=seed, **{**overrides, **option})
-        if reference_identity is None:
-            reference_identity = engine.identity
-        elif not reference_identity.same_workload(engine.identity):
-            raise ValueError("plans in one run may differ in implementation only")
-        inputs = engine.sample_inputs(seed)
-        built.append({"plan": plan, "options": option, "engine": engine, "inputs": inputs})
-    try:
-        for index, (plan, option) in enumerate(zip(plans, options)):
-            print(f"== leg {index}: {target} plan={plan}", flush=True)
-            item = next(item for item in built if item["plan"] == plan and item["options"] == option)
-            engine, inputs = item["engine"], item["inputs"]
-            engine.capture()
-            environment = _env(engine.device)
-            runtime_before = environment.get("runtime_observation")
-            context = report_context(engine, environment)
-            current_context = MeasurementContext.from_dict(context)
-            if reference_context is None:
-                reference_context = current_context
-            elif reference_context.segment_key != current_context.segment_key:
+    for index, (plan, option) in enumerate(zip(plans, options)):
+        print(f"== leg {index}: {target} plan={plan}", flush=True)
+        leg, environment = _run_leg(target, plan, reps=reps, warmup=warmup, seed=seed,
+                                    soak_s=soak_s, attribution=attribution,
+                                    options={**overrides, **option})
+        if legs:
+            if not Identity.from_dict(legs[0]["identity"]).same_workload(
+                    Identity.from_dict(leg["identity"])):
+                raise ValueError("plans in one run may differ in implementation only")
+            if (MeasurementContext.from_dict(legs[0]["measurement_context"]).segment_key
+                    != MeasurementContext.from_dict(leg["measurement_context"]).segment_key):
                 raise ValueError("A/B/A measurement context changed; re-anchor in a new segment")
-            collector = Attribution(device_index=device_selector(engine.device)) if attribution else None
-            with torch.cuda.device(engine.device):
-                if collector is None:
-                    metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
-                                      soak_s=soak_s)
-                    evidence = None
-                else:
-                    with collector:
-                        metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
-                                          soak_s=soak_s, attribution=collector)
-                    evidence = collector.as_dict()
-            environment = _env(engine.device)
-            after = MeasurementContext.from_dict(report_context(engine, environment))
-            if after.segment_key != current_context.segment_key:
-                raise ValueError("A/B/A measurement context changed during a leg; require re-anchor")
-            legs.append({"leg": index, "plan": plan, "identity": engine.identity.as_dict(),
-                         "measurement_context": context, "metrics": metrics, "attribution": evidence,
-                         "runtime_observation": {"before": runtime_before,
-                                                 "after": environment.get("runtime_observation")},
-                         "options": {**overrides, **option},
-                         "implementation_source": getattr(engine, "implementation_source", None)})
-            print(json.dumps(legs[-1]["metrics"]), flush=True)
-            if evidence is not None:
-                print(attribution_summary(evidence), flush=True)
-    finally:
-        built.clear()
-        gc.collect()
-        torch.cuda.empty_cache()
+        leg["leg"] = index
+        legs.append(leg)
 
     report = {
         "identity": legs[0]["identity"],
@@ -383,7 +387,7 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         "measurement_context": legs[0]["measurement_context"],
         "env": environment,
         "config": {"reps": reps, "warmup": warmup, "seed": seed, "plans": plans,
-                   "calibration": calibrate, "capture_policy": "fresh-graph-stream-per-leg",
+                   "calibration": calibrate, "capture_policy": "fresh-process-first-capture-per-leg",
                    "statistics": list(_LAT["statistics"]),
                    "p99_min_reps": _LAT["p99_min_reps"],
                    "soak_s": soak_s,
@@ -437,4 +441,8 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    if sys.argv[1:2] == ["--worker"]:
+        request, response = map(Path, sys.argv[2:])
+        response.write_text(json.dumps(_measure_leg(**json.loads(request.read_text()))))
+    else:
+        raise SystemExit(main())
