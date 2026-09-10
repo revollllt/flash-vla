@@ -121,10 +121,11 @@ component share its kernels and diverge only in their plans.
   v2 migration retains old checkpoint provenance and requires correctness
   revalidation and a new latency anchor. Unknown Targets require an explicit
   architecture mapping.
-- The floor model is guidance, never an objective. Its ceiling divides only by
+- The floor model guides kernel work toward hardware SOL; it does not establish
+  attainable latency or convergence by itself. Its ceiling divides only by
   tagged measured constants of the hardware axis's `measured/` table, its
-  roofline only by the axis's `spec.py` peaks, and the registry's stop
-  condition reads the headroom between measured and ceiling.
+  roofline only by the axis's `spec.py` peaks. Remaining headroom informs the
+  next hypothesis; measured end-to-end latency determines the value of a change.
 
 ## What a Target is
 
@@ -166,16 +167,32 @@ tracked in git, may import the deployment path, and is never imported by it.
 ## The optimization loop
 
 [docs/optimization.md](docs/optimization.md) owns the default agent workflow:
-whole-forward profiling before focused module/kernel analysis, independent
-first-capture measurements, relevant correctness checks and a short result log.
-The benchmark, profiler and numerical checks can run directly without Campaign
-state or publication. Complete qualification and historical Campaign continuation
-remain explicit optional paths; they do not govern routine iteration.
+
+```text
+Profile -> Analyze -> Design -> Implement -> Validate -> Integrate -> Profile
+```
+
+Start with the complete forward, then focus on its costly modules and kernels.
+Compare their work and measured time with the datasheet roofline and applicable
+measured hardware capabilities to identify recoverable time. Reuse existing
+Pi0/Pi0.5 and shared-component kernels, then improve kernel layout, tiling,
+memory traffic, fusion and pipelines toward the hardware's attainable SOL.
+Fusion candidates use explicitly written CUDA/TileLang kernels; existing
+`torch.compile` paths can serve as comparison implementations.
+
+Use relevant correctness checks and kernel measurements to screen hypotheses
+before integrating candidates and measuring the complete model in independent
+first-capture processes. Reassess the bottleneck after an improvement; a local
+win or a floor ratio alone does not finish the loop. Reuse applicable evidence,
+refresh profiles when needed, and retain only a short experiment record.
+These tools run directly; Campaign state, complete qualification and publication
+are optional and do not govern routine iteration. Repository commands and paths
+are relative to the project root; machine-specific assets belong in local config.
 
 | skill | owns |
 |---|---|
 | `target-onboarding` | unfamiliar-model integration from frozen upstream/oracle through compatibility, correctness, baselines, floor/profile, and Campaign handoff |
-| `kernel-design` | the entry point for kernel work: contract, reference, parity, candidate loop, promotion |
+| `kernel-design` | the entry point for kernel work: hypothesis, design, reference, parity, candidate loop, integration |
 | `kernel-wiki` | the queryable sm90 knowledge base built on KernelWiki: symptom-indexed patterns, techniques, hardware and kernel pages with sources, confidence and reproducibility, and the compile-checked sm90 templates bundle |
 | `benchmark-kernel` | per-kernel timing and the amortized in-graph regime |
 | `hardware-unit-test` | the measured constants under every ceiling, and their probes |

@@ -31,8 +31,9 @@ form, so the model could not apply them.
    rows of the measured table), and `measured_us` (the in-graph time
    `benchmarks profile` attributes). The structural tier and both gaps are
    gone. Owner's ruling: the roofline is a white-paper limit and guidance
-   only; measured constants may carry measurement error; neither is a
-   destination.
+   only; measured constants may carry measurement error. These estimates guide
+   kernel work toward hardware SOL; neither alone establishes attainable latency,
+   acceptance or convergence.
 2. **The ceiling follows the constants' own rules.** Below the burst curve,
    `fixed_us + MB / marginal rate` (`ld.bw.dev.dram`); on the curve, `MB /
    delivered rate` interpolated on `tma.bw.dev.burst`'s end-to-end curve; the
@@ -43,18 +44,17 @@ form, so the model could not apply them.
    call site's own geometry; the declaration carries its tag and job id and
    is copied into the report. Pi0.5 declares the gate/up GEMM's cold delivery
    (9.41 us, `tma.bw.dev.burst`, job 591174).
-3. **Headroom is the stop signal.** Each site reports `pct_of_ceiling` and
+3. **Headroom guides iteration.** Each site reports `pct_of_ceiling` and
    `within_ceiling` (measured at most `1 + headroom_pct / 100` times the
    ceiling, `headroom_pct` from the acceptance registry's `stop`); each stage
-   and the Target report `all_within_ceiling`. That flag is what the registry's
-   stop condition reads. Validity stays checked: a ceiling above its measured
+   and the Target report `all_within_ceiling`. Legacy registry stop logic reads
+   that flag. The daily workflow uses it as evidence for the next hypothesis,
+   not an automatic stopping rule. Validity stays checked: a ceiling above its measured
    time by more than the table's own noise floor (`machine.noise_floor_pct`,
    6%), or a roofline above its ceiling, marks the report invalid. The
-   members of an atomic group (a dependent-launch chain) are judged on the
-   group's sums, because under such a chain a kernel's recorded duration
-   overlaps its neighbours' and only the chain's total is a measurement;
-   the first GPU run showed exactly that (a chained gate/up GEMM attributed
-   7.2 us against a 9.4 us cold ceiling, job 598949).
+   members of an overlapping atomic group cannot be judged by adding their
+   recorded kernel durations. The current floor model has no supported joint
+   ceiling for such groups; inspect the chain's timeline and measured span.
 4. **The measured table lives on the hardware axis.**
    `src/flash_vla/hardware/nvidia/h100/measured/` holds `constants.yaml`, the
    arch index and the unit references, beside `spec.py`. The skill keeps its
@@ -63,12 +63,18 @@ form, so the model could not apply them.
    `src/flash_vla/hardware/**/measured/`, then by its own `<arch>/` directories
    so a standalone copy still works. Unit `reference:` paths in the table are
    relative to the measured directory; `probe:` paths stay skill-relative.
-5. **The kernel-design contract prices before it builds.** The contract
-   template's section is "Ceiling, headroom and promotion": the ceiling with
-   its tags or declared job, the upper bound of gain if the candidate fully
-   succeeds (below the registry's promotion bar, do not build), and the
-   registry's promotion rule. The change-gates rule states the two
-   denominators and that neither is an objective.
+5. **Estimate value before implementing a hypothesis.** The daily loop in
+   [docs/optimization.md](../../../../docs/optimization.md) proceeds from whole-model
+   profiling to focused analysis, kernel design, implementation, validation and
+   integration. Reuse applicable floor reports and hardware measurements; gather
+   new evidence only for the selected bottleneck. Price the likely end-to-end
+   saving before a trial, without a frozen contract or mandatory promotion gate.
+   Reuse existing kernels and continue improving them where evidence supports
+   headroom. Fusion candidates are explicitly written CUDA/TileLang kernels;
+   existing `torch.compile` implementations may serve as comparison paths.
+   Related correctness checks and kernel timing screen candidates before full
+   model measurements. The resulting end-to-end evidence determines integration
+   and the next optimization hypothesis.
 
 ## Alternatives considered
 
@@ -89,8 +95,10 @@ form, so the model could not apply them.
 
 - A floor report reads as three columns and a flag; `eval/gate` prints them as
   context and never gates on them.
-- The kernel-design loop stops when every site is within its ceiling or the
-  budget is spent, not when a gap reads zero.
+- The daily kernel-design loop stops when the important hotspots approach an
+  evidence-supported attainable capability with no worthwhile hypothesis left,
+  or the user's scope or budget ends. A floor ratio or one successful candidate
+  is insufficient to establish convergence.
 - `python .claude/skills/hardware-unit-test/scripts/constants.py` run from
   anywhere under the repository finds the moved table; from outside, only a
   standalone copy's own table.
