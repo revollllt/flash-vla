@@ -1,6 +1,7 @@
 """Per-call-site time inside the captured graphs of any Target.
 
-    python -m benchmarks profile --target h100/pi05
+    python -m benchmarks profile --target h100/pi05 --overview --trace-dir artifacts/profile
+    python -m benchmarks profile --target h100/pi05 --segment action_expert
     python -m benchmarks profile --target h100/pi05 --plan reference --plan shipped   # A/B
     python -m benchmarks profile --target h100/pi0 --plan reference --trace-dir artifacts/profile
 
@@ -341,9 +342,53 @@ def check_contract(contract: dict[str, list[str]], names: set[str]) -> dict[str,
     return {"passed": not violations, "violations": violations, "contract": contract}
 
 
+def overview(target: str, plan: str | None = None, *, seed: int = 0,
+             trace_dir: str = "artifacts/profile", **options) -> dict[str, Any]:
+    """Profile a complete forward before selecting a segment for attribution."""
+    require_cuda()
+    target = resolve(target)
+    engine = build(target, plan or "shipped", seed=seed, **options)
+    inputs = engine.sample_inputs(seed)
+    for _ in range(5):
+        engine.forward(**inputs)
+    torch.cuda.synchronize()
+    replay, host = engine.replay, engine.host
+
+    def traced_replay(name):
+        with record_function(f"segment:{name}"):
+            return replay(name)
+
+    def traced_host(name, **inputs):
+        with record_function(f"host:{name}"):
+            return host(name, **inputs)
+
+    engine.replay, engine.host = traced_replay, traced_host
+    try:
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+            with record_function("forward"):
+                engine.forward(**inputs)
+                torch.cuda.synchronize()
+    finally:
+        engine.replay, engine.host = replay, host
+    path = Path(trace_dir) / "overview.json"
+    events = _trace_events(prof, path)
+    gpu = _gpu_events(events)
+    span = intervals([dict(start_us=e["ts"], end_us=e["ts"] + e.get("dur", 0)) for e in gpu])
+    environment = _env(engine.device)
+    return dict(identity=engine.identity.as_dict(), env=environment,
+                measurement_context=report_context(engine, environment),
+                config=dict(seed=seed, plan=plan or "shipped", warmup=5, options=options),
+                trace=str(path), diagnostic_only=True,
+                gpu_activity_us=span["interval_union_us"],
+                gpu_span_us=span["region_makespan_us"],
+                gpu_gaps_us=span["region_makespan_us"] - span["interval_union_us"],
+                note="Segment annotations measure CPU launch scopes; use GPU events in the trace "
+                     "for execution time. Profiling perturbs scheduling; benchmark separately.")
+
+
 def run(target: str, plans: list[str | None], seed: int = 0, trace_dir: str | None = None,
         leg_options: list[dict[str, Any]] | None = None, eager_trace_dir: str | None = None,
-        **overrides) -> dict[str, Any]:
+        segment: str | None = None, **overrides) -> dict[str, Any]:
     """Attribute one replay per segment per leg, check contracts, compare legs."""
     require_cuda()
     torch.cuda.init()
@@ -373,7 +418,10 @@ def run(target: str, plans: list[str | None], seed: int = 0, trace_dir: str | No
         torch.cuda.synchronize()
         seg_reports = {}
         names: set[str] = set()
-        for name in segments(engine):
+        selected = [segment] if segment is not None else list(segments(engine))
+        if segment is not None and segment not in segments(engine):
+            raise ValueError(f"unknown segment: {segment}")
+        for name in selected:
             slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", f"{index}_{plan}_{name}")
             path = Path(trace_dir) / f"{slug}.json" if trace_dir else None
             eager_path = Path(eager_trace_dir) / f"{slug}_eager.json" if eager_trace_dir else None
@@ -382,12 +430,13 @@ def run(target: str, plans: list[str | None], seed: int = 0, trace_dir: str | No
         legs.append({"leg": index, "plan": plan, "options": dict(options),
                      "identity": engine.identity.as_dict(),
                      "measurement_context": context, "segments": seg_reports,
-                     "contract": check_contract(engine.graph_contract, names)})
+                     "contract": (check_contract(engine.graph_contract, names) if segment is None
+                                  else {"passed": None, "violations": "not checked for a partial profile"})})
         del engine
         torch.cuda.empty_cache()
     report = {"identity": legs[0]["identity"],
               "measurement_context": legs[0]["measurement_context"], "env": _env(), "sm_count": sm_count,
-              "config": {"seed": seed, "plans": plans, "trace_dir": trace_dir},
+              "config": {"seed": seed, "plans": plans, "trace_dir": trace_dir, "segment": segment},
               "legs": legs, "deltas": _deltas(legs) if len(legs) > 1 else None}
     return report
 
@@ -444,6 +493,10 @@ def main(argv=None) -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--layers", type=int, default=None)
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--overview", action="store_true",
+                       help="capture a complete forward timeline, without per-kernel attribution")
+    scope.add_argument("--segment", help="attribute only this segment after locating the bottleneck")
     parser.add_argument("--top", type=int, default=12)
     parser.add_argument("--trace-dir", default=os.environ.get("GPU_PROFILE_OUTPUT_DIR"),
                         help="write one Chrome trace per segment per leg here")
@@ -454,14 +507,23 @@ def main(argv=None) -> int:
     overrides = {k: v for k, v in (("steps", args.steps), ("layers", args.layers))
                  if v is not None}
     overrides.update(parse_options(args.option))
-    report = run(args.target, args.plan or [None], seed=args.seed, trace_dir=args.trace_dir,
-                 eager_trace_dir=args.eager_trace_dir, **overrides)
-    print(render(report, args.top))
+    if args.overview:
+        if args.plan and len(args.plan) != 1:
+            parser.error("--overview profiles one version per process")
+        report = overview(args.target, (args.plan or [None])[0], seed=args.seed,
+                          trace_dir=args.trace_dir or "artifacts/profile", **overrides)
+        print(json.dumps(report, indent=2))
+    else:
+        report = run(args.target, args.plan or [None], seed=args.seed, trace_dir=args.trace_dir,
+                     eager_trace_dir=args.eager_trace_dir, segment=args.segment, **overrides)
+        print(render(report, args.top))
     if args.out:
         os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
         with open(args.out, "w") as f:
             json.dump(report, f, indent=2)
-    ok = all(leg["contract"]["passed"] and all(s["valid"] for s in leg["segments"].values())
+    if args.overview:
+        return 0
+    ok = all(leg["contract"]["passed"] is not False and all(s["valid"] for s in leg["segments"].values())
              for leg in report["legs"])
     return 0 if ok else 1
 

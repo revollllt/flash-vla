@@ -1,27 +1,20 @@
 """End-to-end latency of any Target through the engine protocol.
 
     python -m benchmarks latency --target h100/pi05
-    python -m benchmarks latency --target h100/pi05 --plan reference --plan shipped --plan reference
+    python -m benchmarks latency --target h100/pi05 --plan reference --plan shipped
     python -m benchmarks latency --target h100/pi05 --plan shipped --calibrate   # shipped x3
 
-One request, batch 1, the Target's fixed shapes, inherited device clock state. Every
-metric the acceptance registry names (`eval/acceptance.py`) is reported with
-`min`, `median` and `p99`:
+One request, batch 1, the Target's fixed shapes, inherited device clock state.
+The default measures only chunk_latency: wall time including input staging,
+host work and graph replay to the available chunk. Use --breakdown for CUDA-event,
+host-slot, segment and overhead diagnostics; use --attribution for telemetry.
+Both are opt-in. Statistics retain min, median, p99 and ordered raw samples.
+Median is the primary daily comparison; p99 from 100 samples is descriptive.
 
-  chunk_latency     wall clock from inputs available to the chunk available:
-                    staging, host slots, every segment launch and replay
-  device_latency    CUDA-event time around the same forward
-  host_time         wall clock of each declared host slot
-  segment_latency   each segment replayed alone, back to back, no host gap
-  overhead          chunk latency minus the sum of segment latencies
-
-Each leg runs in a fresh process and uses only its initial capture. Deltas
-compare sequential legs on the same device and measurement context; a leg
-whose plan repeats the first leg's is a control leg, and the spread between
-control legs is the run's minimum detectable effect per statistic. A delta
-below it is reported as indistinguishable, and a chunk `min` spread above the
-registry's `control_spread_max_ms` marks the whole run invalid. `--calibrate`
-runs the first plan three times to measure that spread on its own.
+Each version runs in a fresh process and uses only its initial capture. One or
+two versions are sufficient. A repeated control or --calibrate optionally
+estimates drift; without it, noise is unknown, not zero. A/B comparisons require
+the same device, workload and measurement context but do not require a third leg.
 
 Time-ordered `samples_ms` are retained even without attribution. Device-state
 observations before and after each leg remain separate from stable context
@@ -32,13 +25,12 @@ Beside each leg's `metrics` sits an additive `attribution` block
 their timestamps, the process's per-forward context-switch and page-fault
 deltas, the cyclic collector's collections, and a 10 Hz record of the device's
 clocks and of the other compute processes on it. A tail is then attributable
-from the record instead of argued about. `metrics` keeps its exact shape, so
-the report stays readable by anything written against the older schema.
+from the record instead of argued about. `--breakdown` retains the complete metric
+set expected by explicit legacy qualification.
 
 The runner contains no model or stage names: it builds the engine through
 `benchmarks.targets`, takes the program from the engine, and samples inputs
-from it. Verdicts are not produced here; the promotion gate reads this report
-against the acceptance registry.
+from it. This runner reports measurements; it does not promote code.
 """
 from __future__ import annotations
 
@@ -49,9 +41,9 @@ import os
 import platform
 import statistics
 import subprocess
-import time
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -136,8 +128,9 @@ def _time_event(call: Callable[[], Any], reps: int, warmup: int,
 
 def measure(engine, inputs: dict[str, Any], reps: int, warmup: int,
             p99_min_reps: int, soak_s: float = 0.0,
-            attribution: Attribution | None = None) -> dict[str, Any]:
-    """Every latency metric of one engine on `inputs`, min/median/p99 each.
+            attribution: Attribution | None = None, *,
+            breakdown: bool = False) -> dict[str, Any]:
+    """Chunk latency, plus optional per-device/stage diagnostics on the same engine.
 
     Optional `soak_s` seconds of forwards precede warmup. Fixed-time load
     does not certify stable device clocks or latency. An `attribution` collector, if
@@ -159,12 +152,11 @@ def measure(engine, inputs: dict[str, Any], reps: int, warmup: int,
         engine.forward(**inputs)
     torch.cuda.synchronize()
     forward = lambda: engine.forward(**inputs)   # noqa: E731
-    metrics: dict[str, Any] = {
-        "chunk_latency": timed("chunk_latency", _time_wall, forward),
-        "device_latency": timed("device_latency", _time_event, forward),
-        "host_time": {},
-        "segment_latency": {},
-    }
+    metrics = {"chunk_latency": timed("chunk_latency", _time_wall, forward)}
+    if not breakdown:
+        return metrics
+    metrics.update(device_latency=timed("device_latency", _time_event, forward),
+                   host_time={}, segment_latency={})
     for slot in host_slots(engine):
         metrics["host_time"][slot] = timed(
             f"host_time.{slot}", _time_wall, lambda slot=slot: engine.host(slot, **inputs))
@@ -219,16 +211,15 @@ def _deltas(legs: list[dict[str, Any]]) -> dict[str, Any]:
         for key, value in _flatten(leg["metrics"]).items():
             if key in first:
                 spread[key] = max(spread.get(key, 0.0), abs(value - first[key]))
-    # The control spread is the run's minimum detectable effect, and above the
-    # registry's limit it invalidates the run: the gate blocks rather than
-    # reading a delta against a node that did not hold still.
+    # Optional repeated controls estimate drift. Without controls, the
+    # measured difference is still valid but its noise remains unknown.
     limit = _LAT["control_spread_max_ms"]
     key = "chunk_latency.min"
     out = {"reference_leg": 0, "control_legs": len(control),
            "minimum_detectable_effect": spread or None,
            "control_spread_ms": spread.get(key) if spread else None,
            "control_spread_max_ms": limit,
-           "valid": bool(control) and spread.get(key, float("inf")) <= limit,
+           "valid": not control or spread.get(key, float("inf")) <= limit,
            "legs": []}
     for index, leg in enumerate(legs[1:], start=1):
         flat = _flatten(leg["metrics"])
@@ -252,8 +243,9 @@ def _env(device=None) -> dict[str, Any]:
     fields = ("driver_version", "power.limit", "enforced.power.limit",
               "clocks.applications.graphics", "clocks.applications.memory",
               *observation_fields)
+    uuid = device_selector(device)
     result = subprocess.run(
-        ["nvidia-smi", "-i", device_selector(device), "--query-gpu=" + ",".join(fields),
+        ["nvidia-smi", "-i", uuid, "--query-gpu=" + ",".join(fields),
          "--format=csv,noheader,nounits"],
         capture_output=True, text=True, timeout=10, check=True,
     )
@@ -263,6 +255,7 @@ def _env(device=None) -> dict[str, Any]:
     driver, requested, enforced, graphics, memory, *observations = rows[0]
     env = env_block(device)
     env.update({
+        "gpu_uuid": uuid,
         "runtime_observation": dict(zip(observation_fields, observations)),
         "node": platform.node(),
         "job": os.environ.get("SLURM_JOB_ID"),
@@ -301,7 +294,7 @@ def device_selector(device=None) -> str:
     return uuid if uuid.startswith(("GPU-", "MIG-")) else f"GPU-{uuid}"
 
 
-def _measure_leg(target, plan, *, reps, warmup, seed, soak_s, attribution, options):
+def _measure_leg(target, plan, *, reps, warmup, seed, soak_s, attribution, options, breakdown=False):
     """Build once and measure the initial capture in a fresh worker process."""
     require_cuda()
     torch.cuda.init()
@@ -313,22 +306,24 @@ def _measure_leg(target, plan, *, reps, warmup, seed, soak_s, attribution, optio
     collector = Attribution(device_index=device_selector(engine.device)) if attribution else None
     with torch.cuda.device(engine.device):
         if collector is None:
-            metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"], soak_s=soak_s)
+            metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
+                              soak_s=soak_s, breakdown=breakdown)
             evidence = None
         else:
             with collector:
                 metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
-                                  soak_s=soak_s, attribution=collector)
+                                  soak_s=soak_s, attribution=collector, breakdown=breakdown)
             evidence = collector.as_dict()
     environment = _env(engine.device)
     after = MeasurementContext.from_dict(report_context(engine, environment))
     if after.segment_key != MeasurementContext.from_dict(context).segment_key:
-        raise ValueError("A/B/A measurement context changed during a leg; require re-anchor")
+        raise ValueError("latency measurement context changed during a leg; repeat that measurement")
     leg = {"plan": plan, "identity": engine.identity.as_dict(),
            "measurement_context": context, "metrics": metrics, "attribution": evidence,
            "runtime_observation": {"before": runtime_before,
                                    "after": environment.get("runtime_observation")},
            "options": options, "process_id": os.getpid(),
+           "gpu_uuid": environment.get("gpu_uuid"),
            "implementation_source": getattr(engine, "implementation_source", None)}
     if evidence is not None:
         print(attribution_summary(evidence), flush=True)
@@ -349,7 +344,7 @@ def _run_leg(target, plan, **kwargs):
 def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         warmup: int = _LAT["warmup"], seed: int = 0, calibrate: bool = False,
         soak_s: float = _LAT["soak_s"],
-        attribution: bool = True, leg_options: list[dict[str, Any]] | None = None,
+        attribution: bool = False, breakdown: bool = False, leg_options: list[dict[str, Any]] | None = None,
         **overrides) -> dict[str, Any]:
     """Measure each leg's first capture in a fresh process, then compare.
 
@@ -368,15 +363,17 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
     for index, (plan, option) in enumerate(zip(plans, options)):
         print(f"== leg {index}: {target} plan={plan}", flush=True)
         leg, environment = _run_leg(target, plan, reps=reps, warmup=warmup, seed=seed,
-                                    soak_s=soak_s, attribution=attribution,
+                                    soak_s=soak_s, attribution=attribution, breakdown=breakdown,
                                     options={**overrides, **option})
         if legs:
+            if leg["gpu_uuid"] != legs[0]["gpu_uuid"]:
+                raise ValueError("latency comparison requires the same physical GPU")
             if not Identity.from_dict(legs[0]["identity"]).same_workload(
                     Identity.from_dict(leg["identity"])):
                 raise ValueError("plans in one run may differ in implementation only")
             if (MeasurementContext.from_dict(legs[0]["measurement_context"]).segment_key
                     != MeasurementContext.from_dict(leg["measurement_context"]).segment_key):
-                raise ValueError("A/B/A measurement context changed; re-anchor in a new segment")
+                raise ValueError("latency measurement context changed; measure each environment separately")
         leg["leg"] = index
         legs.append(leg)
 
@@ -387,7 +384,8 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         "measurement_context": legs[0]["measurement_context"],
         "env": environment,
         "config": {"reps": reps, "warmup": warmup, "seed": seed, "plans": plans,
-                   "calibration": calibrate, "capture_policy": "fresh-process-first-capture-per-leg",
+                   "calibration": calibrate, "breakdown": breakdown,
+                   "primary_statistic": _LAT["primary_statistic"], "capture_policy": "fresh-process-first-capture-per-leg",
                    "statistics": list(_LAT["statistics"]),
                    "p99_min_reps": _LAT["p99_min_reps"],
                    "soak_s": soak_s,
@@ -408,7 +406,7 @@ def main(argv=None) -> int:
     parser.add_argument("--target", required=True, help="h100/pi05, h100/pi0, or a full name")
     parser.add_argument("--plan", action="append", default=None,
                         help=f"one of {PLAN_NAMES}, a JSON object or a lab/plans/*.json path; "
-                             "repeat for A/B/A (default: shipped)")
+                             "repeat for A/B (default: shipped)")
     parser.add_argument("--reps", type=int, default=_LAT["reps"])
     parser.add_argument("--warmup", type=int, default=_LAT["warmup"])
     parser.add_argument("--soak-seconds", type=float, default=_LAT["soak_s"],
@@ -420,16 +418,21 @@ def main(argv=None) -> int:
     parser.add_argument("--layers", type=int, default=None)
     parser.add_argument("--option", action="append", default=[],
                         help="target-local construction option as key=value, every leg")
+    parser.add_argument("--breakdown", action="store_true",
+                        help="also measure device, host, segment and overhead diagnostics")
+    parser.add_argument("--attribution", action="store_true",
+                        help="collect CPU/GPU telemetry (diagnostic timing)")
     parser.add_argument("--no-attribution", dest="attribution", action="store_false",
                         help="skip per-leg CPU/GPU attribution collection")
     parser.add_argument("--out", default=None, help="write the JSON report here")
+    parser.set_defaults(attribution=False)
     args = parser.parse_args(argv)
     overrides = {k: v for k, v in (("steps", args.steps), ("layers", args.layers))
                  if v is not None}
     overrides.update(parse_options(args.option))
     report = run(args.target, args.plan or [None], reps=args.reps, warmup=args.warmup,
                  seed=args.seed, calibrate=args.calibrate, attribution=args.attribution,
-                 soak_s=args.soak_seconds,
+                 soak_s=args.soak_seconds, breakdown=args.breakdown,
                  **overrides)
     text = json.dumps(report, indent=2)
     print(text)

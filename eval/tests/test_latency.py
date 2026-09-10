@@ -38,7 +38,7 @@ class LatencyRunTests(unittest.TestCase):
         worker.start()
         self.addCleanup(worker.stop)
 
-    def test_builds_each_leg_once_without_recapture(self):
+    def test_builds_two_independent_versions_without_recapture(self):
         events = []
 
         def build(target, plan, **kwargs):
@@ -61,15 +61,19 @@ class LatencyRunTests(unittest.TestCase):
              patch.object(latency, "measure", side_effect=measure), \
              patch.object(latency, "_env", side_effect=[
                  {"runtime_observation": {"clocks.sm": str(value)}}
-                 for value in (1590, 1980, 1980, 1980, 1980, 1980)]):
-            report = latency.run("test", ["a", "b", "a"], reps=1, warmup=0,
-                                 attribution=False)
+                 for value in (1590, 1980, 1980, 1980)]):
+            report = latency.run("test", ["a", "b"], reps=1, warmup=0)
 
         self.assertEqual(events, [("build", "a"), ("measure", "a"),
-                                  ("build", "b"), ("measure", "b"),
-                                  ("build", "a"), ("measure", "a")])
+                                  ("build", "b"), ("measure", "b")])
         self.assertEqual(report["config"]["capture_policy"], "fresh-process-first-capture-per-leg")
-        self.assertEqual([leg["plan"] for leg in report["legs"]], ["a", "b", "a"])
+        self.assertEqual([leg["plan"] for leg in report["legs"]], ["a", "b"])
+        self.assertFalse(report["instrumented"])
+        self.assertFalse(report["config"]["breakdown"])
+        self.assertEqual(report["config"]["primary_statistic"], "median")
+        self.assertTrue(report["deltas"]["valid"])
+        self.assertIsNone(report["deltas"]["minimum_detectable_effect"])
+        self.assertIsNone(report["deltas"]["control_spread_ms"])
         self.assertEqual(report["legs"][0]["runtime_observation"],
                          {"before": {"clocks.sm": "1590"}, "after": {"clocks.sm": "1980"}})
 
@@ -154,3 +158,77 @@ def test_raw_samples_preserve_time_order_without_affecting_statistics():
     result = latency._stats(samples, p99_min_reps=4)
     assert result["samples_ms"] == [90., 79., 85., 80.]
     assert (result["min"], result["median"], result["p99"]) == (79., 82.5, 90.)
+
+
+def test_default_measure_times_only_complete_forward(monkeypatch):
+    from types import SimpleNamespace
+    calls = []
+    engine = SimpleNamespace(forward=lambda **kw: calls.append(kw))
+    monkeypatch.setattr(latency.torch.cuda, "synchronize", lambda: None)
+    def wall(fn, reps, warmup, trace):
+        fn()
+        return [2., 1., 3.]
+    monkeypatch.setattr(latency, "_time_wall", wall)
+    result = latency.measure(engine, {"input": 1}, 3, 5, 100)
+    assert list(result) == ["chunk_latency"]
+    assert result["chunk_latency"]["samples_ms"] == [2., 1., 3.]
+    assert calls == [{"input": 1}, {"input": 1}]
+
+
+def test_breakdown_is_explicit_and_retains_legacy_metrics(monkeypatch):
+    from types import SimpleNamespace
+    calls = []
+    engine = SimpleNamespace(forward=lambda **kw: None,
+                             host=lambda name, **kw: calls.append(name),
+                             replay=lambda name: calls.append(name))
+    monkeypatch.setattr(latency.torch.cuda, "synchronize", lambda: None)
+    monkeypatch.setattr(latency, "host_slots", lambda e: ["prepare"])
+    monkeypatch.setattr(latency, "segments", lambda e: ["expert"])
+    def timer(fn, reps, warmup, trace):
+        fn()
+        return [2.]
+    monkeypatch.setattr(latency, "_time_wall", timer)
+    monkeypatch.setattr(latency, "_time_event", timer)
+    result = latency.measure(engine, {}, 1, 0, 100, breakdown=True)
+    assert set(result) == {"chunk_latency", "device_latency", "host_time", "segment_latency", "overhead"}
+    assert calls == ["prepare", "expert"]
+
+
+def test_optional_repeated_control_still_reports_detected_drift():
+    legs = [dict(plan=p, metrics={"chunk_latency": dict(min=v, median=v)})
+            for p, v in [("a", 10.), ("b", 9.), ("a", 11.)]]
+    result = latency._deltas(legs)
+    assert result["valid"] is False
+    assert result["control_spread_ms"] == 1.
+
+
+def test_comparison_rejects_different_physical_gpus(monkeypatch):
+    import pytest
+    from benchmarks.metrics import report_context
+    engine = _Engine("a")
+    context = report_context(engine, {})
+    responses = iter([(dict(identity=engine.identity.as_dict(), measurement_context=context,
+                            gpu_uuid=uuid), {}) for uuid in ("GPU-1", "GPU-2")])
+    monkeypatch.setattr(latency, "resolve", lambda target: target)
+    monkeypatch.setattr(latency, "_run_leg", lambda *a, **kw: next(responses))
+    with pytest.raises(ValueError, match="same physical GPU"):
+        latency.run("test", ["a", "b"])
+
+
+def test_worker_failure_propagates(monkeypatch):
+    import subprocess
+    import pytest
+    def fail(*args, **kwargs):
+        raise subprocess.CalledProcessError(7, args[0])
+    monkeypatch.setattr(latency.subprocess, "run", fail)
+    with pytest.raises(subprocess.CalledProcessError) as error:
+        latency._run_leg("test", "a")
+    assert error.value.returncode == 7
+
+
+def test_cli_default_and_diagnostics(monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr(latency, "run", lambda *a, **kw: calls.append(kw) or {})
+    latency.main(["--target", "h100/pi05"])
+    latency.main(["--target", "h100/pi05", "--breakdown", "--attribution"])
+    assert [(c["breakdown"], c["attribution"]) for c in calls] == [(False, False), (True, True)]

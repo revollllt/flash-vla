@@ -1,4 +1,7 @@
-"""The promotion gate: one candidate plan against the acceptance registry, one evidence record.
+"""Optional complete qualification for legacy Campaign/deployment evidence.
+Daily optimization uses docs/optimization.md without this gate.
+
+The promotion gate: one candidate plan against the acceptance registry, one evidence record.
 
     python -m eval.gate --target h100/pi05
     python -m eval.gate --target h100/pi05 --candidate lab/plans/pi05-attn-cuda.json
@@ -6,7 +9,7 @@
 
 A script, not a service. It reads the Target's entry of the acceptance
 registry (`eval/acceptance.py`), runs the in-engine correctness checks and the
-same-process A/B/A latency run through the generic harnesses, applies the
+explicit A/B/A latency run through the generic harnesses, applies the
 deployment bound and the candidate rule, computes the floor model as context,
 and writes one evidence record. Required correctness failures stop before
 performance work; floor profiling is opt-in. The performance control defaults
@@ -369,7 +372,7 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
     lat = spec["latency"]
     plans = [reference, candidate, reference]
     latency_report = latency.run(target, plans, reps=reps or lat["reps"], warmup=lat["warmup"],
-                                 seed=seed, attribution=False,
+                                 seed=seed, attribution=False, breakdown=True,
                                  leg_options=[incumbent_options or {}, {}, incumbent_options or {}],
                                  **overrides)
     record["latency"] = {"report": latency_report,

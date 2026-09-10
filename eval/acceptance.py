@@ -64,10 +64,11 @@ DEFAULTS: dict[str, Any] = {
         "p99_min_reps": 100,
         # Deployment does not lock clocks, so neither does any measurement.
         "clocks": "unlocked",
-        # Deltas come only from a same-process A/B/A; the spread between the
-        # two control legs is the run's minimum detectable effect.
-        "deltas": "same_process_aba",
-        # A performance candidate must improve the chunk `min` by at least
+        # Daily measurements are independent first-capture processes; controls
+        # and the historical formal qualification rules below are opt-in.
+        "deltas": "independent_versions",
+        "primary_statistic": "median",
+        # The explicit legacy gate requires the chunk `min` to improve by at least
         # this much, in absolute terms, on top of being distinguishable from
         # the control spread. The number is the bar the Pi0.5 optimization
         # loop used for every promotion it recorded.
