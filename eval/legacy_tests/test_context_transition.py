@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from lab.optimize import campaign, store, transition
-from eval.tests.test_weight_dependency import candidate, finalize, workspace, context
+from eval.legacy_tests.test_weight_dependency import candidate, finalize, workspace, context
 
 # Tiny on-disk weights make recipe execution and compatibility observable.
 ADAPTER = """

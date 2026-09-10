@@ -1,3 +1,5 @@
+> Historical record. Current instructions: [optimization workflow](../optimization.md).
+
 # Flash-VLA optimization checklist
 
 Source: optimization plan v0.2 (2026-09-07), PR01–PR15. This is the execution

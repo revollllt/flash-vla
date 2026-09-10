@@ -16,8 +16,7 @@ Per call site of every stage, at the Target's shapes:
   measured_us   the in-graph time `benchmarks.profile` attributes to the site
 
 and, per site, `pct_of_ceiling` and `within_ceiling`: measured at most
-(1 + headroom_pct / 100) times the ceiling, the registry's stop condition
-(`eval/acceptance.py`, `stop.headroom_pct`). These comparisons are guidance, not proof that no kernel-level opportunity
+(1 + headroom_pct / 100) times the ceiling (default from `benchmarks/config.py`). These comparisons are guidance, not proof that no kernel-level opportunity
 remains. Overlapping atomic groups have no supported additive latency model
 and cannot trigger automatic stopping.
 
@@ -49,7 +48,7 @@ from typing import Any
 
 import torch
 
-from eval import acceptance
+from benchmarks.config import FLOOR_HEADROOM_PCT
 from flash_vla.runtime.cost import Invocation, total
 from flash_vla.runtime.engine import segments
 
@@ -153,12 +152,11 @@ def site_row(invocation: Invocation, peaks: dict[str, Any], constants: dict[str,
 
 
 def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, seed: int = 0,
-        **overrides) -> dict[str, Any]:
+        headroom_pct: float = FLOOR_HEADROOM_PCT, **overrides) -> dict[str, Any]:
     """Compute the three columns per stage and call site, and check the model against them."""
     require_cuda()
     torch.cuda.init()
     target = resolve(target)
-    headroom_pct = acceptance.for_target(target)["stop"]["headroom_pct"]
     engine = build(target, plan or "shipped", seed=seed, **overrides)
     identity = engine.identity
     spec_cls, constants_path = hardware_axis(identity.hardware)

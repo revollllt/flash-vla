@@ -49,4 +49,4 @@ its original output and pass memcheck/synccheck; the latter validates 32 TMA and
 32 WGMMA observation pairs. Job 602589 checks GPU snapshot mutation and aliases.
 CPU exporter/query tests cover partial captures, clock domains, identity,
 reused generations and incomplete observations. Detailed conditions and raw
-artifact locators are in `docs/optimization-results.md`.
+artifact locators are in `docs/history/optimization-results.md`.

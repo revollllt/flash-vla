@@ -49,7 +49,7 @@ from typing import Any, Callable
 
 import torch
 
-from eval.acceptance import DEFAULTS
+from benchmarks.config import LATENCY_DEFAULTS
 from flash_vla.runtime.identity import Identity, MeasurementContext
 from flash_vla.runtime.engine import host_slots, segments
 
@@ -58,7 +58,7 @@ from .attribution import summary as attribution_summary
 from .metrics import env_block, require_cuda, report_context
 from .targets import PLAN_NAMES, build, resolve
 
-_LAT = DEFAULTS["latency"]
+_LAT = LATENCY_DEFAULTS
 
 
 def _stats(samples: list[float], p99_min_reps: int) -> dict[str, Any]:
@@ -196,7 +196,7 @@ def _flatten(metrics: dict[str, Any]) -> dict[str, float]:
     return flat
 
 
-def _deltas(legs: list[dict[str, Any]]) -> dict[str, Any]:
+def _deltas(legs: list[dict[str, Any]], control_spread_max_ms: float | None = None) -> dict[str, Any]:
     """Per-leg deltas against the first leg, and the control spread."""
     first = _flatten(legs[0]["metrics"])
 
@@ -213,13 +213,14 @@ def _deltas(legs: list[dict[str, Any]]) -> dict[str, Any]:
                 spread[key] = max(spread.get(key, 0.0), abs(value - first[key]))
     # Optional repeated controls estimate drift. Without controls, the
     # measured difference is still valid but its noise remains unknown.
-    limit = _LAT["control_spread_max_ms"]
+    limit = control_spread_max_ms
     key = "chunk_latency.min"
     out = {"reference_leg": 0, "control_legs": len(control),
            "minimum_detectable_effect": spread or None,
            "control_spread_ms": spread.get(key) if spread else None,
            "control_spread_max_ms": limit,
-           "valid": not control or spread.get(key, float("inf")) <= limit,
+           "valid": (True if not control else None if limit is None
+                     else spread.get(key, float("inf")) <= limit),
            "legs": []}
     for index, leg in enumerate(legs[1:], start=1):
         flat = _flatten(leg["metrics"])
@@ -345,7 +346,7 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
         warmup: int = _LAT["warmup"], seed: int = 0, calibrate: bool = False,
         soak_s: float = _LAT["soak_s"],
         attribution: bool = False, breakdown: bool = False, leg_options: list[dict[str, Any]] | None = None,
-        **overrides) -> dict[str, Any]:
+        control_spread_max_ms: float | None = None, **overrides) -> dict[str, Any]:
     """Measure each leg's first capture in a fresh process, then compare.
 
     A leg whose plan equals the first leg's is a control leg. Worker startup,
@@ -389,11 +390,10 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
                    "statistics": list(_LAT["statistics"]),
                    "p99_min_reps": _LAT["p99_min_reps"],
                    "soak_s": soak_s,
-                   "promotion_bar_ms": _LAT["promotion_bar_ms"],
-                   "control_spread_max_ms": _LAT["control_spread_max_ms"],
+                   "control_spread_max_ms": control_spread_max_ms,
                    "attribution": attribution, "leg_options": options},
         "legs": legs,
-        "deltas": _deltas(legs) if len(legs) > 1 else None,
+        "deltas": _deltas(legs, control_spread_max_ms) if len(legs) > 1 else None,
     }
     if calibrate:
         report["calibration"] = report["deltas"]["minimum_detectable_effect"]

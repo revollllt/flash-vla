@@ -68,4 +68,4 @@ component A/A-prime diagnostics, two production shapes, GPU fixture/replay
 checks, calibration and independent QKV/TMA runs. CPU old/new gate experiments
 retain identical fail/blocked verdicts while avoiding latency and floor calls
 once their prerequisites fail. They do not measure Agent productivity.
-See `docs/optimization-results.md` and `artifacts/optimization/job-accounting.txt`.
+See `docs/history/optimization-results.md` and `artifacts/optimization/job-accounting.txt`.

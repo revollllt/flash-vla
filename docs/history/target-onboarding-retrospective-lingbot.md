@@ -1,3 +1,5 @@
+> Historical record. Current instructions: [optimization workflow](../optimization.md).
+
 # LingBot Target onboarding retrospective
 
 本复盘只依据 LingBot-VLA-4B 在 H100 上从 requirement freeze 到真实优化晋升的

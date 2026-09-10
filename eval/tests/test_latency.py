@@ -198,8 +198,10 @@ def test_optional_repeated_control_still_reports_detected_drift():
     legs = [dict(plan=p, metrics={"chunk_latency": dict(min=v, median=v)})
             for p, v in [("a", 10.), ("b", 9.), ("a", 11.)]]
     result = latency._deltas(legs)
-    assert result["valid"] is False
+    assert result["valid"] is None
     assert result["control_spread_ms"] == 1.
+    assert result["control_spread_max_ms"] is None
+    assert latency._deltas(legs, control_spread_max_ms=0.1)["valid"] is False
 
 
 def test_comparison_rejects_different_physical_gpus(monkeypatch):

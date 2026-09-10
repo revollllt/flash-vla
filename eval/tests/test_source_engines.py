@@ -135,18 +135,6 @@ def test_source_wrappers_restore_rope_between_engines_and_after_error():
         assert external.apply_rope is official
 
 
-def test_qualification_rejects_explicit_source_unbound_to_receipt(tmp_path):
-    from lab.optimize import runner
-    checkout = str(tmp_path / "recorded")
-    record = dict(target="hardware/nvidia/h100/lingbot_vla", repository=checkout,
-                  spec=dict(qualification_sources=dict(incumbent={}, candidate={},
-                      incumbent_checkout=checkout, candidate_checkout=checkout),
-                      options={"source_checkout": str(tmp_path / "unrecorded")}))
-    with patch.object(runner.store, "changed_inputs", return_value=[]):
-        with pytest.raises(ValueError, match="candidate source option differs"):
-            runner._command(record, "qualify")
-
-
 def test_official_adapter_forwards_source_without_replacing_oracle(tmp_path):
     from eval.lingbot import parity
     oracle = tmp_path / "official-oracle"

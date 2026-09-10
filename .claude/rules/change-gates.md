@@ -1,8 +1,7 @@
-# Must-Read Skills Before Modifying Components
+# Guidance by component
 
-Before modifying a component, read the skill that defines its contract. This
-is intentionally a small project-specific adaptation of SGLang's component
-gate: add a row only when a stable boundary and a maintained skill exist.
+Use the skill relevant to the component being changed. Read its detailed
+references only when they answer the current question.
 
 - **Writing a new kernel, porting an op to CUDA/TileLang, fusing ops, or an
   optimization pass on an existing kernel**
@@ -25,7 +24,7 @@ gate: add a row only when a stable boundary and a maintained skill exist.
   [`ARCHITECTURE.md`](../../ARCHITECTURE.md) and the Target's `target.py` and
   `pipeline.py` before editing.
 
-Two repository hygiene gates apply to every row:
+During an edit:
 
 - Inspect `git status` before and after a scoped edit; preserve unrelated user
   changes.

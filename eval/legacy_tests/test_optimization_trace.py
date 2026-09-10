@@ -7,7 +7,7 @@ import sys
 import unittest
 
 from lab.optimize import campaign, render, store, trace
-from eval.tests.test_campaign import IDENTITY, PASS, QUALIFIED, experiment
+from eval.legacy_tests.test_campaign import IDENTITY, PASS, QUALIFIED, experiment
 
 
 SEGMENT0 = {

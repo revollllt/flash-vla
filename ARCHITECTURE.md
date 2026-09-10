@@ -1,214 +1,94 @@
 # Architecture
 
-This repository builds fixed-workload VLA inference targets. Peak end-to-end
-action latency on one fixed workload takes priority over a universal operator
-abstraction, so the atomic unit of production is neither a model nor a kernel:
+Flash-VLA specializes inference for a fixed model workload and GPU.
 
 ```text
-Target = hardware x inference-compatible model revision x shape profile
-Workload = Target x ExecutionVariant
+Target   = hardware × inference-compatible architecture × shape profile
+Workload = Target × execution policy
 ```
 
-Everything specialized — buffers, fusion boundaries, tile configurations,
-kernels — belongs to one Target. A Target owns a machine-checkable inference signature. Checkpoint values, task,
-source revisions and filesystem locations are provenance rather than Target axes.
-Direct latency comparisons additionally require the same measurement context
-and stable environment.
+A Target owns its graph, shapes, buffers and kernel routing. Execution policy
+covers precision/quantization and cache behavior. Checkpoint values and input
+fixtures are measurement context; changing them does not redefine architecture.
+Plan and source revision identify the implementation being compared.
 
-![flash-vla architecture](docs/arch.png)
-
-## The boundary
-
-`src/flash_vla/runtime/` owns what is invariant across every Target: the op
-vocabulary, the explicit computation graph and the API that builds it, the VLA
-template, the one `ModelRunner`, the static arena and graph capture, plan
-binding, and the identity every report carries. It knows no model, no backend
-and no device.
-
-The Target owns everything else: its model contract, its graph, its backends
-and their kernels, and the plans that route call sites to them. A
-specialization that helps one Target and not another lives in that Target.
-
-## The template
-
-Inference is three stages, in this order:
+## Components and dependencies
 
 ```text
-images -> vision_encoder -> [host slot] -> llm_backbone -> action_expert -> actions
+models/                       model semantics and checkpoint loading
+runtime/                      graph, buffers, execution and plan binding
+hardware/<vendor>/<device>/   Targets and reusable component kernels
+benchmarks/, eval/            measurement and correctness consumers
+lab/                          experiments and optional historical tooling
 ```
 
-`vision_encoder` embeds the camera views, `llm_backbone` builds the prefix KV
-cache, `action_expert` denoises the action chunk over that cache. A host slot
-is optional host work between two stages, ordered by the program and hidden
-behind the preceding stage's replay.
+- Models have no hardware dependencies. Runtime imports no model, backend or Target.
+- A Target combines models, runtime and device component packages. It owns shapes,
+  plans and routing; components own reusable kernel implementations.
+- A Target never imports another Target's kernels. Shared expert builders live
+  in `gemma_expert`; each Target keeps its own JIT registry and compiler settings.
+- CUDA tile primitives and TileLang JIT conventions are vendor-level utilities.
+- Production source imports no `benchmarks`, `eval` or `lab` modules. Experiments
+  may import production code; deployment never imports experiments.
 
-Onboarding a model means rewriting its original forward pass as an explicit
-graph over the op vocabulary: every op names its inputs, outputs and weights,
-and Python loops only construct nodes. This is the relation vLLM's model files
-have to their transformers originals — the rewrite need not be written the way
-the original was, and its correctness is judged only by the precision gate
-against the original implementation.
-
-## Dependency direction
+## Forward execution
 
 ```text
-runtime/                              -> nothing model-, backend- or Target-specific
-models/<model>/                       -> nothing hardware-specific
-hardware/<vendor>/<device>/<model>/   -> models/ + runtime/ + its own backends/
-                                         + the device's component packages
-hardware/<vendor>/<device>/<component>/ -> models/ + runtime/ + hardware/<vendor>/cuda/tile/
-                                         + hardware/<vendor>/tilelang/
-hardware/<vendor>/tilelang/           -> nothing of this repository's
-eval/, benchmarks/                    -> ModelRunner + the Target registry
-                                         (benchmarks/targets.py)
-
-src/ never imports eval/, benchmarks/ or lab/.
-No Target imports another Target's kernels.
-A component package imports no Target.
-The deployment path never imports lab/.
+images → vision_encoder → [host work] → llm_backbone → action_expert → actions
 ```
 
-A component package (`hardware/<vendor>/<device>/<component>/`, one per model
-component the device's Targets share: `siglip`, `gemma_backbone`,
-`gemma_expert`) holds the kernels and the backend factories of that component
-on that device, written once. Two vendor-level libraries sit below both
-packages and Targets and are specific to neither a model nor a device:
-`hardware/<vendor>/cuda/tile/` for the CUDA tile primitives and
-`hardware/<vendor>/tilelang/` for the TileLang JIT conventions. A Target registers the package's backends under
-names of its own and keeps every routing decision; two Targets sharing a
-component share its kernels and diverge only in their plans.
+The explicit graph names inputs, outputs, weights and call sites. `ModelRunner`
+materializes that graph and binds each call site to the selected plan. Model
+shape and control-flow differences belong to the Target rather than branches
+inside the runner. Shared kernels accept the arguments and layout of their
+call-site interface.
 
-## The runtime interface
+A host slot can overlap with the preceding GPU segment when dependencies allow.
+Input copies, host work, graph replay and the final synchronization are part of
+deployed inference. Model loading and capture are setup work.
 
-| module | owns |
-|---|---|
-| `runtime/ops.py` | `OpSpec`: one call site's parameter order, outputs, weights, FLOP formula |
-| `runtime/graph.py` | `Graph`, `BufRef`, `WeightRef`: the forward pass as data, and the builder API |
-| `runtime/vla.py` | `VLA`, `Input`, `STAGE_OUTPUTS`: the template a Target subclasses |
-| `runtime/runner.py` | `ModelRunner`: materialization, execution, capture, attribution, costs |
-| `runtime/registry.py` | `Registry`: how a Target's backends are named, routed and built |
-| `runtime/binding.py` | route constraints and their validation against a plan |
-| `runtime/engine.py` | the `Engine` protocol every harness is written against |
-| `runtime/cuda/` | `StaticArena` (fixed addresses), `Program` (warmup, freeze, capture, replay) |
-| `runtime/identity.py` | `Identity`: Target axes, plan, engine revision, and report-schema compatibility |
-| `runtime/cost.py` | `Cost`, `Invocation`, `Ceiling`, `SegmentCosts`: the minimal traffic and math a floor divides, and a call site's declared measured ceiling |
+## Execution invariants
 
-## Invariants
+- A CUDA graph captures and replays on one dedicated stream; caller-stream input
+  and output dependencies are preserved. Measurement protocol is owned by the
+  [optimization workflow](docs/optimization.md).
+- Resolve plans and route constraints before capture. The static arena owns
+  buffer addresses, padding and aliases; no allocation follows its freeze.
+- Operators write to their declared output buffers. The graph, not return-value
+  inference, describes the data dependencies.
+- Check checkpoint shapes and semantic compatibility before allocation. Targets
+  own architecture metadata; checkpoint producers supply weight provenance.
+- Compare performance only under matching workload and measurement conditions.
+  A different checkpoint, fixture, GPU or execution policy is a different
+  comparison context, not an optimization gain.
 
-- Each CUDA graph owns one dedicated stream for both capture and every replay.
-  Caller-stream input and output dependencies are preserved. Each measured version
-  runs in a fresh process and measures only its initial capture; model loading
-  and capture remain outside timed inference.
-- A plan is resolved and validated against every route constraint before
-  capture, never at the first replay.
-- Nothing allocates after the workspace allocator freezes; a request warmup did
-  not cover raises instead of allocating inside a capture.
-- Every op writes its outputs in place through the parameters its spec names;
-  return values are ignored.
-- Buffers, their padding and their alias views are declared data, not a
-  consequence of running the graph.
-- New runner reports carry Identity v3. A workload match requires hardware,
-  model, architecture revision, inference signature, complete shape and
-  ExecutionVariant. Plan and engine revision are candidate provenance.
-  Targets own architecture metadata; producers pass checkpoint provenance
-  separately. The runner checks weight ABI before allocation. Dirty source
-  has no resolved engine revision.
-- MeasurementContext separates weights, fixture and comparable environment
-  from Target identity. Compared versions must share workload/environment conditions. Checkpoint,
-  fixture or environment changes cannot be attributed as candidate speedup.
-  Reference implementation revisions remain oracle provenance.
-- Legacy Identity v1/v2 remains readable with its original schema. Explicit
-  v2 migration retains old checkpoint provenance and requires correctness
-  revalidation and a new latency anchor. Unknown Targets require an explicit
-  architecture mapping.
-- The floor model guides kernel work toward hardware SOL; it does not establish
-  attainable latency or convergence by itself. Its ceiling divides only by
-  tagged measured constants of the hardware axis's `measured/` table, its
-  roofline only by the axis's `spec.py` peaks. Remaining headroom informs the
-  next hypothesis; measured end-to-end latency determines the value of a change.
+## Targets, plans and assets
 
-## What a Target is
+A Target supplies model configuration and checkpoint mapping, a graph-building
+pipeline, a backend registry and two plans: `shipped` and `reference`. Candidate
+plans stay under `lab/plans/`. Factories in `benchmarks/targets.py` handle model
+construction; generic harnesses consume the runner interface.
 
-One `target.py` holding the model contract (configuration, ordered shape axes
-and shape numbers,
-weight schema and loader), the shipped plan, the reference plan and the backend
-registry; one `pipeline.py` whose `build` writes the graph; its `backends/`;
-a factory entry in `benchmarks/targets.py`; and an acceptance entry in
-`eval/acceptance.py`. There is no engine, buffer plan or cost table to write.
-A backend in the registry is any object satisfying the registry contract
-(`runtime/registry.py`): the Target's own `backends/` module, or the
-`make_wrappers(scratch, selected_names)` factory of a device component
-package. Either way the Target owns the routing, the plans and the route
-constraints; the package owns the kernels.
+Machine configuration maps logical asset IDs to files. `FLASH_VLA_ASSETS` is a
+JSON mapping for file-backed construction; relative asset paths resolve beside
+that JSON. Explicit path overrides retain their separate checkpoint/fixture IDs.
+The runner receives its resolved assets without mutating another runner's
+process environment.
 
-## Deployment configuration
+Official references use `OPENPI_PYTHON` or `LINGBOT_PYTHON`. Pi0 official weights
+also use `OPENPI_PI0_CHECKPOINT` and its explicit immutable ID. Missing reference
+configuration is reported as unavailable rather than replaced with another
+checkpoint.
 
-Targets name logical assets. Machine configuration maps those identifiers to local
-paths; paths never enter shape, inference signature or Target identity.
-For file-backed LingBot construction, set FLASH_VLA_ASSETS to a JSON mapping
-of logical IDs to paths, or pass asset_config to its factory. Relative asset
-paths resolve beside that JSON file. Explicit checkpoint/fixture paths still
-require their separate immutable identities. The runner copies resolved assets
-read-only for its sampler and backend initialization, so another runner cannot
-change its assets through process environment variables.
+## Optimization and evidence
 
-Official acceptance runtimes are configured before process startup with
-OPENPI_PYTHON (Pi0/Pi0.5) or LINGBOT_PYTHON. Pi0's official checkpoint additionally
-uses OPENPI_PI0_CHECKPOINT and an explicit immutable ID through
-OPENPI_PI0_MODEL_REVISION (legacy variable name) or its CLI options. These values
-have no machine-specific repository defaults; missing configuration makes the
-official tier unavailable.
+[docs/optimization.md](docs/optimization.md) owns the two optimization loops and
+links the relevant skills. Hardware rooflines and measured primitive limits
+guide hypotheses; deployed end-to-end measurements decide whether a change helps.
 
-Each Target carries exactly one shipped plan and one reference plan (its
-correctness oracle route). Everything else — candidate plans, ablations,
-per-kernel trials — lives in `lab/`, the optimization workspace, which is
-tracked in git, may import the deployment path, and is never imported by it.
+Current reports use Identity v3. Legacy schemas remain readable for existing
+results; migration and Campaign qualification belong to the optional legacy
+tools. Ordinary benchmarks do not require those workflows.
 
-## The optimization loop
-
-[docs/optimization.md](docs/optimization.md) owns the executable workflow and
-links each step to the relevant project skills.
-
-```text
-Kernel (parallel agents): Profile -> Analyze -> Design -> Implement -> Validate -> Profile
-Model (serial): Profile -> Analyze -> Design -> Implement -> Validate -> Deploy -> Profile
-```
-
-Profile the full model before focusing on a module or kernel. Use applicable
-roofline and measured hardware capabilities to guide manual CUDA/TileLang kernel
-work toward attainable SOL, reusing Pi0/Pi0.5 and shared-component implementations.
-Independent agents optimize different kernels in separate worktrees. Kernel
-Validate checks numerical correctness and representative local performance;
-only correct candidates with demonstrated local gain enter model integration.
-
-The model loop applies one candidate to the latest accepted version, validates
-model correctness, deploys it, then measures actual end-to-end performance to
-retain or roll it back. After accepting K1, K2 compares M+K1 with M+K1+K2.
-Independent first-capture measurements include host work and synchronization;
-measurements sharing a GPU run serially without competing agent work.
-
-Feed model results back to the kernel loop and select the next hotspot. Reuse
-applicable evidence and refresh profiles when the bottleneck changes. A local
-win or floor ratio alone does not finish optimization. Use relative project
-paths, local asset configuration and a short experiment record; Campaign,
-complete qualification and publication are optional.
-
-The `target-onboarding` skill sequences the "What a Target is" implementation
-without moving model semantics into runtime. Skills carry portable experience
-only; evidence (job ids, measurements, rejected candidates) lives in Agent
-Notes, where a rejection ranks with an acceptance: it stops the next agent from
-repeating an expensive, invalid experiment.
-
-## Evaluation
-
-`python -m benchmarks {latency,profile,kernels,floor}` take the Target as an
-input, as do `python -m eval.correctness` and `python -m eval.gate`, which
-turns the registry's checks and an A/B/A into one verdict. `python -m
-eval.smoke` checks every Target's declarations on a login node, without a
-device. `eval/acceptance.py` is the one registry of what the human defines:
-accuracy requirements, framework conventions and each Target's budget. The
-official-baseline tier is per model: `eval/pi05/reference.py`,
-`eval/pi0/reference.py`.
-
-Decisions, their alternatives and their evidence live in
-[Agent Notes](.agents/notes/README.md).
+[Agent Notes](.agents/notes/README.md) explain durable decisions. Historical notes
+and plans are context, not additional requirements for the current workflow.

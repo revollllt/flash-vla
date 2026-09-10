@@ -8,9 +8,9 @@ import sys
 
 import pytest
 
-from eval.tests.test_weight_dependency import workspace, candidate, finalize
-from eval.tests.test_context_transition import ADAPTER, request, next_spec
-from eval.tests.test_results_publication import files
+from eval.legacy_tests.test_weight_dependency import workspace, candidate, finalize
+from eval.legacy_tests.test_context_transition import ADAPTER, request, next_spec
+from eval.legacy_tests.test_results_publication import files
 from lab.optimize import campaign, store
 from lab.optimize.registry import CampaignRegistry
 from lab.results import resume

@@ -1,0 +1,50 @@
+name: Direct runtime and benchmark checks
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/core.yml"
+      - "src/**"
+      - "benchmarks/**"
+      - "eval/**"
+      - "!eval/legacy_tests/**"
+      - "!eval/gate.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+  push:
+    paths:
+      - ".github/workflows/core.yml"
+      - "src/**"
+      - "benchmarks/**"
+      - "eval/**"
+      - "!eval/legacy_tests/**"
+      - "!eval/gate.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: ${{ github.workspace }}/src:${{ github.workspace }}
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install CPU dependencies
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ".[pi05]" "pytest>=9" pyyaml
+      - name: Check direct runtime and benchmark behavior
+        run: python -m pytest -q

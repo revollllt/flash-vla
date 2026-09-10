@@ -7,9 +7,9 @@ import pytest
 
 from lab.optimize import campaign, schema, store, trace, transition
 from eval import acceptance
-from eval.tests.test_campaign import experiment, PASS, VALID, QUALIFIED
+from eval.legacy_tests.test_campaign import experiment, PASS, VALID, QUALIFIED
 from eval.tests.test_identity_v3 import payload, context as identity_context
-from eval.tests.test_optimization_trace import SEGMENT0
+from eval.legacy_tests.test_optimization_trace import SEGMENT0
 
 
 def context():

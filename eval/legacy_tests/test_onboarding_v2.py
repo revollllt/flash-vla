@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from eval.tests.test_target_onboarding import (
+from eval.legacy_tests.test_target_onboarding import (
     spec as legacy_spec, official_reference, inventory, target_bring_up, ladder, floor_profile)
-from eval.tests.test_weight_dependency import workspace
+from eval.legacy_tests.test_weight_dependency import workspace
 from flash_vla.runtime.identity import inference_signature
 from lab import onboarding
 from lab.optimize import campaign, store
@@ -159,7 +159,7 @@ def test_legacy_spec_is_not_used_for_new_onboarding(tmp_path):
 
 @pytest.mark.parametrize("change", ["checkpoint", "reference", "fixture", "environment"])
 def test_existing_campaign_transitions_without_new_lineage_or_iteration(initial, change):
-    from eval.tests.test_context_transition import request, journal
+    from eval.legacy_tests.test_context_transition import request, journal
 
     root, directory, value, baseline = initial
     prepare(directory, value)
@@ -240,8 +240,8 @@ def test_unregistered_budget_cannot_silently_be_replaced(initial):
 
 @pytest.fixture
 def published_clone(initial, tmp_path):
-    from eval.tests.test_results_resume import clone
-    from eval.tests.test_weight_dependency import candidate
+    from eval.legacy_tests.test_results_resume import clone
+    from eval.legacy_tests.test_weight_dependency import candidate
 
     root, directory, value, baseline = initial
     prepare(directory, value)
@@ -263,7 +263,7 @@ def published_clone(initial, tmp_path):
 
 
 def test_fresh_clone_handoff_seeds_history_and_requires_a_new_anchor(published_clone):
-    from eval.tests.test_context_transition import request, journal
+    from eval.legacy_tests.test_context_transition import request, journal
     from lab.optimize.registry import CampaignRegistry
 
     root, directory, value, baseline = published_clone
@@ -296,7 +296,7 @@ def test_manual_handoff_receipts_cannot_reuse_unvalidated_imported_segment(publi
 
 
 def test_new_publication_receipt_cannot_accept_stale_same_segment_history(initial, monkeypatch):
-    from eval.tests.test_weight_dependency import candidate
+    from eval.legacy_tests.test_weight_dependency import candidate
     from lab.results import render
 
     root, directory, value, baseline = initial

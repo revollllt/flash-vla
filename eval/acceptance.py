@@ -1,4 +1,7 @@
-"""The acceptance registry: what the human defines, and the framework's conventions.
+"""Numerical requirements and optional legacy qualification policy.
+
+Direct timing defaults live in benchmarks.config. The qualification thresholds
+below apply only to explicit legacy consumers.
 
 Acceptance means deployable. The human defines three things and one latency
 number: the accuracy requirements (the precision policy, which oracle tiers
@@ -31,11 +34,8 @@ import os
 from copy import deepcopy
 from typing import Any, Mapping
 
-#: The latency metrics `benchmarks/latency.py` reports.
-LATENCY_METRICS = ("chunk_latency", "device_latency", "host_time", "segment_latency",
-                   "overhead")
-#: Every latency metric reports all three.
-STATISTICS = ("min", "median", "p99")
+from benchmarks.config import FLOOR_HEADROOM_PCT, LATENCY_DEFAULTS, LATENCY_METRICS, STATISTICS
+
 #: The correctness metrics of `eval/metrics.py`.
 CORRECTNESS_METRICS = ("max_abs", "mean_abs", "rms_error", "rel_rms", "p99_abs",
                        "cosine_similarity")
@@ -53,31 +53,13 @@ OPENPI_PI0_MODEL_REVISION = os.environ.get("OPENPI_PI0_MODEL_REVISION")
 
 DEFAULTS: dict[str, Any] = {
     "latency": {
-        "metrics": LATENCY_METRICS,
-        "statistics": STATISTICS,
-        "reps": 100,
-        "warmup": 5,
-        # Warmup precedes every timed loop; extra fixed-time load is opt-in.
-        "soak_s": 0,
-        # Below this many repetitions the 99th percentile is the maximum; it is
-        # then reported as insufficient rather than as a tail.
-        "p99_min_reps": 100,
-        # Deployment does not lock clocks, so neither does any measurement.
-        "clocks": "unlocked",
-        # Daily measurements are independent first-capture processes; controls
-        # and the historical formal qualification rules below are opt-in.
-        "deltas": "independent_versions",
-        "primary_statistic": "median",
+        **LATENCY_DEFAULTS,
         # The explicit legacy gate requires the chunk `min` to improve by at least
         # this much, in absolute terms, on top of being distinguishable from
         # the control spread. The number is the bar the Pi0.5 optimization
         # loop used for every promotion it recorded.
         "promotion_bar_ms": 0.10,
-        # A run whose two control legs differ by more than this on the chunk
-        # `min` cannot decide a bar-sized effect: the verdict is `blocked`,
-        # rerun. Equal to the bar. On this cluster the spread of an unlocked,
-        # shared node read 0.007 to 0.12 ms across five runs (jobs 598904 and
-        # 598948); a limit at half the bar blocked three of them.
+        # Maximum control spread for explicit historical qualification.
         "control_spread_max_ms": 0.10,
         # Two modes. `improve` is for a performance candidate: improve the
         # first statistic by more than max(bar, spread) and regress none of the
@@ -108,7 +90,7 @@ DEFAULTS: dict[str, Any] = {
     # When a Target's optimization stops: the deployment bound holds and no
     # candidate is left to build, or the budget is spent, or every call site
     # measures within this much of its measured ceiling in the floor report.
-    "stop": {"headroom_pct": 10},
+    "stop": {"headroom_pct": FLOOR_HEADROOM_PCT},
     "correctness": {
         "metrics": CORRECTNESS_METRICS,
         # Keyed by precision policy: a tolerance is a property of the rounding,

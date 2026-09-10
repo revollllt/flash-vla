@@ -37,3 +37,6 @@ third_party/sglang/
 # Machine-local job launchers live outside version control.
 /sbatch/
 /lab/sbatch/
+
+# Local task state is not project policy.
+/.goal-task/

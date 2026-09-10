@@ -9,7 +9,7 @@ import pytest
 
 from lab.optimize import campaign, store
 from lab.optimize.registry import CampaignRegistry, key_digest
-from eval.tests.test_weight_dependency import workspace, candidate, finalize
+from eval.legacy_tests.test_weight_dependency import workspace, candidate, finalize
 
 
 @pytest.fixture
@@ -202,7 +202,7 @@ def test_corrupt_fork_provenance_is_rejected(setup, field, value):
 
 
 def test_fork_after_transition_has_independent_execution_checkout(setup):
-    from eval.tests.test_context_transition import request, next_spec
+    from eval.legacy_tests.test_context_transition import request, next_spec
 
     root, registry, key, baseline = setup
     parent = registry.create(key, baseline=baseline, inputs=["src/kernel.cu"])
@@ -241,7 +241,7 @@ def test_failed_fork_checkout_is_not_published_as_openable(setup, monkeypatch):
 
 
 def test_child_transition_uses_its_new_checkout_after_fork(setup):
-    from eval.tests.test_context_transition import request
+    from eval.legacy_tests.test_context_transition import request
 
     root, registry, key, baseline = setup
     parent = registry.create(key, baseline=baseline, inputs=["src/kernel.cu"])
@@ -265,7 +265,7 @@ def test_two_processes_finalize_one_iteration_atomically(workspace):
     worker = """
 import sys
 from pathlib import Path
-from eval.tests.test_weight_dependency import finalize
+from eval.legacy_tests.test_weight_dependency import finalize
 print("ready", flush=True)
 try:
     finalize(Path(sys.argv[1]), 1, "no_benefit",
@@ -352,7 +352,7 @@ import json, sys
 from pathlib import Path
 from lab.optimize import campaign, store
 from lab.optimize.registry import CampaignRegistry
-from eval.tests.test_weight_dependency import candidate, finalize
+from eval.legacy_tests.test_weight_dependency import candidate, finalize
 root, key = Path(sys.argv[1]), json.loads(sys.argv[2])
 directory = CampaignRegistry(root).open(key)
 marker = root / "measurement-starts"

@@ -5,9 +5,9 @@ import sys
 
 import pytest
 
-from eval.tests.test_weight_dependency import workspace, candidate, finalize
-from eval.tests.test_context_transition import request
-from eval.tests.test_results_resume import portable
+from eval.legacy_tests.test_weight_dependency import workspace, candidate, finalize
+from eval.legacy_tests.test_context_transition import request
+from eval.legacy_tests.test_results_resume import portable
 from lab.optimize import campaign, store, runner
 from lab.results import index, render
 from lab.results.rebuild import rebuild
@@ -233,7 +233,7 @@ def test_cli_finalization_in_execution_checkout_preserves_publication_root(autom
 def test_cli_seed_prefers_snapshot_over_unusable_new_baseline(portable, tmp_path):
     import json
     from lab.optimize.registry import CampaignRegistry
-    from eval.tests.test_results_resume import clone
+    from eval.legacy_tests.test_results_resume import clone
 
     root, directory, key = portable
     campaign.configure_publication(directory, root)

@@ -5,8 +5,8 @@ import tempfile
 import unittest
 
 from lab.optimize import campaign, migrate, store, trace
-from eval.tests.test_campaign import experiment
-from eval.tests.test_optimization_trace import SEGMENT1
+from eval.legacy_tests.test_campaign import experiment
+from eval.legacy_tests.test_optimization_trace import SEGMENT1
 
 
 def legacy_report(target, revision):

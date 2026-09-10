@@ -1,3 +1,5 @@
+> Historical record. Current instructions: [optimization workflow](../optimization.md).
+
 # 优化计划执行结果（2026-09-07–08）
 
 执行仓库为 lab-H100 的 `/data/user/jzou521/codes/cuda/flash-vla`，起始

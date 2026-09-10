@@ -6,8 +6,8 @@ import sys
 
 import pytest
 
-from eval.tests.test_weight_dependency import workspace, candidate, finalize
-from eval.tests.test_context_transition import inherited_recipes, request, next_spec
+from eval.legacy_tests.test_weight_dependency import workspace, candidate, finalize
+from eval.legacy_tests.test_context_transition import inherited_recipes, request, next_spec
 from lab.optimize import campaign, store, transition, render
 from lab.optimize.registry import CampaignRegistry
 from lab.results.publish import publish

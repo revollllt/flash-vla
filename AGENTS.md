@@ -1,23 +1,20 @@
-# Agent Instructions
+# Agent instructions
 
-For model performance optimization, start with [docs/optimization.md](docs/optimization.md).
-That workflow takes precedence over legacy Campaign and kernel-task procedures.
-Use existing tools directly; do not require Campaign activation or publication.
+For optimization, start with [docs/optimization.md](docs/optimization.md). Use its
+direct commands and load only the skill needed for the current step.
+[ARCHITECTURE.md](ARCHITECTURE.md) owns module boundaries; source owns API details.
+Historical plans, Campaign procedures and Agent Notes do not override this path.
 
-This repository keeps its collaboration rules in [`.claude/rules/`](.claude/rules/).
-Read the rules relevant to the files you will change before editing. In
-particular, all non-trivial work follows the Agent Note and PR workflow in
-[`agent-notes-and-pr-workflow.md`](.claude/rules/agent-notes-and-pr-workflow.md).
+- State one testable hypothesis and use the cheapest informative check first.
+- Control workload, environment and noise before attributing a performance change.
+  Expose uncertainty rather than assuming missing evidence.
+- Make the smallest useful change. Reuse code and measurements; do not add
+  hashes, frozen contracts, baselines, gates or speculative abstractions.
+- Run affected tests using [eval/README.md](eval/README.md). Preserve unrelated
+  work and keep errors visible. No default corpus-wide review or hashing.
+- Update the one owning document when behavior changes. A short experiment log
+  is enough; use an Agent Note only for a durable design decision that needs rationale.
+- Project instructions use relative paths. Machine paths, job launchers and local
+  environment repairs belong in user-directory skills or ignored files.
 
-Documentation records durable specifications, contracts, and evidence; it does
-not restate or narrate implementation. Durable design decisions live in
-[`Agent Notes`](.agents/notes/README.md), not in source-oriented documentation or PR prose.
-
-此外有如下要求：
-1.谋定而后动，通过建立低成本的假设筛选和验证机制，降低每次优化迭代成本
-2.实验求新知，在迭代和对比实验中严格控制变量和噪声尺度，保证每次尝试带来信息增益
-3.谨慎下结论，在归因性能变化前主动排除其他混杂因素，防止测量误差导致错误的优化结论
-
-Project skills describe portable methods and repository-relative examples. Keep
-machine paths, scheduler launchers, node policies and environment repair notes
-in user-directory skills or ignored local files, outside project commits.
+Read the relevant [coding rules](.claude/rules/) when changing implementation.

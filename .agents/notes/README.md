@@ -1,44 +1,19 @@
 # Agent Notes
 
-`.agents/notes/` holds durable decision records. Decisions retain their problem,
-alternatives, consequences, and verification; source code remains authoritative
-for implementation.
+These records explain durable decisions, alternatives and their evidence.
+Current behavior comes from source; README, ARCHITECTURE and the optimization
+workflow own current instructions. An old implemented note is not an additional
+gate for a new experiment.
 
-## Layout and lifecycle
+Read notes only when their rationale is relevant. Ordinary experiments use the
+short log in [the workflow](../../docs/optimization.md); routine edits do not
+require a new note. Update an existing decision record when appropriate.
 
-Each note is `{lifecycle}/{class}/YYYY-MM-DD-topic-title.md`.
+Records use `<lifecycle>/<class>/YYYY-MM-DD-title.md`. Lifecycles are `proposed`,
+`implemented`, `rejected` and `archived`; classes describe the decision, such as
+architecture, process, testing, simplification, feature or bug-fix. Archived
+records are historical and remain unchanged.
 
-- `proposed/`: a reviewable decision not yet shipped.
-- `implemented/`: a decision represented by the current repository state.
-- `rejected/`: a declined proposal whose rationale remains useful.
-- `archived/`: a sealed, historical implemented decision; never edit, move,
-  or treat it as current authority.
-
-Valid classes are `feature`, `bug-fix`, `simplification`, `architecture`,
-`process`, and `testing`.
-
-Every non-trivial PR adds or updates the active note that owns its decision.
-Search before creating a note. Do not duplicate a decision; cross-link partial
-supersessions. A fully superseded decision may be archived only after its
-successor preserves any rationale that remains useful.
-
-## Format
-
-Each active note starts with:
-
-```markdown
-# Agent Note: <title>
-
-Status: <proposed | implemented | rejected — reason>
-```
-
-A proposed note contains `## Problem`, `## Proposal`,
-`## Alternatives considered`, `## Acceptance criteria`, and `## Risks`.
-An implemented note uses `## Decision` and `## Consequences` in place of
-proposal-only sections, and states its current `## Verification`.
-
-## Content boundary
-
-Write decision-level, current-state facts only. Link to source, tests,
-benchmark commands, or artifacts solely as locators; never restate their code,
-control flow, or PR history. A material reversal needs a new cross-linked note.
+Start with a title and status, then explain the problem, decision, consequences
+and verification. Include alternatives only when they explain a real tradeoff.
+Avoid source inventories, duplicate checklists and execution diaries.

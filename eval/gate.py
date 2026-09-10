@@ -373,6 +373,7 @@ def run(target: str, candidate: str = "shipped", reference: str = "shipped",
     plans = [reference, candidate, reference]
     latency_report = latency.run(target, plans, reps=reps or lat["reps"], warmup=lat["warmup"],
                                  seed=seed, attribution=False, breakdown=True,
+                                 control_spread_max_ms=lat["control_spread_max_ms"],
                                  leg_options=[incumbent_options or {}, {}, incumbent_options or {}],
                                  **overrides)
     record["latency"] = {"report": latency_report,

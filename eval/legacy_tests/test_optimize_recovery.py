@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from lab.optimize import scheduler, store, runner
-from eval.tests.test_optimize import spec
-from eval.tests import test_optimize
+from eval.legacy_tests.test_optimize import spec
+from eval.legacy_tests import test_optimize
 
 
 class RecoveryTests(unittest.TestCase):
