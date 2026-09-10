@@ -84,7 +84,8 @@ def harness(monkeypatch):
     return monkeypatch
 
 
-def measured(harness, *, plans=("shipped", "candidate", "shipped"), values=(16., 14., 16.01)):
+def measured(harness, *, plans=("shipped", "candidate", "shipped"), values=(16., 14., 16.01),
+             **options):
     sequence = iter(values)
 
     def measure(engine, inputs, reps, *args, **kwargs):
@@ -95,7 +96,7 @@ def measured(harness, *, plans=("shipped", "candidate", "shipped"), values=(16.,
 
     harness.setattr(latency, "measure", measure)
     harness.setattr(latency, "_run_leg", latency._measure_leg)
-    return latency.run("h100/pi05", list(plans), attribution=False)
+    return latency.run("h100/pi05", list(plans), attribution=False, **options)
 
 
 def checked(harness, tmp_path):
@@ -244,10 +245,13 @@ def test_failed_correctness_stops_before_official_and_measurement(harness, tmp_p
 
 
 def test_formal_gate_requests_uninstrumented_latency(harness, tmp_path):
-    raw = measured(harness, plans=("shipped",) * 3, values=(16., 16.01, 16.02))
+    spread_limit = acceptance.DEFAULTS["latency"]["control_spread_max_ms"]
+    raw = measured(harness, plans=("shipped",) * 3, values=(16., 16.01, 16.02),
+                   control_spread_max_ms=spread_limit)
 
     def invoke(*args, **kwargs):
         assert kwargs["attribution"] is False
+        assert kwargs["control_spread_max_ms"] == spread_limit
         return raw
 
     harness.setattr(latency, "run", invoke)

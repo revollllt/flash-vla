@@ -98,7 +98,8 @@ def test_backend_delayed_load_uses_its_runner_assets(tmp_path, monkeypatch):
             return torch.full((3, 64, 2048), self.value)
 
     loaded = []
-    def policy(weights, layers, cache_rope_frequency, assets):
+    def policy(weights, layers, cache_rope_frequency, assets, *,
+               linear_patch_embedding=False, cache_rope_tables=False):
         loaded.append(Path(assets["checkpoint"]))
         visual = Visual(int(Path(assets["checkpoint"]).read_text()))
         return SimpleNamespace(qwenvl_with_expert=SimpleNamespace(qwenvl=SimpleNamespace(visual=visual)))
@@ -126,7 +127,7 @@ def test_official_parity_cli_forwards_machine_asset_config(monkeypatch, capsys):
         return {"passed": True}
     monkeypatch.setattr(parity, "run", run)
     assert parity.main(["--option", "asset_config=/new layout/assets.json"]) == 0
-    assert received == [{"asset_config": "/new layout/assets.json"}]
+    assert received == [{"asset_config": "/new layout/assets.json", "source_checkout": None}]
 
 
 @pytest.mark.parametrize("name", ["pi0", "pi05"])

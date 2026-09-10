@@ -1,9 +1,8 @@
-from dataclasses import replace
-from unittest.mock import patch
+import copy
 import pytest
 from flash_vla.runtime.identity import Identity
 from lab.optimize import campaign
-from eval.tests.test_identity_v3 import payload, context, context_value
+from eval.tests.test_identity_v3 import payload, context_value
 
 
 def key(identity, *, objective="e2e_chunk_latency_ms", protocol="latency-v2"):

@@ -41,6 +41,15 @@ or the deployed plans. Only affected checks are needed for an iteration.
 
 ## Verification
 
-Validate current documentation links, direct CPU tests, affected legacy consumers,
-and the shared kernels on their existing Pi0/Pi0.5 execution paths. No performance
-improvement is claimed by this refactor.
+- Changed Python sources parse and current documentation links resolve.
+- Direct CPU tests and the focused asset-mock rerun pass; three GPU-dependent
+  cases are skipped on CPU. The explicit legacy suite passes 322 tests.
+- Extracted builder signatures and arithmetic match the original source AST.
+  Pi0 and Pi0.5 shipped plans pass the existing reference comparison at one
+  layer/step on H100, including finite outputs and identical repeated replay.
+- The direct latency command completes with a fresh process, first capture,
+  five warmups, 100 samples and no soak. Direct latency/floor imports do not
+  load qualification policy.
+
+These checks cover source sharing and the direct iteration path. This refactor
+makes no model-quality or performance-improvement claim.
