@@ -4,9 +4,9 @@ from pathlib import Path
 import time
 import torch
 
-from eval.acceptance import tolerances
+from eval.tolerances import tolerances
 from eval.metrics import error_metrics
-from benchmarks.latency import _env
+from flash_vla.environment import collect as _env
 from . import component, store
 
 

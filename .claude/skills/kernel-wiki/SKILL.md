@@ -31,3 +31,7 @@ For a broad question read [the topic map](references/primer.md); for query optio
 read [examples](references/examples.md). The [template index](queries/by-template.md)
 locates CUDA skeletons. Validate or compile affected pages/templates when editing
 this knowledge base; ordinary lookup does not run corpus-wide checks.
+
+For concrete Hopper implementations, read [DeepGEMM](references/deepgemm-sm90.md)
+for producer/consumer GEMM or [FlashMLA](references/flashmla-sm90.md) for cooperating
+warp groups and split-KV decode. These are pinned-source readings, not current project requirements.

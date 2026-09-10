@@ -26,7 +26,7 @@ loop begins after that model's semantics and correctness reference are understoo
 > fixture. Map its forward to the runtime, reuse available components, verify
 > outputs against upstream, and provide the command that measures the new Target.
 
-Use the existing [acceptance policies](../../../eval/acceptance.py) for numerical
+Use the existing [numerical tolerances](../../../eval/tolerances.py) for numerical
 requirements and [runtime architecture](../../../ARCHITECTURE.md) for graph mapping.
 The [recorded onboarding procedure](references/workflow.md) and its schema apply
 when a legacy `lab.onboarding` ledger/handoff is explicitly requested; creating

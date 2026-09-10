@@ -35,8 +35,8 @@ from typing import Any, Callable
 
 import torch
 
-from benchmarks.targets import build, resolve
-from eval.acceptance import DEFAULTS
+from flash_vla.inference import build, resolve
+from lab.optimize.policy import DEFAULTS
 
 _LAT = DEFAULTS["latency"]
 _JITTER = DEFAULTS["deployment"]["jitter_ms"]

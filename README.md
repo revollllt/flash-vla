@@ -30,7 +30,7 @@ Commands below run from the project root in the configured GPU environment.
 ```bash
 python -m benchmarks latency --target h100/pi0 --plan shipped --out artifacts/current.json
 python -m eval.correctness --target h100/pi0 --plan shipped --steps 1 --layers 1
-python -m benchmarks profile --target h100/pi0 --plan shipped --overview --trace-dir artifacts/profile/overview
+python -m tools.profiling.model --target h100/pi0 --plan shipped --overview --trace-dir artifacts/profile/overview
 ```
 
 `shipped` selects the deployed plan; `reference` selects the numerical reference
@@ -52,12 +52,14 @@ end-to-end timing after deployment. It can reuse applicable measurements.
 | `src/flash_vla/models/` | Model semantics, checkpoint formats and loading |
 | `src/flash_vla/hardware/` | GPU-specific Targets, shared components and kernels |
 | `src/flash_vla/runtime/` | Graph execution, buffers, plan binding and capture |
-| `benchmarks/` | Latency, model/kernel profiles and hardware-limit estimates |
-| `eval/` | Numerical references, correctness checks and tests |
+| `eval/` | Model output accuracy and official numerical references |
+| `benchmarks/` | Deployed model and kernel/fusion-chain latency |
+| `tools/` | Profiling, trace analysis and hardware-limit estimates |
+| `tests/` | Runtime, loading and tool correctness checks |
 | `lab/` | Candidate plans and experiments |
 
 [ARCHITECTURE.md](ARCHITECTURE.md) owns the dependency and execution boundaries.
-Use the [evaluation guide](eval/README.md) for scoped tests. Published measurements
+Use [eval](eval/README.md) for accuracy and [tests](tests/README.md) for scoped engineering checks. Published measurements
 live in [results](results/README.md); [historical plans](docs/history/README.md)
 and [legacy tools](lab/optimize/README.md) are available when explicitly needed.
 

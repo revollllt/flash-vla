@@ -7,8 +7,8 @@ time is unknown, not idle. The example is not a production performance test.
 From the repository root:
 
 ```bash
-python -m unittest discover -s eval/tests -p 'test_kernel_trace.py' -v
-python -m benchmarks.kernel_trace.export_perfetto raw.json trace.perfetto.json --summary summary.json
+python -m unittest discover -s tests -p 'test_kernel_trace.py' -v
+python -m tools.profiling.kernel_trace.export_perfetto raw.json trace.perfetto.json --summary summary.json
 ```
 
 On a configured CUDA machine the standalone build is:

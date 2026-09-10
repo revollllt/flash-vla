@@ -12,9 +12,9 @@ from safetensors.torch import load_file
 import torch
 import yaml
 
-from benchmarks.assets import resolve_assets
-from benchmarks.targets import build
-from eval.acceptance import tolerances
+from flash_vla.inference import resolve_assets
+from flash_vla.inference import build
+from eval.tolerances import tolerances
 from eval.metrics import error_metrics
 
 ORACLE_ASSET = "lingbot-robotwin-canonical-v1/seed-42/oracle"
@@ -110,13 +110,13 @@ def main(argv=None) -> int:
     parser.add_argument("--oracle", type=Path)
     parser.add_argument("--asset-config")
     parser.add_argument("--option", action="append", default=[],
-                        help="construction options forwarded by eval.gate; asset_config and source_checkout")
+                        help="construction options forwarded by lab.optimize.gate; asset_config and source_checkout")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--layers", type=int, default=36)
     parser.add_argument("--steps", type=int, default=10)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
-    from benchmarks.latency import parse_options
+    from flash_vla.inference import parse_options
     options = parse_options(args.option)
     unknown = set(options) - {"asset_config", "source_checkout"}
     if unknown:

@@ -1,9 +1,7 @@
 """Readable torch description of the Pi0.5 action-expert attention block.
 
 This is the *algorithm*, written to be read: one operation per line, every
-tensor annotated with its shape, nothing reused in place. It is the input a
-fused-kernel spec is written against -- `specs/tile/` names dataflow, this
-names the maths the dataflow has to reproduce.
+tensor annotated with its shape, nothing reused in place. It describes the maths that the hardware implementation must reproduce.
 
 It is deliberately NOT any of these:
 
@@ -240,7 +238,7 @@ def attention_block(x, s, w_qkv, b, rope, k_cache, v_cache, mask, w_o, g, prefix
     """One layer's attention half, for one flow step: x -> x + gated attention.
 
     The FFN half that follows it (AdaRMS -> gated FFN -> down-projection into
-    the same residual) is a separate chain; see `specs/tile/ffn_taskloop.md`.
+    the same residual) is a separate chain, implemented by the expert CUDA backend.
 
     Returns (x_next, k_cache, v_cache) -- the caches are returned rather than
     mutated so the data flow is visible.

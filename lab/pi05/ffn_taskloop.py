@@ -1,6 +1,6 @@
 """Parity, replay gate, acceptance bench, and counter probe for ffn_taskloop.
 
-Phase 2 gate of specs/tile/ffn_taskloop.md. Three separately runnable pieces,
+FFN task-loop experiments. Three separately runnable pieces,
 each printed behind a [phase] marker BEFORE its device sync, because a
 persistent-kernel bug hangs rather than fails and the log must show which
 phase died:

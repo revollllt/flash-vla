@@ -4,8 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 import torch
-from benchmarks.latency import _env
-from eval.acceptance import tolerances
+from flash_vla.environment import collect as _env
+from eval.tolerances import tolerances
 from eval.metrics import error_metrics
 from flash_vla.hardware.nvidia.h100.pi05.pipeline import rope_table
 from flash_vla.hardware.nvidia.h100.spec import H100Spec

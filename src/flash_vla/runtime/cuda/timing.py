@@ -3,7 +3,7 @@
 These are graph mechanisms, not benchmark policy, which is why they sit in the
 runtime rather than in the benchmark harness: the backend autotuner needs
 them to measure a kernel at all, and a production package must not import a test
-harness to do it. `benchmarks.metrics` re-exports both.
+harness to do it. `flash_vla.environment` re-exports both.
 
 The distinction that makes them necessary: eager timing cannot resolve these
 kernels. At Pi0's decoder shapes the ~15 us launch overhead is several times the

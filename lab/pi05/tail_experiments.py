@@ -46,11 +46,11 @@ from typing import Any, Callable
 
 import torch
 
-from benchmarks.attribution import Attribution
-from benchmarks.attribution import summary as attribution_summary
+from tools.profiling.attribution import Attribution
+from tools.profiling.attribution import summary as attribution_summary
 from benchmarks.latency import device_selector, measure
-from benchmarks.targets import build, resolve
-from eval.acceptance import DEFAULTS
+from flash_vla.inference import build, resolve
+from lab.optimize.policy import DEFAULTS
 
 _LAT = DEFAULTS["latency"]
 #: The four buffers Pi0.5's host slot writes every inference, and the pinned

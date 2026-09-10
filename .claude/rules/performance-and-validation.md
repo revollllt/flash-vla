@@ -2,6 +2,8 @@
 paths:
   - "benchmarks/**/*.py"
   - "eval/**/*.py"
+  - "tools/**/*.py"
+  - "tests/**/*.py"
   - "src/flash_vla/**/*.py"
   - "src/flash_vla/**/*.cu"
   - "src/flash_vla/**/*.cuh"

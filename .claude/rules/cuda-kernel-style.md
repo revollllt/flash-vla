@@ -38,7 +38,7 @@ exception.
   a per-element error path.
 - **Keep layout decisions traceable.** Tile sizes, stages, warp roles, barriers,
   register/shared-memory budgets, and tail policy must map to a contract under
-  `specs/tile/`, the backend kernel module's docstring, or a measured
+  the backend kernel module's docstring, its ABI header, or a measured
   configuration.
 - **State synchronization ownership next to phase changes.** Do not hide a
   barrier or producer/consumer hand-off behind an unexplained helper.

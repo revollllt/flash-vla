@@ -10,7 +10,7 @@ cross-revision bit-identity check the promotion PRs use when a kernel moves
 or a wrapper changes without a numerical change: run `dump` from the tree
 before and the tree after on one node with one seed, then compare on any
 node. Identity is `torch.equal`, so any difference is a finding; the error
-metrics of a non-identical pair come from `python -m eval.calibrate --dumps`,
+metrics of a non-identical pair come from `python -m tools.calibrate --dumps`,
 which reads the same file format.
 
 Run from a tree other than the one holding this file with
@@ -38,7 +38,7 @@ def _revision() -> str:
 
 def dump(target: str, plan: str, out: str, seed: int = 0, steps: int | None = None,
          layers: int | None = None) -> dict[str, Any]:
-    from benchmarks.targets import build, resolve
+    from flash_vla.inference import build, resolve
 
     depth = {k: v for k, v in (("steps", steps), ("layers", layers)) if v is not None}
     engine = build(resolve(target), plan, seed=seed, **depth)

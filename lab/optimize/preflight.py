@@ -1,5 +1,5 @@
 """CPU route resolution; equal plans alone never prove an implementation no-op."""
-from benchmarks.targets import declare
+from flash_vla.inference import declare
 from .schema import validate
 
 

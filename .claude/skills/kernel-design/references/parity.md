@@ -26,8 +26,8 @@ million-element tensor with itself reads 0.99994.
   or weight fold shows up there at full size.
 - **Calibrated, not typed.** A tolerance pair is ten times the natural
   dispersion between the Target's two promoted routes at that depth
-  (`eval/calibrate.py` over `eval.correctness` reports); the registry
-  (`eval/acceptance.py`) records the run its numbers came from. A kernel
+  (`tools/calibrate.py` over `eval.correctness` reports); the registry
+  (`eval/tolerances.py`) retains the existing numerical limits. A kernel
   task reads the pair for its depth key and precision policy; it does not
   invent a number.
 - **Loose but smooth at depth.** Rounding drift compounds per layer, so the

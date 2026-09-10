@@ -21,7 +21,7 @@ observations before and after each leg remain separate from stable context
 identity; they are evidence for drift, not a request to change clocks.
 
 Beside each leg's `metrics` sits an additive `attribution` block
-(`benchmarks/attribution.py`): every timed loop's per-forward samples with
+(`tools/profiling/attribution.py`): every timed loop's per-forward samples with
 their timestamps, the process's per-forward context-switch and page-fault
 deltas, the cyclic collector's collections, and a 10 Hz record of the device's
 clocks and of the other compute processes on it. A tail is then attributable
@@ -29,23 +29,24 @@ from the record instead of argued about. `--breakdown` retains the complete metr
 set expected by explicit legacy qualification.
 
 The runner contains no model or stage names: it builds the engine through
-`benchmarks.targets`, takes the program from the engine, and samples inputs
+`flash_vla.inference`, takes the program from the engine, and samples inputs
 from it. This runner reports measurements; it does not promote code.
 """
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import os
-import platform
 import statistics
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from tools.profiling.attribution import Attribution, LoopTrace
 
 import torch
 
@@ -53,10 +54,8 @@ from benchmarks.config import LATENCY_DEFAULTS
 from flash_vla.runtime.identity import Identity, MeasurementContext
 from flash_vla.runtime.engine import host_slots, segments
 
-from .attribution import Attribution, LoopTrace
-from .attribution import summary as attribution_summary
-from .metrics import env_block, require_cuda, report_context
-from .targets import PLAN_NAMES, build, resolve
+from flash_vla.environment import collect as _env, device_selector, require_cuda, report_context
+from flash_vla.inference import PLAN_NAMES, build, resolve, parse_options
 
 _LAT = LATENCY_DEFAULTS
 
@@ -238,61 +237,10 @@ def _deltas(legs: list[dict[str, Any]], control_spread_max_ms: float | None = No
     return out
 
 
-def _env(device=None) -> dict[str, Any]:
-    observation_fields = ("clocks.sm", "clocks.mem", "pstate", "temperature.gpu",
-                          "power.draw", "clocks_event_reasons.active")
-    fields = ("driver_version", "power.limit", "enforced.power.limit",
-              "clocks.applications.graphics", "clocks.applications.memory",
-              *observation_fields)
-    uuid = device_selector(device)
-    result = subprocess.run(
-        ["nvidia-smi", "-i", uuid, "--query-gpu=" + ",".join(fields),
-         "--format=csv,noheader,nounits"],
-        capture_output=True, text=True, timeout=10, check=True,
-    )
-    rows = list(csv.reader(result.stdout.splitlines(), skipinitialspace=True))
-    if len(rows) != 1 or len(rows[0]) != len(fields):
-        raise ValueError("expected one complete nvidia-smi row for the current CUDA device")
-    driver, requested, enforced, graphics, memory, *observations = rows[0]
-    env = env_block(device)
-    env.update({
-        "gpu_uuid": uuid,
-        "runtime_observation": dict(zip(observation_fields, observations)),
-        "node": platform.node(),
-        "job": os.environ.get("SLURM_JOB_ID"),
-        "driver": driver,
-        "clocks": _LAT["clocks"],
-        # This is the benchmark's execution policy, not a global hardware-lock
-        # certificate. Application clocks remain separate observations.
-        "clock_policy": {
-            "benchmark_control": "inherit",
-            "slurm_gpu_freq_request": os.environ.get("SLURM_GPU_FREQ"),
-            "effective_locked_clocks": "unobserved",
-        },
-        "clock_observation": {"application_graphics_mhz": graphics,
-                              "application_memory_mhz": memory},
-        "power_policy": {"requested_limit_w": float(requested),
-                         "enforced_limit_w": float(enforced)},
-    })
-    return env
 
 
-def parse_options(items: list[str]) -> dict[str, Any]:
-    """`key=value` strings to a dict; true/false and integers are converted."""
-    out: dict[str, Any] = {}
-    for item in items:
-        key, _, value = item.partition("=")
-        low = value.lower()
-        out[key] = (True if low == "true" else False if low == "false"
-                    else int(value) if value.lstrip("-").isdigit() else value)
-    return out
 
 
-def device_selector(device=None) -> str:
-    """Select the actual CUDA device, including CUDA_VISIBLE_DEVICES remapping."""
-    uuid = str(torch.cuda.get_device_properties(
-        torch.cuda.current_device() if device is None else device).uuid)
-    return uuid if uuid.startswith(("GPU-", "MIG-")) else f"GPU-{uuid}"
 
 
 def _measure_leg(target, plan, *, reps, warmup, seed, soak_s, attribution, options, breakdown=False):
@@ -304,7 +252,10 @@ def _measure_leg(target, plan, *, reps, warmup, seed, soak_s, attribution, optio
     environment = _env(engine.device)
     runtime_before = environment.get("runtime_observation")
     context = report_context(engine, environment)
-    collector = Attribution(device_index=device_selector(engine.device)) if attribution else None
+    collector = None
+    if attribution:
+        from tools.profiling.attribution import Attribution, summary as attribution_summary
+        collector = Attribution(device_index=device_selector(engine.device))
     with torch.cuda.device(engine.device):
         if collector is None:
             metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],

@@ -14,7 +14,7 @@ Mirrors `taskloop.py` (the FFN prototype). Three pieces:
 
 Every number here is parsed from `kernels/sm90_attn_task_desc.cuh` through
 `attn_reference.geometry()`, so the planner cannot drift from the ABI.
-Tensor contracts: specs/tile/attention_block_contract.md.
+Tensor arguments are documented beside the launch function and ABI header.
 """
 from __future__ import annotations
 

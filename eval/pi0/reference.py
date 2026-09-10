@@ -9,7 +9,7 @@ The official-baseline tier of the acceptance registry: the Target's reference
 route, built from the OpenPI checkpoint's weights, against OpenPI's own
 forward on the same inputs and noise, judged at the registry's full-depth
 tolerance. The promotion gate runs it with no arguments under the OpenPI
-interpreter; the checkpoint comes from `eval.acceptance.OPENPI_PI0_CHECKPOINT`
+interpreter; the checkpoint comes from `OPENPI_PI0_CHECKPOINT`
 and a missing one is reported as unavailable (exit 3), never as a failure.
 """
 
@@ -22,8 +22,13 @@ from pathlib import Path
 
 import torch
 
-from eval.baselines import openpi
-from eval.acceptance import OPENPI_PI0_CHECKPOINT, OPENPI_PI0_MODEL_REVISION, tolerances
+from flash_vla.models.pi0 import openpi
+from eval.pi0 import official as official_pi0
+import os
+from eval.tolerances import tolerances
+
+OPENPI_PI0_CHECKPOINT = os.environ.get("OPENPI_PI0_CHECKPOINT")
+OPENPI_PI0_MODEL_REVISION = os.environ.get("OPENPI_PI0_MODEL_REVISION")
 from eval.metrics import error_metrics
 
 #: The exit code and stderr marker the gate reads as "unavailable".
@@ -52,8 +57,8 @@ def run(checkpoint: str, *, checkpoint_id: str, seed: int = 0, device: str = "cu
     state = torch.randn((32,), generator=generator, device=torch_device, dtype=torch.float32)
     noise = torch.randn((50, 32), generator=generator, device=torch_device, dtype=torch.float32)
 
-    baseline = openpi.load_model(checkpoint, torch_device)
-    reference = openpi.sample_actions(baseline, images, state, noise).float().clone()
+    baseline = official_pi0.load_model(checkpoint, torch_device)
+    reference = official_pi0.sample_actions(baseline, images, state, noise).float().clone()
     target_weights = openpi.target_checkpoint(baseline)
     del baseline
     torch.cuda.empty_cache()

@@ -22,7 +22,7 @@ import argparse
 import torch
 
 from benchmarks.kernels import record_invocations
-from benchmarks.targets import build, resolve
+from flash_vla.inference import build, resolve
 
 
 def main(argv=None) -> int:

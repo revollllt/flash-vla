@@ -7,8 +7,9 @@ on:
       - "src/**"
       - "benchmarks/**"
       - "eval/**"
-      - "!eval/legacy_tests/**"
-      - "!eval/gate.py"
+      - "tools/**"
+      - "tests/**"
+      - "!tests/legacy/**"
       - "pyproject.toml"
       - "requirements.txt"
   push:
@@ -17,8 +18,9 @@ on:
       - "src/**"
       - "benchmarks/**"
       - "eval/**"
-      - "!eval/legacy_tests/**"
-      - "!eval/gate.py"
+      - "tools/**"
+      - "tests/**"
+      - "!tests/legacy/**"
       - "pyproject.toml"
       - "requirements.txt"
   workflow_dispatch:

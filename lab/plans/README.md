@@ -6,7 +6,7 @@ reference plan live on the Target (`hardware/nvidia/h100/<model>/target.py`).
 Pass one to any harness as `--plan lab/plans/<name>.json`.
 
 A file is named `<target>-<name>.json`, where `<target>` is the Target's short
-alias (`pi05`, `pi0`; `benchmarks/targets.py`): `python -m eval.smoke` reads
+alias (`pi05`, `pi0`; `src/flash_vla/inference.py`): `python -m tests.targets` reads
 the Target from that prefix to check that the plan binds, so a plan whose
 prefix names no Target fails the smoke check.
 

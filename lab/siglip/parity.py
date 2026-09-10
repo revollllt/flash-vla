@@ -23,7 +23,7 @@ import json
 
 import torch
 
-from eval.acceptance import tolerances
+from eval.tolerances import tolerances
 from eval.metrics import error_metrics
 from flash_vla.hardware.nvidia.h100.siglip import geometry
 from flash_vla.hardware.nvidia.h100.siglip.backends import cublas, cuda

@@ -12,5 +12,5 @@ examples. Experiment outputs belong under ignored `artifacts/` directories.
 
 `optimize/`, `onboarding.py` and `results/` retain their existing command interfaces
 for historical Campaigns and publication consumers. Their
-[procedure](optimize/README.md) and `eval/legacy_tests/` apply only to that work.
+[procedure](optimize/README.md) and `tests/legacy/` apply only to that work.
 New kernel experiments do not need a Campaign, receipt or publication step.

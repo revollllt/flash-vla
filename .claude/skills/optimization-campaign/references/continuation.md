@@ -12,7 +12,7 @@ read the relevant section when preparing a command or receipt, not all historica
 
 ## Discover and resume
 
-1. Resolve the request against `benchmarks.targets`: use the registered factory's
+1. Resolve the request against `flash_vla.inference`: use the registered factory's
    weight-free `declare` with the requested shape and asset options. Use the
    Target's reference runtime as documented in lab/optimize/README.md; weight-free
    does not mean dependency-free. Check the

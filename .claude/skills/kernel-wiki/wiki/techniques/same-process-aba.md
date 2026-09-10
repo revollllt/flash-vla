@@ -1,6 +1,6 @@
 ---
 id: technique-same-process-aba
-title: "Same-process A/B/A, min under unpinned clocks, and the in-graph regime"
+title: "Historical A/B/A measurement notes"
 type: technique
 architectures: [sm90]
 tags: [measurement, ablation, persistent-kernel, cache-policy]
@@ -16,45 +16,21 @@ evidence_basis:
     source_id: note-2026-09-07-pi0-expert-cuda-chain
 ---
 
-# Same-process A/B/A, min under unpinned clocks, and the in-graph regime
+# Historical A/B/A measurements
 
-The harness belongs to `doc-benchmark-kernel`; this page records the rules
-that decide what a number means on a cluster where clocks cannot be pinned.
+This page records older experiment evidence. The current
+[optimization workflow](../../../../../docs/optimization.md) owns timing:
+independent processes, first capture, a graph fixed to its stream, and median
+with raw samples. A/B/A is an optional drift diagnostic, not a required model loop.
+The old unpinned-clock observations do not establish a universal noise threshold
+or justify choosing min over median.
 
-- **Compare same-process, interleaved A/B/A**, and with unpinned clocks read
-  `min`, not `median`. Name the node and toolchain; treat sub-microsecond
-  cross-job deltas as noise.
-- **One variable per experiment; screen before you build.** Price a
-  candidate with design-time arithmetic against the measured constants
-  first; one predicted below the noise floor is recorded as screened out,
-  not run.
-- **Profiler-replay medians lie on a persistent launch.** An L2-flush kernel
-  injected before each replay delays co-residency of the persistent grid, so
-  the sample distribution grows a heavy tail that the kernel does not have.
-  Read event timing over rotating buffer sets, or single-replay records, for
-  any persistent kernel.
-- **Switch to the in-graph regime the moment the decision is "fuse or
-  not".** Keep the cold rotating-buffer timer for weight-dominated kernels
-  and for ranking configs of one implementation, where the bias is common to
-  every row; a fusion is judged on whole-stage wall time per layer inside
-  the captured graph.
-- **An anomalously good result that does not reproduce in the complete
-  harness is not evidence**; rerun before believing it, in either direction.
-
-## Commands
-
-The in-graph verdict and the per-site kernel timing this repository uses:
+For kernel comparisons, match shapes, layout and cache state; judge a fusion at
+its full call-site boundary. Persistent kernels and dependent launches can have
+overlapping trace durations, so profiler sums do not substitute for latency.
+Reproduce an anomalous gain with the deployed model before accepting it.
 
 ```bash
-python -m eval.gate --candidate <plan>          # A/B/A in the captured graph; pass | fail | blocked
-python -m benchmarks kernels --site <site>      # per-call-site kernel timing, CUPTI by default
+python -m benchmarks latency --target h100/pi05 --plan shipped --out artifacts/current.json
+python -m benchmarks kernels --target h100/pi05 --site action_expert_attention --timer cudagraph
 ```
-
-A `blocked` verdict is rerun, never read as a pass.
-
-## Caveats
-
-The two rates compared in `pattern-stacked-floors` must share job, node,
-clock and geometry; that comparison turns on a few percent. A cheap upward
-probe can retire an expensive plan (`pattern-one-sided-gradient`): one bound
-row costs a single job.

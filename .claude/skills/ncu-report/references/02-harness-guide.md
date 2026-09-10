@@ -129,7 +129,7 @@ Example selection approach (for a kernel whose dispatcher picks between two temp
 
 ### Where the shapes come from here
 
-The Target declares its shapes (`eval/acceptance.py`, the Target's `target.py`), and the parity drivers already run them — there is no dataset to browse. For a standalone harness, copy the shape tuple from the Target and, when data-dependent branches matter (early exits, masks), dump the real tensors from a parity run and load them with `safetensors_loader.h`.
+The Target declares its shapes (the model's `spec.py` and the Target's `target.py`), and the parity drivers already run them — there is no dataset to browse. For a standalone harness, copy the shape tuple from the Target and, when data-dependent branches matter (early exits, masks), dump the real tensors from a parity run and load them with `safetensors_loader.h`.
 
 If a future workload *does* come as a dataset (e.g. a flashinfer-trace tree with `definitions/`, `workloads/*.jsonl`, `blob/*.safetensors`), the upstream skill ships a browser for it (`helpers/list_flashinfer_workloads.py` in mit-han-lab/ncu-report-skill); the principle is the same — learn the schema, pick one instance per dispatch path plus the largest and the most imbalanced, and reference tensors by absolute path.
 

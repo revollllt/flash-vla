@@ -7,7 +7,7 @@ that controller; they are not prerequisites for new experiments.
 
 
 This controller is for the existing H100 Pi0/Pi0.5 tools. Acceptance remains
-owned by `eval/acceptance.py`; `eval.gate` remains the qualification verdict.
+owned by `lab/optimize/policy.py`; `lab.optimize.gate` remains the qualification verdict.
 The owner requested no new hashes, frozen contracts, baselines or gates.
 
 Real-checkpoint Pi0.5 declarations resolve the upstream OpenPI configuration and
@@ -160,7 +160,7 @@ field must move it to spec.options before preflight or resume; it is not silentl
 
 Qualification currently supports route variants within one checked source tree.
 It requires explicit incumbent/candidate source evidence, affected Targets and
-live checkout paths. Source-version qualification through `eval.gate` is
+live checkout paths. Source-version qualification through `lab.optimize.gate` is
 unsupported: two independent diagnostic libraries do not by themselves make
 that evaluator load both versions. A passing gate still requires current-source
 applicability review; the controller never edits shipped or merges candidates.
@@ -181,7 +181,7 @@ Environment probes do not substitute for model correctness, re-anchor or A/B/A
 evidence.
 
 The existing evaluator can run its registered correctness ladder separately via
-`python -m eval.gate --target TARGET --baseline --correctness-only`. Required
+`python -m lab.optimize.gate --target TARGET --baseline --correctness-only`. Required
 failures still stop subsequent work. Success exits zero with the distinct
 correctness_pass verdict, which cannot authorize promotion without full
 qualification. Formal gate timing disables attribution

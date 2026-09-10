@@ -1,5 +1,5 @@
 """Parity, stage bisection, replay gate and acceptance bench for the Pi0.5
-attention block (specs/tile/attention_block_contract.md, sections 4-6).
+attention block (Gemma expert CUDA ABI: kernels/sm90_attn_task_desc.cuh).
 
 Pieces, each printed behind a [phase] marker BEFORE its device sync, because a
 persistent-kernel bug hangs rather than fails and the log must show which

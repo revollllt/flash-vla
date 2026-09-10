@@ -5,7 +5,7 @@ from pathlib import Path
 import time
 
 from . import measurement as measurements, runner, store, transition
-from eval import acceptance
+from lab.optimize import policy as acceptance
 from flash_vla.runtime.identity import MeasurementContext
 from .schema import STAGES, validate as validate_experiment, validate_applicability
 

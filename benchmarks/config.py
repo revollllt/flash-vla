@@ -13,4 +13,3 @@ LATENCY_DEFAULTS = {
     "deltas": "independent_versions",
     "primary_statistic": "median",
 }
-FLOOR_HEADROOM_PCT = 10

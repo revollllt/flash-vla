@@ -5,9 +5,9 @@ from pathlib import Path
 import struct
 import torch
 
-from benchmarks.kernel_trace.export_perfetto import convert
-from benchmarks.kernel_trace.query import validate_tokens
-from benchmarks.latency import _env
+from tools.profiling.kernel_trace.export_perfetto import convert
+from tools.profiling.kernel_trace.query import validate_tokens
+from flash_vla.environment import collect as _env
 from . import component, fixture, store
 from .component_probe import sample
 
@@ -71,7 +71,7 @@ def main():
                   flags=(f'-I{args.traced_inputs}/src',f'-I{args.traced_inputs}/lab/examples/kernel_trace'))
     configure=traced.library().enc_attn_trace_config
     configure.argtypes=[ctypes.c_void_p,ctypes.c_int]; configure.restype=ctypes.c_int
-    from benchmarks.targets import build
+    from flash_vla.inference import build
     engine=build('h100/pi05','shipped',steps=1,layers=2)
     inputs=engine.sample_inputs(0); engine.forward(**inputs); torch.cuda.synchronize()
     saved=fixture.capture(engine,'llm_backbone','llm_backbone_attention')

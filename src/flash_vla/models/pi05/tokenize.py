@@ -22,7 +22,7 @@ piece, and digits are individual pieces::
 So the per-inference work reduces to 32 lookups in a 257-entry table plus a
 concatenation. `Pi05Tokenizer.encode` is that; `Pi05Tokenizer.reference` is the
 upstream implementation verbatim, kept here so the two can be compared. They
-must agree exactly -- `eval.pi05.tokenize` is the gate, and
+must agree exactly -- `tests.pi05.tokenize` is the gate, and
 it also pins the closed form in `discretize`.
 
 The table is also the input the device-side version would need: `value_tokens`

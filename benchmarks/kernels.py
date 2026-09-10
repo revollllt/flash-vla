@@ -42,9 +42,9 @@ from flash_vla.runtime.cuda.graph import StreamGraph
 from flash_vla.bench import KernelResult, bench_gpu_time, render_table, write_csv
 from flash_vla.runtime.engine import segments
 
-from .latency import parse_options
-from .metrics import require_cuda
-from .targets import PLAN_NAMES, build, resolve
+from flash_vla.inference import parse_options
+from flash_vla.environment import require_cuda
+from flash_vla.inference import PLAN_NAMES, build, resolve
 
 
 def record_invocations(engine, segment: str) -> dict[str, list[tuple[tuple, dict]]]:

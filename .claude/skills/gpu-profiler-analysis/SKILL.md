@@ -23,7 +23,7 @@ harness for uninstrumented end-to-end performance.
 From the project root, with the active model environment and assets configured:
 
 ```bash
-python -m benchmarks profile --target h100/lingbot_vla --plan shipped --seed 42 \
+python -m tools.profiling.model --target h100/lingbot_vla --plan shipped --seed 42 \
   --overview --trace-dir artifacts/profile/overview
 python .claude/skills/gpu-profiler-analysis/scripts/analyze_trace.py \
   --input artifacts/profile/overview/overview.json --output-dir artifacts/profile/summary

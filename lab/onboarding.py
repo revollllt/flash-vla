@@ -592,7 +592,7 @@ def handoff(directory, root, baseline, *, inputs=(), transition_request=None):
         if spec["version"] != 2:
             raise ValueError("handoff requires an explicit v2 onboarding spec")
         key = _campaign_key(spec)
-        from eval import acceptance
+        from lab.optimize import policy as acceptance
 
         if spec["optimization_budget"] != acceptance.for_target(spec["target"]["target"])["budget"]:
             raise ValueError("onboarding budget differs from the registered Target budget")

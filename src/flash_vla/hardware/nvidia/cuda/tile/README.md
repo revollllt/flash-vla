@@ -66,12 +66,12 @@ constraint; there is no runtime fallback.
 ## Validation
 
 - Compile-time: every table entry is instantiated by the parity build.
-- Device parity: `python -m eval.tile_sm90` runs one
+- Device parity: `python -m tests.tile_sm90` runs one
   CTA per case through g2s, s2r, gemm, r2s and s2g against a float32 torch
   reference (SS/RS wgmma bf16 with K- and MN-major B, fp8 wgmma including a
   mixed pair, two stacked warpgroups, mma.sync bf16 and fp8 through cp.async
   and ldmatrix). Run on a GPU node with
-  `sbatch sbatch/pi05_cuda.sh -m eval.tile_sm90`.
+  `sbatch sbatch/pi05_cuda.sh -m tests.tile_sm90`.
 - Production kernels: the FFN task loop, the decoder attention task loop and
   the encoder attention kernel build on these headers. Their parity scripts
   are the regression gate for any change here, and all three must pass:

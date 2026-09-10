@@ -7,7 +7,7 @@ module satisfies the registry contract of `flash_vla.runtime.registry`.
 `ROUTE_CONSTRAINTS` is deliberately empty and there is no `graph_contract`.
 Every wrapper reads and writes the graph's own buffers in the layout the
 TileLang route uses, and none owns scratch that crosses a call-site boundary,
-so each call site may be routed here on its own and `eval.smoke`'s route check
+so each call site may be routed here on its own and `tests.targets`'s route check
 needs no per-Target oracle for this backend. A future backbone QKV projection
 writing head-major Q into implementation-owned scratch would change that and
 would have to declare a constraint, the way the action expert's attention pair

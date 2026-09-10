@@ -87,7 +87,7 @@ ALL_WRAPPERS = {
 NAMES = frozenset(ALL_WRAPPERS)
 
 #: Each call site here is standalone: no route constraint, no extension op, and
-#: so no graph contract and no `eval.smoke` route oracle to maintain.
+#: so no graph contract and no `tests.targets` route oracle to maintain.
 ROUTE_CONSTRAINTS: tuple = ()
 OPS: tuple = ()
 

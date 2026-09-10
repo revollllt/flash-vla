@@ -18,7 +18,8 @@ Plan and source revision identify the implementation being compared.
 models/                       model semantics and checkpoint loading
 runtime/                      graph, buffers, execution and plan binding
 hardware/<vendor>/<device>/   Targets and reusable component kernels
-benchmarks/, eval/            measurement and correctness consumers
+eval/, benchmarks/           accuracy and latency consumers
+tools/, tests/                diagnostics and engineering checks
 lab/                          experiments and optional historical tooling
 ```
 
@@ -28,7 +29,7 @@ lab/                          experiments and optional historical tooling
 - A Target never imports another Target's kernels. Shared expert builders live
   in `gemma_expert`; each Target keeps its own JIT registry and compiler settings.
 - CUDA tile primitives and TileLang JIT conventions are vendor-level utilities.
-- Production source imports no `benchmarks`, `eval` or `lab` modules. Experiments
+- Production source imports no `benchmarks`, `eval`, `tools`, `tests` or `lab` modules. Experiments
   may import production code; deployment never imports experiments.
 
 ## Forward execution
@@ -66,8 +67,10 @@ deployed inference. Model loading and capture are setup work.
 
 A Target supplies model configuration and checkpoint mapping, a graph-building
 pipeline, a backend registry and two plans: `shipped` and `reference`. Candidate
-plans stay under `lab/plans/`. Factories in `benchmarks/targets.py` handle model
-construction; generic harnesses consume the runner interface.
+plans stay under `lab/plans/`. Factories in `src/flash_vla/inference.py` handle model
+construction. OpenPI loading/conversion belongs to `models/pi0/openpi.py` and
+`models/pi05/openpi.py`; evaluation adds official forward adapters. Accuracy,
+latency and profiling tools all consume this same inference entrypoint.
 
 Machine configuration maps logical asset IDs to files. `FLASH_VLA_ASSETS` is a
 JSON mapping for file-backed construction; relative asset paths resolve beside

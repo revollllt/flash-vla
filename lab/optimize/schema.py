@@ -1,6 +1,6 @@
 """Experiment inputs and read-only acceptance adaptation."""
 from pathlib import Path
-from eval import acceptance
+from lab.optimize import policy as acceptance
 
 STAGES = ('preflight', 'probe', 'check', 'measure', 'qualify')
 KINDS = ('performance', 'refactor', 'diagnostic_probe', 'control')
@@ -69,7 +69,7 @@ def validate(spec):
         raise ValueError('empty allowed scope')
     for value in spec.get('changes', []):
         path = relative_path(value)
-        if path in (Path('eval/acceptance.py'), Path('eval/gate.py')):
+        if path in (Path('lab/optimize/policy.py'), Path('lab/optimize/gate.py')):
             raise ValueError('candidate cannot modify its evaluator')
         if not any(path == prefix or prefix in path.parents for prefix in allowed):
             raise ValueError(f'change outside scope: {value}')

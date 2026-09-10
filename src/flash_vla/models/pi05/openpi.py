@@ -1,0 +1,331 @@
+"""Load and convert OpenPI Pi0.5 checkpoints for inference."""
+from __future__ import annotations
+from pathlib import Path
+import torch
+from dataclasses import replace
+import json
+from flash_vla.models.pi0.openpi import _bf16, _fold_norm, _interleave_rope, _linear, _stack_layers, _value
+from .spec import DECODER_HEADS, ENCODER_LAYERS, VISION_LAYERS, weight_shapes
+
+VISION = "paligemma_with_expert.paligemma.model.vision_tower.vision_model"
+PROJECTOR = "paligemma_with_expert.paligemma.model.multi_modal_projector.linear"
+ENCODER = "paligemma_with_expert.paligemma.model.language_model"
+DECODER = "paligemma_with_expert.gemma_expert.model"
+IMAGE_KEYS = ("base_0_rgb", "left_wrist_0_rgb", "right_wrist_0_rgb")
+
+def restore_rope_precision(model) -> int:
+    """Undo OpenPI's bfloat16 cast of the rotary `inv_freq` buffers.
+
+    `PaliGemmaWithExpertModel.to_bfloat16_for_selected_params` casts the whole
+    module with `self.to(dtype=torch.bfloat16)`, which sweeps up `inv_freq` --
+    a registered buffer, not a parameter. That quantizes the rotary frequencies
+    to eight mantissa bits: `10000**(-1/128)` becomes 0.9296875 instead of
+    0.9305720, a relative error of 1e-3.
+
+    Phase is frequency times position, so the error grows with position. At a
+    prefix position of 900 it is several radians -- the rotation is simply a
+    different one. Pi0 never had to care: with an empty prompt its prefix stops
+    at 768 and the damage is smaller, and its gate reads the final action after
+    ten denoising steps rather than the KV cache directly.
+
+    JAX OpenPI, which is what the checkpoints were trained with, computes the
+    timescale in float32 (`models/gemma.py:424-440`), so float32 here is closer
+    to the model as trained, not further.
+
+    Note the frequencies have to be *recomputed*, not re-cast. The forward pass
+    already does `self.inv_freq[...].float()`, so widening the stored buffer
+    changes nothing -- 0.9296875 widened to float32 is still 0.9296875. The
+    quantization happened once, at construction, and only re-running the rope
+    initializer undoes it. Returns the number of buffers fixed.
+    """
+    fixed = 0
+    for module in model.modules():
+        inv_freq = getattr(module, "inv_freq", None)
+        rope_init_fn = getattr(module, "rope_init_fn", None)
+        if not isinstance(inv_freq, torch.Tensor) or rope_init_fn is None:
+            continue
+        exact, attention_scaling = rope_init_fn(module.config, inv_freq.device)
+        module.inv_freq = exact.float()
+        if getattr(module, "original_inv_freq", None) is not None:
+            module.original_inv_freq = module.inv_freq
+        module.attention_scaling = attention_scaling
+        fixed += 1
+    return fixed
+
+
+def _validate_config(config) -> None:
+    expected = dict(pi05=True, discrete_state_input=True, action_dim=32,
+                    max_token_len=200, paligemma_variant="gemma_2b",
+                    action_expert_variant="gemma_300m")
+    mismatches = {name: {"expected": value, "observed": getattr(config, name)}
+                  for name, value in expected.items() if getattr(config, name) != value}
+    if mismatches:
+        raise ValueError(f"OpenPI config is incompatible with the Pi0.5 adapter: {mismatches}")
+
+
+def _validate_checkpoint_config(checkpoint: str | Path | None, config) -> None:
+    """Reject contradictions in an available OpenPI conversion config.json."""
+    if checkpoint is None:
+        return
+    checkpoint = Path(checkpoint)
+    metadata_path = (checkpoint if checkpoint.is_dir() else checkpoint.parent) / "config.json"
+    if not metadata_path.is_file():
+        return
+    metadata = json.loads(metadata_path.read_text())
+    fields = ("pi05", "discrete_state_input", "action_dim", "action_horizon",
+              "max_token_len", "paligemma_variant", "action_expert_variant", "dtype", "precision")
+    mismatches = {
+        name: {"config": getattr(config, "dtype" if name == "precision" else name),
+               "checkpoint": metadata[name]}
+        for name in fields if name in metadata
+        and metadata[name] != getattr(config, "dtype" if name == "precision" else name)
+    }
+    if mismatches:
+        raise ValueError(f"checkpoint config.json contradicts the reference config: {mismatches}")
+
+
+def resolve_config(checkpoint: str | Path | None, config_name: str | None):
+    """Resolve the reference's actual model config before allocating any weights.
+
+    A real checkpoint requires its upstream training config name. This checks
+    this adapter's supported semantics; it does not establish asset provenance
+    or replace inspection of the checkpoint's tensor ABI.
+    """
+    if checkpoint is not None and config_name is None:
+        raise ValueError("a real checkpoint requires an explicit OpenPI config")
+    if config_name is None:
+        from openpi.models.pi0_config import Pi0Config
+        config = Pi0Config(pi05=True, pytorch_compile_mode=None)
+    else:
+        from openpi.training.config import get_config
+        config = replace(get_config(config_name).model, pytorch_compile_mode=None)
+    _validate_config(config)
+    _validate_checkpoint_config(checkpoint, config)
+    return config
+
+
+def checkpoint_contract(checkpoint: str | Path, config) -> dict:
+    """Inspect stored tensor headers against the supported reference and Target ABI.
+
+    The reference is allocated on meta, and normalization also runs on meta.
+    No weight values are read or hashed. Supported configuration semantics plus
+    tensor compatibility do not establish numerical correctness or policy quality.
+    """
+    from safetensors import safe_open
+    from flash_vla.models.pi05 import spec
+    from flash_vla.runtime.identity import validate_weight_schema
+
+    _validate_config(config)
+    _validate_checkpoint_config(checkpoint, config)
+    path = Path(checkpoint)
+    if path.is_dir():
+        path = path / "model.safetensors"
+    from openpi.models_pytorch.pi0_pytorch import PI0Pytorch
+    with torch.device("meta"):
+        model = PI0Pytorch(replace(config, pytorch_compile_mode=None))
+    expected = {name: tuple(value.shape) for name, value in model.state_dict().items()}
+    parameters = dict(model.named_parameters(remove_duplicate=False))
+    with safe_open(str(path), framework="pt", device="cpu") as source:
+        observed = {name: tuple(source.get_slice(name).get_shape()) for name in source.keys()}
+        aliases = {name: value for name, value in (source.metadata() or {}).items() if name in expected}
+    stored_tensors = len(observed)
+    for name, original in aliases.items():
+        if (name in observed or original not in observed or name not in parameters
+                or original not in parameters or parameters[name] is not parameters[original]):
+            raise ValueError(f"checkpoint tied-parameter alias does not match the reference: {name}")
+        observed[name] = observed[original]
+    validate_weight_schema(observed, expected)
+    normalized = {name: tuple(value.shape) for name, value in target_checkpoint(model).items()}
+    validate_weight_schema(normalized, spec.weight_shapes())
+    return {
+        "contract": {**spec.INFERENCE_CONTRACT, "parameter_shapes": normalized},
+        "checkpoint_schema": {"stored_tensors": stored_tensors, "aliases": aliases,
+                              "reference_tensors": len(expected), "normalized_tensors": len(normalized)},
+    }
+
+
+def build_model(checkpoint: str | Path | None = None,
+                device: str | torch.device = "cuda", seed: int = 0,
+                exact_rope: bool = True, *, config=None):
+    """Load a Pi0.5 model, or construct one with random weights if no path is given.
+
+    Random weights are enough for an implementation gate: both sides run the same
+    tensors, so any difference is ours. They do not establish trained-policy
+    correctness or quality. Real weights require their explicit upstream config.
+
+    `exact_rope` restores the rotary frequencies to float32; see
+    `restore_rope_precision` for why that is the honest default.
+    """
+    if config is None:
+        config = resolve_config(checkpoint, None)
+    config = replace(config, pytorch_compile_mode=None)
+    _validate_config(config)
+
+    _validate_checkpoint_config(checkpoint, config)
+    if checkpoint is not None:
+        checkpoint = Path(checkpoint)
+        if checkpoint.is_dir():
+            checkpoint = checkpoint / "model.safetensors"
+        if not checkpoint.is_file():
+            raise FileNotFoundError(checkpoint)
+    try:
+        from openpi.models_pytorch.pi0_pytorch import PI0Pytorch
+    except ImportError as error:
+        raise RuntimeError(
+            "OpenPI's PyTorch dependencies are required; install OpenPI using "
+            "its official PyTorch setup instructions."
+        ) from error
+
+    torch.manual_seed(seed)
+    model = PI0Pytorch(config)
+    if checkpoint is not None:
+        from safetensors.torch import load_model as load_safetensors_model
+        load_safetensors_model(model, str(checkpoint), strict=True)
+
+    model = model.to(device).eval()
+    if exact_rope:
+        restore_rope_precision(model)
+    return model
+
+
+def _decoder_qkv(state: dict[str, torch.Tensor], layer: int) -> torch.Tensor:
+    """Packed decoder QKV in the target's RoPE layout, with no norm to fold in."""
+    attention = f"{DECODER}.layers.{layer}.self_attn"
+    return torch.cat(
+        [
+            _interleave_rope(_linear(state, f"{attention}.q_proj"), DECODER_HEADS),
+            _interleave_rope(_linear(state, f"{attention}.k_proj"), 1),
+            _linear(state, f"{attention}.v_proj"),
+        ],
+        dim=1,
+    )
+
+
+def _encoder_qkv(state: dict[str, torch.Tensor], layer: int) -> torch.Tensor:
+    """Packed encoder QKV, with the plain RMSNorm scale folded in as in Pi0."""
+    attention = f"{ENCODER}.layers.{layer}.self_attn"
+    norm = f"{ENCODER}.layers.{layer}.input_layernorm.weight"
+    return torch.cat(
+        [
+            _interleave_rope(_fold_norm(state, f"{attention}.q_proj", norm), DECODER_HEADS),
+            _interleave_rope(_fold_norm(state, f"{attention}.k_proj", norm), 1),
+            _fold_norm(state, f"{attention}.v_proj", norm),
+        ],
+        dim=1,
+    )
+
+
+@torch.inference_mode()
+def target_checkpoint(model) -> dict[str, torch.Tensor]:
+    """Convert one official Pi0.5 state dict to the packed `weight_shapes()` layout."""
+    state = model.state_dict()
+
+    def vision_layer(index: int) -> str:
+        return f"{VISION}.encoder.layers.{index}"
+
+    def vision_qkv(index: int) -> torch.Tensor:
+        return torch.cat([_linear(state, f"{vision_layer(index)}.self_attn.{p}_proj")
+                          for p in ("q", "k", "v")], dim=1)
+
+    def vision_qkv_bias(index: int) -> torch.Tensor:
+        return torch.cat([_value(state, f"{vision_layer(index)}.self_attn.{p}_proj.bias")
+                          for p in ("q", "k", "v")])
+
+    def encoder_ffn(name: str):
+        return lambda i: _fold_norm(
+            state, f"{ENCODER}.layers.{i}.mlp.{name}",
+            f"{ENCODER}.layers.{i}.post_attention_layernorm.weight")
+
+    def decoder_linear(fmt: str):
+        return lambda i: _linear(state, fmt.format(i=i))
+
+    checkpoint = {
+        # --- vision: identical to Pi0 ---
+        "vision_patch_embedding_w": _bf16(
+            _value(state, f"{VISION}.embeddings.patch_embedding.weight").permute(2, 3, 1, 0)),
+        "vision_patch_embedding_b": _bf16(
+            _value(state, f"{VISION}.embeddings.patch_embedding.bias")),
+        "vision_position_embedding": _bf16(
+            _value(state, f"{VISION}.embeddings.position_embedding.weight")),
+        "vision_attn_qkv_w": _stack_layers(VISION_LAYERS, vision_qkv),
+        "vision_attn_qkv_b": _stack_layers(VISION_LAYERS, vision_qkv_bias),
+        "vision_attn_o_w": _stack_layers(
+            VISION_LAYERS, lambda i: _linear(state, f"{vision_layer(i)}.self_attn.out_proj")),
+        "vision_attn_o_b": _stack_layers(
+            VISION_LAYERS, lambda i: _value(state, f"{vision_layer(i)}.self_attn.out_proj.bias")),
+        "vision_ffn_up_w": _stack_layers(
+            VISION_LAYERS, lambda i: _linear(state, f"{vision_layer(i)}.mlp.fc1")),
+        "vision_ffn_up_b": _stack_layers(
+            VISION_LAYERS, lambda i: _value(state, f"{vision_layer(i)}.mlp.fc1.bias")),
+        "vision_ffn_down_w": _stack_layers(
+            VISION_LAYERS, lambda i: _linear(state, f"{vision_layer(i)}.mlp.fc2")),
+        "vision_ffn_down_b": _stack_layers(
+            VISION_LAYERS, lambda i: _value(state, f"{vision_layer(i)}.mlp.fc2.bias")),
+        "vision_pre_attn_norm_w": _stack_layers(
+            VISION_LAYERS, lambda i: _value(state, f"{vision_layer(i)}.layer_norm1.weight")),
+        "vision_pre_attn_norm_b": _stack_layers(
+            VISION_LAYERS, lambda i: _value(state, f"{vision_layer(i)}.layer_norm1.bias")),
+        "vision_pre_ffn_norm_w": _stack_layers(
+            VISION_LAYERS, lambda i: _value(state, f"{vision_layer(i)}.layer_norm2.weight")),
+        "vision_pre_ffn_norm_b": _stack_layers(
+            VISION_LAYERS, lambda i: _value(state, f"{vision_layer(i)}.layer_norm2.bias")),
+        "vision_final_norm_w": _bf16(_value(state, f"{VISION}.post_layernorm.weight")),
+        "vision_final_norm_b": _bf16(_value(state, f"{VISION}.post_layernorm.bias")),
+
+        # --- encoder: identical to Pi0, plain norms folded into the GEMMs ---
+        "encoder_multi_modal_projector_w": _bf16(_linear(state, PROJECTOR)),
+        "encoder_multi_modal_projector_b": _bf16(_value(state, f"{PROJECTOR}.bias")),
+        "encoder_attn_qkv_w": _stack_layers(ENCODER_LAYERS, lambda i: _encoder_qkv(state, i)),
+        "encoder_attn_o_w": _stack_layers(
+            ENCODER_LAYERS, lambda i: _linear(state, f"{ENCODER}.layers.{i}.self_attn.o_proj")),
+        "encoder_ffn_gate_w": _stack_layers(ENCODER_LAYERS, encoder_ffn("gate_proj")),
+        "encoder_ffn_up_w": _stack_layers(ENCODER_LAYERS, encoder_ffn("up_proj")),
+        "encoder_ffn_down_w": _stack_layers(
+            ENCODER_LAYERS, lambda i: _linear(state, f"{ENCODER}.layers.{i}.mlp.down_proj")),
+
+        # --- decoder: adaptive norms, so nothing folds into these ---
+        "decoder_action_in_proj_w": _bf16(_linear(state, "action_in_proj")),
+        "decoder_action_in_proj_b": _bf16(_value(state, "action_in_proj.bias")),
+        "decoder_time_mlp_in_w": _bf16(_linear(state, "time_mlp_in")),
+        "decoder_time_mlp_in_b": _bf16(_value(state, "time_mlp_in.bias")),
+        "decoder_time_mlp_out_w": _bf16(_linear(state, "time_mlp_out")),
+        "decoder_time_mlp_out_b": _bf16(_value(state, "time_mlp_out.bias")),
+        "decoder_ada_rms_attn_w": _stack_layers(
+            ENCODER_LAYERS, decoder_linear(DECODER + ".layers.{i}.input_layernorm.dense")),
+        "decoder_ada_rms_attn_b": _stack_layers(
+            ENCODER_LAYERS,
+            lambda i: _value(state, f"{DECODER}.layers.{i}.input_layernorm.dense.bias")),
+        "decoder_ada_rms_ffn_w": _stack_layers(
+            ENCODER_LAYERS, decoder_linear(DECODER + ".layers.{i}.post_attention_layernorm.dense")),
+        "decoder_ada_rms_ffn_b": _stack_layers(
+            ENCODER_LAYERS,
+            lambda i: _value(state, f"{DECODER}.layers.{i}.post_attention_layernorm.dense.bias")),
+        "decoder_ada_rms_final_w": _bf16(_linear(state, f"{DECODER}.norm.dense")),
+        "decoder_ada_rms_final_b": _bf16(_value(state, f"{DECODER}.norm.dense.bias")),
+        "decoder_attn_qkv_w": _stack_layers(ENCODER_LAYERS, lambda i: _decoder_qkv(state, i)),
+        "decoder_attn_o_w": _stack_layers(
+            ENCODER_LAYERS, lambda i: _linear(state, f"{DECODER}.layers.{i}.self_attn.o_proj")),
+        "decoder_ffn_gate_w": _stack_layers(
+            ENCODER_LAYERS, lambda i: _linear(state, f"{DECODER}.layers.{i}.mlp.gate_proj")),
+        "decoder_ffn_up_w": _stack_layers(
+            ENCODER_LAYERS, lambda i: _linear(state, f"{DECODER}.layers.{i}.mlp.up_proj")),
+        "decoder_ffn_down_w": _stack_layers(
+            ENCODER_LAYERS, lambda i: _linear(state, f"{DECODER}.layers.{i}.mlp.down_proj")),
+        "decoder_action_out_proj_w": _bf16(_linear(state, "action_out_proj")),
+        "decoder_action_out_proj_b": _bf16(_value(state, "action_out_proj.bias")),
+
+        # --- language: the whole table, gathered per inference ---
+        "vocab_embeddings": _bf16(_value(state, f"{ENCODER}.embed_tokens.weight")),
+    }
+
+    expected = weight_shapes()
+    if set(checkpoint) != set(expected):
+        raise ValueError(
+            f"target checkpoint keys do not match: "
+            f"missing={sorted(set(expected) - set(checkpoint))}, "
+            f"extra={sorted(set(checkpoint) - set(expected))}")
+    for name, shape in expected.items():
+        if tuple(checkpoint[name].shape) != shape:
+            raise ValueError(
+                f"{name} has shape {tuple(checkpoint[name].shape)}, expected {shape}")
+    return checkpoint

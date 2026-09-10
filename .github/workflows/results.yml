@@ -8,14 +8,15 @@ on:
       - "lab/results/**"
       - "lab/optimize/**"
       - "lab/onboarding.py"
-      - "eval/gate.py"
       - "benchmarks/config.py"
       - "benchmarks/latency.py"
-      - "eval/acceptance.py"
-      - "eval/tests/test_identity*"
-      - "eval/legacy_tests/**"
-      - "benchmarks/targets.py"
-      - "benchmarks/metrics.py"
+      - "eval/**"
+      - "tools/profiling/floor.py"
+      - "tests/test_identity*"
+      - "tests/test_checkpoint_factory.py"
+      - "tests/legacy/**"
+      - "src/flash_vla/inference.py"
+      - "src/flash_vla/environment.py"
       - "src/flash_vla/runtime/identity.py"
       - "src/flash_vla/runtime/registry.py"
       - "src/flash_vla/models/**"
@@ -33,14 +34,15 @@ on:
       - "lab/results/**"
       - "lab/optimize/**"
       - "lab/onboarding.py"
-      - "eval/gate.py"
       - "benchmarks/config.py"
       - "benchmarks/latency.py"
-      - "eval/acceptance.py"
-      - "eval/tests/test_identity*"
-      - "eval/legacy_tests/**"
-      - "benchmarks/targets.py"
-      - "benchmarks/metrics.py"
+      - "eval/**"
+      - "tools/profiling/floor.py"
+      - "tests/test_identity*"
+      - "tests/test_checkpoint_factory.py"
+      - "tests/legacy/**"
+      - "src/flash_vla/inference.py"
+      - "src/flash_vla/environment.py"
       - "src/flash_vla/runtime/identity.py"
       - "src/flash_vla/runtime/registry.py"
       - "src/flash_vla/models/**"
@@ -78,7 +80,7 @@ jobs:
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -e ".[pi05]" "pytest>=9" "matplotlib==3.10.8"
       - name: Validate legacy consumers
-        run: python -m pytest -q eval/legacy_tests
+        run: python -m pytest -q tests/legacy
       - name: Validate published facts
         run: python -m lab.results validate
       - name: Check deterministic generated results

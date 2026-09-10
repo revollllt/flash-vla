@@ -1,6 +1,6 @@
 """K-major XFS consumer plus the 132-CTA persistent FFN task loop.
 
-Phase 4 host side of specs/tile/ffn_taskloop_minimal.md. Three pieces:
+Host-side planner and launcher for kernels/ffn_taskloop.cu. Three pieces:
 
 - `build()` compiles kernels/ffn_taskloop.cu into a plain shared library under
   the repo's .cache (shared filesystem, so a login-node build is visible to

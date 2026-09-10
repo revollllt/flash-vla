@@ -5,8 +5,8 @@ from importlib import import_module
 import math
 from pathlib import Path
 
-from benchmarks.targets import resolve
-from eval import acceptance
+from flash_vla.inference import resolve
+from lab.optimize import policy as acceptance
 from flash_vla.runtime.identity import Identity, inference_signature
 
 from . import measurement, store

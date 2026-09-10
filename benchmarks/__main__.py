@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 
-COMMANDS = {"latency": "latency", "profile": "profile", "kernels": "kernels", "floor": "floor"}
+COMMANDS = {"latency": "latency", "kernels": "kernels"}
 
 
 def main(argv=None) -> int:

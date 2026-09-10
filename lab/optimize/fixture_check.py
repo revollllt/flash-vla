@@ -1,7 +1,7 @@
 """Explicit GPU alias/mutation check for the correctness fixture adapter."""
 import argparse
 import torch
-from benchmarks.latency import _env
+from flash_vla.environment import collect as _env
 from . import fixture,store
 
 

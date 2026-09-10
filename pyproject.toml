@@ -34,4 +34,5 @@ where = ["src"]
 "" = "src"
 
 [tool.pytest.ini_options]
-testpaths = ["eval/tests"]
+testpaths = ["tests"]
+norecursedirs = ["legacy"]

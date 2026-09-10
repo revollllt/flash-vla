@@ -1,4 +1,4 @@
-"""Evidence applicability checks; the existing eval.gate remains the only verdict."""
+"""Evidence applicability checks; the existing lab.optimize.gate remains the only verdict."""
 import json
 from pathlib import Path
 from .store import changed_inputs

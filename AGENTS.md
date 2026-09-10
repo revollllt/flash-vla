@@ -10,7 +10,7 @@ Historical plans, Campaign procedures and Agent Notes do not override this path.
   Expose uncertainty rather than assuming missing evidence.
 - Make the smallest useful change. Reuse code and measurements; do not add
   hashes, frozen contracts, baselines, gates or speculative abstractions.
-- Run affected tests using [eval/README.md](eval/README.md). Preserve unrelated
+- Run affected tests using [tests/README.md](tests/README.md). Preserve unrelated
   work and keep errors visible. No default corpus-wide review or hashing.
 - Update the one owning document when behavior changes. A short experiment log
   is enough; use an Agent Note only for a durable design decision that needs rationale.

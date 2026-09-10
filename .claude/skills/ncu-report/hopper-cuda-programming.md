@@ -103,7 +103,7 @@ Arrive / expect-tx / try_wait with parity; the completion mechanism for TMA and 
 
 ### 7. FP8 (E4M3 / E5M2) on the tensor pipe
 
-Doubles wgmma throughput with per-tensor scaling; accumulate in FP32. Appears in NCU as ordinary tensor-pipe activity; the accuracy budget lives in `eval/acceptance.py`, not in the profiler.
+Doubles wgmma throughput with per-tensor scaling; accumulate in FP32. Appears in NCU as ordinary tensor-pipe activity; the accuracy budget lives in `eval/tolerances.py`, not in the profiler.
 
 ---
 

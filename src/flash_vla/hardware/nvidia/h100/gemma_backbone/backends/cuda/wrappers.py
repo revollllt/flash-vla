@@ -125,7 +125,7 @@ def llm_backbone_ffn_down_residual(x, weight, out):
 class _GatedFfnState:
     """The gated-FFN library handle and the grid it launches, built once per table.
 
-    The SM count is read on the first call, not at construction: `eval.smoke`
+    The SM count is read on the first call, not at construction: `tests.targets`
     builds every Target's op table on a login node with no GPU, so a backend
     that touches the device while a plan is merely being declared cannot be
     checked there.

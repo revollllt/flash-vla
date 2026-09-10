@@ -4,7 +4,7 @@
     python -m eval.pi05.reference --stage action_expert     # the denoised chunk
     python -m eval.pi05.reference                           # both, in that order
 
-Both need the OpenPI environment (`OPENPI_PYTHON`, see `eval/acceptance.py`).
+Both need the OpenPI environment (use the configured OpenPI interpreter).
 
 ## llm_backbone
 
@@ -86,9 +86,10 @@ import os
 
 import torch
 
-from benchmarks.targets import PLAN_NAMES
-from eval.acceptance import tolerances
-from eval.baselines import openpi05
+from flash_vla.inference import PLAN_NAMES
+from eval.tolerances import tolerances
+from flash_vla.models.pi05 import openpi as openpi05
+from eval.pi05 import official as official_pi05
 from eval.metrics import error_metrics
 from flash_vla.models.pi05.spec import HEAD_DIM, VISION_TOKENS
 from flash_vla.models.pi05.tokenize import Pi05Tokenizer
@@ -175,9 +176,9 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
 
     baseline = openpi05.build_model(checkpoint, torch_device, seed=seed,
                                     exact_rope=exact_rope, config=config)
-    provenance = openpi05.reference_provenance(baseline, config, exact_rope=exact_rope)
+    provenance = official_pi05.reference_provenance(baseline, config, exact_rope=exact_rope)
     rope_freqs = baseline.paligemma_with_expert.paligemma.model.language_model.rotary_emb.inv_freq
-    past_key_values, _, _ = openpi05.prefix_kv_cache(
+    past_key_values, _, _ = official_pi05.prefix_kv_cache(
         baseline, images, state,
         torch.from_numpy(tokens.astype("int64")).to(torch_device),
         torch.from_numpy(mask).to(torch_device))
@@ -306,15 +307,15 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
     n_valid = 3 * VISION_TOKENS + int(mask.sum())
 
     baseline = openpi05.build_model(checkpoint, torch_device, seed=seed, config=config)
-    provenance = openpi05.reference_provenance(baseline, config)
+    provenance = official_pi05.reference_provenance(baseline, config)
     # Both sides must run the same depth; our engine takes `layers`, the
     # reference has to be cut. The prefix is a different module and stays whole.
-    reference_layers = openpi05.truncate_expert(baseline, layers)
-    past_key_values, _, pad_masks = openpi05.prefix_kv_cache(
+    reference_layers = official_pi05.truncate_expert(baseline, layers)
+    past_key_values, _, pad_masks = official_pi05.prefix_kv_cache(
         baseline, images, state,
         torch.from_numpy(tokens.astype("int64")).to(torch_device),
         torch.from_numpy(mask).to(torch_device))
-    reference = openpi05.denoise(baseline, state, pad_masks, past_key_values,
+    reference = official_pi05.denoise(baseline, state, pad_masks, past_key_values,
                                  noise.unsqueeze(0), num_steps=steps)[0].float().clone()
     cache = [(k.detach().clone(), v.detach().clone()) for k, v in _cache_layers(past_key_values)]
     target_weights = fold(openpi05.target_checkpoint(baseline), steps=steps)
@@ -377,7 +378,7 @@ def main(argv=None) -> int:
     parser.add_argument("--checkpoint-digest", default=None,
                         help="immutable weights digest; required with --checkpoint")
     parser.add_argument("--option", action="append", default=[],
-                        help="construction option forwarded by eval.gate")
+                        help="construction option forwarded by lab.optimize.gate")
     parser.add_argument("--openpi-config", default=None,
                         help="upstream training config name; required with --checkpoint")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
@@ -394,7 +395,7 @@ def main(argv=None) -> int:
     parser.add_argument("--full", action="store_true",
                         help="action_expert only: run end to end instead of transplanting the cache")
     args = parser.parse_args(argv)
-    from benchmarks.latency import parse_options
+    from flash_vla.inference import parse_options
     options = parse_options(args.option)
     supported = {"checkpoint", "checkpoint_id", "checkpoint_digest", "openpi_config", "prompt", "tokenizer_path"}
     unknown = set(options) - supported

@@ -32,8 +32,8 @@ import json
 import torch
 
 from benchmarks.kernels import record_invocations
-from benchmarks.targets import build, resolve
-from eval.acceptance import tolerances
+from flash_vla.inference import build, resolve
+from eval.tolerances import tolerances
 from eval.metrics import error_metrics
 from flash_vla.hardware.nvidia.h100.gemma_backbone.backends.cuda import (
     enc_attn_reference,

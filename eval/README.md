@@ -1,35 +1,25 @@
-# Evaluation
+# Accuracy evaluation
 
-For an optimization, run the affected correctness path from
-[docs/optimization.md](../docs/optimization.md). Numerical thresholds remain in
-`eval/acceptance.py`; `eval/metrics.py` computes the shared error metrics.
-
-## Direct checks
+Compare model outputs against the existing numerical reference. Keep the same
+checkpoint, inputs, shape and execution policy on both sides.
 
 ```bash
-# Default CPU suite: runtime, workload construction, timing and trace behavior.
-python -m pytest -q
-# A timing-only change needs only its affected tests.
-python -m pytest -q eval/tests/test_latency.py eval/tests/test_environment.py
-# GPU example: the changed model path, at the relevant shape/depth.
 python -m eval.correctness --target h100/pi0 --plan shipped --steps 1 --layers 1
+python -m eval.pi0.reference --help
+python -m eval.pi05.reference --help
+python -m eval.lingbot.parity --help
 ```
 
-Use a model's existing official-reference adapter when checkpoint conversion or
-model semantics change. Kernel refactors need the affected numerical checks;
-performance claims also need uninstrumented measurements under matched conditions.
-Documentation-only changes need link/example checks, not model or GPU reruns.
+`correctness.py` compares a plan with its in-engine reference, including stage
+outputs. The model directories contain official-reference execution and parity
+adapters. `metrics.py` owns error calculations; `tolerances.py` owns the existing
+numerical thresholds. Use the configured upstream environment and real asset
+options for official comparisons; missing assets are reported as unavailable.
+Synthetic checks do not establish policy quality.
 
-## Legacy consumers
+LIBERO and other task-success evaluations will be added when integrated. There
+is no placeholder suite or claim of task-quality coverage today.
 
-Campaign, onboarding receipts, migration and complete qualification tests live
-in `eval/legacy_tests/`. Run them when changing those tools or a shared interface
-they consume:
-
-```bash
-python -m pytest -q eval/legacy_tests
-```
-
-`python -m eval.gate` remains an explicit legacy qualification command. The
-results workflow validates publication when its source or dependencies change;
-it is not part of a routine kernel experiment. Production source imports no eval.
+Engineering checks live in [tests](../tests/README.md). Model and kernel latency
+live in [benchmarks](../benchmarks/README.md); diagnostics live in
+[tools](../tools/README.md).

@@ -7,7 +7,7 @@ loop compares a hand-written kernel against the best library implementation of
 the same maths rather than against the incumbent alone. Weights rotate cold
 (`bench_gpu_time`'s rotating buffers), which is the regime that makes a weight
 stream honest; the numbers here are therefore NOT comparable to the in-graph
-attribution of `benchmarks profile`, where the activation is L2-resident
+attribution of `tools.profiling.model`, where the activation is L2-resident
 because its producer just wrote it. Both regimes appear in the contract's
 baseline table and each is read for what it answers.
 

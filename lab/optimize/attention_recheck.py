@@ -7,8 +7,8 @@ import torch
 from . import component, fixture, store
 from .attention_trace_probe import raw_trace
 from .component_probe import sample
-from benchmarks.kernel_trace.query import validate_tokens
-from benchmarks.latency import _env
+from tools.profiling.kernel_trace.query import validate_tokens
+from flash_vla.environment import collect as _env
 
 
 def main():

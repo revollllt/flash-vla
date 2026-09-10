@@ -60,7 +60,7 @@ def _command(record, name):
             source_args = ['--incumbent-option', 'source_checkout=' + str(Path(sources['incumbent_checkout']).resolve())]
         option_args = [arg for key, value in options.items()
                        for arg in ('--option', f'{key}={value}')]
-        return [sys.executable, '-m', 'eval.gate', '--target', record['target'],
+        return [sys.executable, '-m', 'lab.optimize.gate', '--target', record['target'],
                 '--candidate', record['spec'].get('candidate', 'shipped'),
                 '--incumbent', record['spec'].get('incumbent', 'shipped'),
                 '--seed', str(record['spec'].get('conditions', {}).get('seed', 0)),

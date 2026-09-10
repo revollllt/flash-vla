@@ -5,7 +5,7 @@ the minimal work of each: bytes read once, bytes written once, floating-point
 operations. The declaration is a property of the call site's contract at the
 Target's shapes and precision, not of any backend: it is the numerator the
 floor model divides by measured hardware constants
-(`benchmarks/floor.py`). No torch dependency, so a
+(`tools/profiling/floor.py`). No torch dependency, so a
 floor can be computed on a login node.
 """
 from __future__ import annotations

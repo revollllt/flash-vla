@@ -5,7 +5,7 @@
 //   kAttention (head, kv-split)  : o_buf[h]  = softmax(q_buf[h] K^T * scale + mask) V
 //   kOutProj   (n-tile, head)    : out      += (o_buf @ W_o) * g
 //
-// Contract: specs/tile/attention_block_contract.md.  ABI, geometry and the
+// ABI, geometry and the
 // counter map: sm90_attn_task_desc.cuh.  Torch mirrors: attn_reference.py
 // (task by task) and attn_block_reference.py (block).
 //

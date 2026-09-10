@@ -10,8 +10,8 @@ with "action_expert_out_proj_residual" joining the last pair on the fused
 three-call route.
 
 Attention runs the standalone kernels of `kernels/attn_taskloop.cu` -- the
-per-op form of the task-loop bodies, under the tensor contract of
-`specs/tile/attention_block_contract.md`. The fused persistent attention block
+per-op form of the task-loop bodies; the ABI and geometry live in
+`kernels/sm90_attn_task_desc.cuh`. The fused persistent attention block
 was built, is correct, and lost;
 `.agents/notes/rejected/architecture/2026-08-27-attention-block-taskloop.md`
 records the measured attribution.

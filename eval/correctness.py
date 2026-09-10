@@ -16,8 +16,8 @@ comparison, so a segment is judged on its own inputs and upstream drift does
 not mix into its number. Without it the comparison is cumulative, which is the
 deployment reading and is read after the isolated one passes.
 
-Gates follow the acceptance registry: the single-step, single-layer run gates
-on the shallow cosine threshold; deeper runs are reports, because a
+The single-step, single-layer comparison uses the existing numerical tolerances
+for cosine similarity and relative RMS; deeper runs report drift because a
 denoising loop on random weights is a chaotic map and any two
 implementations that are not bit-identical separate. Replay determinism and
 finiteness of every padded allocation behind a declared output gate at every
@@ -34,11 +34,11 @@ from typing import Any
 
 import torch
 
-from benchmarks.targets import PLAN_NAMES, build, resolve
-from benchmarks.latency import _env
-from benchmarks.metrics import report_context
+from flash_vla.inference import PLAN_NAMES, build, resolve
+from flash_vla.environment import collect as _env
+from flash_vla.environment import report_context
 from flash_vla.runtime.identity import MeasurementContext
-from eval.acceptance import DEFAULTS, tolerances
+from eval.tolerances import tolerances
 from eval.metrics import error_metrics
 
 
@@ -175,8 +175,6 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
         "threshold_key": threshold,
         "within_tolerance": within,
         "mode": "gate" if shallow else "report",
-        "checks": [c["check"] for c in DEFAULTS["correctness"]["checks"]
-                   if c.get("oracle") in (None, "in_engine_reference")],
     }
     report["passed"] = bool(replay_identical and finite and (not shallow or within))
     del reference, candidate, inputs, first, second, ref_out
@@ -200,7 +198,7 @@ def main(argv=None) -> int:
     parser.add_argument("--option", action="append", default=[],
                         help="target construction option as key=value, both implementations")
     args = parser.parse_args(argv)
-    from benchmarks.latency import parse_options
+    from flash_vla.inference import parse_options
     options = parse_options(args.option)
     if {"steps", "layers"} & options.keys():
         parser.error("set check depth with --steps/--layers; --option is for other construction parameters")

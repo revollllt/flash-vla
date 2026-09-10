@@ -4,7 +4,7 @@ import importlib.util
 from pathlib import Path
 from time import perf_counter
 from unittest.mock import patch
-from eval import gate
+from lab.optimize import gate
 from . import store
 
 

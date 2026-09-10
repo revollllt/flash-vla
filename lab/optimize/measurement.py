@@ -83,7 +83,7 @@ def latency(report, *, expected_identity, expected_context, protocol, objective)
 
 def comparison(report, *, expected_identity, parent_identity, expected_context, protocol, objective):
     """Derive parent/candidate scalars from same-context A/B/A leg evidence."""
-    from eval import acceptance
+    from lab.optimize import policy as acceptance
 
     policy = acceptance.for_target(expected_identity["target"])["latency"]
     aba = report["aba"]

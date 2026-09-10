@@ -1,4 +1,4 @@
-// ffn_taskloop.cu -- Phase 5 of specs/tile/ffn_taskloop_minimal.md.
+// Persistent FFN task loop; ABI and geometry are defined in sm90_ffn_task_desc.cuh.
 //
 // Persistent task-loop prototype consuming an upstream K-major XFS buffer:
 //   GatedUp task (128x): hidden[:, n:n+32] = gelu(XFS @ W1 + b1) * (XFS @ W2 + b2)

@@ -17,12 +17,12 @@
 
 3. **理解模型结构。** 结合 [architecture](../ARCHITECTURE.md)，沿 `vision_encoder → llm_backbone → action_expert` 阅读推理路径，理清 shape、调用次数、已有优化和 denoising 循环中的重复计算。
 
-4. **自顶向下 profile，选择值得优化的瓶颈。** 用 [gpu-profiler-analysis](../.claude/skills/gpu-profiler-analysis/SKILL.md) 看完整 forward 的 GPU 时间线，先定位耗时模块或 host/同步空隙，再深入该模块的 call site 和 kernel。按需用 [ncu-report](../.claude/skills/ncu-report/SKILL.md) 判断计算、访存和流水线瓶颈；结合已有 `benchmarks floor` 报告和 [hardware-unit-test](../.claude/skills/hardware-unit-test/SKILL.md) 的实测数据估计距可达 SOL 的空间、调用次数及端到端收益，缺数据才做针对性测量。
+4. **自顶向下 profile，选择值得优化的瓶颈。** 用 [gpu-profiler-analysis](../.claude/skills/gpu-profiler-analysis/SKILL.md) 看完整 forward 的 GPU 时间线，先定位耗时模块或 host/同步空隙，再深入该模块的 call site 和 kernel。按需用 [ncu-report](../.claude/skills/ncu-report/SKILL.md) 判断计算、访存和流水线瓶颈；结合已有 `tools.profiling.floor` 报告和 [hardware-unit-test](../.claude/skills/hardware-unit-test/SKILL.md) 的实测数据估计距可达 SOL 的空间、调用次数及端到端收益，缺数据才做针对性测量。
 
    ```bash
-   python -m benchmarks profile --target h100/lingbot_vla --plan shipped --seed 42 --overview --trace-dir artifacts/profile/overview
+   python -m tools.profiling.model --target h100/lingbot_vla --plan shipped --seed 42 --overview --trace-dir artifacts/profile/overview
    # 仅当整体分析指向 action_expert 时，深入该模块。
-   python -m benchmarks profile --target h100/lingbot_vla --plan shipped --seed 42 --segment action_expert --trace-dir artifacts/profile/detail
+   python -m tools.profiling.model --target h100/lingbot_vla --plan shipped --seed 42 --segment action_expert --trace-dir artifacts/profile/detail
    ```
 
    Profile 与 benchmark 使用相同输入和执行配置；看 GPU 耗时，CPU segment 标签仅表示提交范围。正式延迟另起无 profiler 的进程测量。
