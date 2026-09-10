@@ -14,7 +14,7 @@
 
 3. **理解模型的推理路径。** 沿着 `vision_encoder → llm_backbone → action_expert` 阅读实现，理清各部分的输入 shape、精度、调用次数和中间结果复用。确认当前已经用了哪些优化，尤其关注 denoising 循环中的重复计算。
 
-4. **先做端到端 profile，再深入主要瓶颈。** 保持与 benchmark 相同的输入、`torch.compile` 和 CUDA Graph 设置，用 Torch Profiler 或 Nsight Systems 查看完整 forward：时间主要花在哪个模块，是否存在 host 调度、同步或 GPU 空隙。然后只对最值得优化的部分做 call-site / kernel 分析；需要硬件计数器时，再对关键 kernel 使用 Nsight Compute / `ncu-report`。用“该部分耗时 × 预计可降低比例”粗估端到端收益，选一个有依据、值得尝试的瓶颈。
+4. **先做端到端 profile，再深入主要瓶颈。** 保持与 benchmark 相同的输入、精度、执行路径和 CUDA Graph 设置，用 Torch Profiler 或 Nsight Systems 查看完整 forward：时间主要花在哪个模块，是否存在 host 调度、同步或 GPU 空隙。然后只对最值得优化的部分做 call-site / kernel 分析；需要硬件计数器时，再对关键 kernel 使用 Nsight Compute / `ncu-report`。用“该部分耗时 × 预计可降低比例”粗估端到端收益，选一个有依据、值得尝试的瓶颈。
 
    ```bash
    python -m benchmarks profile --target h100/lingbot_vla --plan shipped --seed 42 --overview --trace-dir artifacts/profile/overview
