@@ -20,13 +20,14 @@ python .claude/skills/ncu-report/scripts/analyze_reports.py \
   --report artifacts/profile/b.ncu-rep --tag b
 ```
 
-For a standalone harness, copy `harness_template.cu` and, if needed,
+For a standalone harness, copy `harness_template.cu` and its included
 `safetensors_loader.h` into an ignored experiment directory. Fill the template's
 TODOs before compiling; an existing project driver is often enough.
 
 ```bash
 mkdir -p artifacts/profile/harness
 cp .claude/skills/ncu-report/scripts/harness_template.cu artifacts/profile/harness/kernel.cu
+cp .claude/skills/ncu-report/scripts/safetensors_loader.h artifacts/profile/harness/
 # After filling the template, compile for the intended GPU (this example: Hopper).
 nvcc -arch=sm_90a -O3 -std=c++17 -lineinfo \
   -I third_party/cutlass/include artifacts/profile/harness/kernel.cu \
