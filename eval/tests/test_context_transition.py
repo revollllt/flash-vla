@@ -378,7 +378,8 @@ def test_concurrent_transition_reservation_has_one_winner(workspace):
     assert len(transition.records(directory)) == 1
 
 
-def test_render_draws_separate_latency_lines_for_context_segments(workspace, tmp_path):
+@pytest.mark.parametrize("change", ["checkpoint", "fixture"])
+def test_render_draws_separate_latency_lines_for_context_segments(workspace, tmp_path, change):
     import importlib.util
     if importlib.util.find_spec("matplotlib") is None:
         pytest.skip("Matplotlib not installed")
@@ -388,7 +389,11 @@ def test_render_draws_separate_latency_lines_for_context_segments(workspace, tmp
 
     root, directory = workspace
     inherited_recipes(root, directory)
-    campaign.transition_context(root, directory, request(root, directory))
+    incoming = request(root, directory)
+    if change == "fixture":
+        incoming["measurement_context"]["weights"] = context()["weights"]
+        incoming["measurement_context"]["fixture"] = {"id": "fixture-b", "digest": "fixture-b"}
+    campaign.transition_context(root, directory, incoming)
     campaign.start(root, next_spec(directory), directory)
     finalize(directory, 4, "accepted", result={"validity": "valid",
                                               "candidate_ms": 19.0, "parent_incumbent_ms": 20.0})
@@ -396,7 +401,8 @@ def test_render_draws_separate_latency_lines_for_context_segments(workspace, tmp
     lines = []
     original = Axes.plot
     def capture(axis, xs, ys, *args, **kwargs):
-        lines.append((list(xs), list(ys)))
+        if kwargs.get("color") == "C0":
+            lines.append((list(xs), list(ys)))
         return original(axis, xs, ys, *args, **kwargs)
     with patch.object(Axes, "plot", capture):
         render.render_optimization_progress(metadata=metadata, points=points,
@@ -405,7 +411,8 @@ def test_render_draws_separate_latency_lines_for_context_segments(workspace, tmp
     assert lines == [([0, 1, 2, 3], [16.0, 14.0, 14.0, 14.0]),
                      ([3.5, 4], [20.0, 19.0])]
     svg = (tmp_path / "contexts.svg").read_text()
-    assert "checkpoint task-b" in svg
+    assert any(("fixture fixture-b" if change == "fixture" else "checkpoint task-b")
+               in point.summary for point in points if point.reanchor)
     assert "segment 1 re-anchor" in svg
     assert "iter None" not in svg
     render.render_optimization_progress(metadata=metadata, points=points,
