@@ -1,58 +1,38 @@
 # 模型性能优化 workflow
 
-目标是通过持续的 kernel 设计与优化，逼近目标硬件和实际 shape 下的 SOL（Speed of Light），并将收益落实到端到端延迟。采用双循环：
+通过手写 kernel 优化逼近实际 shape 下的硬件 SOL，并降低部署后的端到端延迟。采用双循环：
 
-| 层级 | 循环 | 产出 |
-| --- | --- | --- |
-| Kernel 内循环：多 agent 并行 | Profile → Analyze → Design → Implement → Validate，按结果继续迭代 | 正确且有局部性能收益的 kernel 或融合算子链 |
-| Model 外循环：串行 | Profile → Analyze → Design → Implement → Validate → Deploy → Profile | 逐个确认候选的部署端到端增益，以及下一轮瓶颈 |
+- **Kernel 内循环，可多 agent 并行：** Profile → Analyze → Design → Implement → Validate，按结果继续迭代。
+- **Model 外循环，串行执行：** Profile → Analyze → Design → Implement → Validate → Deploy → Profile。
 
-外循环确定要优化的热点，内循环负责 kernel 优化。**只有内循环确认正确且有局部收益的候选，才进入 model 集成、验证和部署测试。** Kernel 的 Validate 检查局部正确性与速度；Model 的 Validate 检查集成后的模型正确性，Deploy 后再测实际端到端性能。已有本轮同代码、同条件的测量、正确性结果和 profile 可以复用。
+1. **准备模型与环境。** 从项目根目录运行命令，沿用目标模型的 Python 环境、真实 checkpoint、固定输入及运行参数，在目标 GPU 上执行。已有 Target 直接使用；新增模型时用 [target-onboarding](../.claude/skills/target-onboarding/SKILL.md)。以下命令以 LingBot 为例，需配置已有的 `FLASH_VLA_ASSETS`。
 
-1. **准备模型和环境。** 从项目根目录运行以下命令，文中的项目文件路径均相对项目根目录。沿用模型已有的 Python 环境、真实 checkpoint、输入和运行参数，在目标 GPU 上执行；使用 Slurm 集群时通过作业分配 GPU。以下以 LingBot 为例，使用已有的 `FLASH_VLA_ASSETS` 配置；其他模型使用对应 Target 和资产参数。机器上的资产位置由本地配置提供。
-
-2. **测当前版本的端到端延迟，确认输出正确。** 以本轮当前版本为比较起点，用已有数值参考和容差确认输出；已有结果就复用。`shipped` 表示当前发布方案，`reference` 表示数值参考实现。
+2. **测当前模型并确认输出。** 以当前 `shipped` 版本为比较起点，沿用已有数值参考和容差；本轮同代码、同条件的测量和正确性结果可以复用。
 
    ```bash
    python -m benchmarks latency --target h100/lingbot_vla --plan shipped --seed 42 --out artifacts/before.json
    ```
 
-   默认 warmup 5 次、测量 100 次，以 median 比较并保留原始样本，不做 soak。每个版本独立进程、只用首次 capture，每个 graph 始终在自己的 capture stream 上 replay。计时包含输入搬运、host 工作、replay 和末尾同步，不包含模型加载与 capture。
+   前后保持同一物理 GPU、驱动/runtime、checkpoint、输入、shape、精度和计时范围。各版本独立进程、首次 capture、一个 graph 固定一个 stream；默认 warmup 5 次、测量 100 次、无 soak，以 median 比较并保留原始样本。计时包含输入搬运、host 工作、replay 和末尾同步，不含加载与 capture。A、B 分别测，有漂移迹象才针对性复测。
 
-3. **理解模型的推理路径。** 沿着 `vision_encoder → llm_backbone → action_expert` 阅读实现，理清各部分的输入 shape、精度、调用次数和中间结果复用。确认当前已经用了哪些优化，尤其关注 denoising 循环中的重复计算。
+3. **理解模型结构。** 结合 [architecture](../ARCHITECTURE.md)，沿 `vision_encoder → llm_backbone → action_expert` 阅读推理路径，理清 shape、调用次数、已有优化和 denoising 循环中的重复计算。
 
-4. **Profile：从整个模型定位到关键 kernel。** 保持与 benchmark 相同的输入、精度、执行路径和 CUDA Graph 设置，用 Torch Profiler 或 Nsight Systems 查看完整 forward：时间主要花在哪个模块，是否存在 host 调度、同步或 GPU 空隙。再对主要耗时模块做 call-site / kernel 分析，明确关键 kernel 的耗时、调用次数及相互依赖；需要硬件计数器定位原因时，再使用 Nsight Compute / `ncu-report`。
+4. **自顶向下 profile，选择值得优化的瓶颈。** 用 [gpu-profiler-analysis](../.claude/skills/gpu-profiler-analysis/SKILL.md) 看完整 forward 的 GPU 时间线，先定位耗时模块或 host/同步空隙，再深入该模块的 call site 和 kernel。按需用 [ncu-report](../.claude/skills/ncu-report/SKILL.md) 判断计算、访存和流水线瓶颈；结合已有 `benchmarks floor` 报告和 [hardware-unit-test](../.claude/skills/hardware-unit-test/SKILL.md) 的实测数据估计距可达 SOL 的空间、调用次数及端到端收益，缺数据才做针对性测量。
 
    ```bash
    python -m benchmarks profile --target h100/lingbot_vla --plan shipped --seed 42 --overview --trace-dir artifacts/profile/overview
-   # 若整体 profile 指向 action_expert，再深入这个模块。
+   # 仅当整体分析指向 action_expert 时，深入该模块。
    python -m benchmarks profile --target h100/lingbot_vla --plan shipped --seed 42 --segment action_expert --trace-dir artifacts/profile/detail
    ```
 
-   看 GPU 时间线判断耗时，CPU segment 标签仅表示提交范围。Profile 用于诊断，正式延迟另起无 profiler 的进程测量。
+   Profile 与 benchmark 使用相同输入和执行配置；看 GPU 耗时，CPU segment 标签仅表示提交范围。正式延迟另起无 profiler 的进程测量。
 
-5. **Analyze：判断距离硬件 SOL 还有多少空间，选择优化假设。** 对关键 kernel 或相依算子链，结合 FLOPs、最低必要访存量和硬件算力/带宽估计理论下界 `max(FLOPs / 算力, bytes / 带宽)`，再用实际 shape 下的实测硬件能力和 profile 判断可达水平。优先复用已有 `benchmarks floor` 报告及 `src/flash_vla/hardware/<vendor>/<device>/measured/` 数据；缺少适用数据时，只针对当前问题估算或测量，并标明不确定性。
+5. **并行设计和实现 kernel。** 将不同 kernel 或独立融合链分给多个 agent，在独立 worktree 中用 [kernel-design](../.claude/skills/kernel-design/SKILL.md) 迭代。先查 Pi0、Pi0.5、共享组件已有实现及 [kernel-wiki](../.claude/skills/kernel-wiki/SKILL.md)，再围绕一个有依据的假设做最小改动。按瓶颈优化 tile、数据布局、Tensor Core 利用率、访存和流水线；手写 CUDA/TileLang 融合 normalization、activation、residual、epilogue 等计算，减少中间张量和重复工作，不以 `torch.compile` 自动融合作为交付方案。
 
-   区分计算、访存、launch、同步或流水线瓶颈，用“每次可节省时间 × 调用次数”粗估端到端价值，考虑重叠与关键路径。先查 Pi0、Pi0.5、其他 Target 和共享组件的已有实现，以及 `kernel-wiki` 中对应架构的经验，再选一个有依据、收益值得尝试的假设。已有 kernel 也要根据剩余空间继续优化；floor/ceiling 是参考，不能仅凭一个比例宣告达到 SOL。
+6. **Kernel Validate：确认正确性和局部收益。** 沿用现有参考与容差检查相关 shape/输入，用 [benchmark-kernel](../.claude/skills/benchmark-kernel/SKILL.md) 对齐实际数据布局、缓存和执行条件，比较 kernel 或完整融合链的耗时。失败或收益不确定就留在内循环分析、修改；**正确且有可信局部收益才交给 Model 外循环**，无需先优化到极限。同一 GPU 的性能测量串行；多 GPU 可各自做同卡前后对比，model 正式计时期间避免其他 agent 争用测量资源。
 
-6. **Kernel 内循环：手写 kernel，验证局部收益并迭代。** 对选定热点执行 Profile → Analyze → Design → Implement → Validate。优先复用或适配已有 CUDA/TileLang 实现；融合优化通过手写融合 kernel 完成，不把 `torch.compile` 自动融合当作交付方案。现有编译融合路径可以作为替换前的数值和性能对照。
+7. **Model 串行集成、验证、部署和测量。** 每次只把一个胜出候选接入当前最佳模型和 plan，做受影响的模型正确性检查；近似改动补充任务质量评估。验证通过后 Deploy 到实际推理路径，再运行第 2 步命令测部署性能，使用实际加载的 plan，结果另存 `artifacts/after.json`。有端到端收益就保留，否则回退或记录不确定，再处理下一个候选。接受 K1 后，K2 比较 `M+K1` 与 `M+K1+K2`，逐个确认增量收益。
 
-   **不同 kernel 可分给多个 agent 并行优化。** 每个 agent 在独立分支/worktree 中负责一个 kernel 或独立融合链，提交候选改动和对应实验记录；model 当前最佳 plan 由外循环统一串行更新。设计和实现可并行，同一物理 GPU 上的性能测量要串行；model 正式计时期间，该 GPU 不运行其他 agent 的任务。有多张 GPU 时，各 agent 在各自 GPU 上完成同条件前后对比。
+   局部收益未传递到模型时，回第 4 步分析并反馈内循环；收益成立后由部署版本选下一轮热点。候选适配最新模型，相关条件变化才补验证；瓶颈未变可复用 profile。按用户预算持续迭代，主要热点接近有证据支持的可达能力且无值得尝试的新方案时结束。
 
-   计算瓶颈重点研究 tile 形状、Tensor Core 利用率和 warp/CTA 分工；访存瓶颈重点研究数据布局、合并访问、shared memory/寄存器复用及异步搬运；流水线瓶颈重点研究计算与搬运重叠、同步和资源占用。同时考虑将 normalization、activation、residual、epilogue 等相邻计算手工融合，消除中间张量、reshape/shuffle 和重复计算。根据瓶颈选择设计，不逐项机械尝试。
-
-   每次先用最小改动验证一个假设。Validate 对比候选与当前实现的数值结果及 kernel/融合算子链耗时，计时对齐实际 shape、数据布局、缓存和执行条件。正确性失败、没有收益或收益仍不确定时，留在内循环分析和调整；需要定位原因时更新局部 profile 或采集 NCU 证据。**确认正确且有局部收益后，即可将候选交给 Model 外循环**，无需先穷尽所有 kernel 优化。内循环没有值得尝试的方案时，将结论反馈给外循环，重新选择热点。
-
-7. **Model 外循环：串行集成，逐个验证 kernel 的端到端增益。** 每次以当前已接受的最佳部署版本为 A，只加入一个通过内循环的候选作为 B；融合链作为一个完整候选。不捆绑多个独立候选测一次总收益。完成本候选的模型验证、部署计时和保留/回退后，再处理下一个。接受 K1 后，K2 比较的是 `M+K1` 与 `M+K1+K2`，因此每次得到该候选在当前模型上的增量收益。
-
-   外层 Design / Implement 将候选接入最新已接受的模型版本和 plan。候选开发期间模型已更新的，先适配当前版本；若相关接口、shape 或执行条件变化，补做受影响的 kernel 验证。Model Validate 沿用现有参考和容差，检查集成后受影响的模型输出，覆盖相关真实 shape，并按需要补充独立输入。共享 runtime / 同步改动做相关 GPU 集成检查，近似或语义改动补充任务质量评估。只验证本次改动涉及的部分，不放宽精度要求。
-
-   验证通过后执行 Deploy：将该模型版本及其 plan 部署到目标 GPU，通过实际推理入口运行，再测完整模型的端到端延迟。测量使用实际部署的入口、checkpoint、输入、shape、精度和 CUDA Graph 配置，包含实际路径中的 host 工作与同步。重复第 2 步命令，`--plan` 使用部署实际加载的 plan，结果另存为 `artifacts/after.json`。部署后的测量才是判断实际性能收益的依据。
-
-   前后保持同一物理 GPU、驱动/runtime、checkpoint、输入、shape、精度、计时范围和无竞争负载的条件。默认分别测 A、B；有漂移迹象才针对性复测，必要时用 A/B/A。收益接近已观察到的波动时先记为不确定，换环境后的差异不能算作代码收益。
-
-   部署后确认正确且端到端有收益就保留为当前最佳方案，否则回退本次候选版本或记录待确认问题。Kernel 局部收益不保证 model 收益：局部变快但部署性能未改善时，回到第 4 步检查关键路径、重叠、调度和测量条件，并将结论反馈给内循环。收益成立后，以部署版本为对象重新判断剩余瓶颈与硬件能力的差距，由外循环选择下一轮 kernel 工作；执行路径或瓶颈变化时更新整体 profile，其余时候复用已有证据。
-
-   留一条简短记录：假设与改动、代码版本或 diff、命令与环境、正确性及延迟结果、结论，并保存原始 JSON。只有主要热点已接近有证据支持的可达能力且没有值得尝试的新方案，或用户范围/时间预算要求结束时，才停止；一次优化成功或达到某个 floor 比例不代表循环完成。
-
-日常迭代无需 Campaign 初始化、context activation、re-anchor 或完整 gate；不新增 hash、冻结 contract 或审批步骤。历史审查工具按明确需要使用，绘图和发布集中在有意义的阶段完成。
+每轮只留改动、代码版本或 diff、命令与环境、正确性及性能结果、结论，并保存原始 JSON。Skill 按需使用，不要求每轮全部执行；不新增 hash、冻结 contract 或 gate，不做无关全量审查。历史 Campaign 与发布流程仅在明确需要时使用。

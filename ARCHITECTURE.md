@@ -166,65 +166,32 @@ tracked in git, may import the deployment path, and is never imported by it.
 
 ## The optimization loop
 
-[docs/optimization.md](docs/optimization.md) owns the default agent workflow:
+[docs/optimization.md](docs/optimization.md) owns the executable workflow and
+links each step to the relevant project skills.
 
 ```text
 Kernel (parallel agents): Profile -> Analyze -> Design -> Implement -> Validate -> Profile
 Model (serial): Profile -> Analyze -> Design -> Implement -> Validate -> Deploy -> Profile
 ```
 
-Start with the complete forward, then focus on its costly modules and kernels.
-Compare their work and measured time with the datasheet roofline and applicable
-measured hardware capabilities to identify recoverable time. Reuse existing
-Pi0/Pi0.5 and shared-component kernels, then improve kernel layout, tiling,
-memory traffic, fusion and pipelines toward the hardware's attainable SOL.
-Fusion candidates use explicitly written CUDA/TileLang kernels; existing
-`torch.compile` paths can serve as comparison implementations.
+Profile the full model before focusing on a module or kernel. Use applicable
+roofline and measured hardware capabilities to guide manual CUDA/TileLang kernel
+work toward attainable SOL, reusing Pi0/Pi0.5 and shared-component implementations.
+Independent agents optimize different kernels in separate worktrees. Kernel
+Validate checks numerical correctness and representative local performance;
+only correct candidates with demonstrated local gain enter model integration.
 
-The model loop selects the hotspot and invokes the kernel loop. Kernel Validate
-checks numerical correctness and local performance for the kernel or fused chain
-under representative shapes, layouts, cache and execution conditions. Only a
-correct candidate with demonstrated local gain proceeds to model integration;
-failed or uncertain candidates stay in the inner loop. A winning kernel can
-advance without exhausting every possible kernel improvement.
+The model loop applies one candidate to the latest accepted version, validates
+model correctness, deploys it, then measures actual end-to-end performance to
+retain or roll it back. After accepting K1, K2 compares M+K1 with M+K1+K2.
+Independent first-capture measurements include host work and synchronization;
+measurements sharing a GPU run serially without competing agent work.
 
-Independent kernel or fused-chain tasks can run in parallel agents with separate
-branches/worktrees. Each returns its candidate and experiment record; the model
-loop alone updates the best accepted plan. Performance measurements sharing one
-physical GPU are serialized, and deployed model timing has no concurrent agent
-work on that GPU. Separate GPUs can run independent local comparisons.
-
-The model loop processes one candidate at a time against the latest accepted
-deployment: after accepting K1, evaluate K2 as M+K1 versus M+K1+K2. Do not bundle
-independent candidates into one end-to-end comparison. Finish model validation,
-deployment timing and retention or rollback before integrating the next candidate.
-Model Design/Implement applies the candidate to the current model and plan;
-recheck affected kernel behavior if intervening changes alter its interfaces,
-shapes or execution conditions.
-Model Validate checks the affected model outputs and integration behavior.
-Deploy runs the validated model through its actual inference path on the target
-GPU. Then measure the deployed complete model using its actual entry point,
-assets, inputs and execution settings in independent
-first-capture processes, including host work and synchronization. This deployed
-end-to-end measurement determines whether to retain or roll back the candidate.
-The outer loop profiles the deployed version to select the next kernel task,
-and feeds integration findings back to the inner loop when local gains do not
-reach the model. A local win or a floor ratio alone does not finish optimization.
-Reuse applicable evidence, refresh profiles when needed, and retain only a short
-experiment record.
-These tools run directly; Campaign state, complete qualification and publication
-are optional and do not govern routine iteration. Repository commands and paths
-are relative to the project root; machine-specific assets belong in local config.
-
-| skill | owns |
-|---|---|
-| `target-onboarding` | unfamiliar-model integration from frozen upstream/oracle through compatibility, correctness, baselines, floor/profile, and Campaign handoff |
-| `kernel-design` | the kernel loop: hypothesis, design, reference, parity and local performance; winning candidates feed the model loop |
-| `kernel-wiki` | the queryable sm90 knowledge base built on KernelWiki: symptom-indexed patterns, techniques, hardware and kernel pages with sources, confidence and reproducibility, and the compile-checked sm90 templates bundle |
-| `benchmark-kernel` | per-kernel timing and the amortized in-graph regime |
-| `hardware-unit-test` | the measured constants under every ceiling, and their probes |
-| `gpu-profiler-analysis` | Torch, Nsight Systems and Nsight Compute capture |
-| `ncu-report` | reading a Nsight Compute report into a named bottleneck |
+Feed model results back to the kernel loop and select the next hotspot. Reuse
+applicable evidence and refresh profiles when the bottleneck changes. A local
+win or floor ratio alone does not finish optimization. Use relative project
+paths, local asset configuration and a short experiment record; Campaign,
+complete qualification and publication are optional.
 
 The `target-onboarding` skill sequences the "What a Target is" implementation
 without moving model semantics into runtime. Skills carry portable experience
