@@ -1,0 +1,142 @@
+{
+  "identity": {
+    "schema_version": 3,
+    "target": "hardware/nvidia/h100/lingbot_vla",
+    "hardware": "h100-sxm5-80gb",
+    "model": "lingbot-vla",
+    "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+    "shape": {
+      "batch": 1,
+      "views": 3,
+      "image_height": 224,
+      "image_width": 224,
+      "patch_rows_per_view": 256,
+      "patch_width": 1176,
+      "visual_tokens_per_view": 64,
+      "visual_tokens": 192,
+      "vision_layers": 32,
+      "vision_dim": 1280,
+      "vision_ffn_dim": 3420,
+      "vision_heads": 16,
+      "vision_head_dim": 80,
+      "language_slots": 72,
+      "prefix_len": 264,
+      "state_dim": 75,
+      "action_dim": 75,
+      "chunk": 50,
+      "suffix_len": 51,
+      "steps": 10,
+      "layers": 36,
+      "backbone_dim": 2048,
+      "backbone_ffn_dim": 11008,
+      "expert_dim": 768,
+      "expert_ffn_dim": 2752,
+      "query_heads": 16,
+      "kv_heads": 2,
+      "head_dim": 128
+    },
+    "plan": {
+      "lingbot_vision": "fused-rope",
+      "lingbot_prefix": "fused-rope",
+      "lingbot_action": "fused-rope"
+    },
+    "model_revision": "lingbot-vla-r1",
+    "engine_revision": null,
+    "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+    "execution_variant": {
+      "quantization": {
+        "mode": "bf16"
+      },
+      "cache": {
+        "mode": "none"
+      }
+    }
+  },
+  "implementation_source": null,
+  "measurement_context": {
+    "weights": {
+      "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+      "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+    },
+    "fixture": {
+      "id": "lingbot-robotwin-canonical-v1/seed-42",
+      "digest": "lingbot-robotwin-canonical-v1/seed-42"
+    }
+  },
+  "oracle": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/onboarding/lingbot-vla-4b-h100-bf16/official/official-eager.safetensors",
+  "reference_provenance": {
+    "upstream_commit": "4eb34b7693a0565c67433f8fac9c59a2e67eb60b",
+    "checkpoint_revision": "fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e",
+    "qwen_revision": "66285546d2b821cf421d4f5eb2576359d3770cd3",
+    "precision": "bf16",
+    "fixture_seed": 42,
+    "adapter_revision": "ed5abce8b730b4f66f584ebb0fc270c8ba96d418",
+    "repository": "https://github.com/Robbyant/lingbot-vla.git",
+    "commit": "4eb34b7693a0565c67433f8fac9c59a2e67eb60b"
+  },
+  "seed": 42,
+  "metrics": {
+    "vision_embeddings": {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0000000000000009
+    },
+    "prefix_k": {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 0.9999999999997167
+    },
+    "prefix_v": {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0000000000000033
+    },
+    "velocity_step_0": {
+      "max_abs": 0.0625,
+      "mean_abs": 0.0009520889282226562,
+      "rms_error": 0.0030306806812708887,
+      "rel_rms": 0.0053899358299380005,
+      "p99_abs": 0.0078125,
+      "cosine_similarity": 0.9999855284853127
+    },
+    "actions": {
+      "max_abs": 0.04296875,
+      "mean_abs": 0.0007203531901041666,
+      "rms_error": 0.0022005572212566403,
+      "rel_rms": 0.0023809186819727587,
+      "p99_abs": 0.0078125,
+      "cosine_similarity": 0.9999971695627633
+    },
+    "physical_actions": {
+      "max_abs": 0.021480143070220947,
+      "mean_abs": 0.001233482147300882,
+      "rms_error": 0.0024841698948675187,
+      "rel_rms": 0.010310427094070441,
+      "p99_abs": 0.008796125880908213,
+      "cosine_similarity": 0.9999486304935974
+    }
+  },
+  "bitwise_equal": {
+    "vision_embeddings": true,
+    "prefix_k": true,
+    "prefix_v": true,
+    "velocity_step_0": false,
+    "actions": false,
+    "physical_actions": false
+  },
+  "replay_identical": true,
+  "threshold": {
+    "rel_rms_max": 0.34,
+    "cosine_min": 0.9943
+  },
+  "passed": true
+}

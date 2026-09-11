@@ -1,0 +1,5 @@
+{
+  "lingbot_vision": "fused-prefix",
+  "lingbot_prefix": "fused-prefix",
+  "lingbot_action": "fused-prefix"
+}

@@ -1,0 +1,5 @@
+{
+  "lingbot_vision": "fused-attention",
+  "lingbot_prefix": "fused-attention",
+  "lingbot_action": "fused-attention"
+}

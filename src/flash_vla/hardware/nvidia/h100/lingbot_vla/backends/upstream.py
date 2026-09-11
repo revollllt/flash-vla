@@ -219,7 +219,8 @@ def _linear_patch_embedding(self, hidden_states):
 
 
 def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets,
-                  linear_patch_embedding: bool = False, cache_rope_tables: bool = False):
+                  linear_patch_embedding: bool = False, cache_rope_tables: bool = False,
+                  pack_expert_projections: bool = False, grouped_attention: bool = False):
     import yaml
     from lerobot.configs.policies import PreTrainedConfig
     from transformers import AutoConfig
@@ -270,8 +271,100 @@ def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets
             lingbot.apply_rope = previous
 
     core.qwenvl_with_expert.forward = forward_with_rope
+    if pack_expert_projections:
+        _pack_expert_projections(core, layers)
+    if grouped_attention:
+        core.qwenvl_with_expert.attention_interface = _grouped_attention
     gc.collect()
     return core
+
+
+def _grouped_attention(query_states, key_states, value_states, attention_mask):
+    """Eager attention that folds the GQA groups into the batched-matmul rows.
+
+    Upstream materializes `repeat`ed key/value copies, one per query head, so
+    each expert layer-step writes and re-reads 16/2 times the cache it needs.
+    Folding the group axis into the row axis of the same batched matmul leaves
+    every dot product and its K reduction unchanged.
+
+    Shapes: query `[b, lq, H, D]`, key/value `[b, lk, Hkv, D]`, mask
+    `[b, lq, lk]`, all on CUDA; returns `[b, lq, H * D]`. Capture-safe.
+    """
+    batch, q_len, heads, head_dim = query_states.shape
+    kv_heads = key_states.shape[2]
+    group = heads // kv_heads
+    queries = query_states.permute(0, 2, 1, 3).reshape(batch, kv_heads, group * q_len, head_dim)
+    keys = key_states.permute(0, 2, 1, 3)
+    values = value_states.permute(0, 2, 1, 3)
+
+    weights = torch.matmul(queries, keys.transpose(-1, -2))
+    weights = weights.view(batch, heads, q_len, -1)
+    weights *= head_dim ** -0.5
+    weights = torch.where(attention_mask[:, None, :, :], weights, -2.3819763e38)
+    probs = torch.nn.functional.softmax(weights, dim=-1).to(dtype=value_states.dtype)
+
+    output = torch.matmul(probs.view(batch, kv_heads, group * q_len, -1), values)
+    output = output.view(batch, kv_heads, group, q_len, head_dim)
+    return output.permute(0, 3, 1, 2, 4).reshape(batch, q_len, heads * head_dim)
+
+
+def _expert_layer_forward(self, hidden_states, att_output=None, start=0, end=0,
+                          compute_kqv=False, norm_qkv=False, output_atten=False,
+                          ada_cond=None, gate=None, **kwargs):
+    """One expert decoder layer on packed projections, replacing the upstream split.
+
+    Two GEMMs replace five: q/k/v share one packed weight and gate/up share
+    another, concatenated along the output dimension so every dot product and
+    its K reduction are the ones upstream computes. The single float32 cast of
+    the packed projection replaces the three the caller would otherwise make,
+    and the residual is kept rather than cloned, because the AdaRMS that
+    follows returns a new tensor and never writes through its input.
+
+    `hidden_states` is `[b, l, EXPERT_DIM]` bf16 on CUDA. Capture-safe: the
+    packed weights are bound by `_pack_expert_projections` during warmup.
+    """
+    if compute_kqv:
+        normed = self.input_layernorm(hidden_states, ada_cond)
+        packed = torch.nn.functional.linear(
+            normed, self.packed_qkv_weight, self.packed_qkv_bias).float()
+        query, key, value = packed.split(self.qkv_widths, dim=-1)
+        head_dim = self.self_attn.head_dim
+        return (query.view(*query.shape[:-1], -1, head_dim),
+                key.view(*key.shape[:-1], -1, head_dim),
+                value.view(*value.shape[:-1], -1, head_dim), None)
+    if not output_atten:
+        raise ValueError("the LingBot expert layer runs either projections or the attention tail")
+
+    weight_dtype = self.self_attn.o_proj.weight.dtype
+    out = self.self_attn.o_proj(att_output[:, start:end].to(weight_dtype))
+    out += hidden_states
+    normed = self.post_attention_layernorm(out, ada_cond)
+    gate_up = torch.nn.functional.linear(normed, self.packed_gate_up_weight)
+    gate_values, up_values = gate_up.split(self.gate_up_widths, dim=-1)
+    out += self.mlp.down_proj(torch.nn.functional.silu(gate_values) * up_values)
+    return out
+
+
+def _pack_expert_projections(core, depth: int) -> None:
+    """Bind each expert layer's packed q/k/v and gate/up weights and its leaner forward.
+
+    Allocation happens here, while the runner is still warming up, because the
+    static arena refuses to allocate once capture has begun.
+    """
+    layers = core.qwenvl_with_expert.qwen_expert.model.layers
+    for layer in layers[:depth]:
+        attention = layer.self_attn
+        layer.packed_qkv_weight = torch.cat(
+            [attention.q_proj.weight, attention.k_proj.weight, attention.v_proj.weight], dim=0)
+        layer.packed_qkv_bias = torch.cat(
+            [attention.q_proj.bias, attention.k_proj.bias, attention.v_proj.bias], dim=0)
+        layer.qkv_widths = [attention.q_proj.out_features, attention.k_proj.out_features,
+                            attention.v_proj.out_features]
+        layer.packed_gate_up_weight = torch.cat(
+            [layer.mlp.gate_proj.weight, layer.mlp.up_proj.weight], dim=0)
+        layer.gate_up_widths = [layer.mlp.gate_proj.out_features,
+                                layer.mlp.up_proj.out_features]
+        layer.forward = MethodType(_expert_layer_forward, layer)
 
 
 def _prepare_time_modulation(core, steps, dtype, device, *, fuse_norm=False):
@@ -293,6 +386,7 @@ def _prepare_time_modulation(core, steps, dtype, device, *, fuse_norm=False):
         time += dt
 
     step = [0]
+    modulation = (step, conditions)
     layers = core.qwenvl_with_expert.qwen_expert.model.layers
     depth = core.qwenvl_with_expert.qwenvl.config.num_hidden_layers
     for layer in layers[:depth]:
@@ -314,13 +408,22 @@ def _prepare_time_modulation(core, steps, dtype, device, *, fuse_norm=False):
                                    norm.variance_epsilon)
 
                 norm.forward = normalized
-    return step
+    return modulation
 
 
 class _State:
     def __init__(self, cache_rope_frequency: bool, assets, linear_patch_embedding: bool,
-                 cache_rope_tables: bool, precompute_time_modulation: bool, fuse_norm: bool) -> None:
+                 cache_rope_tables: bool, precompute_time_modulation: bool, fuse_norm: bool,
+                 pack_expert_projections: bool = False, grouped_attention: bool = False,
+                 specialized_loop: bool = False, fused_rope: bool = False,
+                 fused_attention: bool = False, specialized_prefix: bool = False) -> None:
         self.core = None
+        self.loop = None
+        self.specialized_loop = specialized_loop
+        self.fused_rope = fused_rope
+        self.fused_attention = fused_attention
+        self.specialized_prefix = specialized_prefix
+        self.prefix_pass = None
         self.vision_metadata = None
         self.action_constants = None
         self.precompute_time_modulation = precompute_time_modulation
@@ -329,21 +432,33 @@ class _State:
         self.cache_rope_frequency = cache_rope_frequency
         self.linear_patch_embedding = linear_patch_embedding
         self.cache_rope_tables = cache_rope_tables
+        self.pack_expert_projections = pack_expert_projections
+        self.grouped_attention = grouped_attention
         self.assets = assets
 
     def ensure(self, weights, layers: int):
         if self.core is None:
             self.core = _build_policy(weights, layers, self.cache_rope_frequency, self.assets,
                                       linear_patch_embedding=self.linear_patch_embedding,
-                                      cache_rope_tables=self.cache_rope_tables)
+                                      cache_rope_tables=self.cache_rope_tables,
+                                      pack_expert_projections=self.pack_expert_projections,
+                                      grouped_attention=self.grouped_attention)
         return self.core
 
 
 def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                   linear_patch_embedding=False, cache_rope_tables=False,
-                  precompute_time_modulation=False, fuse_norm=False):
+                  precompute_time_modulation=False, fuse_norm=False,
+                  pack_expert_projections=False, grouped_attention=False,
+                  specialized_loop=False, fused_rope=False, fused_attention=False,
+                  specialized_prefix=False):
     state = _State(cache_rope_frequency, scratch.assets, linear_patch_embedding,
-                   cache_rope_tables, precompute_time_modulation, fuse_norm)
+                   cache_rope_tables, precompute_time_modulation, fuse_norm,
+                   pack_expert_projections=pack_expert_projections,
+                   grouped_attention=grouped_attention,
+                   specialized_loop=specialized_loop, fused_rope=fused_rope,
+                   fused_attention=fused_attention,
+                   specialized_prefix=specialized_prefix)
 
     @torch.no_grad()
     def vision(pixel_values, out, layers, *weights):
@@ -373,6 +488,15 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
         from lingbotvla.models.vla.pi0.utils import make_att_2d_masks
 
         core = state.core
+        if state.specialized_prefix:
+            if state.prefix_pass is None:
+                from .prefix_pass import PrefixPass
+
+                state.prefix_pass = PrefixPass(core, layers=layers, scratch=scratch,
+                                               device=vision.device)
+            state.prefix_pass.run(vision, image_masks, language_tokens, language_masks,
+                                  prefix_masks, prefix_k, prefix_v)
+            return
         module = core.qwenvl_with_expert
         image_prefix = vision.reshape(1, -1, vision.shape[-1])
         expanded_image_masks = image_masks.unsqueeze(0).repeat_interleave(
@@ -413,9 +537,23 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                 torch.tensor(1.0, dtype=noise.dtype, device=noise.device),
             )
         if state.precompute_time_modulation and state.time_modulation_step is None:
-            state.time_modulation_step = _prepare_time_modulation(
+            state.time_modulation_step, conditions = _prepare_time_modulation(
                 core, steps, noise.dtype, noise.device, fuse_norm=state.fuse_norm,
             )
+            if state.specialized_loop:
+                from .expert_loop import ExpertLoop
+
+                state.loop = ExpertLoop(
+                    core, layers=layers, steps=steps, conditions=conditions,
+                    time_step=state.time_modulation_step, scratch=scratch,
+                    device=noise.device, dtype=noise.dtype,
+                    fused_rope=state.fused_rope,
+                    fused_attention=state.fused_attention,
+                )
+        if state.loop is not None:
+            state.loop.run(state_tensor, noise, prefix_masks, prefix_k, prefix_v,
+                           actions, velocity_step_0)
+            return
         dt, initial_time = state.action_constants
         time = initial_time.clone()
         current = noise.clone()
