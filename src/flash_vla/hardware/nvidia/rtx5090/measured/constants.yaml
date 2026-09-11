@@ -1,0 +1,112 @@
+# Machine constants for sm120-rtx5090.
+#
+# A RESULTS TABLE, not a lab notebook -- same contract as the sm90 table beside
+# it. Each entry is: the number, the condition it holds under (`units`), the
+# one-line answer (`short`), and the rule to apply (`rule`).
+#
+# THIS TABLE IS ALMOST EMPTY ON PURPOSE. Bring-up established what the machine's
+# instruction set and static limits are; it has measured no bandwidth, no
+# latency and no throughput. Every performance unit below is declared
+# `unmeasured` so that `constants.py --validate` reports it as a GAP rather than
+# letting a floor silently fall back to an H100 number. Nothing in the sm90
+# table transfers -- different DRAM, different cache, different SM count, and a
+# tensor core reached by a different instruction.
+machine:
+  id: sm120-rtx5090
+  gpu: NVIDIA GeForce RTX 5090
+  arch: sm120a
+  sms: 170
+  smem_per_cta_b: 101376
+  smem_per_sm_b: 102400
+  dram_peak_tbs: 1.792
+  l2_mb: 96
+  clocks_pinned: false
+  caution: 'Consumer Blackwell, not datacenter Blackwell: no wgmma and no tcgen05, so there is no asynchronous
+    MMA on this part at all and every tensor-core mainloop is warp-level mma.sync. Shared memory per
+    block is 99 KB against sm90''s 227, and max warps per SM is 48 against 64, so an sm90 tile budget
+    overshoots both. Toolchain is CUDA 13.1 (V13.1.80), driver 580.142, PTX ISA 9.1 max. The `a` target
+    is required: setmaxnreg, block-scaled mma and ldmatrix .m16n16 are refused on plain sm_120.'
+units:
+- id: isa
+  status: measured
+  probe: lab/sm120/ptx_support.py
+  reference: isa-support.md
+  covers: Which PTX instructions ptxas accepts for sm_90a, sm_120 and sm_120a, decided per instruction
+    by assembling a minimal entry containing only that instruction. Establishes that wgmma and tcgen05
+    are both absent, that TMA/mbarrier/cp.async/ldmatrix/PDL all survive, and which three features require
+    the `a` target.
+- id: limits
+  status: measured
+  probe: lab/sm120/cluster_dsmem.cu
+  reference: isa-support.md
+  covers: Static placement limits established by running rather than by reading a table -- the largest
+    thread-block cluster that launches and exchanges distributed shared memory, and the largest dynamic
+    shared-memory opt-in a block is granted.
+- id: tma
+  status: unmeasured
+  probe: skill probes/units/tma_ring -- builds for sm_120a, not yet run here
+  reference: none yet
+  covers: 'Copy-engine delivery rate. Instructions all present; every sm90 number is void: GDDR7 at 1.792
+    TB/s against HBM3 at 3.35, 96 MB of L2 against 50, 170 SMs against 132.'
+- id: launch
+  status: unmeasured
+  probe: none yet
+  reference: none yet
+  covers: 'Per-launch grid ramp and cold streaming bandwidth. Blocks the floor model: sm90''s `1.85 +
+    MB/2.77` is this repository''s most-cited constant and is an H100 fact.'
+- id: atomic
+  status: unmeasured
+  probe: skill probes/units/gmem_atomic -- no sm90-only construct, not yet run here
+  reference: none yet
+  covers: Global atomic throughput against instruction, width, scope and address placement, and the arrive->observe
+    latency of a gmem counter.
+- id: mma
+  status: unmeasured
+  probe: needs a new mma.sync-only probe; the skill's mma_rate is built on wgmma
+  reference: none yet
+  covers: 'Warp-level `mma.sync` issue rate, accumulator count to saturate, and the ldmatrix feed tax.
+    The sm90 unit''s wgmma half has no counterpart here and `mma.xover.n.wgmma` has no meaning: there
+    is no second instruction to cross over to.'
+- id: coop
+  status: unmeasured
+  probe: skill probes/units/coop_launch -- no sm90-only construct, not yet run here
+  reference: none yet
+  covers: Cooperative launch grid_sync cost, placeable block count, and whether a grid barrier beats the
+    relaunch it replaces.
+constants:
+- tag: cluster.count.max
+  unit: limits
+  value: 8
+  units: CTAs per thread-block cluster that launch, cluster_sync and exchange DSMEM at 256 threads and
+    1 KB of shared memory; 16 is refused with `cluster misconfiguration`, and `cudaOccupancyMaxPotentialClusterSize`
+    independently returns 8
+  short: cluster 8 works, 16 refused
+  rule: Clusters and distributed shared memory are available on this part up to 8, so a DSMEM reduction
+    ported from sm90 has a working substrate -- but its sm90 barrier cost does not transfer and must be
+    measured before the reduction is assumed worthwhile.
+- tag: smem.bytes.cta.max
+  unit: limits
+  value: 101376
+  units: bytes of dynamic shared memory per block accepted by cudaFuncSetAttribute; 99 KB is accepted
+    and 100 KB is refused with `invalid argument`
+  short: 99 KB per block, hard
+  rule: 'Budget tiles against 99 KB, not sm90''s 227: an inherited sm90 stage count overshoots by 2.29x
+    and fails at launch rather than degrading. Pair it with 48 warps per SM, not 64.'
+- tag: isa.wgmma.absent
+  unit: isa
+  value: 0
+  units: wgmma instructions accepted on sm_120a, out of 5 tested (fence, commit_group, wait_group, mma_async
+    bf16, mma_async fp8); ptxas refuses each with "not supported on .target 'sm_120a'", and tcgen05 is
+    refused on the same target
+  short: no wgmma, no tcgen05
+  rule: Every tensor-core mainloop on this machine is warp-level `mma.sync`. Do not port a wgmma mainloop
+    by changing its arch flag -- it does not assemble -- and do not carry across any sm90 constant whose
+    subject is wgmma.
+- tag: isa.target.a_required
+  unit: isa
+  value: 3
+  units: instructions accepted on sm_120a but refused on sm_120 -- setmaxnreg.inc/.dec, mma with block
+    scale, and ldmatrix .m16n16
+  short: sm_120a required for setmaxnreg
+  rule: Pin the `a` target in each Target's compiler settings. Building plain sm_120 does not make warp
+    specialisation slower, it makes `setmaxnreg` fail to assemble.
