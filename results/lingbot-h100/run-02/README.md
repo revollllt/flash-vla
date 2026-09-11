@@ -218,3 +218,42 @@ are no longer bit-identical to their torch expression are `ada_rms_add` (3.9e-3,
 one bf16 ulp, from summing 768 squares with shuffles rather than a shared-memory
 tree) and the split-key attention (9.8e-4, one bf16 ulp). Nothing in the
 deployed route computes at a lower precision than the reference does.
+
+## What this run taught about measuring
+
+Three things cost time here before they were understood, all of them about
+method rather than kernels. They are recorded because each one changed a
+decision.
+
+**A standalone ratio is sufficient to kill a candidate and not sufficient to
+ship one.** The cold rotating-weight harness the kernel work used is correct
+about the kernel: it measured the AdaRMS prologue at 0.73-0.75x and killed it
+without spending a single model-level run, which is exactly what it is for. But
+it put the SiLU epilogue at 1.03-1.10x, and the paired deployed A/B put the same
+code at **-0.034 ms**, with `min` moving the other way. Removing a launch from
+an isolated pair does not predict removing it from a 10.6-launch-per-layer-step
+chain where its cost may already be partly absorbed. Anything that comes out
+positive goes through a paired A/B before it ships; anything negative can be
+dropped on the standalone alone.
+
+**Whole-segment totals from separate profiling jobs are not comparable.**
+Re-profiling one unchanged commit gave 15.727 ms and 16.455 ms for the same
+expert, ~4%. Per-kernel times inside one profile are fine — those are 1.3-2.2x
+ratios — but a segment total across jobs is not, and a claim built on one here
+was wrong by 0.75 ms in the wrong direction.
+
+**Verify bit-exactness before timing.** Every fused variant in this run was
+checked against the kernel it replaced before it was benchmarked. That is what
+made three negative results publishable rather than suspect: when a fusion came
+out slower, there was no open question about whether it was also wrong, so the
+measurement could be trusted and the mechanism chased. It is also what made the
+one genuine numerical change — `ada_rms_add`'s reduction order — visible as a
+deliberate 1-ulp trade rather than a surprise.
+
+A fourth, from run-01 and still the sharpest: **a tolerance cannot settle a
+correctness question whose failure mode is smaller than the tolerance.** One
+attention key miscounted out of 315 is 3.2e-3 relative, inside two bf16 ulps.
+The fully-masked-row case is checked instead with a value cache of all ones,
+where the answer is exactly 1.0 under any mask because the weights cancel
+against their own sum, so a miscounted key is an exact mismatch rather than a
+small one.
