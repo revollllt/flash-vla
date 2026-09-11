@@ -124,6 +124,7 @@ not have resolved.
 | 9 | fused pointwise and packed gate/up in the backbone | 31.000 | 29.806 | **−1.194** | 0.001 | keep | 614377 |
 | 10 | fused flash-form attention kernel | 28.419 | 201.797 | **+173.378** | 0.002 | revert | 614399 |
 | 11 | single-pass masked softmax | 29.756 | 29.752 | −0.004 | 0.007 | uncertain | 614448 |
+| 12 | expert `o_proj` and `down_proj` on the hand-written skinny GEMM | 29.767 | 29.170 | **−0.597** | 0.016 | keep | 614587 |
 
 Iterations 7 and 8 were run in parallel against the same retained plan on two
 GPUs, so 8 is the superset and the one deployed; 7's number attributes the
@@ -251,13 +252,37 @@ Three things set the remaining floor:
 
    Numerically the kernel is bit-identical to cuBLAS on the two split=1 shapes
    and differs only by K-reduction order on the other two (rel_rms 7.4e-5 and
-   1.3e-4); against fp32 all four match cuBLAS's own error. So this is
-   **"not beaten in the time spent", not "cannot be beaten"**: the mainloop has
-   ~2.7 µs in hand against a ~2 µs epilogue. The two unexplored fixes are a
-   dedicated producer warp owning the multicast, so the cluster wait leaves the
-   consumer's critical path, and moving the split-K reduction into distributed
-   shared memory to drop the global round trip and the device fence. Work and
-   jobs are in the `skinny-gemm` branch and worktree.
+   1.3e-4); against fp32 all four match cuBLAS's own error.
+
+   **Both remaining fixes were then tried, and one of them landed** (iteration
+   12). Moving the split-K reduction into distributed shared memory — the
+   `k_split` CTAs of one N tile become a cluster, each stages its fp32 partial
+   in its own shared memory, one `barrier.cluster.arrive`/`wait` publishes them
+   and each CTA sums its own slice through `mapa.shared::cluster` — removes the
+   global workspace, the arrival counters and the device-scope release fence:
+
+   | shape | cuBLAS | mainloop | full | epilogue |
+   |---|---:|---:|---:|---:|
+   | `o_proj`, global partials | 5.72 | 4.08 | 6.29 | 2.21 |
+   | `o_proj`, **DSMEM cluster** | 5.75 | 4.86 | **5.24** | **0.38** |
+   | `down_proj`, global partials | 6.64 | 4.85 | 6.73 | 1.88 |
+   | `down_proj`, **DSMEM cluster** | 6.64 | 5.59 | **5.64** | **0.05** |
+
+   That is 1.10x and 1.18x cuBLAS, and declaring the cluster costs the mainloop
+   ~0.7 µs of scheduling which the reduction repays several times over. Both
+   shapes share the `tile_n=64, depth=6, k_split=8` configuration, which is
+   also the cuBLAS kernel they share in the deployed route. Deployed it is
+   **−0.597 ms**.
+
+   The other fix did not land. A dedicated producer warp owning the multicast
+   recovers 0.5-0.8 µs over issuing it inline, confirming that diagnosis, but
+   qkv and gate_up still come out at 6.98 and 7.10 against cuBLAS's 4.79 and
+   5.84. The mainloop-only probe of the multicast kernel is 6.33 / 7.20 against
+   the plain TMA kernel's 3.75 / 5.18, so **the loss is in the mainloop, not the
+   handshake that was moved**: halving the activation traffic does not pay for
+   gang-scheduled cluster placement, 160 threads instead of 128, and a fan-out
+   multicast slower than each CTA issuing its own box. Those two shapes stay on
+   cuBLAS. Work and jobs are on the `skinny-gemm` branch and worktree.
 2. **The attention is 6.66 ms** and wants the split-key flash kernel that
    iteration 10 did not implement. The QK matmul additionally fell off the TF32
    path onto a float32 SIMT kernel when the cache went head-major, which is

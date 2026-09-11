@@ -37,6 +37,7 @@ prefix names no Target fails the smoke check.
 | `lingbot_vla-aligned-vision.json` | plus the width-aligned packed vision feed-forward |
 | `lingbot_vla-vision-norm.json` | plus the single-launch vision RMSNorm |
 | `lingbot_vla-fused-mlp.json` | plus the AdaRMS that absorbs its residual add and the fused gated activation |
-| `lingbot_vla-fused-backbone.json` | plus the same pointwise kernels and a packed gate/up in the backbone. This is what the LingBot Target ships; the file exists so a later candidate can A/B against what shipped WAS |
+| `lingbot_vla-fused-backbone.json` | plus the same pointwise kernels and a packed gate/up in the backbone. It exists so a later candidate can A/B against what shipped WAS |
+| `lingbot_vla-skinny-projections.json` | plus the expert's two 768-wide output projections on the hand-written weight-stationary GEMM, whose split-K partials reduce through distributed shared memory. This is what the LingBot Target ships. The packed q/k/v and gate/up projections are deliberately NOT here: the same kernel measured 5.12 and 5.91 us against cuBLAS's 4.79 and 5.84 on those shapes |
 | `lingbot_vla-attention-kernel.json` | the flash-form attention kernel of `cuda/kernels/attention.cu`. **Measured 7x slower than the route it replaces** (results/lingbot-h100/run-01); kept so the kernel stays reachable for the split-key rewrite it needs |
 | `pi0-gemma-cuda.json` | the shipped Pi0 route plus the backbone attention and the output projection on the shared `gemma_backbone` component. The FFN down projection is deliberately NOT here: cuBLAS measured 6.6 us per call slower than Pi0's TileLang body in the graph, where the hidden buffer it reads is L2-resident (job 599832) |

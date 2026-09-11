@@ -29,6 +29,12 @@ from flash_vla.models.lingbot.spec import (
 _ROPE_WAVELENGTH = 10_000.0
 _CACHE_LEN = PREFIX_LEN + SUFFIX_LEN
 _SCALE = HEAD_DIM ** -0.5
+#: The configuration the hand-written skinny GEMM was tuned to at M=51 for the
+#: two 768-wide output projections: 12 N tiles of 64 split 8 ways over K, whose
+#: splits are one cluster reducing through distributed shared memory. Measured
+#: 1.10x cuBLAS on `o_proj` and 1.18x on `down_proj`; the packed q/k/v and
+#: gate/up projections are left on cuBLAS, which is faster for them.
+_SKINNY_GEMM = {"tile_n": 64, "depth": 6, "k_split": 8, "producer": 3}
 
 
 def _apply_rope(values: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
@@ -83,7 +89,7 @@ class ExpertLoop:
     def __init__(self, core, *, layers: int, steps: int, conditions, time_step,
                  scratch, device, dtype, fused_rope: bool = False,
                  fused_attention: bool = False, fused_mlp: bool = False,
-                 attention_kernel: bool = False) -> None:
+                 attention_kernel: bool = False, skinny_gemm: bool = False) -> None:
         self.core = core
         self.steps = steps
         self.depth = layers
@@ -93,6 +99,7 @@ class ExpertLoop:
         self.fused_attention = fused_attention
         self.fused_mlp = fused_mlp
         self.attention_kernel = attention_kernel
+        self.skinny_gemm = skinny_gemm
 
         expert = core.qwenvl_with_expert.qwen_expert.model
         self.layers = tuple(expert.layers[:layers])
@@ -124,6 +131,11 @@ class ExpertLoop:
             self.no_residual = scratch("lingbot_expert_zero", (SUFFIX_LEN, width),
                                        torch.bfloat16, device)
             self.no_residual.zero_()
+            if skinny_gemm:
+                for role in ("projected", "gated"):
+                    setattr(self, f"{role}_out",
+                            scratch(f"lingbot_expert_{role}", (SUFFIX_LEN, width),
+                                    torch.bfloat16, device))
 
         self.suffix_pad = torch.ones((1, SUFFIX_LEN), dtype=torch.bool, device=device)
         # Upstream's suffix mask_ar: the state token is its own block and the
@@ -143,6 +155,11 @@ class ExpertLoop:
         from .cuda import pointwise
 
         self._kernels = pointwise
+        if self.skinny_gemm:
+            from .cuda import skinny_gemm
+
+            self._gemm = skinny_gemm
+            skinny_gemm.build()      # surface a compile failure before capture
         pointwise.rope_project(
             torch.zeros((SUFFIX_LEN, sum(self.layers[0].qkv_widths)),
                         dtype=torch.bfloat16, device=device),
@@ -240,6 +257,20 @@ class ExpertLoop:
         out += layer.mlp.down_proj(torch.nn.functional.silu(gate_values) * up_values)
         return out
 
+    def _output_projection(self, layer, attention):
+        """The attention output projection, `[SUFFIX_LEN, H * D]` bf16 in, `[SUFFIX_LEN, D]` out."""
+        if not self.skinny_gemm:
+            return layer.self_attn.o_proj(attention)
+        return self._gemm.linear(self.attention_out, layer.self_attn.o_proj.weight,
+                                 self.projected_out, **_SKINNY_GEMM)
+
+    def _down_projection(self, layer, activated):
+        """The feed-forward down projection over the gated activation."""
+        if not self.skinny_gemm:
+            return layer.mlp.down_proj(activated)
+        return self._gemm.linear(activated, layer.mlp.down_proj.weight,
+                                 self.gated_out, **_SKINNY_GEMM)
+
     def _modulate(self, norm, source, residual, condition, total):
         """`total = source + residual`, normalized into `self.normed`, in one launch."""
         self._kernels.ada_rms_add(source.view(SUFFIX_LEN, -1), residual, norm.weight,
@@ -259,11 +290,12 @@ class ExpertLoop:
         for index, layer in enumerate(self.layers):
             query = self._project(layer, self.normed[None], index, cos, sin)
             attention = self._attention(query, index, mask)
-            projected = layer.self_attn.o_proj(attention)
+            projected = self._output_projection(layer, attention)
             self._modulate(layer.post_attention_layernorm, projected, self.hidden,
                            condition, self.residual)
             gate_up = torch.nn.functional.linear(self.normed, layer.packed_gate_up_weight)
-            down = layer.mlp.down_proj(self._kernels.silu_multiply(gate_up, self.activation))
+            down = self._down_projection(
+                layer, self._kernels.silu_multiply(gate_up, self.activation))
             if index + 1 == self.depth:
                 return (down.view(SUFFIX_LEN, -1) + self.residual)[None]
             self._modulate(self.layers[index + 1].input_layernorm, down, self.residual,

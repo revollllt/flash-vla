@@ -17,6 +17,7 @@ from . import patch_linear as _patch_linear
 from . import rope_frequency as _rope_frequency
 from . import rope_table as _rope_table
 from . import time_modulation as _time_modulation
+from . import skinny_projections as _skinny_projections
 from . import upstream as _upstream
 from . import vision_norm as _vision_norm
 
@@ -37,6 +38,7 @@ BACKENDS = {
     "vision-norm": _vision_norm,
     "fused-mlp": _fused_mlp,
     "fused-backbone": _fused_backbone,
+    "skinny-projections": _skinny_projections,
     "attention-kernel": _fused_attn_kernel,
 }
 REGISTRY = Registry(BACKENDS, default="upstream-reference")
