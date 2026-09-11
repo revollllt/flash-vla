@@ -124,20 +124,20 @@ class ExpertLoop:
 
     def _bind_kernels(self, device, half: int) -> None:
         """Load the CUDA library and exercise it once, before capture begins."""
-        from .cuda import expert_rope
+        from .cuda import pointwise
 
-        self._kernels = expert_rope
-        expert_rope.rope_project(
+        self._kernels = pointwise
+        pointwise.rope_project(
             torch.zeros((SUFFIX_LEN, sum(self.layers[0].qkv_widths)),
                         dtype=torch.bfloat16, device=device),
             torch.zeros((SUFFIX_LEN, half), dtype=torch.float32, device=device),
             torch.zeros((SUFFIX_LEN, half), dtype=torch.float32, device=device),
             *self._slots(0))
         if self.fused_attention:
-            expert_rope.masked_softmax(
+            pointwise.masked_softmax(
                 torch.zeros((1, SUFFIX_LEN, _CACHE_LEN), dtype=torch.float32, device=device),
                 torch.ones((SUFFIX_LEN, _CACHE_LEN), dtype=torch.bool, device=device), _SCALE)
-            expert_rope.attention_epilogue(self.query, self.attention_out)
+            pointwise.attention_epilogue(self.query, self.attention_out)
 
     def _slots(self, index: int):
         """The kernel's `(query, key_slot, value_slot)` views for one layer."""

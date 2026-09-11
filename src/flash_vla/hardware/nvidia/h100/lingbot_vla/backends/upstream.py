@@ -21,6 +21,7 @@ from flash_vla.models.lingbot.spec import (
     KV_HEADS,
     LANGUAGE_SLOTS,
     LAYERS,
+    PATCH_ROWS_PER_VIEW,
     PREFIX_LEN,
     QUERY_HEADS,
     VIEWS,
@@ -218,9 +219,83 @@ def _linear_patch_embedding(self, hidden_states):
     return torch.nn.functional.linear(patches, weight)
 
 
+#: bf16 tensor-core GEMMs want every leading dimension 8 elements aligned. The
+#: vision FFN is 3420 wide, which is not, so cuBLAS falls back to the Ampere
+#: `cutlass_80_tensorop_bf16_s16816gemm_bf16_256x128_64x3_tn_align2` kernel for
+#: all three of its projections: 57.4 us each against a ~10 us compute-bound
+#: model and a 5.0 us streaming floor, 5.51 ms of the segment's 10.40 ms
+#: (torch-profiler replay, job 614222).
+_VISION_FFN_ALIGNMENT = 8
+
+
+def _pad_vision_ffn(visual) -> None:
+    """Pack and zero-pad each vision block's feed-forward to an aligned width.
+
+    The padded lanes carry a zero weight and a zero bias, so they contribute
+    `silu(0) * 0 = 0` to the gated product and a zero column to the down
+    projection: the value is unchanged, only the K-reduction blocking moves.
+    Allocation happens during warmup, before the static arena freezes.
+    """
+    for block in visual.blocks:
+        mlp = block.mlp
+        width = mlp.gate_proj.out_features
+        padded = -(-width // _VISION_FFN_ALIGNMENT) * _VISION_FFN_ALIGNMENT
+        pad = padded - width
+
+        pad_out = torch.nn.functional.pad
+        mlp.packed_gate_up_weight = torch.cat(
+            [pad_out(mlp.gate_proj.weight, (0, 0, 0, pad)),
+             pad_out(mlp.up_proj.weight, (0, 0, 0, pad))], dim=0)
+        mlp.packed_gate_up_bias = torch.cat(
+            [pad_out(mlp.gate_proj.bias, (0, pad)), pad_out(mlp.up_proj.bias, (0, pad))], dim=0)
+        mlp.padded_down_weight = pad_out(mlp.down_proj.weight, (0, pad))
+        mlp.padded_width = padded
+        mlp.forward = MethodType(_padded_vision_mlp, mlp)
+
+
+def _padded_vision_mlp(self, hidden_state):
+    """`Qwen2_5_VLMLP` on one packed, width-aligned gated projection."""
+    gate_up = torch.nn.functional.linear(
+        hidden_state, self.packed_gate_up_weight, self.packed_gate_up_bias)
+    gate, up = gate_up.split(self.padded_width, dim=-1)
+    return torch.nn.functional.linear(
+        self.act_fn(gate) * up, self.padded_down_weight, self.down_proj.bias)
+
+
+def _fuse_rms_norms(norms, rows: int, width: int, scratch, device) -> None:
+    """Bind the single-launch RMSNorm to each of `norms`, over one shared output.
+
+    Every site's result is consumed by the GEMM that follows it before the next
+    site runs, and the whole stage replays on one stream, so one buffer per
+    (rows, width) is enough. Allocation happens during warmup.
+    """
+    from .cuda import pointwise
+
+    buffer = scratch(f"lingbot_rms_norm_{rows}x{width}", (rows, width),
+                     torch.bfloat16, device)
+    for norm in norms:
+        def forward(hidden_states, norm=norm):
+            if hidden_states.shape != buffer.shape or not hidden_states.is_contiguous():
+                return _EAGER_RMS_NORM(norm, hidden_states)
+            return pointwise.rms_norm(hidden_states, norm.weight, buffer,
+                                      norm.variance_epsilon)
+
+        norm.forward = forward
+
+
+def _EAGER_RMS_NORM(norm, hidden_states):
+    """Upstream's own expression, for a call whose shape the fused buffer misses."""
+    values = hidden_states.to(torch.float32)
+    variance = values.pow(2).mean(-1, keepdim=True)
+    values = values * torch.rsqrt(variance + norm.variance_epsilon)
+    return norm.weight * values.to(hidden_states.dtype)
+
+
 def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets,
                   linear_patch_embedding: bool = False, cache_rope_tables: bool = False,
-                  pack_expert_projections: bool = False, grouped_attention: bool = False):
+                  pack_expert_projections: bool = False, grouped_attention: bool = False,
+                  pad_vision_ffn: bool = False, fused_vision_norm: bool = False,
+                  scratch=None):
     import yaml
     from lerobot.configs.policies import PreTrainedConfig
     from transformers import AutoConfig
@@ -254,6 +329,12 @@ def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets
     _patch_vision_attention(visual)
     if linear_patch_embedding:
         visual.patch_embed.forward = MethodType(_linear_patch_embedding, visual.patch_embed)
+    if pad_vision_ffn:
+        _pad_vision_ffn(visual)
+    if fused_vision_norm:
+        norms = [norm for block in visual.blocks for norm in (block.norm1, block.norm2)]
+        _fuse_rms_norms(norms + [visual.merger.ln_q], VIEWS * PATCH_ROWS_PER_VIEW,
+                        VISION_DIM, scratch, device)
     from lingbotvla.models.vla.pi0 import modeling_lingbot_vla as lingbot
     apply_rope, clear_rope_tables = _configure_rope_frequency(cache_rope_frequency, cache_rope_tables)
     original_forward = core.qwenvl_with_expert.forward
@@ -416,13 +497,18 @@ class _State:
                  cache_rope_tables: bool, precompute_time_modulation: bool, fuse_norm: bool,
                  pack_expert_projections: bool = False, grouped_attention: bool = False,
                  specialized_loop: bool = False, fused_rope: bool = False,
-                 fused_attention: bool = False, specialized_prefix: bool = False) -> None:
+                 fused_attention: bool = False, specialized_prefix: bool = False,
+                 pad_vision_ffn: bool = False, fused_vision_norm: bool = False,
+                 scratch=None) -> None:
         self.core = None
         self.loop = None
         self.specialized_loop = specialized_loop
         self.fused_rope = fused_rope
         self.fused_attention = fused_attention
         self.specialized_prefix = specialized_prefix
+        self.pad_vision_ffn = pad_vision_ffn
+        self.fused_vision_norm = fused_vision_norm
+        self.scratch = scratch
         self.prefix_pass = None
         self.vision_metadata = None
         self.action_constants = None
@@ -442,7 +528,10 @@ class _State:
                                       linear_patch_embedding=self.linear_patch_embedding,
                                       cache_rope_tables=self.cache_rope_tables,
                                       pack_expert_projections=self.pack_expert_projections,
-                                      grouped_attention=self.grouped_attention)
+                                      grouped_attention=self.grouped_attention,
+                                      pad_vision_ffn=self.pad_vision_ffn,
+                                      fused_vision_norm=self.fused_vision_norm,
+                                      scratch=self.scratch)
         return self.core
 
 
@@ -451,14 +540,15 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                   precompute_time_modulation=False, fuse_norm=False,
                   pack_expert_projections=False, grouped_attention=False,
                   specialized_loop=False, fused_rope=False, fused_attention=False,
-                  specialized_prefix=False):
+                  specialized_prefix=False, pad_vision_ffn=False, fused_vision_norm=False):
     state = _State(cache_rope_frequency, scratch.assets, linear_patch_embedding,
                    cache_rope_tables, precompute_time_modulation, fuse_norm,
                    pack_expert_projections=pack_expert_projections,
                    grouped_attention=grouped_attention,
                    specialized_loop=specialized_loop, fused_rope=fused_rope,
                    fused_attention=fused_attention,
-                   specialized_prefix=specialized_prefix)
+                   specialized_prefix=specialized_prefix, pad_vision_ffn=pad_vision_ffn,
+                   fused_vision_norm=fused_vision_norm, scratch=scratch)
 
     @torch.no_grad()
     def vision(pixel_values, out, layers, *weights):

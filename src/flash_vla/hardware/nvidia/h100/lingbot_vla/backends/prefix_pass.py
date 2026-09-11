@@ -59,9 +59,9 @@ class PrefixPass:
         exponents = (2.0 / HEAD_DIM) * torch.arange(half, dtype=torch.float32, device=device)
         self.inverse_timescale = 1.0 / (_ROPE_WAVELENGTH ** exponents)
 
-        from .cuda import expert_rope
+        from .cuda import pointwise
 
-        self._kernels = expert_rope
+        self._kernels = pointwise
         self._bind(device, half)
 
     @staticmethod

@@ -3,3 +3,5 @@ iteration,change,latency_ms,decision,report,revision
 1,Packed expert q/k/v and gate/up GEMMs + grouped attention,55.494,keep,measurements/001.json,ef798e0+packed-projections
 2,Target-owned denoising loop with a resident key/value cache,48.969,keep,measurements/002.json,ef798e0+expert-loop
 3,Fused CUDA projection epilogue (widen + RoPE + cache write),42.267,keep,measurements/003.json,ef798e0+fused-rope
+4,Head-major cache with fused CUDA softmax and attention epilogue,37.300,keep,measurements/004.json,ef798e0+fused-attention
+5,Target-owned backbone prefix pass on the same kernels,34.983,keep,measurements/005.json,ef798e0+fused-prefix

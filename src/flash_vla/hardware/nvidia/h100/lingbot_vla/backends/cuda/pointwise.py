@@ -1,6 +1,6 @@
-"""Host side of the action expert's hand-written pointwise stages.
+"""Host side of this Target's hand-written pointwise stages.
 
-`build()` compiles `kernels/expert_rope.cu` into a plain shared library under
+`build()` compiles `kernels/pointwise.cu` into a plain shared library under
 the repo's `.cache` (shared filesystem, so a login-node build is visible to a
 compute node) and loads it through ctypes: the library has a C ABI and takes
 raw device pointers, so no torch extension machinery is involved and every
@@ -23,7 +23,7 @@ from pathlib import Path
 import torch
 
 _HERE = Path(__file__).resolve().parent
-_SRC = _HERE / "kernels" / "expert_rope.cu"
+_SRC = _HERE / "kernels" / "pointwise.cu"
 _REPO = _HERE.parents[7]
 _DEFAULT_NVCC = "/data/apps/cuda/12.6/bin/nvcc"
 
@@ -41,15 +41,15 @@ def build(verbose: bool = False) -> Path:
     """Compile the shared library if this source and toolchain have not been built."""
     nvcc = _nvcc()
     tag = hashlib.sha256(_SRC.read_bytes() + nvcc.encode()).hexdigest()[:16]
-    directory = _REPO / ".cache" / "cuda_ext" / f"lingbot_expert_{tag}"
+    directory = _REPO / ".cache" / "cuda_ext" / f"lingbot_pointwise_{tag}"
     directory.mkdir(parents=True, exist_ok=True)
-    out = directory / "libexpert.so"
+    out = directory / "libpointwise.so"
     if out.exists():
         return out
     command = [nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
                "-arch=sm_90a", "-o", str(out), str(_SRC)]
     if verbose:
-        print("[expert build]", " ".join(command), flush=True)
+        print("[lingbot pointwise build]", " ".join(command), flush=True)
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"nvcc failed:\n{result.stdout}\n{result.stderr}")
@@ -69,6 +69,9 @@ def library(verbose: bool = False):
         lib.expert_epilogue_launch.argtypes = [ctypes.c_void_p] * 2 + [ctypes.c_int] * 3 + [
             ctypes.c_void_p]
         lib.expert_epilogue_launch.restype = ctypes.c_int
+        lib.rms_norm_launch.argtypes = [ctypes.c_void_p] * 3 + [ctypes.c_int] * 2 + [
+            ctypes.c_float, ctypes.c_void_p]
+        lib.rms_norm_launch.restype = ctypes.c_int
         _LIB = lib
     return _LIB
 
@@ -132,4 +135,24 @@ def attention_epilogue(source: torch.Tensor, target: torch.Tensor) -> None:
         raise RuntimeError(f"expert_epilogue_launch failed: {code}")
 
 
-__all__ = ["attention_epilogue", "build", "library", "masked_softmax", "rope_project"]
+def rms_norm(source: torch.Tensor, weight: torch.Tensor, target: torch.Tensor,
+             epsilon: float) -> torch.Tensor:
+    """Upstream's `Qwen2RMSNorm` over the last dimension, in one launch.
+
+    `source` and `target` are `[rows, width]` bf16 contiguous on CUDA and
+    `weight` is `[width]` bf16; `target` is written in full and returned.
+    Capture-safe.
+    """
+    lib = library()
+    rows, width = source.shape
+    code = lib.rms_norm_launch(
+        ctypes.c_void_p(source.data_ptr()), ctypes.c_void_p(weight.data_ptr()),
+        ctypes.c_void_p(target.data_ptr()), rows, width,
+        ctypes.c_float(epsilon), _stream())
+    if code != 0:
+        raise RuntimeError(f"rms_norm_launch failed: {code}")
+    return target
+
+
+__all__ = ["attention_epilogue", "build", "library", "masked_softmax", "rms_norm",
+           "rope_project"]

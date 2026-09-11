@@ -33,6 +33,7 @@ namespace {
 constexpr int kRopeThreads = 256;
 constexpr int kSoftmaxThreads = 128;
 constexpr int kEpilogueThreads = 256;
+constexpr int kNormThreads = 256;
 // Upstream's masked-logit sentinel: finite, so exp(sentinel - max) underflows
 // to exactly zero unless every key in the row is masked.
 constexpr float kMaskedLogit = -2.3819763e38f;
@@ -157,7 +158,48 @@ __global__ void expert_epilogue_kernel(
         __float2bfloat16(source[index]);
 }
 
+// Upstream's `Qwen2RMSNorm`: normalize in float32, round to bf16, then scale by
+// the bf16 weight -- two roundings, in that order. Eager torch spends five to
+// six launches on it (a widening copy, a mean reduction over 48 CTAs, the
+// reciprocal square root, the scale and the weight product) and re-reads the
+// activation from DRAM at each one.
+__global__ void rms_norm_kernel(
+    const __nv_bfloat16* __restrict__ source, const __nv_bfloat16* __restrict__ weight,
+    __nv_bfloat16* __restrict__ target, int width, float epsilon) {
+    __shared__ float reduction[kNormThreads];
+    const long long base = (long long)blockIdx.x * width;
+
+    float total = 0.0f;
+    for (int i = threadIdx.x; i < width; i += blockDim.x) {
+        const float value = __bfloat162float(source[base + i]);
+        total = __fadd_rn(total, __fmul_rn(value, value));
+    }
+    reduction[threadIdx.x] = total;
+    __syncthreads();
+    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            reduction[threadIdx.x] += reduction[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+    const float scale = rsqrtf(reduction[0] / (float)width + epsilon);
+    for (int i = threadIdx.x; i < width; i += blockDim.x) {
+        const float normalized = __bfloat162float(
+            __float2bfloat16(__bfloat162float(source[base + i]) * scale));
+        target[base + i] = __float2bfloat16(normalized * __bfloat162float(weight[i]));
+    }
+}
+
 }  // namespace
+
+extern "C" int rms_norm_launch(
+    const void* source, const void* weight, void* target,
+    int rows, int width, float epsilon, void* stream) {
+    rms_norm_kernel<<<rows, kNormThreads, 0, (cudaStream_t)stream>>>(
+        (const __nv_bfloat16*)source, (const __nv_bfloat16*)weight,
+        (__nv_bfloat16*)target, width, epsilon);
+    return (int)cudaPeekAtLastError();
+}
 
 extern "C" int expert_rope_launch(
     const void* packed, const void* cos_table, const void* sin_table,

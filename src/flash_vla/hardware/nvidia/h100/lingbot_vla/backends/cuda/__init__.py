@@ -1,6 +1,6 @@
-"""Hand-written CUDA kernels for the LingBot action expert's fixed shapes."""
-from . import expert_rope
+"""Hand-written CUDA kernels for this Target's fixed shapes."""
+from . import pointwise
 
-rope_project = expert_rope.rope_project
+rope_project = pointwise.rope_project
 
-__all__ = ["expert_rope", "rope_project"]
+__all__ = ["rope_project"]

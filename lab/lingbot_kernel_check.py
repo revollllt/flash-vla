@@ -6,7 +6,7 @@ Runs on the Target's real shapes with random inputs; no checkpoint is needed.
 """
 import torch
 
-from flash_vla.hardware.nvidia.h100.lingbot_vla.backends.cuda import expert_rope
+from flash_vla.hardware.nvidia.h100.lingbot_vla.backends.cuda import pointwise
 from flash_vla.models.lingbot.spec import (
     HEAD_DIM, KV_HEADS, PREFIX_LEN, QUERY_HEADS, SUFFIX_LEN,
 )
@@ -57,7 +57,7 @@ def check_rope(device) -> bool:
             slots = (query.permute(1, 0, 2),
                      token_cache[PREFIX_LEN:].permute(1, 0, 2),
                      value_token[PREFIX_LEN:].permute(1, 0, 2))
-        expert_rope.rope_project(packed, cos, sin, *slots)
+        pointwise.rope_project(packed, cos, sin, *slots)
         torch.cuda.synchronize()
         if head_major:
             ok &= _report(f"rope/{label} query", query, want_q.permute(1, 0, 2))
@@ -78,7 +78,7 @@ def check_softmax(device) -> bool:
     want = torch.where(mask[None], scores * SCALE, -2.3819763e38)
     want = torch.nn.functional.softmax(want, dim=-1)
     got = scores.clone()
-    expert_rope.masked_softmax(got, mask, SCALE)
+    pointwise.masked_softmax(got, mask, SCALE)
     torch.cuda.synchronize()
     return _report("masked softmax", got, want, tolerance=2e-7)
 
@@ -86,7 +86,7 @@ def check_softmax(device) -> bool:
 def check_epilogue(device) -> bool:
     source = torch.randn(QUERY_HEADS, SUFFIX_LEN, HEAD_DIM, device=device)
     target = torch.zeros(SUFFIX_LEN, QUERY_HEADS * HEAD_DIM, dtype=torch.bfloat16, device=device)
-    expert_rope.attention_epilogue(source, target)
+    pointwise.attention_epilogue(source, target)
     torch.cuda.synchronize()
     want = source.permute(1, 0, 2).reshape(SUFFIX_LEN, -1).to(torch.bfloat16)
     return _report("attention epilogue", target, want)
