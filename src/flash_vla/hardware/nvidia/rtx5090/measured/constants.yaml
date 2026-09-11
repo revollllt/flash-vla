@@ -108,5 +108,7 @@ constants:
   units: instructions accepted on sm_120a but refused on sm_120 -- setmaxnreg.inc/.dec, mma with block
     scale, and ldmatrix .m16n16
   short: sm_120a required for setmaxnreg
-  rule: Pin the `a` target in each Target's compiler settings. Building plain sm_120 does not make warp
-    specialisation slower, it makes `setmaxnreg` fail to assemble.
+  rule: 'Pin `sm_120f` in each Target''s compiler settings. Building plain sm_120 does not make warp specialisation
+    slower, it makes `setmaxnreg` fail to assemble; and the family target `sm_120f` is identical to `sm_120a`
+    on all 51 probed instructions while covering the whole GB20x family rather than one die, so the
+    architecture-conditional target buys nothing here.'

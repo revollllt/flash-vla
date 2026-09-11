@@ -26,7 +26,7 @@ PTXAS = (
     if os.environ.get("CUDA_HOME")
     else shutil.which("ptxas") or "ptxas"
 )
-TARGETS = ("sm_90a", "sm_120", "sm_120a")
+TARGETS = ("sm_90a", "sm_120", "sm_120a", "sm_120f")
 VERSION = "9.1"
 
 # (id, family, declarations, body). Declarations go before the body inside the
@@ -308,14 +308,16 @@ def main() -> int:
             rows.append(row)
 
     width = max(len(r["id"]) for r in rows)
-    print(f"{'instruction':<{width}}  {'sm_90a':>8} {'sm_120':>8} {'sm_120a':>8}")
-    print("-" * (width + 28))
+    head = "  ".join(f"{t:>8}" for t in TARGETS)
+    print(f"{'instruction':<{width}}  {head}")
+    print("-" * (width + len(head) + 2))
     last = None
     for r in rows:
         if r["family"] != last:
             print(f"[{r['family']}]")
             last = r["family"]
-        print(f"{r['id']:<{width}}  {r['sm_90a']:>8} {r['sm_120']:>8} {r['sm_120a']:>8}")
+        cells = "  ".join(f"{r[t]:>8}" for t in TARGETS)
+        print(f"{r['id']:<{width}}  {cells}")
         for tgt, msg in (r.get("errors") or {}).items():
             print(f"    BROKEN {tgt}: {msg}")
 

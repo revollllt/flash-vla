@@ -98,11 +98,13 @@ the one that remains has never been characterised on this part.
 
 ## The biggest thing still untested here
 
-**Whether TMA `.multicast::cluster` actually delivers.** It assembles for
-`sm_120`, and assembling proved nothing about clusters until they were launched —
-the cluster rows in this table exist precisely because the assemble-time answer
-and the runtime answer were assumed to agree and had to be checked. No probe here
-issues a multicast TMA or counts its delivered bytes. Treat it as unknown.
+**What TMA `.multicast::cluster` costs here.** No longer a question of whether it
+works — NVIDIA's Target ISA Notes say it assembles on any `sm_90`-or-higher
+target but is optimized only for `sm_90a`/`sm_10xa`/`sm_11xa` and their families,
+and "may have substantially reduced performance on other targets". `sm_120a` is
+not on that list. So the open question is the size of the penalty, and no probe
+here issues a multicast TMA or counts its delivered bytes. An sm_90a design that
+treats multicast as a free fan-out does not port on that assumption.
 
 Second: **the noise floor.** sm90's table carries ~6% and an explicit "clocks not
 pinnable"; this machine's variability has not been characterised at all, so no
