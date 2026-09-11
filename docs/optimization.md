@@ -10,7 +10,7 @@
 2. **测当前模型并确认输出。** 以当前 `shipped` 版本为比较起点，沿用已有数值参考和容差；本轮同代码、同条件的测量和正确性结果可以复用。
 
    ```bash
-   python -m benchmarks latency --target h100/lingbot_vla --plan shipped --seed 42 --out artifacts/before.json
+   python -m benchmarks latency --target h100/lingbot_vla --plan shipped --seed 42 --out results/lingbot-h100/run-name/measurements/000.json
    ```
 
    前后保持同一物理 GPU、驱动/runtime、checkpoint、输入、shape、精度和计时范围。各版本独立进程、首次 capture、一个 graph 固定一个 stream；默认 warmup 5 次、测量 100 次、无 soak，以 median 比较并保留原始样本。计时包含输入搬运、host 工作、replay 和末尾同步，不含加载与 capture。A、B 分别测，有漂移迹象才针对性复测。
@@ -31,7 +31,7 @@
 
 6. **Kernel Validate：确认正确性和局部收益。** 沿用现有参考与容差检查相关 shape/输入，用 [benchmark-kernel](../.claude/skills/benchmark-kernel/SKILL.md) 对齐实际数据布局、缓存和执行条件，比较 kernel 或完整融合链的耗时。失败或收益不确定就留在内循环分析、修改；**正确且有可信局部收益才交给 Model 外循环**，无需先优化到极限。同一 GPU 的性能测量串行；多 GPU 可各自做同卡前后对比，model 正式计时期间避免其他 agent 争用测量资源。
 
-7. **Model 串行集成、验证、部署和测量。** 每次只把一个胜出候选接入当前最佳模型和 plan，做受影响的模型正确性检查；近似改动补充任务质量评估。验证通过后 Deploy 到实际推理路径，再运行第 2 步命令测部署性能，使用实际加载的 plan，结果另存 `artifacts/after.json`。有端到端收益就保留，否则回退或记录不确定，再处理下一个候选。接受 K1 后，K2 比较 `M+K1` 与 `M+K1+K2`，逐个确认增量收益。
+7. **Model 串行集成、验证、部署和测量。** 每次只把一个胜出候选接入当前最佳模型和 plan，做受影响的模型正确性检查；近似改动补充任务质量评估。验证通过后 Deploy 到实际推理路径，再运行第 2 步命令测部署性能，使用实际加载的 plan，结果按迭代编号另存同一 `measurements/` 目录（例如 `001.json`）。有端到端收益就保留，否则回退或记录不确定，再处理下一个候选。接受 K1 后，K2 比较 `M+K1` 与 `M+K1+K2`，逐个确认增量收益。
 
    局部收益未传递到模型时，回第 4 步分析并反馈内循环；收益成立后由部署版本选下一轮热点。候选适配最新模型，相关条件变化才补验证；瓶颈未变可复用 profile。按用户预算持续迭代，主要热点接近有证据支持的可达能力且无值得尝试的新方案时结束。
 
