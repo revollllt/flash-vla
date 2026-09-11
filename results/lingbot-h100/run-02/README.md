@@ -60,3 +60,86 @@ The expert, per layer-step (360 of them):
 | `qkv` (cuBLAS) | 5.01 | 1.80 ms | 3.27 |
 | `ada_rms_add` ×2 | 2 × 2.66 | 1.92 ms | ~2.0 |
 | RoPE + gated activation | 2.02 + 1.81 | 1.38 ms | at floor |
+
+## The 15.864 ms target is not reachable at this structure
+
+The target came from a pure roofline comparison, which puts LingBot at 4.07 ms
+against Pi0.5's 4.83 and therefore says LingBot should be the *faster* of the
+two. That comparison divides by datasheet peaks — 3.35 TB/s and 989 TFLOPS —
+and so assumes every launch fills 132 SMs. LingBot's expert runs 51 rows; its
+operators occupy 51 to 128 CTAs. Priced instead against the machine's measured
+cold-read model, `t_us = 1.85 + MB/2.77`, and against the per-kernel bests that
+this run and run-01 actually reached, the floor is:
+
+| | floor | now |
+|---|---:|---:|
+| expert: four projections at their streaming floors | 5.23 ms | 8.01 |
+| expert: attention at its measured best | 4.51 | 4.53 |
+| expert: two AdaRMS at ~2.0 µs | 1.44 | 1.92 |
+| `llm_backbone` | ~4.0 | 4.78 |
+| `vision_encoder` | ~2.5 | 3.07 |
+| input staging, host work, graph launches | 0.5 | 0.5 |
+| **total** | **~18.2 ms** | **~23.6** |
+
+So ~18 ms is the floor without a structural change, and 15.9 is below it. The
+reason is the one the roofline hides and run-01 already measured: LingBot's
+expert is **deep and narrow** where Pi0.5's is shallow and wide. Near-identical
+weight volume per denoise step (0.71 GB against 0.62) is spread over 36 layers
+of 19.8 MB instead of 18 of 34.6, so the same bytes are moved by twice as many
+launches, each half the size, on a machine that charges 1.85 µs per launch
+before a byte moves. Ten denoising steps multiply that penalty by ten.
+
+Closing the remaining ~5 ms to that floor, and going below it, is the same
+lever in both cases: fewer, larger launches per layer-step. Pi0.5 reaches five
+call sites per expert layer through a persistent 132-CTA task loop
+(`gemma_expert/backends/cuda/kernels/ffn_taskloop.cu`) whose geometry is
+compiled in for its shape. LingBot is at ten. A persistent per-layer-step
+kernel is the structural change that would close it, and it is a project-phase
+build, not an iteration.
+
+### Two fusion attempts that did not pay, and why
+
+Both were tried in this run and both are negatives worth keeping.
+
+**An AdaRMS prologue inside the GEMM** — the obvious way to delete the 1.92 ms
+`ada_rms_add` pays — measured **0.61x** on `gate_up` (15.11 µs fused against
+9.21 unfused), bit-exact. The reasoning that motivated it was wrong: a
+weight-stationary GEMM's CTAs each read the whole 51xK activation *separately*,
+so a row-wise reduction placed in its prologue runs once per CTA — 86 times
+over at `tile_n=64` on N=5504 — and serialises ahead of the mainloop instead of
+overlapping it. Deleting a 3.53 µs launch by paying ~6 µs is not a trade.
+Fusing a row reduction into a weight-stationary prologue is the wrong shape,
+independently of this Target.
+
+**TF32 in the attention kernel** measured no gain: fp32 at 12.53 µs against
+TF32 at 12.57 and 12.98 across the sweep. This was worth checking because
+upstream's own eager attention runs on TF32 tensor cores
+(`sm80_xmma_gemm_f32f32_tf32f32_f32`, `cutlass_80_tensorop_s1688gemm` in the
+baseline profile), so a TF32 variant would have moved *toward* the reference
+rather than away from it — the precision objection did not apply. It simply did
+not matter: the kernel is latency-bound, so faster math only exposes the
+staging. The fp32 path ships.
+
+A **SiLU-multiply epilogue** in the GEMM was also built and is correct and
+bit-exact, at 1.03x (8.58 against 8.83). That is ~0.09 ms of a 24.4 ms forward,
+below the bar for taking a new code path into the deployed route, so it is not
+integrated.
+
+## Final state
+
+`shipped` = `vision-attention` on all three call sites. Verified on the
+committed source (job 615569, driver 570.86.10): every hand-written kernel
+matches its torch expression except the two noted below, full-depth ten-step
+parity against the upstream eager oracle passes with `replay_identical`, and
+three legs measure **24.393 / 24.390 / 24.394 ms** with a 0.003 ms repeat
+spread.
+
+Accuracy has moved and is worth stating plainly. Across run-01 and run-02 the
+deepest output, `physical_actions`, has gone from bit-identical to the oracle,
+to cos 0.99995, to **cos 0.99974** now, against a 0.9943 threshold — so roughly
+4.6% of the tolerance budget is spent. Every step of that is reduction-order or
+cuBLAS-kernel-selection change, never a lower precision: the two kernels that
+are no longer bit-identical to their torch expression are `ada_rms_add` (3.9e-3,
+one bf16 ulp, from summing 768 squares with shuffles rather than a shared-memory
+tree) and the split-key attention (9.8e-4, one bf16 ulp). Nothing in the
+deployed route computes at a lower precision than the reference does.

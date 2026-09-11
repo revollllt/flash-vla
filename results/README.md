@@ -10,3 +10,4 @@ Performance comparisons are local to the representative checkpoint/fixture segme
 ## Current optimization runs
 
 - [lingbot-h100/run-01](lingbot-h100/run-01/README.md)
+- [lingbot-h100/run-02](lingbot-h100/run-02/README.md)
