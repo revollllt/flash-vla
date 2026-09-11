@@ -35,4 +35,6 @@
 
    局部收益未传递到模型时，回第 4 步分析并反馈内循环；收益成立后由部署版本选下一轮热点。候选适配最新模型，相关条件变化才补验证；瓶颈未变可复用 profile。按用户预算持续迭代，主要热点接近有证据支持的可达能力且无值得尝试的新方案时结束。
 
-每轮只留改动、代码版本或 diff、命令与环境、正确性及性能结果、结论，并保存原始 JSON。Skill 按需使用，不要求每轮全部执行；不新增 hash、冻结 contract 或 gate，不做无关全量审查。历史结果可用 `python -m lab.results rebuild` 重绘；优化过程不再维护 Campaign 状态机。
+每轮在 `results/<target>/<run>/` 保存改动、代码版本或 diff、命令与环境、正确性结论及原始 benchmark JSON，并更新 `iterations.csv` 与 `progress.svg`。从当前版本的实测点开始；每次模型候选记录部署后的端到端 median，保留未获益、不确定和失败尝试，只有决定保留的版本推进主曲线。Kernel 局部收益写入实验说明，不能替代模型延迟画在主曲线上。条件变化时另起一组记录，不把不同条件的数据连成一条加速曲线。记录和绘图的简短示例见 [results 工具](../lab/results/README.md)。
+
+Skill 按需使用，不要求每轮全部执行；不新增 hash、冻结 contract 或 gate，不做无关全量审查。历史结果可用 `python -m lab.results rebuild` 重绘；优化过程不再维护 Campaign 状态机。

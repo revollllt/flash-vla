@@ -1,4 +1,4 @@
-"""Plot a saved trace or rebuild historical result pages."""
+"""Plot an iteration table, plot a saved trace or rebuild historical pages."""
 import argparse
 import json
 from pathlib import Path
@@ -15,9 +15,17 @@ def main(argv=None):
     plotting = commands.add_parser("plot", help="plot one saved trace")
     plotting.add_argument("trace", type=Path)
     plotting.add_argument("--out", type=Path, required=True)
+    curve = commands.add_parser("curve", help="plot a new run's iteration CSV")
+    curve.add_argument("table", type=Path)
+    curve.add_argument("--out", type=Path, required=True)
+    curve.add_argument("--title")
     args = parser.parse_args(argv)
     if args.command == "rebuild":
         result = rebuild(args.root)
+    elif args.command == "curve":
+        from .curve import render
+        render(args.table, args.out, title=args.title)
+        result = {"plot": str(args.out)}
     else:
         metadata, points = plot.from_trace(read_json(args.trace))
         plot.render_optimization_progress(metadata=metadata, points=points, output_svg=args.out)

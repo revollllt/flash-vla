@@ -41,6 +41,12 @@ def rebuild(root):
                  f'{performance["anchor_ms"]:.3f}', f'{performance["best_ms"]:.3f}',
                  f'{performance["speedup"]:.3f}×', str(summary["latest_iteration"])]
         lines.append("| " + " | ".join(cells) + " |")
+    runs = [path.parent for path in sorted(root.glob("*/*/iterations.csv"))]
+    if runs:
+        lines.extend(["", "## Current optimization runs", ""])
+        for directory in runs:
+            relative = directory.relative_to(root).as_posix()
+            lines.append(f"- [{_cell(relative)}]({relative}/README.md)")
     value = dict(schema_version=1, campaigns=entries)
     write_json(root / "index.json", value)
     (root / "README.md").write_text("\n".join(lines) + "\n")
