@@ -99,7 +99,9 @@ class ExpertLoop:
         self.fused_attention = fused_attention
         self.fused_mlp = fused_mlp
         self.attention_kernel = attention_kernel
-        self.skinny_gemm = skinny_gemm
+        # The skinny GEMM replaces two call sites that only exist on the fused
+        # stack, and reads the workspace that stack allocates.
+        self.skinny_gemm = skinny_gemm and fused_mlp
 
         expert = core.qwenvl_with_expert.qwen_expert.model
         self.layers = tuple(expert.layers[:layers])
@@ -160,6 +162,7 @@ class ExpertLoop:
 
             self._gemm = skinny_gemm
             skinny_gemm.build()      # surface a compile failure before capture
+            self._warm_tensor_maps()
         pointwise.rope_project(
             torch.zeros((SUFFIX_LEN, sum(self.layers[0].qkv_widths)),
                         dtype=torch.bfloat16, device=device),
@@ -176,6 +179,24 @@ class ExpertLoop:
                     self.query, self.key_cache[0], self.value_cache[0],
                     torch.ones((SUFFIX_LEN, _CACHE_LEN), dtype=torch.bool, device=device),
                     self.attention_out, _SCALE)
+
+    def _warm_tensor_maps(self) -> None:
+        """Build every TMA tensor map the skinny GEMM will need, outside capture.
+
+        The kernel memoizes a map per (base pointer, shape, box) on the host,
+        and a miss calls `cuTensorMapEncodeTiled`, which is a driver call and is
+        not safe inside a CUDA-graph capture. Every pointer here is already
+        fixed -- the weights live in the runner's static arena and the
+        activations in its frozen workspace -- so encoding each pair once now
+        guarantees the cache hits for the rest of the engine's life. Doing it
+        here rather than relying on the warmup forwards means the invariant is
+        "one eager call before capture", not "enough warmup iterations".
+        """
+        for layer in self.layers:
+            self._gemm.linear(self.attention_out, layer.self_attn.o_proj.weight,
+                              self.projected_out, **_SKINNY_GEMM)
+            self._gemm.linear(self.activation, layer.mlp.down_proj.weight,
+                              self.gated_out, **_SKINNY_GEMM)
 
     def _slots(self, index: int):
         """The kernel's `(query, key_slot, value_slot)` views for one layer."""
