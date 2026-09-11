@@ -24,6 +24,7 @@ import torch
 
 _HERE = Path(__file__).resolve().parent
 _SRC = _HERE / "kernels" / "pointwise.cu"
+_ATTENTION_SRC = _HERE / "kernels" / "attention.cu"
 _REPO = _HERE.parents[7]
 _DEFAULT_NVCC = "/data/apps/cuda/12.6/bin/nvcc"
 
@@ -40,14 +41,15 @@ def _nvcc() -> str:
 def build(verbose: bool = False) -> Path:
     """Compile the shared library if this source and toolchain have not been built."""
     nvcc = _nvcc()
-    tag = hashlib.sha256(_SRC.read_bytes() + nvcc.encode()).hexdigest()[:16]
+    tag = hashlib.sha256(_SRC.read_bytes() + _ATTENTION_SRC.read_bytes()
+                         + nvcc.encode()).hexdigest()[:16]
     directory = _REPO / ".cache" / "cuda_ext" / f"lingbot_pointwise_{tag}"
     directory.mkdir(parents=True, exist_ok=True)
     out = directory / "libpointwise.so"
     if out.exists():
         return out
     command = [nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
-               "-arch=sm_90a", "-o", str(out), str(_SRC)]
+               "-arch=sm_90a", "-o", str(out), str(_SRC), str(_ATTENTION_SRC)]
     if verbose:
         print("[lingbot pointwise build]", " ".join(command), flush=True)
     result = subprocess.run(command, capture_output=True, text=True)
@@ -75,6 +77,12 @@ def library(verbose: bool = False):
         lib.ada_rms_add_launch.argtypes = [ctypes.c_void_p] * 7 + [ctypes.c_int] * 2 + [
             ctypes.c_float, ctypes.c_void_p]
         lib.ada_rms_add_launch.restype = ctypes.c_int
+        lib.rms_norm_add_launch.argtypes = [ctypes.c_void_p] * 5 + [ctypes.c_int] * 2 + [
+            ctypes.c_float, ctypes.c_void_p]
+        lib.rms_norm_add_launch.restype = ctypes.c_int
+        lib.expert_attention_launch.argtypes = [ctypes.c_void_p] * 5 + [ctypes.c_int] * 5 + [
+            ctypes.c_float, ctypes.c_void_p]
+        lib.expert_attention_launch.restype = ctypes.c_int
         lib.silu_multiply_launch.argtypes = [ctypes.c_void_p] * 2 + [ctypes.c_int] * 2 + [
             ctypes.c_void_p]
         lib.silu_multiply_launch.restype = ctypes.c_int
@@ -180,6 +188,47 @@ def ada_rms_add(source: torch.Tensor, residual: torch.Tensor, weight: torch.Tens
         raise RuntimeError(f"ada_rms_add_launch failed: {code}")
 
 
+def fused_attention(query: torch.Tensor, keys: torch.Tensor, values: torch.Tensor,
+                    mask: torch.Tensor, target: torch.Tensor, scale: float) -> torch.Tensor:
+    """Masked grouped-query attention over a resident cache, in one launch.
+
+    `query` is `[heads, rows, dim]` and `keys`/`values` are
+    `[kv_heads, key_count, dim]`, float32 and contiguous on CUDA; `mask` is
+    `[rows, key_count]` bool. `target` is `[rows, heads * dim]` bf16 and is
+    written in full, transposed and rounded for the output projection.
+    Capture-safe.
+    """
+    lib = library()
+    heads, rows, dim = query.shape
+    kv_heads, key_count, _ = keys.shape
+    code = lib.expert_attention_launch(
+        ctypes.c_void_p(query.data_ptr()), ctypes.c_void_p(keys.data_ptr()),
+        ctypes.c_void_p(values.data_ptr()), ctypes.c_void_p(mask.data_ptr()),
+        ctypes.c_void_p(target.data_ptr()), rows, heads, kv_heads, key_count, dim,
+        ctypes.c_float(scale), _stream())
+    if code != 0:
+        raise RuntimeError(f"expert_attention_launch failed: {code}")
+    return target
+
+
+def rms_norm_add(source: torch.Tensor, residual: torch.Tensor, weight: torch.Tensor,
+                 total: torch.Tensor, target: torch.Tensor, epsilon: float) -> None:
+    """`total = source + residual`, `target = RMSNorm(total)`, in one launch.
+
+    All tensors are bf16 on CUDA: `source`, `residual`, `total` and `target` are
+    `[rows, width]` contiguous and `weight` is `[width]`. `total` and `target`
+    are written in full. Capture-safe.
+    """
+    lib = library()
+    rows, width = source.shape
+    code = lib.rms_norm_add_launch(
+        ctypes.c_void_p(source.data_ptr()), ctypes.c_void_p(residual.data_ptr()),
+        ctypes.c_void_p(weight.data_ptr()), ctypes.c_void_p(total.data_ptr()),
+        ctypes.c_void_p(target.data_ptr()), rows, width, ctypes.c_float(epsilon), _stream())
+    if code != 0:
+        raise RuntimeError(f"rms_norm_add_launch failed: {code}")
+
+
 def silu_multiply(source: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     """`silu(gate) * up` over a packed `[rows, 2 * width]` bf16 gated projection.
 
@@ -196,5 +245,5 @@ def silu_multiply(source: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return target
 
 
-__all__ = ["ada_rms_add", "attention_epilogue", "build", "library", "masked_softmax",
-           "rms_norm", "rope_project", "silu_multiply"]
+__all__ = ["ada_rms_add", "attention_epilogue", "build", "fused_attention", "library",
+           "masked_softmax", "rms_norm", "rms_norm_add", "rope_project", "silu_multiply"]

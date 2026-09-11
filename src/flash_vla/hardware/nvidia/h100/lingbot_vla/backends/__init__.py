@@ -7,6 +7,8 @@ from . import fused_norm as _fused_norm
 from . import aligned_vision as _aligned_vision
 from . import expert_route as _expert_route
 from . import fused_attention as _fused_attention
+from . import fused_attn_kernel as _fused_attn_kernel
+from . import fused_backbone as _fused_backbone
 from . import fused_mlp as _fused_mlp
 from . import fused_prefix as _fused_prefix
 from . import fused_rope as _fused_rope
@@ -34,6 +36,8 @@ BACKENDS = {
     "aligned-vision": _aligned_vision,
     "vision-norm": _vision_norm,
     "fused-mlp": _fused_mlp,
+    "fused-backbone": _fused_backbone,
+    "attention-kernel": _fused_attn_kernel,
 }
 REGISTRY = Registry(BACKENDS, default="upstream-reference")
 

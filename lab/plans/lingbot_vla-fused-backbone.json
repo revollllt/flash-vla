@@ -1,0 +1,5 @@
+{
+  "lingbot_vision": "fused-backbone",
+  "lingbot_prefix": "fused-backbone",
+  "lingbot_action": "fused-backbone"
+}

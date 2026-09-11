@@ -252,7 +252,53 @@ __global__ void silu_multiply_kernel(
         activated * __bfloat162float(source[base + width + lane]));
 }
 
+// `Qwen2RMSNorm` preceded by the residual add that feeds it, for the towers
+// whose normalization carries no FiLM modulation. Rounding order is upstream's:
+// the normalized value is rounded to bf16 before the weight product, which is
+// why this cannot be expressed as `ada_rms_add` with a zero gamma and beta.
+__global__ void rms_norm_add_kernel(
+    const __nv_bfloat16* __restrict__ source, const __nv_bfloat16* __restrict__ residual,
+    const __nv_bfloat16* __restrict__ weight,
+    __nv_bfloat16* __restrict__ total, __nv_bfloat16* __restrict__ target,
+    int width, float epsilon) {
+    __shared__ float reduction[kNormThreads];
+    const long long base = (long long)blockIdx.x * width;
+
+    float squares = 0.0f;
+    for (int i = threadIdx.x; i < width; i += blockDim.x) {
+        const __nv_bfloat16 sum = __float2bfloat16(
+            __bfloat162float(source[base + i]) + __bfloat162float(residual[base + i]));
+        total[base + i] = sum;
+        const float value = __bfloat162float(sum);
+        squares = __fadd_rn(squares, __fmul_rn(value, value));
+    }
+    reduction[threadIdx.x] = squares;
+    __syncthreads();
+    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            reduction[threadIdx.x] += reduction[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+    const float scale = rsqrtf(reduction[0] / (float)width + epsilon);
+    for (int i = threadIdx.x; i < width; i += blockDim.x) {
+        const float normalized = __bfloat162float(
+            __float2bfloat16(__bfloat162float(total[base + i]) * scale));
+        target[base + i] = __float2bfloat16(normalized * __bfloat162float(weight[i]));
+    }
+}
+
 }  // namespace
+
+extern "C" int rms_norm_add_launch(
+    const void* source, const void* residual, const void* weight, void* total,
+    void* target, int rows, int width, float epsilon, void* stream) {
+    rms_norm_add_kernel<<<rows, kNormThreads, 0, (cudaStream_t)stream>>>(
+        (const __nv_bfloat16*)source, (const __nv_bfloat16*)residual,
+        (const __nv_bfloat16*)weight, (__nv_bfloat16*)total, (__nv_bfloat16*)target,
+        width, epsilon);
+    return (int)cudaPeekAtLastError();
+}
 
 extern "C" int ada_rms_add_launch(
     const void* source, const void* residual, const void* weight, const void* gamma,

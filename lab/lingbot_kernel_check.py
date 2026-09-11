@@ -137,11 +137,33 @@ def check_silu_multiply(device) -> bool:
     return _report("silu multiply", target, want, tolerance=8e-3)
 
 
+def check_fused_attention(device) -> bool:
+    heads, kv_heads, rows, keys, dim = QUERY_HEADS, KV_HEADS, SUFFIX_LEN, CACHE_LEN, HEAD_DIM
+    group = heads // kv_heads
+    query = torch.randn(heads, rows, dim, device=device)
+    key = torch.randn(kv_heads, keys, dim, device=device)
+    value = torch.randn(kv_heads, keys, dim, device=device)
+    mask = torch.rand(rows, keys, device=device) > 0.25
+    mask[:, 0] = True
+    target = torch.zeros(rows, heads * dim, dtype=torch.bfloat16, device=device)
+    pointwise.fused_attention(query, key, value, mask, target, SCALE)
+    torch.cuda.synchronize()
+
+    weights = torch.matmul(query.view(kv_heads, group * rows, dim),
+                           key.transpose(-1, -2)).view(heads, rows, keys)
+    weights = torch.where(mask[None], weights * SCALE, -2.3819763e38)
+    probs = torch.nn.functional.softmax(weights, dim=-1)
+    out = torch.matmul(probs.view(kv_heads, group * rows, keys), value)
+    want = out.view(heads, rows, dim).permute(1, 0, 2).reshape(rows, -1).to(torch.bfloat16)
+    return _report("fused attention", target, want, tolerance=3.2e-2)
+
+
 def main() -> int:
     torch.manual_seed(0)
     device = "cuda"
     ok = (check_rope(device) & check_softmax(device) & check_epilogue(device)
-          & check_rms_norm(device) & check_ada_rms_add(device) & check_silu_multiply(device))
+          & check_rms_norm(device) & check_ada_rms_add(device) & check_silu_multiply(device)
+          & check_fused_attention(device))
     print("PASS" if ok else "FAIL")
     return 0 if ok else 1
 

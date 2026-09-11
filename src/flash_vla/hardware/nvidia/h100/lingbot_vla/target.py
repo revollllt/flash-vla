@@ -96,9 +96,9 @@ class LingBotVLA(VLA):
     }
     registry = REGISTRY
     plan = {
-        "lingbot_vision": "fused-mlp",
-        "lingbot_prefix": "fused-mlp",
-        "lingbot_action": "fused-mlp",
+        "lingbot_vision": "fused-backbone",
+        "lingbot_prefix": "fused-backbone",
+        "lingbot_action": "fused-backbone",
     }
     reference_plan: Mapping[str, str] = {}
 

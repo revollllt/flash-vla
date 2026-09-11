@@ -82,7 +82,8 @@ class ExpertLoop:
 
     def __init__(self, core, *, layers: int, steps: int, conditions, time_step,
                  scratch, device, dtype, fused_rope: bool = False,
-                 fused_attention: bool = False, fused_mlp: bool = False) -> None:
+                 fused_attention: bool = False, fused_mlp: bool = False,
+                 attention_kernel: bool = False) -> None:
         self.core = core
         self.steps = steps
         self.depth = layers
@@ -91,6 +92,7 @@ class ExpertLoop:
         self.fused_rope = fused_rope or fused_attention
         self.fused_attention = fused_attention
         self.fused_mlp = fused_mlp
+        self.attention_kernel = attention_kernel
 
         expert = core.qwenvl_with_expert.qwen_expert.model
         self.layers = tuple(expert.layers[:layers])
@@ -152,6 +154,11 @@ class ExpertLoop:
                 torch.zeros((1, SUFFIX_LEN, _CACHE_LEN), dtype=torch.float32, device=device),
                 torch.ones((SUFFIX_LEN, _CACHE_LEN), dtype=torch.bool, device=device), _SCALE)
             pointwise.attention_epilogue(self.query, self.attention_out)
+            if self.attention_kernel:
+                pointwise.fused_attention(
+                    self.query, self.key_cache[0], self.value_cache[0],
+                    torch.ones((SUFFIX_LEN, _CACHE_LEN), dtype=torch.bool, device=device),
+                    self.attention_out, _SCALE)
 
     def _slots(self, index: int):
         """The kernel's `(query, key_slot, value_slot)` views for one layer."""
@@ -200,6 +207,10 @@ class ExpertLoop:
 
     def _attention(self, query, index, mask):
         """One layer-step's masked GQA attention, as bf16 `[1, SUFFIX_LEN, H * D]`."""
+        if self.attention_kernel:
+            return self._kernels.fused_attention(
+                query, self.key_cache[index], self.value_cache[index], mask[0],
+                self.attention_out, _SCALE)[None]
         if not self.fused_attention:
             return _grouped_attention(query[None], self.key_cache[index][None],
                                       self.value_cache[index][None], mask)

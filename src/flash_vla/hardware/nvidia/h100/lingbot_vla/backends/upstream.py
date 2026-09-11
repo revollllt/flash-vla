@@ -228,7 +228,7 @@ def _linear_patch_embedding(self, hidden_states):
 _VISION_FFN_ALIGNMENT = 8
 
 
-def _pad_vision_ffn(visual) -> None:
+def _pad_vision_ffn(visual, scratch=None, device=None, rows: int = 0) -> None:
     """Pack and zero-pad each vision block's feed-forward to an aligned width.
 
     The padded lanes carry a zero weight and a zero bias, so they contribute
@@ -250,16 +250,30 @@ def _pad_vision_ffn(visual) -> None:
             [pad_out(mlp.gate_proj.bias, (0, pad)), pad_out(mlp.up_proj.bias, (0, pad))], dim=0)
         mlp.padded_down_weight = pad_out(mlp.down_proj.weight, (0, pad))
         mlp.padded_width = padded
+        mlp.activation = (None if scratch is None else
+                          scratch("lingbot_vision_activation", (rows, padded),
+                                  torch.bfloat16, device))
         mlp.forward = MethodType(_padded_vision_mlp, mlp)
 
 
 def _padded_vision_mlp(self, hidden_state):
-    """`Qwen2_5_VLMLP` on one packed, width-aligned gated projection."""
+    """`Qwen2_5_VLMLP` on one packed, width-aligned gated projection.
+
+    With an `activation` workspace bound, the gated product is one launch over
+    the packed result instead of torch's separate SiLU and multiply, which
+    otherwise pass the 10.5 MB hidden tile three times.
+    """
     gate_up = torch.nn.functional.linear(
         hidden_state, self.packed_gate_up_weight, self.packed_gate_up_bias)
-    gate, up = gate_up.split(self.padded_width, dim=-1)
+    if self.activation is not None and gate_up.shape[0] == self.activation.shape[0]:
+        from .cuda import pointwise
+
+        activated = pointwise.silu_multiply(gate_up, self.activation)
+    else:
+        gate, up = gate_up.split(self.padded_width, dim=-1)
+        activated = self.act_fn(gate) * up
     return torch.nn.functional.linear(
-        self.act_fn(gate) * up, self.padded_down_weight, self.down_proj.bias)
+        activated, self.padded_down_weight, self.down_proj.bias)
 
 
 def _fuse_rms_norms(norms, rows: int, width: int, scratch, device) -> None:
@@ -330,7 +344,8 @@ def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets
     if linear_patch_embedding:
         visual.patch_embed.forward = MethodType(_linear_patch_embedding, visual.patch_embed)
     if pad_vision_ffn:
-        _pad_vision_ffn(visual)
+        _pad_vision_ffn(visual, scratch if fused_vision_norm else None, device,
+                        VIEWS * PATCH_ROWS_PER_VIEW)
     if fused_vision_norm:
         norms = [norm for block in visual.blocks for norm in (block.norm1, block.norm2)]
         _fuse_rms_norms(norms + [visual.merger.ln_q], VIEWS * PATCH_ROWS_PER_VIEW,
@@ -499,7 +514,8 @@ class _State:
                  specialized_loop: bool = False, fused_rope: bool = False,
                  fused_attention: bool = False, specialized_prefix: bool = False,
                  pad_vision_ffn: bool = False, fused_vision_norm: bool = False,
-                 fused_mlp: bool = False, scratch=None) -> None:
+                 fused_mlp: bool = False, fused_prefix_pointwise: bool = False,
+                 attention_kernel: bool = False, scratch=None) -> None:
         self.core = None
         self.loop = None
         self.specialized_loop = specialized_loop
@@ -509,6 +525,8 @@ class _State:
         self.pad_vision_ffn = pad_vision_ffn
         self.fused_vision_norm = fused_vision_norm
         self.fused_mlp = fused_mlp
+        self.fused_prefix_pointwise = fused_prefix_pointwise
+        self.attention_kernel = attention_kernel
         self.scratch = scratch
         self.prefix_pass = None
         self.vision_metadata = None
@@ -542,7 +560,7 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                   pack_expert_projections=False, grouped_attention=False,
                   specialized_loop=False, fused_rope=False, fused_attention=False,
                   specialized_prefix=False, pad_vision_ffn=False, fused_vision_norm=False,
-                  fused_mlp=False):
+                  fused_mlp=False, fused_prefix_pointwise=False, attention_kernel=False):
     state = _State(cache_rope_frequency, scratch.assets, linear_patch_embedding,
                    cache_rope_tables, precompute_time_modulation, fuse_norm,
                    pack_expert_projections=pack_expert_projections,
@@ -550,7 +568,9 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                    specialized_loop=specialized_loop, fused_rope=fused_rope,
                    fused_attention=fused_attention,
                    specialized_prefix=specialized_prefix, pad_vision_ffn=pad_vision_ffn,
-                   fused_vision_norm=fused_vision_norm, fused_mlp=fused_mlp, scratch=scratch)
+                   fused_vision_norm=fused_vision_norm, fused_mlp=fused_mlp,
+                   fused_prefix_pointwise=fused_prefix_pointwise,
+                   attention_kernel=attention_kernel, scratch=scratch)
 
     @torch.no_grad()
     def vision(pixel_values, out, layers, *weights):
@@ -585,7 +605,9 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                 from .prefix_pass import PrefixPass
 
                 state.prefix_pass = PrefixPass(core, layers=layers, scratch=scratch,
-                                               device=vision.device)
+                                               device=vision.device,
+                                               fused_pointwise=state.fused_prefix_pointwise,
+                                               attention_kernel=state.attention_kernel)
             state.prefix_pass.run(vision, image_masks, language_tokens, language_masks,
                                   prefix_masks, prefix_k, prefix_v)
             return
@@ -642,6 +664,7 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                     fused_rope=state.fused_rope,
                     fused_attention=state.fused_attention,
                     fused_mlp=state.fused_mlp,
+                    attention_kernel=state.attention_kernel,
                 )
         if state.loop is not None:
             state.loop.run(state_tensor, noise, prefix_masks, prefix_k, prefix_v,
