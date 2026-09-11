@@ -34,6 +34,8 @@ constexpr int kRopeThreads = 256;
 constexpr int kSoftmaxThreads = 128;
 constexpr int kEpilogueThreads = 256;
 constexpr int kNormThreads = 256;
+// 768 wide is 384 pairs over 256 threads: at most two a thread.
+constexpr int kNormPairsPerThread = 4;
 // Upstream's masked-logit sentinel: finite, so exp(sentinel - max) underflows
 // to exactly zero unless every key in the row is masked.
 constexpr float kMaskedLogit = -2.3819763e38f;
@@ -104,6 +106,40 @@ __global__ void expert_rope_kernel(
 // distribution.
 constexpr int kLogitsPerThread = 4;        // keys <= kSoftmaxThreads * 4
 
+// A row-wise reduction over 51 rows is 51 CTAs whatever the block size, so
+// these kernels never fill the machine and their cost is latency, not
+// bandwidth. Reduce inside each warp with shuffles and cross the warps once,
+// rather than walking a shared-memory tree with a __syncthreads per level:
+// at 256 threads that is 8 barriers against 1.
+__device__ __forceinline__ float warp_reduce_sum(float value) {
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        value += __shfl_xor_sync(0xffffffffu, value, offset);
+    }
+    return value;
+}
+
+__device__ __forceinline__ float block_reduce_sum_fast(float value, float* shared) {
+    const int lane = threadIdx.x & 31;
+    const int warp = threadIdx.x >> 5;
+    value = warp_reduce_sum(value);
+    if (lane == 0) {
+        shared[warp] = value;
+    }
+    __syncthreads();
+    const int warps = blockDim.x >> 5;
+    float total = threadIdx.x < warps ? shared[threadIdx.x] : 0.0f;
+    if (warp == 0) {
+        total = warp_reduce_sum(total);
+        if (lane == 0) {
+            shared[0] = total;
+        }
+    }
+    __syncthreads();
+    const float result = shared[0];
+    __syncthreads();
+    return result;
+}
+
 __device__ __forceinline__ float block_reduce_max(float value, float* shared) {
     shared[threadIdx.x] = value;
     __syncthreads();
@@ -154,7 +190,7 @@ __global__ void expert_softmax_kernel(
         logits[i] = expf(logits[i] - maximum);
         total += logits[i];
     }
-    const float total_sum = block_reduce_sum(total, shared);
+    const float total_sum = block_reduce_sum_fast(total, shared);
     held = 0;
     for (int i = threadIdx.x; i < keys; i += kSoftmaxThreads) {
         line[i] = logits[held++] / total_sum;
@@ -185,27 +221,33 @@ __global__ void expert_epilogue_kernel(
 __global__ void rms_norm_kernel(
     const __nv_bfloat16* __restrict__ source, const __nv_bfloat16* __restrict__ weight,
     __nv_bfloat16* __restrict__ target, int width, float epsilon) {
-    __shared__ float reduction[kNormThreads];
-    const long long base = (long long)blockIdx.x * width;
+    __shared__ float reduction[kNormThreads / 32];
+    const int pairs = width >> 1;
+    const long long base = (long long)blockIdx.x * pairs;
+    const __nv_bfloat162* source_row = (const __nv_bfloat162*)source + base;
 
+    __nv_bfloat162 held[kNormPairsPerThread];
+    int count = 0;
     float total = 0.0f;
-    for (int i = threadIdx.x; i < width; i += blockDim.x) {
-        const float value = __bfloat162float(source[base + i]);
-        total = __fadd_rn(total, __fmul_rn(value, value));
+    for (int i = threadIdx.x; i < pairs; i += kNormThreads) {
+        const __nv_bfloat162 value = source_row[i];
+        held[count++] = value;
+        const float low = __low2float(value);
+        const float high = __high2float(value);
+        total = __fadd_rn(total, __fadd_rn(__fmul_rn(low, low), __fmul_rn(high, high)));
     }
-    reduction[threadIdx.x] = total;
-    __syncthreads();
-    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
-        if (threadIdx.x < stride) {
-            reduction[threadIdx.x] += reduction[threadIdx.x + stride];
-        }
-        __syncthreads();
-    }
-    const float scale = rsqrtf(reduction[0] / (float)width + epsilon);
-    for (int i = threadIdx.x; i < width; i += blockDim.x) {
-        const float normalized = __bfloat162float(
-            __float2bfloat16(__bfloat162float(source[base + i]) * scale));
-        target[base + i] = __float2bfloat16(normalized * __bfloat162float(weight[i]));
+    const float scale = rsqrtf(block_reduce_sum_fast(total, reduction) / (float)width
+                               + epsilon);
+
+    const __nv_bfloat162* weight_pairs = (const __nv_bfloat162*)weight;
+    __nv_bfloat162* target_row = (__nv_bfloat162*)target + base;
+    count = 0;
+    for (int i = threadIdx.x; i < pairs; i += kNormThreads) {
+        const __nv_bfloat162 value = held[count++];
+        const __nv_bfloat162 w = weight_pairs[i];
+        target_row[i] = __floats2bfloat162_rn(
+            __bfloat162float(__float2bfloat16(__low2float(value) * scale)) * __low2float(w),
+            __bfloat162float(__float2bfloat16(__high2float(value) * scale)) * __high2float(w));
     }
 }
 
@@ -223,31 +265,47 @@ __global__ void ada_rms_add_kernel(
     const __nv_bfloat16* __restrict__ beta,
     __nv_bfloat16* __restrict__ total, __nv_bfloat16* __restrict__ target,
     int width, float epsilon) {
-    __shared__ float reduction[kNormThreads];
-    const long long base = (long long)blockIdx.x * width;
+    __shared__ float reduction[kNormThreads / 32];
+    const int pairs = width >> 1;
+    const long long base = (long long)blockIdx.x * pairs;
+    const __nv_bfloat162* source_row = (const __nv_bfloat162*)source + base;
+    const __nv_bfloat162* residual_row = (const __nv_bfloat162*)residual + base;
+    __nv_bfloat162* total_row = (__nv_bfloat162*)total + base;
 
+    // The sum is kept in registers rather than re-read from `total`: at 768
+    // wide and 256 threads that is at most two pairs a thread.
+    __nv_bfloat162 held[kNormPairsPerThread];
+    int count = 0;
     float squares = 0.0f;
-    for (int i = threadIdx.x; i < width; i += blockDim.x) {
-        const __nv_bfloat16 sum = __float2bfloat16(
-            __bfloat162float(source[base + i]) + __bfloat162float(residual[base + i]));
-        total[base + i] = sum;
-        const float value = __bfloat162float(sum);
-        squares = __fadd_rn(squares, __fmul_rn(value, value));
+    for (int i = threadIdx.x; i < pairs; i += kNormThreads) {
+        const __nv_bfloat162 a = source_row[i];
+        const __nv_bfloat162 b = residual_row[i];
+        const __nv_bfloat162 sum = __floats2bfloat162_rn(
+            __low2float(a) + __low2float(b), __high2float(a) + __high2float(b));
+        total_row[i] = sum;
+        held[count++] = sum;
+        const float low = __low2float(sum);
+        const float high = __high2float(sum);
+        squares = __fadd_rn(squares, __fadd_rn(__fmul_rn(low, low), __fmul_rn(high, high)));
     }
-    reduction[threadIdx.x] = squares;
-    __syncthreads();
-    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
-        if (threadIdx.x < stride) {
-            reduction[threadIdx.x] += reduction[threadIdx.x + stride];
-        }
-        __syncthreads();
-    }
-    const float scale = rsqrtf(reduction[0] / (float)width + epsilon);
-    for (int i = threadIdx.x; i < width; i += blockDim.x) {
-        const float normalized =
-            __bfloat162float(total[base + i]) * scale * __bfloat162float(weight[i]);
-        target[base + i] = __float2bfloat16(
-            (1.0f + __bfloat162float(gamma[i])) * normalized + __bfloat162float(beta[i]));
+    const float scale = rsqrtf(block_reduce_sum_fast(squares, reduction) / (float)width
+                               + epsilon);
+
+    const __nv_bfloat162* weight_pairs = (const __nv_bfloat162*)weight;
+    const __nv_bfloat162* gamma_pairs = (const __nv_bfloat162*)gamma;
+    const __nv_bfloat162* beta_pairs = (const __nv_bfloat162*)beta;
+    __nv_bfloat162* target_row = (__nv_bfloat162*)target + base;
+    count = 0;
+    for (int i = threadIdx.x; i < pairs; i += kNormThreads) {
+        const __nv_bfloat162 sum = held[count++];
+        const __nv_bfloat162 w = weight_pairs[i];
+        const __nv_bfloat162 g = gamma_pairs[i];
+        const __nv_bfloat162 b = beta_pairs[i];
+        target_row[i] = __floats2bfloat162_rn(
+            (1.0f + __low2float(g)) * (__low2float(sum) * scale * __low2float(w))
+                + __low2float(b),
+            (1.0f + __high2float(g)) * (__high2float(sum) * scale * __high2float(w))
+                + __high2float(b));
     }
 }
 
@@ -292,30 +350,39 @@ __global__ void rms_norm_add_kernel(
     const __nv_bfloat16* __restrict__ weight,
     __nv_bfloat16* __restrict__ total, __nv_bfloat16* __restrict__ target,
     int width, float epsilon) {
-    __shared__ float reduction[kNormThreads];
-    const long long base = (long long)blockIdx.x * width;
+    __shared__ float reduction[kNormThreads / 32];
+    const int pairs = width >> 1;
+    const long long base = (long long)blockIdx.x * pairs;
+    const __nv_bfloat162* source_row = (const __nv_bfloat162*)source + base;
+    const __nv_bfloat162* residual_row = (const __nv_bfloat162*)residual + base;
+    __nv_bfloat162* total_row = (__nv_bfloat162*)total + base;
 
+    __nv_bfloat162 held[kNormPairsPerThread];
+    int count = 0;
     float squares = 0.0f;
-    for (int i = threadIdx.x; i < width; i += blockDim.x) {
-        const __nv_bfloat16 sum = __float2bfloat16(
-            __bfloat162float(source[base + i]) + __bfloat162float(residual[base + i]));
-        total[base + i] = sum;
-        const float value = __bfloat162float(sum);
-        squares = __fadd_rn(squares, __fmul_rn(value, value));
+    for (int i = threadIdx.x; i < pairs; i += kNormThreads) {
+        const __nv_bfloat162 a = source_row[i];
+        const __nv_bfloat162 b = residual_row[i];
+        const __nv_bfloat162 sum = __floats2bfloat162_rn(
+            __low2float(a) + __low2float(b), __high2float(a) + __high2float(b));
+        total_row[i] = sum;
+        held[count++] = sum;
+        const float low = __low2float(sum);
+        const float high = __high2float(sum);
+        squares = __fadd_rn(squares, __fadd_rn(__fmul_rn(low, low), __fmul_rn(high, high)));
     }
-    reduction[threadIdx.x] = squares;
-    __syncthreads();
-    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
-        if (threadIdx.x < stride) {
-            reduction[threadIdx.x] += reduction[threadIdx.x + stride];
-        }
-        __syncthreads();
-    }
-    const float scale = rsqrtf(reduction[0] / (float)width + epsilon);
-    for (int i = threadIdx.x; i < width; i += blockDim.x) {
-        const float normalized = __bfloat162float(
-            __float2bfloat16(__bfloat162float(total[base + i]) * scale));
-        target[base + i] = __float2bfloat16(normalized * __bfloat162float(weight[i]));
+    const float scale = rsqrtf(block_reduce_sum_fast(squares, reduction) / (float)width
+                               + epsilon);
+
+    const __nv_bfloat162* weight_pairs = (const __nv_bfloat162*)weight;
+    __nv_bfloat162* target_row = (__nv_bfloat162*)target + base;
+    count = 0;
+    for (int i = threadIdx.x; i < pairs; i += kNormThreads) {
+        const __nv_bfloat162 sum = held[count++];
+        const __nv_bfloat162 w = weight_pairs[i];
+        target_row[i] = __floats2bfloat162_rn(
+            __bfloat162float(__float2bfloat16(__low2float(sum) * scale)) * __low2float(w),
+            __bfloat162float(__float2bfloat16(__high2float(sum) * scale)) * __high2float(w));
     }
 }
 
@@ -394,6 +461,9 @@ extern "C" int vision_rope_launch(
 extern "C" int rms_norm_add_launch(
     const void* source, const void* residual, const void* weight, void* total,
     void* target, int rows, int width, float epsilon, void* stream) {
+    if ((width & 1) != 0 || (width >> 1) > kNormThreads * kNormPairsPerThread) {
+        return 1;
+    }
     rms_norm_add_kernel<<<rows, kNormThreads, 0, (cudaStream_t)stream>>>(
         (const __nv_bfloat16*)source, (const __nv_bfloat16*)residual,
         (const __nv_bfloat16*)weight, (__nv_bfloat16*)total, (__nv_bfloat16*)target,
@@ -405,6 +475,9 @@ extern "C" int ada_rms_add_launch(
     const void* source, const void* residual, const void* weight, const void* gamma,
     const void* beta, void* total, void* target, int rows, int width, float epsilon,
     void* stream) {
+    if ((width & 1) != 0 || (width >> 1) > kNormThreads * kNormPairsPerThread) {
+        return 1;
+    }
     ada_rms_add_kernel<<<rows, kNormThreads, 0, (cudaStream_t)stream>>>(
         (const __nv_bfloat16*)source, (const __nv_bfloat16*)residual,
         (const __nv_bfloat16*)weight, (const __nv_bfloat16*)gamma,
@@ -428,6 +501,9 @@ extern "C" int silu_multiply_launch(
 extern "C" int rms_norm_launch(
     const void* source, const void* weight, void* target,
     int rows, int width, float epsilon, void* stream) {
+    if ((width & 1) != 0 || (width >> 1) > kNormThreads * kNormPairsPerThread) {
+        return 1;
+    }
     rms_norm_kernel<<<rows, kNormThreads, 0, (cudaStream_t)stream>>>(
         (const __nv_bfloat16*)source, (const __nv_bfloat16*)weight,
         (__nv_bfloat16*)target, width, epsilon);
