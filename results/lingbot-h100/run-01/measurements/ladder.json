@@ -1,0 +1,2573 @@
+{
+  "identity": {
+    "schema_version": 3,
+    "target": "hardware/nvidia/h100/lingbot_vla",
+    "hardware": "h100-sxm5-80gb",
+    "model": "lingbot-vla",
+    "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+    "shape": {
+      "batch": 1,
+      "views": 3,
+      "image_height": 224,
+      "image_width": 224,
+      "patch_rows_per_view": 256,
+      "patch_width": 1176,
+      "visual_tokens_per_view": 64,
+      "visual_tokens": 192,
+      "vision_layers": 32,
+      "vision_dim": 1280,
+      "vision_ffn_dim": 3420,
+      "vision_heads": 16,
+      "vision_head_dim": 80,
+      "language_slots": 72,
+      "prefix_len": 264,
+      "state_dim": 75,
+      "action_dim": 75,
+      "chunk": 50,
+      "suffix_len": 51,
+      "steps": 10,
+      "layers": 36,
+      "backbone_dim": 2048,
+      "backbone_ffn_dim": 11008,
+      "expert_dim": 768,
+      "expert_ffn_dim": 2752,
+      "query_heads": 16,
+      "kv_heads": 2,
+      "head_dim": 128
+    },
+    "plan": {
+      "lingbot_vision": "fused-norm",
+      "lingbot_prefix": "fused-norm",
+      "lingbot_action": "fused-norm"
+    },
+    "model_revision": "lingbot-vla-r1",
+    "engine_revision": null,
+    "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+    "execution_variant": {
+      "quantization": {
+        "mode": "bf16"
+      },
+      "cache": {
+        "mode": "none"
+      }
+    }
+  },
+  "protocol": "latency-v2",
+  "instrumented": false,
+  "measurement_context": {
+    "weights": {
+      "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+      "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+    },
+    "fixture": {
+      "id": "lingbot-robotwin-canonical-v1/seed-42",
+      "digest": "lingbot-robotwin-canonical-v1/seed-42"
+    },
+    "environment": {
+      "gpu_sku": "NVIDIA H100 80GB HBM3",
+      "driver": "610.43.02",
+      "cuda_runtime": "12.6",
+      "pytorch": "2.9.1+cu126",
+      "tilelang": "unavailable",
+      "clock_policy": {
+        "benchmark_control": "inherit",
+        "slurm_gpu_freq_request": null,
+        "effective_locked_clocks": "unobserved"
+      },
+      "power_policy": {
+        "requested_limit_w": 700.0,
+        "enforced_limit_w": 700.0
+      },
+      "capture_regime": "cuda_graph",
+      "clock_observation": {
+        "application_graphics_mhz": "[Requested functionality has been deprecated]",
+        "application_memory_mhz": "[Requested functionality has been deprecated]"
+      }
+    },
+    "hostname": "ACD1-55",
+    "slurm_job_id": "614462",
+    "timestamp": 1789106993.5035694,
+    "reference_provenance": {}
+  },
+  "env": {
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "python": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/lingbot-official-4eb34b7/bin/python",
+    "torch": "2.9.1+cu126",
+    "torch_cuda": "12.6",
+    "tilelang": "unavailable",
+    "gpu_uuid": "GPU-7a24d8c8-7e92-a8ba-2a98-58215c2c2e19",
+    "runtime_observation": {
+      "clocks.sm": "1980",
+      "clocks.mem": "2619",
+      "pstate": "P0",
+      "temperature.gpu": "38",
+      "power.draw": "381.18",
+      "clocks_event_reasons.active": "0x0000000000000000"
+    },
+    "node": "ACD1-55",
+    "job": "614462",
+    "driver": "610.43.02",
+    "clocks": "unlocked",
+    "clock_policy": {
+      "benchmark_control": "inherit",
+      "slurm_gpu_freq_request": null,
+      "effective_locked_clocks": "unobserved"
+    },
+    "clock_observation": {
+      "application_graphics_mhz": "[Requested functionality has been deprecated]",
+      "application_memory_mhz": "[Requested functionality has been deprecated]"
+    },
+    "power_policy": {
+      "requested_limit_w": 700.0,
+      "enforced_limit_w": 700.0
+    }
+  },
+  "config": {
+    "reps": 100,
+    "warmup": 5,
+    "seed": 42,
+    "plans": [
+      "lab/plans/lingbot-fused-norm.json",
+      "lab/plans/lingbot_vla-packed-projections.json",
+      "lab/plans/lingbot_vla-expert-loop.json",
+      "lab/plans/lingbot_vla-fused-rope.json",
+      "lab/plans/lingbot_vla-fused-attention.json",
+      "lab/plans/lingbot_vla-fused-prefix.json",
+      "lab/plans/lingbot_vla-aligned-vision.json",
+      "lab/plans/lingbot_vla-vision-norm.json",
+      "lab/plans/lingbot_vla-fused-mlp.json",
+      "shipped"
+    ],
+    "calibration": false,
+    "breakdown": false,
+    "primary_statistic": "median",
+    "capture_policy": "fresh-process-first-capture-per-leg",
+    "statistics": [
+      "min",
+      "median",
+      "p99"
+    ],
+    "p99_min_reps": 100,
+    "soak_s": 0,
+    "control_spread_max_ms": null,
+    "attribution": false,
+    "leg_options": [
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {}
+    ]
+  },
+  "legs": [
+    {
+      "plan": "lab/plans/lingbot-fused-norm.json",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/h100/lingbot_vla",
+        "hardware": "h100-sxm5-80gb",
+        "model": "lingbot-vla",
+        "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+        "shape": {
+          "batch": 1,
+          "views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "patch_rows_per_view": 256,
+          "patch_width": 1176,
+          "visual_tokens_per_view": 64,
+          "visual_tokens": 192,
+          "vision_layers": 32,
+          "vision_dim": 1280,
+          "vision_ffn_dim": 3420,
+          "vision_heads": 16,
+          "vision_head_dim": 80,
+          "language_slots": 72,
+          "prefix_len": 264,
+          "state_dim": 75,
+          "action_dim": 75,
+          "chunk": 50,
+          "suffix_len": 51,
+          "steps": 10,
+          "layers": 36,
+          "backbone_dim": 2048,
+          "backbone_ffn_dim": 11008,
+          "expert_dim": 768,
+          "expert_ffn_dim": 2752,
+          "query_heads": 16,
+          "kv_heads": 2,
+          "head_dim": 128
+        },
+        "plan": {
+          "lingbot_vision": "fused-norm",
+          "lingbot_prefix": "fused-norm",
+          "lingbot_action": "fused-norm"
+        },
+        "model_revision": "lingbot-vla-r1",
+        "engine_revision": null,
+        "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+          "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+        },
+        "fixture": {
+          "id": "lingbot-robotwin-canonical-v1/seed-42",
+          "digest": "lingbot-robotwin-canonical-v1/seed-42"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA H100 80GB HBM3",
+          "driver": "610.43.02",
+          "cuda_runtime": "12.6",
+          "pytorch": "2.9.1+cu126",
+          "tilelang": "unavailable",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 700.0,
+            "enforced_limit_w": 700.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "[Requested functionality has been deprecated]",
+            "application_memory_mhz": "[Requested functionality has been deprecated]"
+          }
+        },
+        "hostname": "ACD1-55",
+        "slurm_job_id": "614462",
+        "timestamp": 1789106993.5035694,
+        "reference_provenance": {}
+      },
+      "metrics": {
+        "chunk_latency": {
+          "min": 57.436360977590084,
+          "median": 58.47491440363228,
+          "n": 100,
+          "samples_ms": [
+            57.861764915287495,
+            57.74910980835557,
+            58.491053991019726,
+            58.52680979296565,
+            58.56309412047267,
+            58.535566087812185,
+            58.48582088947296,
+            57.690924033522606,
+            57.835618034005165,
+            58.50137211382389,
+            58.52530896663666,
+            58.549302630126476,
+            57.955626863986254,
+            57.80267994850874,
+            58.505584951490164,
+            58.47958894446492,
+            58.494355995208025,
+            58.54054307565093,
+            58.58210381120443,
+            57.832637801766396,
+            57.90080223232508,
+            58.49231779575348,
+            58.49088728427887,
+            58.503746055066586,
+            57.94840585440397,
+            57.81065206974745,
+            58.4784559905529,
+            58.50143637508154,
+            58.56425082311034,
+            58.52112406864762,
+            58.4791530855,
+            57.86963179707527,
+            57.93850589543581,
+            58.49749781191349,
+            58.52306727319956,
+            58.5594167932868,
+            57.94640816748142,
+            57.75181436911225,
+            57.47815873473883,
+            57.79794976115227,
+            58.49869642406702,
+            58.52012801915407,
+            58.5719458758831,
+            57.90725816041231,
+            58.06245794519782,
+            58.47509112209082,
+            58.46775462850928,
+            58.465268928557634,
+            57.93557781726122,
+            57.769724167883396,
+            57.436360977590084,
+            57.76564497500658,
+            58.554258197546005,
+            58.53898962959647,
+            58.47868928685784,
+            57.90122505277395,
+            57.86449182778597,
+            58.50683432072401,
+            58.505679946392775,
+            58.54091560468078,
+            58.00547869876027,
+            57.73802101612091,
+            57.452429085969925,
+            57.701998855918646,
+            58.474231977015734,
+            58.49962402135134,
+            58.534055948257446,
+            57.90237709879875,
+            57.81812174245715,
+            58.472291100770235,
+            58.47473768517375,
+            58.47587110474706,
+            58.51959530264139,
+            58.56333393603563,
+            57.78588401153684,
+            57.9055012203753,
+            58.46913205459714,
+            58.48041083663702,
+            58.48011001944542,
+            57.91942495852709,
+            57.83274304121733,
+            58.48217010498047,
+            58.497828897088766,
+            58.540786150842905,
+            58.50158724933863,
+            58.45130933448672,
+            57.79682286083698,
+            57.913982309401035,
+            58.47187526524067,
+            58.500746730715036,
+            58.54406300932169,
+            57.91795905679464,
+            57.80498310923576,
+            58.47464269027114,
+            58.47213510423899,
+            58.47991583868861,
+            58.508701622486115,
+            58.53815609589219,
+            57.800399139523506,
+            57.89561988785863
+          ],
+          "p99": 58.5719458758831
+        }
+      },
+      "attribution": null,
+      "runtime_observation": {
+        "before": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "30",
+          "power.draw": "125.70",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        },
+        "after": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "35",
+          "power.draw": "278.87",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        }
+      },
+      "options": {},
+      "process_id": 303625,
+      "gpu_uuid": "GPU-7a24d8c8-7e92-a8ba-2a98-58215c2c2e19",
+      "implementation_source": null,
+      "leg": 0
+    },
+    {
+      "plan": "lab/plans/lingbot_vla-packed-projections.json",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/h100/lingbot_vla",
+        "hardware": "h100-sxm5-80gb",
+        "model": "lingbot-vla",
+        "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+        "shape": {
+          "batch": 1,
+          "views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "patch_rows_per_view": 256,
+          "patch_width": 1176,
+          "visual_tokens_per_view": 64,
+          "visual_tokens": 192,
+          "vision_layers": 32,
+          "vision_dim": 1280,
+          "vision_ffn_dim": 3420,
+          "vision_heads": 16,
+          "vision_head_dim": 80,
+          "language_slots": 72,
+          "prefix_len": 264,
+          "state_dim": 75,
+          "action_dim": 75,
+          "chunk": 50,
+          "suffix_len": 51,
+          "steps": 10,
+          "layers": 36,
+          "backbone_dim": 2048,
+          "backbone_ffn_dim": 11008,
+          "expert_dim": 768,
+          "expert_ffn_dim": 2752,
+          "query_heads": 16,
+          "kv_heads": 2,
+          "head_dim": 128
+        },
+        "plan": {
+          "lingbot_vision": "packed-projections",
+          "lingbot_prefix": "packed-projections",
+          "lingbot_action": "packed-projections"
+        },
+        "model_revision": "lingbot-vla-r1",
+        "engine_revision": null,
+        "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+          "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+        },
+        "fixture": {
+          "id": "lingbot-robotwin-canonical-v1/seed-42",
+          "digest": "lingbot-robotwin-canonical-v1/seed-42"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA H100 80GB HBM3",
+          "driver": "610.43.02",
+          "cuda_runtime": "12.6",
+          "pytorch": "2.9.1+cu126",
+          "tilelang": "unavailable",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 700.0,
+            "enforced_limit_w": 700.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "[Requested functionality has been deprecated]",
+            "application_memory_mhz": "[Requested functionality has been deprecated]"
+          }
+        },
+        "hostname": "ACD1-55",
+        "slurm_job_id": "614462",
+        "timestamp": 1789107076.8106053,
+        "reference_provenance": {}
+      },
+      "metrics": {
+        "chunk_latency": {
+          "min": 50.65471213310957,
+          "median": 51.22933303937316,
+          "n": 100,
+          "samples_ms": [
+            51.3275908306241,
+            51.21554899960756,
+            51.20569234713912,
+            51.27937579527497,
+            51.27939209342003,
+            51.21024325489998,
+            51.22418003156781,
+            51.278880797326565,
+            51.25145893543959,
+            51.22689297422767,
+            51.220630295574665,
+            51.30030633881688,
+            51.26515356823802,
+            51.22124403715134,
+            51.25326802954078,
+            51.30077991634607,
+            51.26215098425746,
+            51.215164829045534,
+            51.23664205893874,
+            51.275033969432116,
+            51.24156130477786,
+            51.190400030463934,
+            51.245665177702904,
+            51.27173801884055,
+            50.88409688323736,
+            50.695347134023905,
+            51.16021726280451,
+            51.52868293225765,
+            50.82827992737293,
+            50.68228812888265,
+            51.15010542795062,
+            51.26324528828263,
+            51.21057201176882,
+            51.19357584044337,
+            51.26653611660004,
+            51.274914760142565,
+            51.22811812907457,
+            51.199075765907764,
+            51.27351172268391,
+            51.279121078550816,
+            51.203403621912,
+            51.219023298472166,
+            51.273740362375975,
+            51.262886729091406,
+            51.19410762563348,
+            51.20139988139272,
+            51.26971984282136,
+            51.2524489313364,
+            51.20111908763647,
+            51.21641093865037,
+            51.27177573740482,
+            51.24110775068402,
+            51.19758611544967,
+            51.21721979230642,
+            51.29220802336931,
+            51.25079024583101,
+            51.19754979386926,
+            51.22678494080901,
+            51.25865899026394,
+            51.232270896434784,
+            51.20336636900902,
+            51.23278358951211,
+            51.268271170556545,
+            51.22543405741453,
+            51.19209410622716,
+            51.24025093391538,
+            51.277266815304756,
+            50.86116027086973,
+            50.65471213310957,
+            51.111450884491205,
+            51.26847792416811,
+            51.5222018584609,
+            50.74317520484328,
+            51.15238577127457,
+            51.2778521515429,
+            51.21582094579935,
+            51.20337102562189,
+            51.24950595200062,
+            51.255264319479465,
+            51.20404716581106,
+            51.18726333603263,
+            51.2585723772645,
+            51.26244015991688,
+            51.17739085108042,
+            51.1991661041975,
+            51.25371413305402,
+            51.262919791042805,
+            51.20029766112566,
+            51.19693698361516,
+            51.27023393288255,
+            51.25895841047168,
+            51.208279095590115,
+            51.22068524360657,
+            51.256928127259016,
+            51.24746635556221,
+            51.18941096588969,
+            51.22422380372882,
+            51.26467114314437,
+            51.230547949671745,
+            51.19102168828249
+          ],
+          "p99": 51.5222018584609
+        }
+      },
+      "attribution": null,
+      "runtime_observation": {
+        "before": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "30",
+          "power.draw": "126.76",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        },
+        "after": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "34",
+          "power.draw": "282.65",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        }
+      },
+      "options": {},
+      "process_id": 361719,
+      "gpu_uuid": "GPU-7a24d8c8-7e92-a8ba-2a98-58215c2c2e19",
+      "implementation_source": null,
+      "leg": 1
+    },
+    {
+      "plan": "lab/plans/lingbot_vla-expert-loop.json",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/h100/lingbot_vla",
+        "hardware": "h100-sxm5-80gb",
+        "model": "lingbot-vla",
+        "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+        "shape": {
+          "batch": 1,
+          "views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "patch_rows_per_view": 256,
+          "patch_width": 1176,
+          "visual_tokens_per_view": 64,
+          "visual_tokens": 192,
+          "vision_layers": 32,
+          "vision_dim": 1280,
+          "vision_ffn_dim": 3420,
+          "vision_heads": 16,
+          "vision_head_dim": 80,
+          "language_slots": 72,
+          "prefix_len": 264,
+          "state_dim": 75,
+          "action_dim": 75,
+          "chunk": 50,
+          "suffix_len": 51,
+          "steps": 10,
+          "layers": 36,
+          "backbone_dim": 2048,
+          "backbone_ffn_dim": 11008,
+          "expert_dim": 768,
+          "expert_ffn_dim": 2752,
+          "query_heads": 16,
+          "kv_heads": 2,
+          "head_dim": 128
+        },
+        "plan": {
+          "lingbot_vision": "expert-loop",
+          "lingbot_prefix": "expert-loop",
+          "lingbot_action": "expert-loop"
+        },
+        "model_revision": "lingbot-vla-r1",
+        "engine_revision": null,
+        "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+          "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+        },
+        "fixture": {
+          "id": "lingbot-robotwin-canonical-v1/seed-42",
+          "digest": "lingbot-robotwin-canonical-v1/seed-42"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA H100 80GB HBM3",
+          "driver": "610.43.02",
+          "cuda_runtime": "12.6",
+          "pytorch": "2.9.1+cu126",
+          "tilelang": "unavailable",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 700.0,
+            "enforced_limit_w": 700.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "[Requested functionality has been deprecated]",
+            "application_memory_mhz": "[Requested functionality has been deprecated]"
+          }
+        },
+        "hostname": "ACD1-55",
+        "slurm_job_id": "614462",
+        "timestamp": 1789107158.656898,
+        "reference_provenance": {}
+      },
+      "metrics": {
+        "chunk_latency": {
+          "min": 48.472941387444735,
+          "median": 48.93150180578232,
+          "n": 100,
+          "samples_ms": [
+            48.992258962243795,
+            48.97389328107238,
+            48.94677037373185,
+            48.89690410345793,
+            48.93030785024166,
+            48.98760607466102,
+            48.95468009635806,
+            48.91031514853239,
+            48.91651077196002,
+            48.472941387444735,
+            48.682600259780884,
+            48.98735275492072,
+            48.96921431645751,
+            48.919009044766426,
+            48.940306063741446,
+            48.965511843562126,
+            48.9662098698318,
+            48.91198221594095,
+            48.93960431218147,
+            48.69719222187996,
+            48.54949098080397,
+            48.94479038193822,
+            49.02714118361473,
+            48.90127386897802,
+            48.911564983427525,
+            48.95670199766755,
+            48.96276630461216,
+            48.880967777222395,
+            48.886322882026434,
+            48.960932064801455,
+            49.02964876964688,
+            48.89374831691384,
+            48.90799708664417,
+            48.99126524105668,
+            48.98684099316597,
+            48.91349608078599,
+            48.89449290931225,
+            49.02260610833764,
+            48.96664386615157,
+            48.92312083393335,
+            48.902763053774834,
+            48.934896010905504,
+            48.94891381263733,
+            48.91632962971926,
+            48.89269405975938,
+            48.937791027128696,
+            48.94945491105318,
+            48.9201582968235,
+            48.89448918402195,
+            48.93494723364711,
+            48.95317414775491,
+            48.92447777092457,
+            48.87949023395777,
+            48.910997807979584,
+            48.95417299121618,
+            49.013970885425806,
+            48.89475321397185,
+            48.903016839176416,
+            48.958996776491404,
+            48.968271818012,
+            48.89148334041238,
+            48.912311904132366,
+            49.018161837011576,
+            48.91802975907922,
+            48.86984312906861,
+            48.89415903016925,
+            48.94913826137781,
+            48.932695761322975,
+            48.88022132217884,
+            48.9133563823998,
+            48.958437982946634,
+            48.9449012093246,
+            48.89685893431306,
+            48.88493614271283,
+            48.946225084364414,
+            48.936146311461926,
+            48.88479690998793,
+            48.87774307280779,
+            48.94732590764761,
+            48.94795874133706,
+            48.88697434216738,
+            48.873667139559984,
+            48.940427135676146,
+            48.96223312243819,
+            48.98869292810559,
+            48.895949963480234,
+            48.9404839463532,
+            48.95193222910166,
+            48.8965748809278,
+            48.87682758271694,
+            48.928894102573395,
+            48.96335210651159,
+            48.92370104789734,
+            48.94699202850461,
+            48.910388723015785,
+            48.95750805735588,
+            48.91367582604289,
+            48.88038570061326,
+            49.007253255695105,
+            48.953256104141474
+          ],
+          "p99": 49.02714118361473
+        }
+      },
+      "attribution": null,
+      "runtime_observation": {
+        "before": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "30",
+          "power.draw": "125.81",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        },
+        "after": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "34",
+          "power.draw": "294.16",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        }
+      },
+      "options": {},
+      "process_id": 395551,
+      "gpu_uuid": "GPU-7a24d8c8-7e92-a8ba-2a98-58215c2c2e19",
+      "implementation_source": null,
+      "leg": 2
+    },
+    {
+      "plan": "lab/plans/lingbot_vla-fused-rope.json",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/h100/lingbot_vla",
+        "hardware": "h100-sxm5-80gb",
+        "model": "lingbot-vla",
+        "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+        "shape": {
+          "batch": 1,
+          "views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "patch_rows_per_view": 256,
+          "patch_width": 1176,
+          "visual_tokens_per_view": 64,
+          "visual_tokens": 192,
+          "vision_layers": 32,
+          "vision_dim": 1280,
+          "vision_ffn_dim": 3420,
+          "vision_heads": 16,
+          "vision_head_dim": 80,
+          "language_slots": 72,
+          "prefix_len": 264,
+          "state_dim": 75,
+          "action_dim": 75,
+          "chunk": 50,
+          "suffix_len": 51,
+          "steps": 10,
+          "layers": 36,
+          "backbone_dim": 2048,
+          "backbone_ffn_dim": 11008,
+          "expert_dim": 768,
+          "expert_ffn_dim": 2752,
+          "query_heads": 16,
+          "kv_heads": 2,
+          "head_dim": 128
+        },
+        "plan": {
+          "lingbot_vision": "fused-rope",
+          "lingbot_prefix": "fused-rope",
+          "lingbot_action": "fused-rope"
+        },
+        "model_revision": "lingbot-vla-r1",
+        "engine_revision": null,
+        "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+          "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+        },
+        "fixture": {
+          "id": "lingbot-robotwin-canonical-v1/seed-42",
+          "digest": "lingbot-robotwin-canonical-v1/seed-42"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA H100 80GB HBM3",
+          "driver": "610.43.02",
+          "cuda_runtime": "12.6",
+          "pytorch": "2.9.1+cu126",
+          "tilelang": "unavailable",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 700.0,
+            "enforced_limit_w": 700.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "[Requested functionality has been deprecated]",
+            "application_memory_mhz": "[Requested functionality has been deprecated]"
+          }
+        },
+        "hostname": "ACD1-55",
+        "slurm_job_id": "614462",
+        "timestamp": 1789107276.613239,
+        "reference_provenance": {}
+      },
+      "metrics": {
+        "chunk_latency": {
+          "min": 39.732109289616346,
+          "median": 39.80191540904343,
+          "n": 100,
+          "samples_ms": [
+            39.81608897447586,
+            39.83757086098194,
+            39.84611388295889,
+            39.7681025788188,
+            39.750011172145605,
+            39.83129980042577,
+            39.820638950914145,
+            39.789695758372545,
+            39.812198374420404,
+            39.759605191648006,
+            39.78336276486516,
+            39.803060702979565,
+            39.81682891026139,
+            39.76235305890441,
+            39.75532203912735,
+            39.77966122329235,
+            39.85116304829717,
+            39.8572962731123,
+            39.732109289616346,
+            39.763940032571554,
+            39.794300217181444,
+            39.813920855522156,
+            39.85688090324402,
+            39.74630078300834,
+            39.7487236186862,
+            39.802487939596176,
+            39.836285170167685,
+            39.828079752624035,
+            39.74901000037789,
+            39.742161985486746,
+            39.76472374051809,
+            39.8263200186193,
+            39.80587096884847,
+            39.75461842492223,
+            39.754926692694426,
+            39.78425404056907,
+            39.80903001502156,
+            39.82327086851001,
+            39.759703911840916,
+            39.754355791956186,
+            39.76640896871686,
+            39.82151113450527,
+            39.81655463576317,
+            39.81558093801141,
+            39.76618405431509,
+            39.78253901004791,
+            39.81730015948415,
+            39.81911204755306,
+            39.7782102227211,
+            39.75354926660657,
+            39.78882310912013,
+            39.820450358092785,
+            39.835921954363585,
+            39.77056173607707,
+            39.76659802719951,
+            39.77689100429416,
+            39.83973013237119,
+            39.86823791638017,
+            39.76361034438014,
+            39.75253691896796,
+            39.77823304012418,
+            39.814707823097706,
+            39.817823097109795,
+            39.81921495869756,
+            40.019086096435785,
+            39.76529464125633,
+            39.87516509369016,
+            39.82259426265955,
+            39.81417790055275,
+            39.75126892328262,
+            39.761305786669254,
+            39.822781924158335,
+            39.810892194509506,
+            39.76040706038475,
+            39.81320094317198,
+            39.7610142827034,
+            39.821036625653505,
+            39.88250019028783,
+            39.823805913329124,
+            39.75301515311003,
+            39.76670792326331,
+            39.80931965634227,
+            39.81008566915989,
+            39.76062312722206,
+            39.74888613447547,
+            39.776035118848085,
+            39.805226027965546,
+            39.81188824400306,
+            39.772280026227236,
+            39.763450622558594,
+            39.76486483588815,
+            39.8141723126173,
+            39.815608877688646,
+            39.80573592707515,
+            39.754047989845276,
+            39.7694893181324,
+            39.801342878490686,
+            39.81132386252284,
+            39.81675626710057,
+            39.7514458745718
+          ],
+          "p99": 39.88250019028783
+        }
+      },
+      "attribution": null,
+      "runtime_observation": {
+        "before": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "30",
+          "power.draw": "125.75",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        },
+        "after": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "35",
+          "power.draw": "308.80",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        }
+      },
+      "options": {},
+      "process_id": 426844,
+      "gpu_uuid": "GPU-7a24d8c8-7e92-a8ba-2a98-58215c2c2e19",
+      "implementation_source": null,
+      "leg": 3
+    },
+    {
+      "plan": "lab/plans/lingbot_vla-fused-attention.json",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/h100/lingbot_vla",
+        "hardware": "h100-sxm5-80gb",
+        "model": "lingbot-vla",
+        "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+        "shape": {
+          "batch": 1,
+          "views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "patch_rows_per_view": 256,
+          "patch_width": 1176,
+          "visual_tokens_per_view": 64,
+          "visual_tokens": 192,
+          "vision_layers": 32,
+          "vision_dim": 1280,
+          "vision_ffn_dim": 3420,
+          "vision_heads": 16,
+          "vision_head_dim": 80,
+          "language_slots": 72,
+          "prefix_len": 264,
+          "state_dim": 75,
+          "action_dim": 75,
+          "chunk": 50,
+          "suffix_len": 51,
+          "steps": 10,
+          "layers": 36,
+          "backbone_dim": 2048,
+          "backbone_ffn_dim": 11008,
+          "expert_dim": 768,
+          "expert_ffn_dim": 2752,
+          "query_heads": 16,
+          "kv_heads": 2,
+          "head_dim": 128
+        },
+        "plan": {
+          "lingbot_vision": "fused-attention",
+          "lingbot_prefix": "fused-attention",
+          "lingbot_action": "fused-attention"
+        },
+        "model_revision": "lingbot-vla-r1",
+        "engine_revision": null,
+        "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+          "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+        },
+        "fixture": {
+          "id": "lingbot-robotwin-canonical-v1/seed-42",
+          "digest": "lingbot-robotwin-canonical-v1/seed-42"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA H100 80GB HBM3",
+          "driver": "610.43.02",
+          "cuda_runtime": "12.6",
+          "pytorch": "2.9.1+cu126",
+          "tilelang": "unavailable",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 700.0,
+            "enforced_limit_w": 700.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "[Requested functionality has been deprecated]",
+            "application_memory_mhz": "[Requested functionality has been deprecated]"
+          }
+        },
+        "hostname": "ACD1-55",
+        "slurm_job_id": "614462",
+        "timestamp": 1789107356.1293683,
+        "reference_provenance": {}
+      },
+      "metrics": {
+        "chunk_latency": {
+          "min": 37.1968480758369,
+          "median": 37.250758381560445,
+          "n": 100,
+          "samples_ms": [
+            37.26639226078987,
+            37.24394692108035,
+            37.20929194241762,
+            37.29035286232829,
+            37.28004498407245,
+            37.263202015310526,
+            37.22014930099249,
+            37.19920292496681,
+            37.26021479815245,
+            37.28160075843334,
+            37.27370826527476,
+            37.20887424424291,
+            37.22100332379341,
+            37.307333666831255,
+            37.33054222539067,
+            37.279034964740276,
+            37.238817662000656,
+            37.226259242743254,
+            37.21200209110975,
+            37.26109676063061,
+            37.27853484451771,
+            37.282336037606,
+            37.2248450294137,
+            37.2333531267941,
+            37.33861818909645,
+            37.282477132976055,
+            37.250945810228586,
+            37.2215211391449,
+            37.23356407135725,
+            37.28510998189449,
+            37.272507790476084,
+            37.28254698216915,
+            37.24928293377161,
+            37.208212073892355,
+            37.238966673612595,
+            37.24307473748922,
+            37.2879053466022,
+            37.27017110213637,
+            37.20831498503685,
+            37.20248490571976,
+            37.2505709528923,
+            37.28016326203942,
+            37.27006306871772,
+            37.236819975078106,
+            37.21187822520733,
+            37.210111040621996,
+            37.2720081359148,
+            37.27459814399481,
+            37.2758898884058,
+            37.22331579774618,
+            37.22633421421051,
+            37.25600801408291,
+            37.264558020979166,
+            37.266000639647245,
+            37.2173716314137,
+            37.197139114141464,
+            37.23012376576662,
+            37.278857082128525,
+            37.31414582580328,
+            37.22239099442959,
+            37.26397408172488,
+            37.208512891083956,
+            37.264864426106215,
+            37.291196174919605,
+            37.253370974212885,
+            37.224805913865566,
+            37.21305588260293,
+            37.24127681925893,
+            37.266054190695286,
+            37.274878937751055,
+            37.217187229543924,
+            37.19911025837064,
+            37.20558620989323,
+            37.25915867835283,
+            37.30631526559591,
+            37.22998220473528,
+            37.20610402524471,
+            37.209813948720694,
+            37.262680009007454,
+            37.434504833072424,
+            37.255057133734226,
+            37.21061395481229,
+            37.1968480758369,
+            37.229268811643124,
+            37.252317648380995,
+            37.2782270424068,
+            37.23440179601312,
+            37.26328490301967,
+            37.20041364431381,
+            37.28178096935153,
+            37.314599845558405,
+            37.29905607178807,
+            37.20710473135114,
+            37.20007697120309,
+            37.240360863506794,
+            37.268546875566244,
+            37.25864598527551,
+            37.20042621716857,
+            37.20712987706065,
+            37.24757814779878
+          ],
+          "p99": 37.33861818909645
+        }
+      },
+      "attribution": null,
+      "runtime_observation": {
+        "before": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "30",
+          "power.draw": "134.97",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        },
+        "after": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "38",
+          "power.draw": "344.01",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        }
+      },
+      "options": {},
+      "process_id": 472528,
+      "gpu_uuid": "GPU-7a24d8c8-7e92-a8ba-2a98-58215c2c2e19",
+      "implementation_source": null,
+      "leg": 4
+    },
+    {
+      "plan": "lab/plans/lingbot_vla-fused-prefix.json",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/h100/lingbot_vla",
+        "hardware": "h100-sxm5-80gb",
+        "model": "lingbot-vla",
+        "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+        "shape": {
+          "batch": 1,
+          "views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "patch_rows_per_view": 256,
+          "patch_width": 1176,
+          "visual_tokens_per_view": 64,
+          "visual_tokens": 192,
+          "vision_layers": 32,
+          "vision_dim": 1280,
+          "vision_ffn_dim": 3420,
+          "vision_heads": 16,
+          "vision_head_dim": 80,
+          "language_slots": 72,
+          "prefix_len": 264,
+          "state_dim": 75,
+          "action_dim": 75,
+          "chunk": 50,
+          "suffix_len": 51,
+          "steps": 10,
+          "layers": 36,
+          "backbone_dim": 2048,
+          "backbone_ffn_dim": 11008,
+          "expert_dim": 768,
+          "expert_ffn_dim": 2752,
+          "query_heads": 16,
+          "kv_heads": 2,
+          "head_dim": 128
+        },
+        "plan": {
+          "lingbot_vision": "fused-prefix",
+          "lingbot_prefix": "fused-prefix",
+          "lingbot_action": "fused-prefix"
+        },
+        "model_revision": "lingbot-vla-r1",
+        "engine_revision": null,
+        "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+          "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+        },
+        "fixture": {
+          "id": "lingbot-robotwin-canonical-v1/seed-42",
+          "digest": "lingbot-robotwin-canonical-v1/seed-42"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA H100 80GB HBM3",
+          "driver": "610.43.02",
+          "cuda_runtime": "12.6",
+          "pytorch": "2.9.1+cu126",
+          "tilelang": "unavailable",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 700.0,
+            "enforced_limit_w": 700.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "[Requested functionality has been deprecated]",
+            "application_memory_mhz": "[Requested functionality has been deprecated]"
+          }
+        },
+        "hostname": "ACD1-55",
+        "slurm_job_id": "614462",
+        "timestamp": 1789107437.4982872,
+        "reference_provenance": {}
+      },
+      "metrics": {
+        "chunk_latency": {
+          "min": 34.8025499843061,
+          "median": 34.85441533848643,
+          "n": 100,
+          "samples_ms": [
+            34.85738066956401,
+            34.814758226275444,
+            34.87832099199295,
+            34.880881663411856,
+            34.87431909888983,
+            34.81521178036928,
+            34.82900885865092,
+            34.84443621709943,
+            34.883671905845404,
+            34.898312762379646,
+            34.82463816180825,
+            34.809289034456015,
+            34.82448635622859,
+            34.89197511225939,
+            34.885026048868895,
+            34.89135671406984,
+            34.831919241696596,
+            34.842709079384804,
+            34.86065659672022,
+            34.8930018953979,
+            34.904505126178265,
+            34.87939527258277,
+            34.825701266527176,
+            34.8255829885602,
+            34.84777733683586,
+            34.869974944740534,
+            34.86922709271312,
+            34.84048508107662,
+            34.83676491305232,
+            34.83690368011594,
+            34.8694552667439,
+            34.88527424633503,
+            34.89192575216293,
+            34.82506703585386,
+            34.83928181231022,
+            34.83517607674003,
+            34.8772993311286,
+            34.882855135947466,
+            34.85992504283786,
+            34.80401914566755,
+            34.82420602813363,
+            34.8166162148118,
+            34.85544491559267,
+            34.87237403169274,
+            34.85893504694104,
+            34.83003005385399,
+            34.823765978217125,
+            34.908176865428686,
+            35.132074262946844,
+            34.88675318658352,
+            34.83330877497792,
+            34.828102216124535,
+            34.85265886411071,
+            34.89759378135204,
+            34.900033846497536,
+            34.889159724116325,
+            34.852552227675915,
+            34.852846059948206,
+            34.84921995550394,
+            34.88684631884098,
+            34.883792977780104,
+            34.860883839428425,
+            34.815504681319,
+            34.82780698686838,
+            34.83114019036293,
+            34.86867994070053,
+            34.87607231363654,
+            34.853385761380196,
+            34.822313115000725,
+            34.81189766898751,
+            34.85134802758694,
+            34.89033505320549,
+            34.88554712384939,
+            34.84046179801226,
+            34.81061290949583,
+            34.82096316292882,
+            34.87283596768975,
+            34.88421533256769,
+            34.86842243000865,
+            34.82193173840642,
+            34.81544880196452,
+            34.81642995029688,
+            34.86059559509158,
+            34.863749984651804,
+            34.8609359934926,
+            34.82709499076009,
+            34.808612894266844,
+            34.84976710751653,
+            34.88280810415745,
+            34.898858051747084,
+            34.85877811908722,
+            34.8025499843061,
+            34.81342224404216,
+            34.85669521614909,
+            34.890871960669756,
+            34.88702606409788,
+            34.83153833076358,
+            34.812540747225285,
+            34.82677601277828,
+            34.876453690230846
+          ],
+          "p99": 34.908176865428686
+        }
+      },
+      "attribution": null,
+      "runtime_observation": {
+        "before": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "30",
+          "power.draw": "139.79",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        },
+        "after": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "37",
+          "power.draw": "355.72",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        }
+      },
+      "options": {},
+      "process_id": 506756,
+      "gpu_uuid": "GPU-7a24d8c8-7e92-a8ba-2a98-58215c2c2e19",
+      "implementation_source": null,
+      "leg": 5
+    },
+    {
+      "plan": "lab/plans/lingbot_vla-aligned-vision.json",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/h100/lingbot_vla",
+        "hardware": "h100-sxm5-80gb",
+        "model": "lingbot-vla",
+        "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+        "shape": {
+          "batch": 1,
+          "views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "patch_rows_per_view": 256,
+          "patch_width": 1176,
+          "visual_tokens_per_view": 64,
+          "visual_tokens": 192,
+          "vision_layers": 32,
+          "vision_dim": 1280,
+          "vision_ffn_dim": 3420,
+          "vision_heads": 16,
+          "vision_head_dim": 80,
+          "language_slots": 72,
+          "prefix_len": 264,
+          "state_dim": 75,
+          "action_dim": 75,
+          "chunk": 50,
+          "suffix_len": 51,
+          "steps": 10,
+          "layers": 36,
+          "backbone_dim": 2048,
+          "backbone_ffn_dim": 11008,
+          "expert_dim": 768,
+          "expert_ffn_dim": 2752,
+          "query_heads": 16,
+          "kv_heads": 2,
+          "head_dim": 128
+        },
+        "plan": {
+          "lingbot_vision": "aligned-vision",
+          "lingbot_prefix": "aligned-vision",
+          "lingbot_action": "aligned-vision"
+        },
+        "model_revision": "lingbot-vla-r1",
+        "engine_revision": null,
+        "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+          "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+        },
+        "fixture": {
+          "id": "lingbot-robotwin-canonical-v1/seed-42",
+          "digest": "lingbot-robotwin-canonical-v1/seed-42"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA H100 80GB HBM3",
+          "driver": "610.43.02",
+          "cuda_runtime": "12.6",
+          "pytorch": "2.9.1+cu126",
+          "tilelang": "unavailable",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 700.0,
+            "enforced_limit_w": 700.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "[Requested functionality has been deprecated]",
+            "application_memory_mhz": "[Requested functionality has been deprecated]"
+          }
+        },
+        "hostname": "ACD1-55",
+        "slurm_job_id": "614462",
+        "timestamp": 1789107519.3323815,
+        "reference_provenance": {}
+      },
+      "metrics": {
+        "chunk_latency": {
+          "min": 31.454153824597597,
+          "median": 31.5924440510571,
+          "n": 100,
+          "samples_ms": [
+            31.454153824597597,
+            31.60395473241806,
+            31.64452686905861,
+            31.65910206735134,
+            31.668078154325485,
+            31.664066947996616,
+            31.700624153017998,
+            31.60736709833145,
+            31.579331029206514,
+            31.58202487975359,
+            31.58088820055127,
+            31.616085208952427,
+            31.637665815651417,
+            31.585040036588907,
+            31.54715709388256,
+            31.600965652614832,
+            31.588633079081774,
+            31.60033980384469,
+            31.5729440189898,
+            31.58398810774088,
+            31.589949037879705,
+            31.6011318936944,
+            31.610705889761448,
+            31.602398958057165,
+            31.55563771724701,
+            31.56743897125125,
+            31.56571416184306,
+            31.62904502823949,
+            31.60880319774151,
+            31.636205967515707,
+            31.637988053262234,
+            31.595613341778517,
+            31.58682817593217,
+            31.563077121973038,
+            31.552511733025312,
+            31.56503476202488,
+            31.588761135935783,
+            31.600784976035357,
+            31.58252127468586,
+            31.57888911664486,
+            31.59353695809841,
+            31.587745994329453,
+            31.590444035828114,
+            31.60354169085622,
+            31.620051711797714,
+            31.623282004147768,
+            31.59107407554984,
+            31.58099390566349,
+            31.589734368026257,
+            31.618776731193066,
+            31.61981701850891,
+            31.593372114002705,
+            31.566418707370758,
+            31.599788926541805,
+            31.612932682037354,
+            31.634842045605183,
+            31.60767676308751,
+            31.592687126249075,
+            31.581266317516565,
+            31.59285383298993,
+            31.59223683178425,
+            31.596525106579065,
+            31.59231785684824,
+            31.58554434776306,
+            31.580886337906122,
+            31.577222980558872,
+            31.59975353628397,
+            31.575067900121212,
+            31.554187182337046,
+            31.56430507078767,
+            31.56718984246254,
+            31.583672389388084,
+            31.581990886479616,
+            31.58294316381216,
+            31.552611850202084,
+            31.54559200629592,
+            31.60297218710184,
+            31.58304514363408,
+            31.581505201756954,
+            31.592797953635454,
+            31.57769702374935,
+            31.627129763364792,
+            31.638810876756907,
+            31.963671557605267,
+            31.623833812773228,
+            31.646136194467545,
+            31.601842027157545,
+            31.6343130543828,
+            31.623064074665308,
+            31.621025875210762,
+            31.606003176420927,
+            31.568330712616444,
+            31.57953266054392,
+            31.59436583518982,
+            31.57403413206339,
+            31.59257024526596,
+            31.576768029481173,
+            31.58900374546647,
+            31.58179996535182,
+            31.59733396023512
+          ],
+          "p99": 31.700624153017998
+        }
+      },
+      "attribution": null,
+      "runtime_observation": {
+        "before": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "30",
+          "power.draw": "134.71",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        },
+        "after": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "34",
+          "power.draw": "346.76",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        }
+      },
+      "options": {},
+      "process_id": 537914,
+      "gpu_uuid": "GPU-7a24d8c8-7e92-a8ba-2a98-58215c2c2e19",
+      "implementation_source": null,
+      "leg": 6
+    },
+    {
+      "plan": "lab/plans/lingbot_vla-vision-norm.json",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/h100/lingbot_vla",
+        "hardware": "h100-sxm5-80gb",
+        "model": "lingbot-vla",
+        "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+        "shape": {
+          "batch": 1,
+          "views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "patch_rows_per_view": 256,
+          "patch_width": 1176,
+          "visual_tokens_per_view": 64,
+          "visual_tokens": 192,
+          "vision_layers": 32,
+          "vision_dim": 1280,
+          "vision_ffn_dim": 3420,
+          "vision_heads": 16,
+          "vision_head_dim": 80,
+          "language_slots": 72,
+          "prefix_len": 264,
+          "state_dim": 75,
+          "action_dim": 75,
+          "chunk": 50,
+          "suffix_len": 51,
+          "steps": 10,
+          "layers": 36,
+          "backbone_dim": 2048,
+          "backbone_ffn_dim": 11008,
+          "expert_dim": 768,
+          "expert_ffn_dim": 2752,
+          "query_heads": 16,
+          "kv_heads": 2,
+          "head_dim": 128
+        },
+        "plan": {
+          "lingbot_vision": "vision-norm",
+          "lingbot_prefix": "vision-norm",
+          "lingbot_action": "vision-norm"
+        },
+        "model_revision": "lingbot-vla-r1",
+        "engine_revision": null,
+        "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+          "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+        },
+        "fixture": {
+          "id": "lingbot-robotwin-canonical-v1/seed-42",
+          "digest": "lingbot-robotwin-canonical-v1/seed-42"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA H100 80GB HBM3",
+          "driver": "610.43.02",
+          "cuda_runtime": "12.6",
+          "pytorch": "2.9.1+cu126",
+          "tilelang": "unavailable",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 700.0,
+            "enforced_limit_w": 700.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "[Requested functionality has been deprecated]",
+            "application_memory_mhz": "[Requested functionality has been deprecated]"
+          }
+        },
+        "hostname": "ACD1-55",
+        "slurm_job_id": "614462",
+        "timestamp": 1789107600.714037,
+        "reference_provenance": {}
+      },
+      "metrics": {
+        "chunk_latency": {
+          "min": 30.19480174407363,
+          "median": 30.230102129280567,
+          "n": 100,
+          "samples_ms": [
+            30.304924119263887,
+            30.294314958155155,
+            30.26591893285513,
+            30.22523783147335,
+            30.219795182347298,
+            30.253619886934757,
+            30.229314230382442,
+            30.237595085054636,
+            30.21043911576271,
+            30.215593054890633,
+            30.233660712838173,
+            30.23820323869586,
+            30.26369819417596,
+            30.240476597100496,
+            30.233265832066536,
+            30.251743737608194,
+            30.22688301280141,
+            30.22526064887643,
+            30.237249098718166,
+            30.213952995836735,
+            30.2034430205822,
+            30.205586925148964,
+            30.22533468902111,
+            30.226212926208973,
+            30.233534052968025,
+            30.23826191201806,
+            30.242615845054388,
+            30.212655197829008,
+            30.236546881496906,
+            30.250987969338894,
+            30.223608948290348,
+            30.22930771112442,
+            30.196089763194323,
+            30.200504697859287,
+            30.225958209484816,
+            30.26522696018219,
+            30.22226272150874,
+            30.24689108133316,
+            30.23958159610629,
+            30.233753845095634,
+            30.229242984205484,
+            30.30518488958478,
+            30.510177835822105,
+            30.230890028178692,
+            30.23817902430892,
+            30.23329982534051,
+            30.24060931056738,
+            30.21929506212473,
+            30.234267935156822,
+            30.238029081374407,
+            30.239497311413288,
+            30.236294027417898,
+            30.211505014449358,
+            30.21794557571411,
+            30.199251137673855,
+            30.22480523213744,
+            30.22392699494958,
+            30.238929204642773,
+            30.24191176518798,
+            30.22504271939397,
+            30.224586836993694,
+            30.220896005630493,
+            30.222647357732058,
+            30.22229904308915,
+            30.219967011362314,
+            30.19480174407363,
+            30.222324654459953,
+            30.195432249456644,
+            30.223838053643703,
+            30.234267003834248,
+            30.226991046220064,
+            30.22276610136032,
+            30.211508739739656,
+            30.23418504744768,
+            30.22758476436138,
+            30.250197276473045,
+            30.236498918384314,
+            30.24060884490609,
+            30.244281981140375,
+            30.228380113840103,
+            30.24875558912754,
+            30.233454890549183,
+            30.228452291339636,
+            30.227855313569307,
+            30.234926380217075,
+            30.208084266632795,
+            30.212621204555035,
+            30.20399482920766,
+            30.23247793316841,
+            30.215959064662457,
+            30.255001969635487,
+            30.227223876863718,
+            30.238707084208727,
+            30.217049177736044,
+            30.217811930924654,
+            30.240445397794247,
+            30.24405427277088,
+            30.234945937991142,
+            30.236920341849327,
+            30.241798609495163
+          ],
+          "p99": 30.30518488958478
+        }
+      },
+      "attribution": null,
+      "runtime_observation": {
+        "before": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "30",
+          "power.draw": "135.07",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        },
+        "after": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "35",
+          "power.draw": "359.04",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        }
+      },
+      "options": {},
+      "process_id": 570419,
+      "gpu_uuid": "GPU-7a24d8c8-7e92-a8ba-2a98-58215c2c2e19",
+      "implementation_source": null,
+      "leg": 7
+    },
+    {
+      "plan": "lab/plans/lingbot_vla-fused-mlp.json",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/h100/lingbot_vla",
+        "hardware": "h100-sxm5-80gb",
+        "model": "lingbot-vla",
+        "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+        "shape": {
+          "batch": 1,
+          "views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "patch_rows_per_view": 256,
+          "patch_width": 1176,
+          "visual_tokens_per_view": 64,
+          "visual_tokens": 192,
+          "vision_layers": 32,
+          "vision_dim": 1280,
+          "vision_ffn_dim": 3420,
+          "vision_heads": 16,
+          "vision_head_dim": 80,
+          "language_slots": 72,
+          "prefix_len": 264,
+          "state_dim": 75,
+          "action_dim": 75,
+          "chunk": 50,
+          "suffix_len": 51,
+          "steps": 10,
+          "layers": 36,
+          "backbone_dim": 2048,
+          "backbone_ffn_dim": 11008,
+          "expert_dim": 768,
+          "expert_ffn_dim": 2752,
+          "query_heads": 16,
+          "kv_heads": 2,
+          "head_dim": 128
+        },
+        "plan": {
+          "lingbot_vision": "fused-mlp",
+          "lingbot_prefix": "fused-mlp",
+          "lingbot_action": "fused-mlp"
+        },
+        "model_revision": "lingbot-vla-r1",
+        "engine_revision": null,
+        "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+          "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+        },
+        "fixture": {
+          "id": "lingbot-robotwin-canonical-v1/seed-42",
+          "digest": "lingbot-robotwin-canonical-v1/seed-42"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA H100 80GB HBM3",
+          "driver": "610.43.02",
+          "cuda_runtime": "12.6",
+          "pytorch": "2.9.1+cu126",
+          "tilelang": "unavailable",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 700.0,
+            "enforced_limit_w": 700.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "[Requested functionality has been deprecated]",
+            "application_memory_mhz": "[Requested functionality has been deprecated]"
+          }
+        },
+        "hostname": "ACD1-55",
+        "slurm_job_id": "614462",
+        "timestamp": 1789107698.262399,
+        "reference_provenance": {}
+      },
+      "metrics": {
+        "chunk_latency": {
+          "min": 29.141942970454693,
+          "median": 29.438099591061473,
+          "n": 100,
+          "samples_ms": [
+            29.141942970454693,
+            29.439252335578203,
+            29.423390049487352,
+            29.415498953312635,
+            29.459687881171703,
+            29.499833937734365,
+            29.46341410279274,
+            29.484527185559273,
+            29.507523868232965,
+            29.488539788872004,
+            29.491405002772808,
+            29.435898177325726,
+            29.42722011357546,
+            29.423429165035486,
+            29.44269683212042,
+            29.45088781416416,
+            29.43316288292408,
+            29.452058020979166,
+            29.43187579512596,
+            29.437521938234568,
+            29.455089010298252,
+            29.434273950755596,
+            29.424509033560753,
+            29.44277599453926,
+            29.445122927427292,
+            29.431006871163845,
+            29.430460184812546,
+            29.430763330310583,
+            29.43860925734043,
+            29.432660900056362,
+            29.43073119968176,
+            29.435093980282545,
+            29.43289279937744,
+            29.43554287776351,
+            29.46405578404665,
+            29.44773295894265,
+            29.442985076457262,
+            29.4335400685668,
+            29.427874833345413,
+            29.4402027502656,
+            29.429518152028322,
+            29.437175020575523,
+            29.434516560286283,
+            29.450665693730116,
+            29.426574241369963,
+            29.41345376893878,
+            29.447486624121666,
+            29.42634280771017,
+            29.430961702018976,
+            29.440906830132008,
+            29.45178234949708,
+            29.443379025906324,
+            29.4365999288857,
+            29.438148252665997,
+            29.43549118936062,
+            29.44111404940486,
+            29.452376067638397,
+            29.449898283928633,
+            29.430842027068138,
+            29.448955319821835,
+            29.42363591864705,
+            29.43931706249714,
+            29.43715499714017,
+            29.484035912901163,
+            29.636921361088753,
+            29.444961342960596,
+            29.44174688309431,
+            29.43805092945695,
+            29.44707591086626,
+            29.45013577118516,
+            29.446262400597334,
+            29.437247198075056,
+            29.43505486473441,
+            29.439005069434643,
+            29.441062826663256,
+            29.43672612309456,
+            29.44154106080532,
+            29.46040965616703,
+            29.438802041113377,
+            29.406988061964512,
+            29.407733120024204,
+            29.423637315630913,
+            29.43019801750779,
+            29.429346788674593,
+            29.452708084136248,
+            29.43145390599966,
+            29.439177829772234,
+            29.457800090312958,
+            29.431352857500315,
+            29.434225987643003,
+            29.419200029224157,
+            29.43130023777485,
+            29.447857290506363,
+            29.473005793988705,
+            29.427916277199984,
+            29.449386056512594,
+            29.436901211738586,
+            29.435356613248587,
+            29.453564900904894,
+            29.451041016727686
+          ],
+          "p99": 29.507523868232965
+        }
+      },
+      "attribution": null,
+      "runtime_observation": {
+        "before": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "30",
+          "power.draw": "142.28",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        },
+        "after": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "37",
+          "power.draw": "364.70",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        }
+      },
+      "options": {},
+      "process_id": 604700,
+      "gpu_uuid": "GPU-7a24d8c8-7e92-a8ba-2a98-58215c2c2e19",
+      "implementation_source": null,
+      "leg": 8
+    },
+    {
+      "plan": "shipped",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/h100/lingbot_vla",
+        "hardware": "h100-sxm5-80gb",
+        "model": "lingbot-vla",
+        "shape_profile": "action_dim75-backbone_dim2048-backbone_ffn_dim11008-batch1-chunk50-expert_dim768-expert_ffn_dim2752-head_dim128-image_height224-image_width224-kv_heads2-language_slots72-layers36-patch_rows_per_view256-patch_width1176-prefix_len264-query_heads16-state_dim75-steps10-suffix_len51-views3-vision_dim1280-vision_ffn_dim3420-vision_head_dim80-vision_heads16-vision_layers32-visual_tokens192-visual_tokens_per_view64",
+        "shape": {
+          "batch": 1,
+          "views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "patch_rows_per_view": 256,
+          "patch_width": 1176,
+          "visual_tokens_per_view": 64,
+          "visual_tokens": 192,
+          "vision_layers": 32,
+          "vision_dim": 1280,
+          "vision_ffn_dim": 3420,
+          "vision_heads": 16,
+          "vision_head_dim": 80,
+          "language_slots": 72,
+          "prefix_len": 264,
+          "state_dim": 75,
+          "action_dim": 75,
+          "chunk": 50,
+          "suffix_len": 51,
+          "steps": 10,
+          "layers": 36,
+          "backbone_dim": 2048,
+          "backbone_ffn_dim": 11008,
+          "expert_dim": 768,
+          "expert_ffn_dim": 2752,
+          "query_heads": 16,
+          "kv_heads": 2,
+          "head_dim": 128
+        },
+        "plan": {
+          "lingbot_vision": "fused-backbone",
+          "lingbot_prefix": "fused-backbone",
+          "lingbot_action": "fused-backbone"
+        },
+        "model_revision": "lingbot-vla-r1",
+        "engine_revision": null,
+        "inference_signature": "sha256:683a2a4efbfb2d300aaf65f8a300ad5565c966963148083fa4c4a0a1cecba97f",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3",
+          "checkpoint_digest": "lingbot-vla-4b-posttrain-robotwin@fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e+qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
+        },
+        "fixture": {
+          "id": "lingbot-robotwin-canonical-v1/seed-42",
+          "digest": "lingbot-robotwin-canonical-v1/seed-42"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA H100 80GB HBM3",
+          "driver": "610.43.02",
+          "cuda_runtime": "12.6",
+          "pytorch": "2.9.1+cu126",
+          "tilelang": "unavailable",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 700.0,
+            "enforced_limit_w": 700.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "[Requested functionality has been deprecated]",
+            "application_memory_mhz": "[Requested functionality has been deprecated]"
+          }
+        },
+        "hostname": "ACD1-55",
+        "slurm_job_id": "614462",
+        "timestamp": 1789107770.9226475,
+        "reference_provenance": {}
+      },
+      "metrics": {
+        "chunk_latency": {
+          "min": 28.279629070311785,
+          "median": 28.32728438079357,
+          "n": 100,
+          "samples_ms": [
+            28.381708078086376,
+            28.35035277530551,
+            28.342257253825665,
+            28.320068959146738,
+            28.343091253191233,
+            28.362142853438854,
+            28.309958986938,
+            28.281459119170904,
+            28.317641001194715,
+            28.31607311964035,
+            28.3351787365973,
+            28.33555079996586,
+            28.33097893744707,
+            28.352103661745787,
+            28.33524812012911,
+            28.324695769697428,
+            28.344820719212294,
+            28.286807239055634,
+            28.3178286626935,
+            28.300668112933636,
+            28.306609019637108,
+            28.326332103461027,
+            28.32593908533454,
+            28.32120331004262,
+            28.29372975975275,
+            28.302227146923542,
+            28.3057177439332,
+            28.341453056782484,
+            28.352646622806787,
+            28.33181293681264,
+            28.337351977825165,
+            28.299842029809952,
+            28.29897915944457,
+            28.31565821543336,
+            28.35300099104643,
+            28.350934851914644,
+            28.349634259939194,
+            28.31575693562627,
+            28.29252416267991,
+            28.302192222326994,
+            28.32023100927472,
+            28.328008949756622,
+            28.34316808730364,
+            28.366041835397482,
+            28.34690408781171,
+            28.29138794913888,
+            28.296391014009714,
+            28.326721861958504,
+            28.347556944936514,
+            28.352675028145313,
+            28.330320958048105,
+            28.32735190168023,
+            28.320730198174715,
+            28.330496978014708,
+            28.308717999607325,
+            28.319257777184248,
+            28.348737861961126,
+            28.339863754808903,
+            28.328096959739923,
+            28.279629070311785,
+            28.325260151177645,
+            28.29721476882696,
+            28.320324141532183,
+            28.313988354057074,
+            28.33157079294324,
+            28.32681406289339,
+            28.400101233273745,
+            28.389008715748787,
+            28.4008109010756,
+            28.354238718748093,
+            28.336388058960438,
+            28.338131960481405,
+            28.337433002889156,
+            28.327216859906912,
+            28.337777126580477,
+            28.32857985049486,
+            28.32249691709876,
+            28.323349077254534,
+            28.335036244243383,
+            28.336078859865665,
+            28.329933993518353,
+            28.31866592168808,
+            28.29622197896242,
+            28.313723858445883,
+            28.35934003815055,
+            28.328469023108482,
+            28.3614001236856,
+            28.324870392680168,
+            28.344600927084684,
+            28.33270514383912,
+            28.30509888008237,
+            28.295187279582024,
+            28.28789921477437,
+            28.30011071637273,
+            28.326068073511124,
+            28.344727121293545,
+            28.335593175143003,
+            28.326845727860928,
+            28.282806742936373,
+            28.282838873565197
+          ],
+          "p99": 28.400101233273745
+        }
+      },
+      "attribution": null,
+      "runtime_observation": {
+        "before": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "30",
+          "power.draw": "137.34",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        },
+        "after": {
+          "clocks.sm": "1980",
+          "clocks.mem": "2619",
+          "pstate": "P0",
+          "temperature.gpu": "38",
+          "power.draw": "381.18",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        }
+      },
+      "options": {},
+      "process_id": 642931,
+      "gpu_uuid": "GPU-7a24d8c8-7e92-a8ba-2a98-58215c2c2e19",
+      "implementation_source": null,
+      "leg": 9
+    }
+  ],
+  "deltas": {
+    "reference_leg": 0,
+    "control_legs": 0,
+    "minimum_detectable_effect": null,
+    "control_spread_ms": null,
+    "control_spread_max_ms": null,
+    "valid": true,
+    "legs": [
+      {
+        "leg": 1,
+        "plan": "lab/plans/lingbot_vla-packed-projections.json",
+        "same_as_reference": false,
+        "deltas": {
+          "chunk_latency.min": {
+            "delta": -6.7816488444805145
+          },
+          "chunk_latency.median": {
+            "delta": -7.245581364259124
+          },
+          "chunk_latency.p99": {
+            "delta": -7.049744017422199
+          }
+        }
+      },
+      {
+        "leg": 2,
+        "plan": "lab/plans/lingbot_vla-expert-loop.json",
+        "same_as_reference": false,
+        "deltas": {
+          "chunk_latency.min": {
+            "delta": -8.96341959014535
+          },
+          "chunk_latency.median": {
+            "delta": -9.543412597849965
+          },
+          "chunk_latency.p99": {
+            "delta": -9.544804692268372
+          }
+        }
+      },
+      {
+        "leg": 3,
+        "plan": "lab/plans/lingbot_vla-fused-rope.json",
+        "same_as_reference": false,
+        "deltas": {
+          "chunk_latency.min": {
+            "delta": -17.704251687973738
+          },
+          "chunk_latency.median": {
+            "delta": -18.672998994588852
+          },
+          "chunk_latency.p99": {
+            "delta": -18.689445685595274
+          }
+        }
+      },
+      {
+        "leg": 4,
+        "plan": "lab/plans/lingbot_vla-fused-attention.json",
+        "same_as_reference": false,
+        "deltas": {
+          "chunk_latency.min": {
+            "delta": -20.239512901753187
+          },
+          "chunk_latency.median": {
+            "delta": -21.22415602207184
+          },
+          "chunk_latency.p99": {
+            "delta": -21.23332768678665
+          }
+        }
+      },
+      {
+        "leg": 5,
+        "plan": "lab/plans/lingbot_vla-fused-prefix.json",
+        "same_as_reference": false,
+        "deltas": {
+          "chunk_latency.min": {
+            "delta": -22.633810993283987
+          },
+          "chunk_latency.median": {
+            "delta": -23.62049906514585
+          },
+          "chunk_latency.p99": {
+            "delta": -23.663769010454416
+          }
+        }
+      },
+      {
+        "leg": 6,
+        "plan": "lab/plans/lingbot_vla-aligned-vision.json",
+        "same_as_reference": false,
+        "deltas": {
+          "chunk_latency.min": {
+            "delta": -25.982207152992487
+          },
+          "chunk_latency.median": {
+            "delta": -26.882470352575183
+          },
+          "chunk_latency.p99": {
+            "delta": -26.871321722865105
+          }
+        }
+      },
+      {
+        "leg": 7,
+        "plan": "lab/plans/lingbot_vla-vision-norm.json",
+        "same_as_reference": false,
+        "deltas": {
+          "chunk_latency.min": {
+            "delta": -27.241559233516455
+          },
+          "chunk_latency.median": {
+            "delta": -28.244812274351716
+          },
+          "chunk_latency.p99": {
+            "delta": -28.266760986298323
+          }
+        }
+      },
+      {
+        "leg": 8,
+        "plan": "lab/plans/lingbot_vla-fused-mlp.json",
+        "same_as_reference": false,
+        "deltas": {
+          "chunk_latency.min": {
+            "delta": -28.29441800713539
+          },
+          "chunk_latency.median": {
+            "delta": -29.03681481257081
+          },
+          "chunk_latency.p99": {
+            "delta": -29.064422007650137
+          }
+        }
+      },
+      {
+        "leg": 9,
+        "plan": "shipped",
+        "same_as_reference": false,
+        "deltas": {
+          "chunk_latency.min": {
+            "delta": -29.1567319072783
+          },
+          "chunk_latency.median": {
+            "delta": -30.14763002283871
+          },
+          "chunk_latency.p99": {
+            "delta": -30.171844642609358
+          }
+        }
+      }
+    ]
+  }
+}
