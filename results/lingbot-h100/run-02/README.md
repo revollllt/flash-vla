@@ -147,32 +147,41 @@ rather than away from it — the precision objection did not apply. It simply di
 not matter: the kernel is latency-bound, so faster math only exposes the
 staging. The fp32 path ships.
 
-A **SiLU-multiply epilogue** in the GEMM is correct and bit-exact at 1.03-1.09x
-(8.58 against 8.83 unfused in one run, 7.06 against 7.69 in another; the ratio
-is the trustworthy part, node-to-node variation on this cluster being ±15% on
-absolutes).
+A **SiLU-multiply epilogue** in the GEMM is correct and bit-exact at
+**1.03-1.10x** — 8.58 against 8.83 unfused in one job, 7.46 against 8.19 in
+another, with nothing changed on that path between them, so the spread is
+run-to-run variation rather than improvement.
 
 Here the epilogue itself is genuinely free — **the fusion was free but the
 tiling it forced was not.** `silu_multiply` pairs output column `c` with packed
-column `c + 2752`, so a CTA must own both; building the B tile from two TMA
-boxes keeps the wgmma a single instruction but halves the CTA count, 172 → 86
-at `tile_n=64`, and CTA count is what this kernel lives on. The pairing costs
-~1.2 µs of GEMM to absorb a 1.81 µs launch. Going the other way, `tile_n=32`
-restores 172 CTAs but pays an N=32 wgmma and 16-row TMA boxes, landing at 0.91x.
+column `c + 2752`, so a CTA must own both, and the B tile becomes two
+half-height TMA boxes per stage pulling two weight regions 2752 rows apart.
+
+The first explanation for that cost was the halved CTA count (172 → 86 at
+`tile_n=64`), and **the split-K test below measured it false**: restoring 172
+CTAs made the kernel slower, not faster. The accurate version is that the
+forced re-tiling costs whatever the weight stream cares about, and for the
+largest of the four weights — `gate_up` at 8.45 MB, the most DRAM-bound — that
+is **access shape, not parallelism**. 86 CTAs already saturate the stream; more
+only add overhead.
 
 The generalisation worth keeping: **an element-wise epilogue is worth fusing
-when its operands already share a tile**, and not when bringing them together
-costs more CTAs than the launch it absorbs is worth. That is also why the
-residual-add epilogue, measured at +0.21 and +0.20 µs bit-exact on `o_proj` and
-`down_proj`, is a cost rather than a saving on its own: it only removes work if
-the prologue lands and `ada_rms_add` disappears, and the prologue did not.
+when its operands already share a tile**, and when they do not, the cost of
+bringing them together is paid in whatever the kernel is actually bound by —
+which has to be measured rather than inferred from CTA counts. That is also why
+the residual-add epilogue, measured at +0.21 and +0.20 µs bit-exact on `o_proj`
+and `down_proj`, is a cost rather than a saving on its own: it only removes
+work if the prologue lands and `ada_rms_add` disappears, and the prologue did
+not.
 
 Restoring the CTA count with the same DSMEM split-K reduction that already
-ships was then measured and **also fails**: `k_split=2` does give back 172 CTAs,
-and it is slower — 8.15 µs against 86 CTAs' 7.46 — as well as no longer
-bit-exact, because the split changes the K-reduction order. So the CTA count is
-not the whole cost either, and the epilogue's best remains the unsplit paired
-tile at 1.10x (7.46 against 8.19 unfused).
+ships was then measured and **refutes the diagnosis it was meant to fix**.
+`k_split=2` does give back exactly the CTAs — 86 → 172 — and costs 0.7 µs
+instead of buying any: 8.15 µs against 7.46, and 11.63 at depth 8. It also
+gives up bit-exactness unavoidably, since partials summed across splits differ
+by ~1 ulp in fp32 and the activation rounds its operand to bf16 before using
+it. `k_split=1` stays the default and stays bit-exact, and the epilogue's best
+remains the unsplit paired tile.
 
 Taken into the model behind its own plan (`lingbot_vla-fused-gate.json`) and
 measured paired against the deployed route (job 615732), that 1.10x is worth
