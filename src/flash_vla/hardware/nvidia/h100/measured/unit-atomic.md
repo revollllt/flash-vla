@@ -4,8 +4,8 @@
 `atom.ratio.place`, `atom.rate.addr`, `atom.ratio.width`, `atom.ratio.scope`, `atom.lat.dev.hop`
 
 ```
-# launcher and output path are this host's; the probe itself takes neither
-sbatch sbatch/pi05_cuda.sh .claude/skills/hardware-unit-test/probes/units/gmem_atomic/gmem_atomic.py \
+# Run from the project root with the GPU environment configured.
+python .agents/skills/hardware-unit-test/probes/units/gmem_atomic/gmem_atomic.py \
     --json profiles/hardware-unit-test/atomic.json
 ```
 

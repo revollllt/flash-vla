@@ -9,7 +9,7 @@ a grid barrier costs *about the same* — an assumption that was load-bearing an
 never measured. It is now, and it holds.
 
 ```
-sbatch sbatch/pi05_cuda.sh .claude/skills/hardware-unit-test/probes/units/coop_launch/coop_launch.py \
+python .agents/skills/hardware-unit-test/probes/units/coop_launch/coop_launch.py \
     --json profiles/hardware-unit-test/coop.json
 ```
 

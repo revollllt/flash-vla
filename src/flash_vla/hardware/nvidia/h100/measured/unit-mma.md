@@ -12,8 +12,8 @@ Two instructions, measured in one job on the same SMs: the warpgroup
 interchangeable and the choice between them is a tiling decision.
 
 ```
-# launcher and output path are this host's; the probe itself takes neither
-sbatch sbatch/pi05_cuda.sh .claude/skills/hardware-unit-test/probes/units/mma_rate/mma_rate.py \
+# Run from the project root with the GPU environment configured.
+python .agents/skills/hardware-unit-test/probes/units/mma_rate/mma_rate.py \
     --json profiles/hardware-unit-test/mma.json
 ```
 

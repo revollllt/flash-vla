@@ -5,8 +5,8 @@
 `tma.bw.dev.curve`, `tma.bw.dev.burst` · **Curve** `tma-bw-vs-product`
 
 ```
-# launcher and output path are this host's; the probe itself takes neither
-sbatch sbatch/pi05_cuda.sh .claude/skills/hardware-unit-test/probes/units/tma_ring/tma_ring.py \
+# Run from the project root with the GPU environment configured.
+python .agents/skills/hardware-unit-test/probes/units/tma_ring/tma_ring.py \
     --sweeps A,E,F --json profiles/hardware-unit-test/tma_frontier.json
 python3 scripts/curve_from_json.py profiles/hardware-unit-test/tma_frontier.json --yaml
 ```

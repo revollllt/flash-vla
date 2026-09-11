@@ -24,11 +24,11 @@ combine a number from one with a number from the other without saying so.
 
 ```bash
 # from the repository root
-python3 .claude/skills/hardware-unit-test/scripts/constants.py --machine sm90
-python3 .claude/skills/hardware-unit-test/scripts/constants.py --tag tma.issue.warp
-python3 .claude/skills/hardware-unit-test/scripts/constants.py --unit mma
-python3 .claude/skills/hardware-unit-test/scripts/frontier.py --table
-python3 .claude/skills/hardware-unit-test/scripts/frontier.py --copy-floor --txns-per-warp 32 --bytes 4194304
+python3 .agents/skills/hardware-unit-test/scripts/constants.py --machine sm90
+python3 .agents/skills/hardware-unit-test/scripts/constants.py --tag tma.issue.warp
+python3 .agents/skills/hardware-unit-test/scripts/constants.py --unit mma
+python3 .agents/skills/hardware-unit-test/scripts/frontier.py --table
+python3 .agents/skills/hardware-unit-test/scripts/frontier.py --copy-floor --txns-per-warp 32 --bytes 4194304
 ```
 
 `--machine sm90` selects this table; `--tag` prints one constant in full, `--unit`

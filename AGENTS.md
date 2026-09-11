@@ -5,6 +5,10 @@ direct commands and load only the skill needed for the current step.
 [ARCHITECTURE.md](ARCHITECTURE.md) owns module boundaries; source owns API details.
 Historical plans and Agent Notes do not override this path.
 
+Project skills live in [.agents/skills/](.agents/skills/). Keep this as the single
+source; `.claude/skills` is a relative symlink for Claude Code compatibility.
+Add new skills under `.agents/skills/` so both entries expose them.
+
 - State one testable hypothesis and use the cheapest informative check first.
 - Control workload, environment and noise before attributing a performance change.
   Expose uncertainty rather than assuming missing evidence.
