@@ -80,6 +80,9 @@ def library(verbose: bool = False):
         lib.rms_norm_add_launch.argtypes = [ctypes.c_void_p] * 5 + [ctypes.c_int] * 2 + [
             ctypes.c_float, ctypes.c_void_p]
         lib.rms_norm_add_launch.restype = ctypes.c_int
+        lib.vision_rope_launch.argtypes = [ctypes.c_void_p] * 6 + [ctypes.c_int] * 3 + [
+            ctypes.c_void_p]
+        lib.vision_rope_launch.restype = ctypes.c_int
         lib.expert_attention_launch.argtypes = [ctypes.c_void_p] * 5 + [ctypes.c_int] * 5 + [
             ctypes.c_longlong] * 2 + [ctypes.c_float, ctypes.c_void_p]
         lib.expert_attention_launch.restype = ctypes.c_int
@@ -212,6 +215,28 @@ def fused_attention(query: torch.Tensor, keys: torch.Tensor, values: torch.Tenso
     if code != 0:
         raise RuntimeError(f"expert_attention_launch failed: {code}")
     return target
+
+
+def vision_rope(packed: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
+                query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> None:
+    """Split a vision block's packed projection into rotated, contiguous q/k/v.
+
+    `packed` is `[rows, 3 * heads * head_dim]` bf16 and `cos`/`sin` are
+    `[rows, head_dim // 2]` float32, all contiguous on CUDA. `query`, `key` and
+    `value` are `[rows, heads, head_dim]` bf16 contiguous and are written in
+    full, in the layout flash-attention's varlen entry point wants. The rotation
+    is evaluated in float32 and rounded once on the store. One launch,
+    capture-safe.
+    """
+    lib = library()
+    rows, heads, head_dim = query.shape
+    code = lib.vision_rope_launch(
+        ctypes.c_void_p(packed.data_ptr()), ctypes.c_void_p(cos.data_ptr()),
+        ctypes.c_void_p(sin.data_ptr()), ctypes.c_void_p(query.data_ptr()),
+        ctypes.c_void_p(key.data_ptr()), ctypes.c_void_p(value.data_ptr()),
+        rows, heads, head_dim, _stream())
+    if code != 0:
+        raise RuntimeError(f"vision_rope_launch failed: {code}")
 
 
 def rms_norm_add(source: torch.Tensor, residual: torch.Tensor, weight: torch.Tensor,

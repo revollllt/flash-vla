@@ -20,6 +20,7 @@ from . import time_modulation as _time_modulation
 from . import skinny_projections as _skinny_projections
 from . import split_attention_route as _split_attention
 from . import upstream as _upstream
+from . import vision_attention as _vision_attention
 from . import vision_norm as _vision_norm
 
 BACKENDS = {
@@ -41,6 +42,7 @@ BACKENDS = {
     "fused-backbone": _fused_backbone,
     "skinny-projections": _skinny_projections,
     "split-attention": _split_attention,
+    "vision-attention": _vision_attention,
     "attention-kernel": _fused_attn_kernel,
 }
 REGISTRY = Registry(BACKENDS, default="upstream-reference")

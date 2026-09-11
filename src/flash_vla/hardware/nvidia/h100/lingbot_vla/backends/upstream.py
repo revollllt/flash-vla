@@ -140,6 +140,52 @@ ROUTE_CONSTRAINTS = (
 )
 
 
+def _fused_vision_attention(visual, scratch, device, rows: int) -> None:
+    """Prepare each vision block's q/k/v in one launch instead of about eleven.
+
+    Upstream splits the packed projection into three views flash-attention then
+    has to make contiguous, re-chunks and re-casts cos and sin inside every one
+    of the 32 blocks for a value that is constant for the whole forward, and
+    sends q and k through float32 either side of the rotation. The blocks share
+    one set of output buffers because each is consumed by the attention call
+    that follows it, before the next block runs on the same stream.
+    """
+    from lingbotvla.models.vla.pi0 import qwenvl_in_vla as qwen
+
+    from .cuda import pointwise
+
+    heads = visual.blocks[0].attn.num_heads
+    head_dim = visual.blocks[0].attn.head_dim if hasattr(visual.blocks[0].attn, "head_dim") \
+        else visual.blocks[0].attn.qkv.out_features // (3 * heads)
+    buffers = tuple(
+        scratch(f"lingbot_vision_{role}", (rows, heads, head_dim), torch.bfloat16, device)
+        for role in ("query", "key", "value"))
+    tables: dict = {}
+
+    def make_forward(max_seqlen: int):
+        def forward(self, hidden_states, cu_seqlens, rotary_pos_emb=None,
+                    position_embeddings=None):
+            packed = self.qkv(hidden_states)
+            if not tables:
+                # cos/sin are fixed by the window layout for the life of the
+                # engine; upstream rebuilds this slice once per block.
+                cos, sin = position_embeddings
+                half = head_dim // 2
+                tables["cos"] = cos[..., :half].float().contiguous()
+                tables["sin"] = sin[..., :half].float().contiguous()
+            query, key, value = buffers
+            pointwise.vision_rope(packed, tables["cos"], tables["sin"], query, key, value)
+            out = qwen.flash_attn_varlen_func(
+                query, key, value, cu_seqlens, cu_seqlens, max_seqlen, max_seqlen
+            ).reshape(hidden_states.shape[0], -1)
+            return self.proj(out)
+        return forward
+
+    full = set(visual.fullatt_block_indexes)
+    for index, block in enumerate(visual.blocks):
+        block.attn.forward = MethodType(make_forward(256 if index in full else 64), block.attn)
+
+
 def _patch_vision_attention(visual) -> None:
     from lingbotvla.models.vla.pi0 import qwenvl_in_vla as qwen
 
@@ -309,7 +355,7 @@ def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets
                   linear_patch_embedding: bool = False, cache_rope_tables: bool = False,
                   pack_expert_projections: bool = False, grouped_attention: bool = False,
                   pad_vision_ffn: bool = False, fused_vision_norm: bool = False,
-                  scratch=None):
+                  fused_vision_attention: bool = False, scratch=None):
     import yaml
     from lerobot.configs.policies import PreTrainedConfig
     from transformers import AutoConfig
@@ -340,7 +386,10 @@ def _build_policy(weight_values, layers: int, cache_rope_frequency: bool, assets
     core = policy.model
     core.qwenvl_with_expert.qwenvl.config.num_hidden_layers = layers
     visual = core.qwenvl_with_expert.qwenvl.visual
-    _patch_vision_attention(visual)
+    if fused_vision_attention:
+        _fused_vision_attention(visual, scratch, device, VIEWS * PATCH_ROWS_PER_VIEW)
+    else:
+        _patch_vision_attention(visual)
     if linear_patch_embedding:
         visual.patch_embed.forward = MethodType(_linear_patch_embedding, visual.patch_embed)
     if pad_vision_ffn:
@@ -514,6 +563,7 @@ class _State:
                  specialized_loop: bool = False, fused_rope: bool = False,
                  fused_attention: bool = False, specialized_prefix: bool = False,
                  pad_vision_ffn: bool = False, fused_vision_norm: bool = False,
+                 fused_vision_attention: bool = False,
                  fused_mlp: bool = False, fused_prefix_pointwise: bool = False,
                  attention_kernel: bool = False, skinny_gemm: bool = False,
                  split_attention: bool = False, scratch=None) -> None:
@@ -525,6 +575,7 @@ class _State:
         self.specialized_prefix = specialized_prefix
         self.pad_vision_ffn = pad_vision_ffn
         self.fused_vision_norm = fused_vision_norm
+        self.fused_vision_attention = fused_vision_attention
         self.fused_mlp = fused_mlp
         self.fused_prefix_pointwise = fused_prefix_pointwise
         self.attention_kernel = attention_kernel
@@ -553,6 +604,7 @@ class _State:
                                       grouped_attention=self.grouped_attention,
                                       pad_vision_ffn=self.pad_vision_ffn,
                                       fused_vision_norm=self.fused_vision_norm,
+                                      fused_vision_attention=self.fused_vision_attention,
                                       scratch=self.scratch)
         return self.core
 
@@ -564,7 +616,7 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                   specialized_loop=False, fused_rope=False, fused_attention=False,
                   specialized_prefix=False, pad_vision_ffn=False, fused_vision_norm=False,
                   fused_mlp=False, fused_prefix_pointwise=False, attention_kernel=False,
-                  skinny_gemm=False, split_attention=False):
+                  skinny_gemm=False, split_attention=False, fused_vision_attention=False):
     state = _State(cache_rope_frequency, scratch.assets, linear_patch_embedding,
                    cache_rope_tables, precompute_time_modulation, fuse_norm,
                    pack_expert_projections=pack_expert_projections,
@@ -572,7 +624,8 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                    specialized_loop=specialized_loop, fused_rope=fused_rope,
                    fused_attention=fused_attention,
                    specialized_prefix=specialized_prefix, pad_vision_ffn=pad_vision_ffn,
-                   fused_vision_norm=fused_vision_norm, fused_mlp=fused_mlp,
+                   fused_vision_norm=fused_vision_norm,
+                   fused_vision_attention=fused_vision_attention, fused_mlp=fused_mlp,
                    fused_prefix_pointwise=fused_prefix_pointwise,
                    attention_kernel=attention_kernel, skinny_gemm=skinny_gemm,
                    split_attention=split_attention, scratch=scratch)

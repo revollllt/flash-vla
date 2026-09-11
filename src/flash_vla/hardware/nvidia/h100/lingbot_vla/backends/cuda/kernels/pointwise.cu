@@ -307,7 +307,77 @@ __global__ void rms_norm_add_kernel(
     }
 }
 
+// The vision blocks' q/k/v preparation, which upstream spends about eleven
+// launches a block on: the packed projection is split into three views that
+// flash-attention needs contiguous, cos and sin are re-chunked, made
+// contiguous and re-cast to float32 inside *every* block for a value that is
+// constant for the whole forward, and q and k make a float32 round trip either
+// side of the rotation. All of it is one pass over the projection here.
+//
+// The rotation is the same half-split form the expert uses -- flash-attention's
+// `apply_rotary_emb` with `interleaved=False` over a rotary width equal to the
+// head -- evaluated in float32 and rounded once on the store, which is what
+// `.type_as(q)` does upstream.
+__global__ void vision_rope_kernel(
+    const __nv_bfloat16* __restrict__ packed,
+    const float* __restrict__ cos_table, const float* __restrict__ sin_table,
+    __nv_bfloat16* __restrict__ query, __nv_bfloat16* __restrict__ key,
+    __nv_bfloat16* __restrict__ value,
+    int rows, int heads, int head_dim, int rotate_total, int value_total) {
+    const int index = blockIdx.x * blockDim.x + threadIdx.x;
+    const int half = head_dim >> 1;
+    const int width = heads * head_dim;
+
+    if (index < rotate_total) {
+        const int per_row = 2 * heads * half;
+        const int row = index / per_row;
+        const int rest = index - row * per_row;
+        const int head = rest / half;
+        const int pair = rest - head * half;
+        const bool is_key = head >= heads;
+        const int local = is_key ? head - heads : head;
+
+        const __nv_bfloat16* source =
+            packed + (long long)row * 3 * width + (is_key ? width : 0) + local * head_dim;
+        __nv_bfloat16* target =
+            (is_key ? key : query) + (long long)row * width + local * head_dim;
+        const float first = __bfloat162float(source[pair]);
+        const float second = __bfloat162float(source[pair + half]);
+        const float cosine = cos_table[row * half + pair];
+        const float sine = sin_table[row * half + pair];
+        target[pair] = __float2bfloat16(
+            __fsub_rn(__fmul_rn(first, cosine), __fmul_rn(second, sine)));
+        target[pair + half] = __float2bfloat16(
+            __fadd_rn(__fmul_rn(second, cosine), __fmul_rn(first, sine)));
+        return;
+    }
+
+    const int value_index = index - rotate_total;
+    if (value_index < value_total) {
+        const int row = value_index / width;
+        const int lane = value_index - row * width;
+        value[value_index] = packed[(long long)row * 3 * width + 2 * width + lane];
+    }
+}
+
 }  // namespace
+
+extern "C" int vision_rope_launch(
+    const void* packed, const void* cos_table, const void* sin_table,
+    void* query, void* key, void* value, int rows, int heads, int head_dim,
+    void* stream) {
+    if (head_dim <= 0 || (head_dim & 1) != 0) {
+        return 1;
+    }
+    const int rotate_total = rows * 2 * heads * (head_dim >> 1);
+    const int value_total = rows * heads * head_dim;
+    const int blocks = (rotate_total + value_total + kRopeThreads - 1) / kRopeThreads;
+    vision_rope_kernel<<<blocks, kRopeThreads, 0, (cudaStream_t)stream>>>(
+        (const __nv_bfloat16*)packed, (const float*)cos_table, (const float*)sin_table,
+        (__nv_bfloat16*)query, (__nv_bfloat16*)key, (__nv_bfloat16*)value,
+        rows, heads, head_dim, rotate_total, value_total);
+    return (int)cudaPeekAtLastError();
+}
 
 extern "C" int rms_norm_add_launch(
     const void* source, const void* residual, const void* weight, void* total,

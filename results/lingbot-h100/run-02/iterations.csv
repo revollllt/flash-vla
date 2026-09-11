@@ -1,0 +1,3 @@
+iteration,change,latency_ms,decision,report,revision
+0,Carried over from run-01 (split-attention),25.501,start,../run-01/measurements/ladder.json,7b23564
+1,One-launch vision q/k/v rope replacing ~11 pointwise launches,24.683,keep,measurements/100-vision-attention.json,HEAD
