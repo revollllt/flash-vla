@@ -172,10 +172,16 @@ memory. Arithmetic is float32 throughout — no TF32, no tensor cores.
 
 | | µs | vs chain |
 |---|---:|---:|
-| cuBLAS QK + masked softmax + cuBLAS PV (3 launches) | 19.93 | 1.00x |
-| the same plus the transpose/bf16 epilogue (4 launches, same output) | 21.50 | |
-| **split-key, 2 launches** (slices 9.31 + combine 2.79) | **12.54** | **1.59x / 1.71x** |
+| cuBLAS QK + masked softmax + cuBLAS PV (3 launches) | 16.83 | 1.00x |
+| the same plus the transpose/bf16 epilogue (4 launches, same output) | 18.23 | |
+| **split-key, 2 launches** (slices 9.31 + combine 2.79) | **12.53** | **1.34x / 1.46x** |
 | iteration 10's one-warp-per-row kernel (1 launch) | 305.45 | 0.07x |
+
+These baselines are the TF32 path the route actually runs. An earlier version of
+this table priced them against torch's full-precision matmul default (19.93 and
+21.50, giving 1.59x / 1.71x), which overstated the kernel; the deployed
+measurement below is unaffected, since it compares whole routes rather than
+kernels.
 | streaming floor / float32 FMA roofline | 2.40 / 2.20 | |
 
 **The binding constraint is scheduler latency, and it was measured rather than

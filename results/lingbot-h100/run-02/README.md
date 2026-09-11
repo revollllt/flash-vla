@@ -102,14 +102,31 @@ build, not an iteration.
 Both were tried in this run and both are negatives worth keeping.
 
 **An AdaRMS prologue inside the GEMM** — the obvious way to delete the 1.92 ms
-`ada_rms_add` pays — measured **0.61x** on `gate_up` (15.11 µs fused against
-9.21 unfused), bit-exact. The reasoning that motivated it was wrong: a
-weight-stationary GEMM's CTAs each read the whole 51xK activation *separately*,
-so a row-wise reduction placed in its prologue runs once per CTA — 86 times
-over at `tile_n=64` on N=5504 — and serialises ahead of the mainloop instead of
-overlapping it. Deleting a 3.53 µs launch by paying ~6 µs is not a trade.
-Fusing a row reduction into a weight-stationary prologue is the wrong shape,
-independently of this Target.
+`ada_rms_add` pays — is bit-exact and measured **0.73x on qkv and 0.75x on
+gate_up** (10.62 and 11.68 µs fused, against 7.78 and 8.72 unfused).
+
+The mechanism, in the order that matters: **a row-wise reduction collapses onto
+one CTA's critical path, and is then repeated in every CTA.** `ada_rms_add`
+spreads 51 rows over 51 CTAs, one row each, three elements a thread. A
+weight-stationary GEMM CTA must normalize *all* 51 rows before its first wgmma,
+because `rsqrt(mean(x^2))` needs all of K — so a single CTA's prologue measures
+9.70 µs even at 512 threads, already ~3x the 3.53 µs launch it was meant to
+absorb, before the GEMM runs or any redundancy is counted. The width sweep is
+the diagnostic and it is flattening: 128 threads 15.23 µs, 256 → 11.39, 512 →
+9.70. Every one of the 80-172 CTAs then repeats that work.
+
+Per element the fused form is about **9x more efficient** than the reference
+kernel; it simply has 51x the work on one critical path. That is why the first
+half of the sentence is what makes it unfixable and the second is only what
+makes it expensive. My own framing for this was that the data being resident
+makes the normalization free — that is true of the *arithmetic* and false of
+the *reduction*, and the reduction is exactly what `ada_rms_add`'s 51 CTAs were
+buying.
+
+A restructuring that would escape it exists — factoring the per-row scale out
+of the GEMM, since `out[r,:]` is linear in `A[r,:]`, moving the scale to the
+epilogue and `beta` into the bias — but it drops the `bf16(normed)` rounding
+before the MMA and so is not bit-exact. Not attempted.
 
 **TF32 in the attention kernel** measured no gain: fp32 at 12.53 µs against
 TF32 at 12.57 and 12.98 across the sweep. This was worth checking because
@@ -120,10 +137,29 @@ rather than away from it — the precision objection did not apply. It simply di
 not matter: the kernel is latency-bound, so faster math only exposes the
 staging. The fp32 path ships.
 
-A **SiLU-multiply epilogue** in the GEMM was also built and is correct and
-bit-exact, at 1.03x (8.58 against 8.83). That is ~0.09 ms of a 24.4 ms forward,
-below the bar for taking a new code path into the deployed route, so it is not
-integrated.
+A **SiLU-multiply epilogue** in the GEMM is correct and bit-exact at 1.03-1.09x
+(8.58 against 8.83 unfused in one run, 7.06 against 7.69 in another; the ratio
+is the trustworthy part, node-to-node variation on this cluster being ±15% on
+absolutes).
+
+Here the epilogue itself is genuinely free — **the fusion was free but the
+tiling it forced was not.** `silu_multiply` pairs output column `c` with packed
+column `c + 2752`, so a CTA must own both; building the B tile from two TMA
+boxes keeps the wgmma a single instruction but halves the CTA count, 172 → 86
+at `tile_n=64`, and CTA count is what this kernel lives on. The pairing costs
+~1.2 µs of GEMM to absorb a 1.81 µs launch. Going the other way, `tile_n=32`
+restores 172 CTAs but pays an N=32 wgmma and 16-row TMA boxes, landing at 0.91x.
+
+The generalisation worth keeping: **an element-wise epilogue is worth fusing
+when its operands already share a tile**, and not when bringing them together
+costs more CTAs than the launch it absorbs is worth. That is also why the
+residual-add epilogue, measured at +0.21 and +0.20 µs bit-exact on `o_proj` and
+`down_proj`, is a cost rather than a saving on its own: it only removes work if
+the prologue lands and `ada_rms_add` disappears, and the prologue did not.
+
+Restoring the CTA count with the same DSMEM split-K reduction that already
+ships — `k_split=2` on K=768's twelve k-tiles gives back 172 and 80 CTAs for a
+~0.4 µs cluster reduction — is being measured.
 
 ## Final state
 
