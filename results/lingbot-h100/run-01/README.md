@@ -210,13 +210,20 @@ machine's measured `1.85 + MB/2.77` cold-read model:
 | softmax | 4.56 µs | 1.64 ms | ~2.6 µs | |
 | RoPE, gated activation, epilogue | 5.9 µs | 2.13 ms | at floor | |
 
-Three things set the remaining floor, none of them addressed here:
+Three things set the remaining floor:
 
 1. **The four projections are 8.48 ms and all run under 132 CTAs**, which is
-   exactly the regime `ld.ctas.dev.knee` prices at 1.63x. At M=51 a
-   weight-stationary kernel that spreads the output (and if needed the
-   contraction) over a full wave should approach the streaming floor; cuBLAS
-   sits about 2x above it.
+   exactly the regime `ld.ctas.dev.knee` prices at 1.63x, and cuBLAS sits
+   1.2-2.0x above the streaming floor on them. This was tried and **did not
+   work**: a hand-written weight-stationary kernel (TMA ring into shared
+   memory, wgmma, tile_n and ring depth and split-K swept, with and without
+   cluster multicast) was benchmarked cold against cuBLAS on all four shapes at
+   the real M=51, and its best configuration reached 0.92x, 0.99x, 0.92x and
+   0.99x of cuBLAS respectively -- slower on every one, and the multicast
+   variant slower still. The kernel is numerically exact against cuBLAS on the
+   qkv shape and within 1.3e-4 rel_rms on the others, so this is a performance
+   result, not a correctness one. At these sizes the launch term dominates and
+   cuBLAS's own kernel selection is already close to what the shape allows.
 2. **The attention is 6.66 ms** and wants the split-key flash kernel that
    iteration 10 did not implement. The QK matmul additionally fell off the TF32
    path onto a float32 SIMT kernel when the cache went head-major, which is
@@ -230,3 +237,21 @@ Three things set the remaining floor, none of them addressed here:
 Below the expert, the vision encoder's three feed-forward GEMMs are now within
 ~1.25x of their compute roofline and the backbone's within ~1.5x of their
 streaming floor, so both towers are closer to done than the expert is.
+
+Two cheaper things were also checked and are not worth pursuing: the QK matmul
+fell off the TF32 path onto a float32 SIMT kernel when the cache went
+head-major, but the PV matmul next to it is TF32 and costs the same 6.9 µs, so
+the kernel choice is not what sets that time; and host, staging and graph-launch
+overhead is 0.514 ms of 28.4 ms, so there is nothing outside the segments.
+
+## Final state
+
+`shipped` = `fused-backbone` on all three call sites. Verified on the exact
+committed source (job 614503, ACD1-30, driver 610.43.02):
+
+- every hand-written kernel matches its torch expression (bit-identical except
+  the masked softmax at 2.8e-9 and the unrouted fused attention at 9.8e-4);
+- full-depth ten-step parity against the upstream eager oracle passes, replay
+  deterministic, `physical_actions` cos 0.9999537 against a 0.9943 threshold;
+- three legs of the deployed version: 28.370 / 28.382 / 28.372 ms median, a
+  repeat-leg spread of 0.012 ms.

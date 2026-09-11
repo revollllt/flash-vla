@@ -29,4 +29,14 @@ prefix names no Target fails the smoke check.
 | `pi05-gemma-cuda.json` | the shipped Pi0.5 route with the backbone attention taken from the shared `gemma_backbone` component instead of the Target's own copy |
 | `pi0-preshipped.json` | Pi0's shipped route as it stood before the Gemma backbone package: the three action-expert fusions and nothing else. It exists so the promotion gate's latency legs can compare the candidate against what shipped WAS, once the shipped plan itself has moved |
 | `pi05-preshipped.json` | the same for Pi0.5: backbone attention on the Target's own `cuda` copy, the five action-expert sites on `cuda-pdl` |
+| `lingbot_vla-packed-projections.json` | the expert's q/k/v and gate/up as one packed GEMM each, and attention without the repeated key/value copies |
+| `lingbot_vla-expert-loop.json` | plus the Target's own denoising loop over a resident key/value cache |
+| `lingbot_vla-fused-rope.json` | plus the hand-written projection epilogue (widen, rotate, write the cache) |
+| `lingbot_vla-fused-attention.json` | plus the head-major cache, the fused masked softmax and the attention epilogue |
+| `lingbot_vla-fused-prefix.json` | plus the Target's own backbone prefix pass on those kernels |
+| `lingbot_vla-aligned-vision.json` | plus the width-aligned packed vision feed-forward |
+| `lingbot_vla-vision-norm.json` | plus the single-launch vision RMSNorm |
+| `lingbot_vla-fused-mlp.json` | plus the AdaRMS that absorbs its residual add and the fused gated activation |
+| `lingbot_vla-fused-backbone.json` | plus the same pointwise kernels and a packed gate/up in the backbone. This is what the LingBot Target ships; the file exists so a later candidate can A/B against what shipped WAS |
+| `lingbot_vla-attention-kernel.json` | the flash-form attention kernel of `cuda/kernels/attention.cu`. **Measured 7x slower than the route it replaces** (results/lingbot-h100/run-01); kept so the kernel stays reachable for the split-key rewrite it needs |
 | `pi0-gemma-cuda.json` | the shipped Pi0 route plus the backbone attention and the output projection on the shared `gemma_backbone` component. The FFN down projection is deliberately NOT here: cuBLAS measured 6.6 us per call slower than Pi0's TileLang body in the graph, where the hidden buffer it reads is L2-resident (job 599832) |
