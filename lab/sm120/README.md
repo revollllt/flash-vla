@@ -22,3 +22,14 @@ sum; then walks `cudaFuncSetAttribute` to find the real shared-memory opt-in
 ceiling. Exists because ptxas accepting `barrier.cluster` says nothing about
 whether a cluster can be placed, and the two answers were not the same as the
 ones in circulation.
+
+**`tilelang_sm120.py`** — the go/no-go for any TileLang-backed Target on this
+device: compiles and runs a reduction kernel, a tensor-core matmul with warp
+specialisation off, and the same matmul with it on, comparing each against
+torch. The third is the one with something to prove, since warp specialisation
+on Hopper uses `setmaxnreg` and ptxas refuses that on plain `sm_120`.
+
+**`stack_check.py`** — bf16 matmul, CUDA graph capture/replay, and a CUPTI
+capture. The graph check is the load-bearing one: the runtime replays a captured
+graph, so capture failing would invalidate the execution model rather than one
+kernel.

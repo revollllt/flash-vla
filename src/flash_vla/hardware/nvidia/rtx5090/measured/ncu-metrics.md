@@ -22,13 +22,23 @@ anywhere the toolkit is installed.
 GPU Performance Counters on the target device 0.
 ```
 
-Counter access is disabled for non-root users here. Until that is changed,
-**no NCU capture and no Nsight Systems GPU-counter capture can run on this
-box** — which blocks step 4 of
-[the optimization workflow](../../../../../../docs/optimization.md) entirely,
-not just kernel-level diagnosis. Enabling it is a host configuration change
-(the `NVreg_RestrictProfilingToAdminUsers` module parameter) and belongs in
-user-local setup, not in this repository.
+Counter access is disabled for non-root users here, so **no NCU capture and no
+Nsight Systems GPU-counter capture can run on this box**. Enabling it is a host
+configuration change (the `NVreg_RestrictProfilingToAdminUsers` module
+parameter) and belongs in user-local setup, not in this repository.
+
+**This does not block the timeline, and an earlier version of this file said it
+did.** `ERR_NVGPUCTRPERM` gates *counter* collection. CUPTI *activity* tracing —
+kernel start/end timestamps — is a separate mechanism and needs no such
+permission, which is what `tools/profiling/model.py:151` uses
+(`torch.profiler` with `ProfilerActivity.CUDA`). Measured here: a capture on
+this device returns kernel-level device time, naming the kernel
+(`cutlass_80_wmma_tensorop_bf16_s16816...` for a bf16 matmul).
+
+So step 4 of [the optimization workflow](../../../../../../docs/optimization.md)
+— the top-down model timeline — **is available**. What is lost is NCU's
+kernel-counter diagnosis: tensor-core utilisation, stall reasons, cache hit
+rates, the `ncu-report` skill's whole surface.
 
 Everything below was therefore established from the metric *catalogue*, not from
 a capture. The names are right; nothing here reports a measured value.
