@@ -30,7 +30,12 @@ python -m eval.lingbot.parity --plan shipped --seed 42 --layers 36 --steps 10 \
 Each model trial is measured against the retained version in the **same job on
 the same physical GPU**, because the partition mixes two driver generations
 (570.86.10 and 610.43.02) and a leg's measurement context records the driver.
-`latency_ms` in `iterations.csv` is that trial's own median.
+The two differ by 6-8% on this workload, so absolute medians are only
+comparable within a job.
+
+Jobs run from a snapshot of `src/`, `lab/`, `benchmarks/`, `eval/` and `tools/`
+taken at job start, because the editing session continues while a latency leg
+re-imports the package in a fresh worker minutes into the job.
 
 ## Result
 
@@ -168,8 +173,21 @@ differs by 2.8e-9 and the unrouted fused attention by 9.8e-4, one bf16 ulp.
 
 ## What is left
 
-A second profiler replay on the deployed route (job 614367, same diagnostic
-caveat) after iteration 8:
+Uninstrumented breakdown of the deployed route (job 614494,
+`benchmarks latency --breakdown`, medians):
+
+| | ms | share |
+|---|---:|---:|
+| `vision_encoder` | 4.051 | 14% |
+| `llm_backbone` | 5.238 | 18% |
+| `action_expert` | **18.600** | **65%** |
+| input staging, host work, graph launches | 0.514 | 2% |
+| chunk latency | 28.403 | |
+
+Host and launch overhead is 0.5 ms, so there is nothing to recover outside the
+segments. A second profiler replay on the same route (job 614367, diagnostic
+only, and about 15% above the uninstrumented numbers above) says where the
+segment time goes after iteration 8:
 
 | segment | in-graph | launches | was |
 |---|---:|---:|---:|
