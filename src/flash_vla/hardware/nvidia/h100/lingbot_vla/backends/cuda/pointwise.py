@@ -66,7 +66,7 @@ def library(verbose: bool = False):
             ctypes.c_void_p]
         lib.expert_rope_launch.restype = ctypes.c_int
         lib.expert_softmax_launch.argtypes = [ctypes.c_void_p] * 2 + [ctypes.c_int] * 3 + [
-            ctypes.c_float, ctypes.c_int, ctypes.c_void_p]
+            ctypes.c_float, ctypes.c_void_p]
         lib.expert_softmax_launch.restype = ctypes.c_int
         lib.expert_epilogue_launch.argtypes = [ctypes.c_void_p] * 2 + [ctypes.c_int] * 3 + [
             ctypes.c_void_p]
@@ -119,21 +119,19 @@ def rope_project(packed: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
         raise RuntimeError(f"expert_rope_launch failed: {code}")
 
 
-def masked_softmax(scores: torch.Tensor, mask: torch.Tensor, scale: float,
-                   single_pass: bool = True) -> None:
+def masked_softmax(scores: torch.Tensor, mask: torch.Tensor, scale: float) -> None:
     """Scale, apply `mask` and softmax `scores` in place along its last dimension.
 
     `scores` is `[heads, q_rows, keys]` float32 contiguous and `mask` is
     `[q_rows, keys]` bool; masked logits take upstream's finite sentinel before
-    the reduction. `single_pass` keeps the row in registers instead of writing
-    it back between the three reductions; it needs `keys <= 512`. One launch,
+    the reduction. The row is held in registers, so `keys <= 512`. One launch,
     capture-safe.
     """
     lib = library()
     heads, q_rows, keys = scores.shape
     code = lib.expert_softmax_launch(
         ctypes.c_void_p(scores.data_ptr()), ctypes.c_void_p(mask.data_ptr()),
-        heads, q_rows, keys, ctypes.c_float(scale), int(single_pass), _stream())
+        heads, q_rows, keys, ctypes.c_float(scale), _stream())
     if code != 0:
         raise RuntimeError(f"expert_softmax_launch failed: {code}")
 

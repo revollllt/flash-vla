@@ -10,3 +10,4 @@ iteration,change,latency_ms,decision,report,revision
 8,AdaRMS absorbing its residual add and a fused gated activation,29.799,keep,measurements/008-fused-mlp.json,ef798e0+fused-mlp
 9,Fused pointwise and packed gated projection in the backbone,29.806,keep,measurements/009-fused-backbone.json,ef798e0+fused-backbone
 10,Fused flash-form attention kernel,201.797,revert,measurements/010-attention-kernel.json,ef798e0+attention-kernel
+11,Single-pass masked softmax,29.752,uncertain,measurements/011-single-pass-softmax.json,ef798e0+single-pass-softmax
