@@ -268,6 +268,16 @@ Three things set the remaining floor:
    of pure grid ramp. Folding them into the preceding GEMM's epilogue is the
    only way past that.
 
+Iteration 11 is the useful negative here and it generalises: rewriting the
+masked softmax from three passes over the 1 MB score tensor to one changed the
+deployed median by 0.004 ms against a 0.007 ms control spread. These small
+kernels are not bandwidth-bound, so doing less memory work in them does not
+show up; what they cost is the launch and the fraction of the machine a
+51-row grid can occupy. That is the reason no further per-kernel tuning was
+attempted on the pointwise stages, and why the two live opportunities above are
+both about removing launches or filling the grid rather than moving fewer
+bytes.
+
 Below the expert, the vision encoder's three feed-forward GEMMs are now within
 ~1.25x of their compute roofline and the backbone's within ~1.5x of their
 streaming floor, so both towers are closer to done than the expert is.
