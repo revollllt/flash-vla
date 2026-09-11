@@ -214,16 +214,50 @@ Three things set the remaining floor:
 
 1. **The four projections are 8.48 ms and all run under 132 CTAs**, which is
    exactly the regime `ld.ctas.dev.knee` prices at 1.63x, and cuBLAS sits
-   1.2-2.0x above the streaming floor on them. This was tried and **did not
-   work**: a hand-written weight-stationary kernel (TMA ring into shared
-   memory, wgmma, tile_n and ring depth and split-K swept, with and without
-   cluster multicast) was benchmarked cold against cuBLAS on all four shapes at
-   the real M=51, and its best configuration reached 0.92x, 0.99x, 0.92x and
-   0.99x of cuBLAS respectively -- slower on every one, and the multicast
-   variant slower still. The kernel is numerically exact against cuBLAS on the
-   qkv shape and within 1.3e-4 rel_rms on the others, so this is a performance
-   result, not a correctness one. At these sizes the launch term dominates and
-   cuBLAS's own kernel selection is already close to what the shape allows.
+   1.2-2.0x above the streaming floor on them. A hand-written weight-stationary
+   kernel was built for them (one warpgroup per CTA over a `tile_n` slice, M=51
+   padded to wgmma's 64, a TMA ring feeding `wgmma.m64xNx16` from shared memory,
+   with tile width, ring depth, split-K and cluster multicast all swept) and
+   benchmarked cold at the real M=51 against cuBLAS:
+
+   | shape | weight MB | floor | cuBLAS | mainloop only | full kernel |
+   |---|---:|---:|---:|---:|---:|
+   | packed qkv | 3.93 | 3.27 | 4.78 | **3.75** | 5.12 (0.93x) |
+   | packed gate_up | 8.45 | 4.90 | 5.85 | **5.18** | 5.91 (0.99x) |
+   | `o_proj` | 3.15 | 2.99 | 5.72 | **3.53** | 6.23 (0.92x) |
+   | `down_proj` | 4.23 | 3.38 | 6.64 | **3.91** | 6.72 (0.99x) |
+
+   **The shipped kernel loses on all four, and the streaming hypothesis behind
+   it is nevertheless confirmed.** "Mainloop only" is a real build
+   (`SKINNY_PROBE_NO_EPILOGUE`: the same TMA loads and the same wgmma, epilogue
+   replaced by a guarded store), and it runs 1.12-1.68x cuBLAS at 1.06-1.18x
+   the `1.85 + MB/2.77` floor. Spreading these over 120-240 CTAs does reach the
+   floor; what costs more than it buys is getting there, and the two costs were
+   measured separately:
+
+   - `o_proj` and `down_proj` are N=768, only 12 tiles of 64, so they need
+     split-K, and the cross-SM reduction costs 1.8-2.5 µs. Accumulating with
+     `red.global.add` was worse at ~8 µs, which is L2's ~100 G atomics/s rather
+     than a tuning miss; per-split partials, a distributed reduction and
+     staging the partial through the dead ring brought it to 1.8-2.5, of which
+     ~1.3 µs is publishing 13 KB per CTA behind a device-scope release fence.
+   - qkv and gate_up need no split-K, so their wall is that every CTA re-reads
+     the whole activation from L2: at the tile width that supplies enough CTAs,
+     qkv moves 6.2 MB of activation against 3.9 MB of weight, against a
+     measured ~2.1 TB/s aggregate load ceiling. Cluster-of-two TMA multicast is
+     implemented and correct but slower (7.44 and 7.94 µs, job 614485) because
+     rank 0 waits on a cross-CTA empty barrier in the same thread that issues
+     its own weight box, putting a cluster round trip on every stage.
+
+   Numerically the kernel is bit-identical to cuBLAS on the two split=1 shapes
+   and differs only by K-reduction order on the other two (rel_rms 7.4e-5 and
+   1.3e-4); against fp32 all four match cuBLAS's own error. So this is
+   **"not beaten in the time spent", not "cannot be beaten"**: the mainloop has
+   ~2.7 µs in hand against a ~2 µs epilogue. The two unexplored fixes are a
+   dedicated producer warp owning the multicast, so the cluster wait leaves the
+   consumer's critical path, and moving the split-K reduction into distributed
+   shared memory to drop the global round trip and the device fence. Work and
+   jobs are in the `skinny-gemm` branch and worktree.
 2. **The attention is 6.66 ms** and wants the split-key flash kernel that
    iteration 10 did not implement. The QK matmul additionally fell off the TF32
    path onto a float32 SIMT kernel when the cache went head-major, which is
