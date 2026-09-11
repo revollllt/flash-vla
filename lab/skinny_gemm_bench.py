@@ -177,8 +177,11 @@ def run_shape(name: str, kernel, device, args) -> tuple:
 
     results = []
     for tile_n, depth, split, producer in candidates(n, k, kernel, args.producers):
+        # Producer 3 reduces in shared memory and takes neither buffer, so it
+        # is called the way the API documents it -- passing one anyway is what
+        # hid a launcher guard that rejected the documented call.
         workspace = counters = None
-        if split > 1:
+        if split > 1 and producer != 3:
             workspace, counters = kernel.make_workspace(rows, n, tile_n, split, device)
         tag = (f"  {PRODUCERS[producer]:8s} tile_n={tile_n:3d} depth={depth:2d} "
                f"split={split:2d} ctas={kernel.n_tiles(n, tile_n) * split:3d}")
@@ -198,7 +201,7 @@ def run_shape(name: str, kernel, device, args) -> tuple:
                 print(f"{tag}: WRONG cosine={acc['cosine']:.6f} "
                       f"max_abs={acc['max_abs']:.3e}")
                 continue
-            if split > 1 and int(counters.abs().max().item()) != 0:
+            if counters is not None and int(counters.abs().max().item()) != 0:
                 print(f"{tag}: arrival counters not restored to zero")
                 continue
 
@@ -228,7 +231,7 @@ def run_shape(name: str, kernel, device, args) -> tuple:
               f"rel_rms={acc['rel_rms']:.3e} cosine={acc['cosine']:.6f}")
         out.zero_()
         ws = ctr = None
-        if split > 1:
+        if split > 1 and producer != 3:
             ws, ctr = kernel.make_workspace(rows, n, tile_n, split, device)
         kernel.linear(x, weights[0], out, bias, tile_n=tile_n, depth=depth,
                       k_split=split, producer=producer, workspace=ws, counters=ctr)

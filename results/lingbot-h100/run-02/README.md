@@ -219,6 +219,33 @@ one bf16 ulp, from summing 768 squares with shuffles rather than a shared-memory
 tree) and the split-key attention (9.8e-4, one bf16 ulp). Nothing in the
 deployed route computes at a lower precision than the reference does.
 
+## Reproducing these numbers
+
+Every measurement cited here runs from `main`. The kernel work was developed on
+two branches, `skinny-gemm` and `split-attention`, both cut from this effort's
+original starting commit; they are **not merged** — merging would revert the
+main line they were branched before — and instead their shipping kernels and
+their benchmark harnesses have been brought across file by file:
+
+| | |
+|---|---|
+| `lab/skinny_gemm_bench.py`, `_probe.py`, `_fused_bench.py` | the cold rotating-weight harness behind every GEMM number |
+| `lab/lingbot_split_attention_bench.py`, `_profile.py` | the attention sweep and its `clock64()` phase instrumentation |
+| `lab/lingbot_kernel_check.py` | the deployed kernels against their torch expressions |
+| `lab/lingbot_vision_mlp_check.py` | the width-aligned vision feed-forward against the unpadded one |
+| `lab/reference_pointwise.cu` | frozen copies of the kernels the fused variants are compared against |
+
+The attention kernel's **TF32 mainloop is present and selectable**
+(`tensor=True`) but not routed: it measured a wash (12.57 µs against the float32
+path's 12.53) and the float32 path is strictly closer to a float64 reference, so
+`DEFAULT_TENSOR` is `False`. It is kept so that negative result can be re-run.
+
+One caveat carried across with the files: `lab/reference_pointwise.cu`'s copy of
+`ada_rms_add_kernel` is deliberately stale — the deployed kernel was rewritten
+after it was frozen, and is itself no longer bit-identical to its torch
+expression. Anything revisiting the normalization needs a fresh copy and should
+not use that one as ground truth.
+
 ## What this run taught about measuring
 
 Three things cost time here before they were understood, all of them about

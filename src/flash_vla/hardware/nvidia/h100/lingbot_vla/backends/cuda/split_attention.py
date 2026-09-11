@@ -39,6 +39,20 @@ DEFAULT_ROW_TILE = 64
 DEFAULT_ROW_GROUPS = 1
 DEFAULT_UNROLL = 4
 DEFAULT_PIECES = 2
+# The float32 mainloops are the default. `tensor=True` selects TF32 tensor-core
+# mainloops instead, which is the precision the upstream reference itself runs
+# at -- its QK is sm80_xmma_gemm_f32f32_tf32f32_f32 and its PV
+# cutlass_80_tensorop_s1688gemm (job 614222) -- so it is not a step below the
+# oracle, but it is an approximation relative to this kernel's float32 path and
+# belongs in a parity run. The TF32 path fixes 64 query rows per CTA and takes
+# key_tile 32, 48 or 64.
+#
+# Measured, it is a wash: 12.57 us at key_tile 32 against the float32 path's
+# 12.53 at 40 (job 615519), because the mainloops it accelerates are only a
+# third of the kernel. It is kept selectable, not recommended -- the float32
+# path is the same speed and strictly closer to a float64 reference.
+DEFAULT_TENSOR = False
+TENSOR_KEY_TILE = 32
 
 _LIB = None
 _WORKSPACE: dict[tuple, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
@@ -75,16 +89,16 @@ def library(verbose: bool = False):
     if _LIB is None:
         lib = ctypes.CDLL(str(build(verbose=verbose)))
         lib.split_attention_launch.argtypes = [ctypes.c_void_p] * 8 + [ctypes.c_int] * 5 + [
-            ctypes.c_longlong] * 2 + [ctypes.c_float] + [ctypes.c_int] * 5 + [ctypes.c_void_p]
+            ctypes.c_longlong] * 2 + [ctypes.c_float] + [ctypes.c_int] * 6 + [ctypes.c_void_p]
         lib.split_attention_launch.restype = ctypes.c_int
         lib.split_attention_partials.argtypes = [ctypes.c_void_p] * 7 + [ctypes.c_int] * 5 + [
-            ctypes.c_longlong] * 2 + [ctypes.c_float] + [ctypes.c_int] * 4 + [ctypes.c_void_p]
+            ctypes.c_longlong] * 2 + [ctypes.c_float] + [ctypes.c_int] * 5 + [ctypes.c_void_p]
         lib.split_attention_partials.restype = ctypes.c_int
         lib.split_attention_combine.argtypes = [ctypes.c_void_p] * 4 + [ctypes.c_int] * 4 + [
             ctypes.c_void_p]
         lib.split_attention_combine.restype = ctypes.c_int
         lib.split_attention_timed.argtypes = [ctypes.c_void_p] * 8 + [ctypes.c_int] * 5 + [
-            ctypes.c_longlong] * 2 + [ctypes.c_float, ctypes.c_int, ctypes.c_void_p]
+            ctypes.c_longlong] * 2 + [ctypes.c_float] + [ctypes.c_int] * 2 + [ctypes.c_void_p]
         lib.split_attention_timed.restype = ctypes.c_int
         lib.split_attention_splits.argtypes = [ctypes.c_int, ctypes.c_int]
         lib.split_attention_splits.restype = ctypes.c_int
@@ -132,7 +146,8 @@ def fused_attention(query: torch.Tensor, keys: torch.Tensor, values: torch.Tenso
                     row_tile: int = DEFAULT_ROW_TILE,
                     row_groups: int = DEFAULT_ROW_GROUPS,
                     unroll: int = DEFAULT_UNROLL,
-                    pieces: int = DEFAULT_PIECES) -> torch.Tensor:
+                    pieces: int = DEFAULT_PIECES,
+                    tensor: bool = DEFAULT_TENSOR) -> torch.Tensor:
     """Masked grouped-query attention over a resident cache, in two launches.
 
     `query` is `[heads, rows, dim]` float32 contiguous and `keys`/`values` are
@@ -161,7 +176,7 @@ def fused_attention(query: torch.Tensor, keys: torch.Tensor, values: torch.Tenso
         ctypes.c_void_p(accumulator.data_ptr()), ctypes.c_void_p(maximum.data_ptr()),
         ctypes.c_void_p(denominator.data_ptr()), ctypes.c_void_p(target.data_ptr()),
         rows, heads, kv_heads, key_count, dim,
-        keys.stride(0), keys.stride(1), ctypes.c_float(scale), key_tile, row_tile, row_groups, unroll, pieces,
+        keys.stride(0), keys.stride(1), ctypes.c_float(scale), key_tile, row_tile, row_groups, unroll, pieces, int(tensor),
         _stream())
     if code != 0:
         raise RuntimeError(f"split_attention_launch failed: {code}")
@@ -172,7 +187,7 @@ def partials(query: torch.Tensor, keys: torch.Tensor, values: torch.Tensor,
              mask: torch.Tensor, scale: float, buffers,
              key_tile: int = DEFAULT_KEY_TILE, row_tile: int = DEFAULT_ROW_TILE,
              row_groups: int = DEFAULT_ROW_GROUPS,
-             unroll: int = DEFAULT_UNROLL) -> None:
+             unroll: int = DEFAULT_UNROLL, tensor: bool = DEFAULT_TENSOR) -> None:
     """The first of the two launches on its own, for attributing its latency."""
     lib = library()
     heads, rows, dim = query.shape
@@ -184,7 +199,7 @@ def partials(query: torch.Tensor, keys: torch.Tensor, values: torch.Tensor,
         ctypes.c_void_p(accumulator.data_ptr()), ctypes.c_void_p(maximum.data_ptr()),
         ctypes.c_void_p(denominator.data_ptr()),
         rows, heads, kv_heads, key_count, dim,
-        keys.stride(0), keys.stride(1), ctypes.c_float(scale), key_tile, row_tile, row_groups, unroll,
+        keys.stride(0), keys.stride(1), ctypes.c_float(scale), key_tile, row_tile, row_groups, unroll, int(tensor),
         _stream())
     if code != 0:
         raise RuntimeError(f"split_attention_partials failed: {code}")
@@ -205,12 +220,13 @@ def combine(buffers, target: torch.Tensor, pieces: int = DEFAULT_PIECES) -> None
 
 def timed(query: torch.Tensor, keys: torch.Tensor, values: torch.Tensor,
           mask: torch.Tensor, scale: float, buffers,
-          row_groups: int = DEFAULT_ROW_GROUPS) -> torch.Tensor:
+          row_groups: int = DEFAULT_ROW_GROUPS,
+          tensor: bool = DEFAULT_TENSOR) -> torch.Tensor:
     """Run one configuration instrumented, returning per-CTA SM cycles.
 
     The result is `[splits, heads, 4]` int64: staging, QK, PV and whole-CTA
-    cycle counts for each CTA of the first row tile. Only key_tile 40 with a
-    64-row tile is instrumented. Not for use in a captured graph.
+    cycle counts for each CTA of the first row tile. The float32 path is
+    instrumented at key_tile 40 with a 64-row tile, the tensor path at 48. Not for use in a captured graph.
     """
     lib = library()
     heads, rows, dim = query.shape
@@ -224,7 +240,7 @@ def timed(query: torch.Tensor, keys: torch.Tensor, values: torch.Tensor,
         ctypes.c_void_p(accumulator.data_ptr()), ctypes.c_void_p(maximum.data_ptr()),
         ctypes.c_void_p(denominator.data_ptr()), ctypes.c_void_p(record.data_ptr()),
         rows, heads, kv_heads, key_count, dim,
-        keys.stride(0), keys.stride(1), ctypes.c_float(scale), row_groups, _stream())
+        keys.stride(0), keys.stride(1), ctypes.c_float(scale), row_groups, int(tensor), _stream())
     if code != 0:
         raise RuntimeError(f"split_attention_timed failed: {code}")
     return record
@@ -235,6 +251,6 @@ def noop() -> None:
     library().split_attention_noop(_stream())
 
 
-__all__ = ["DEFAULT_KEY_TILE", "DEFAULT_ROW_GROUPS", "DEFAULT_PIECES", "DEFAULT_ROW_TILE",
+__all__ = ["DEFAULT_KEY_TILE", "DEFAULT_TENSOR", "TENSOR_KEY_TILE", "DEFAULT_ROW_GROUPS", "DEFAULT_PIECES", "DEFAULT_ROW_TILE",
            "DEFAULT_UNROLL", "build", "combine", "fused_attention",
            "library", "noop", "partials", "splits_for", "timed", "workspace"]

@@ -51,6 +51,12 @@
 //     alternatives stay instantiated so the negative result is re-runnable.
 //   - `pieces` gives the combine's 816 warps of work a second warp per output
 //     row, which is worth ~0.2 us of its ~2.8.
+//   - The TF32 tensor-core mainloops below are 1.5x and 1.3x faster than the
+//     float32 ones per CTA (QK 7229 -> 4671 cycles, PV 4126 -> 3064) and buy
+//     nothing end to end: 12.57 us against 12.53 (job 615519). The math was
+//     never the constraint. What is left is staging bandwidth, the combine's
+//     partial traffic, and 1.76 us of two graph nodes -- about two thirds of
+//     the total, none of it arithmetic.
 //
 // Arithmetic is float32 throughout, as the upstream eager path's is. Masked
 // logits take upstream's finite sentinel rather than -inf, so a fully masked
@@ -412,6 +418,376 @@ __global__ __launch_bounds__(kThreads) void split_attention_kernel(
     }
 }
 
+// ---------------------------------------------------------------------------
+// TF32 tensor-core variant of the slices kernel.
+//
+// The upstream eager attention this is validated against already runs its two
+// products on TF32 tensor cores -- the baseline profile of the unmodified route
+// (job 614222) shows `sm80_xmma_gemm_f32f32_tf32f32_f32` for QK and
+// `cutlass_80_tensorop_s1688gemm` (m16n8k8) for PV -- so a TF32 mainloop moves
+// toward the reference's numerics rather than away from them. Inputs are
+// rounded with `cvt.rna.tf32.f32`, which is what cuBLAS does, and every
+// accumulation stays float32.
+//
+// Both products map onto `mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32`
+// without transposing anything in shared memory. The instruction fixes which
+// (m, k) and (k, n) element each lane holds, and this kernel assembles those
+// fragments by direct shared-memory reads, so the caches can stay in their
+// natural [key][dim] order for both passes:
+//   QK: A = query[row][dim] (m, k), B[k][n] = key[n = key][k = dim].
+//   PV: A = probability[row][key] (m, k), B[k][n] = value[k = key][n = dim].
+// The eight warps are four 16-row blocks by two column groups: two key groups
+// in QK, two 64-wide dimension groups in PV.
+//
+// Every shared-memory stride is chosen against a fragment's access pattern, not
+// against a vector width. A fragment lane holds lane/4 as the row and lane%4 as
+// the k offset, so the 32 lanes land on 32 distinct banks when the row stride
+// is 4 mod 32 words (query, key, probability); the B fragment of PV transposes
+// those roles, so its stride wants 8 mod 32 (value).
+//
+// The mask becomes one 64-bit word per query row, built with `__ballot_sync`
+// over coalesced reads at staging time. Read as a byte per (row, key) in the
+// fragment layout it is a 16-way bank conflict on twelve loads per thread,
+// which would cost more than the mainloop it guards; as a bit test it is two
+// broadcast loads for the whole epilogue.
+// ---------------------------------------------------------------------------
+
+__device__ __forceinline__ unsigned to_tf32(float value) {
+    unsigned rounded;
+    asm("cvt.rna.tf32.f32 %0, %1;" : "=r"(rounded) : "f"(value));
+    return rounded;
+}
+
+__device__ __forceinline__ void mma_tf32(float (&accumulator)[4], const unsigned (&a)[4],
+                                         const unsigned (&b)[2]) {
+    asm volatile(
+        "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 "
+        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+        : "+f"(accumulator[0]), "+f"(accumulator[1]), "+f"(accumulator[2]),
+          "+f"(accumulator[3])
+        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
+}
+
+// Row stride of the shared probability tile: the smallest width at or above the
+// key tile that is 4 mod 32 words, so PV's A fragment is conflict-free.
+__host__ __device__ constexpr int prob_stride(int key_tile) {
+    int stride = key_tile;
+    while (stride % 32 != 4) {
+        ++stride;
+    }
+    return stride;
+}
+
+constexpr int kTensorRows = 64;             // four 16-row MMA blocks
+constexpr int kTensorQueryStride = kDim + 4;    // 4 mod 32: A fragment of QK
+constexpr int kTensorKeyStride = kDim + 4;      // 4 mod 32: B fragment of QK
+constexpr int kTensorValueStride = kDim + 8;    // 8 mod 32: B fragment of PV
+
+constexpr int tensor_shared_bytes(int key_tile) {
+    return (int)sizeof(float) * (kTensorRows * kTensorQueryStride
+                                 + key_tile * kTensorKeyStride
+                                 + key_tile * kTensorValueStride
+                                 + kTensorRows * prob_stride(key_tile)
+                                 + 2 * 2 * kTensorRows)
+           + (int)sizeof(unsigned long long) * kTensorRows;
+}
+
+template <int kKeyTile, bool kTimed = false>
+__global__ __launch_bounds__(kThreads) void split_attention_tensor_kernel(
+    const float* __restrict__ query, const float* __restrict__ keys,
+    const float* __restrict__ values, const bool* __restrict__ mask,
+    float* __restrict__ partial, float* __restrict__ partial_max,
+    float* __restrict__ partial_sum, long long* __restrict__ timing,
+    int rows, int heads, int group, int key_count,
+    long long head_stride, long long key_stride, float scale) {
+    const long long entered = kTimed ? clock64() : 0;
+    constexpr int kProbStride = prob_stride(kKeyTile);
+    constexpr int kKeysPerGroup = kKeyTile / 2;
+    constexpr int kQkTiles = kKeysPerGroup / 8;      // n tiles of the QK product
+    constexpr int kPvTiles = kDim / 2 / 8;           // n tiles of the PV product
+    constexpr int kQuads = kDim / 4;
+    constexpr int kQueryCopies = (kTensorRows * kQuads + kThreads - 1) / kThreads;
+    constexpr int kCacheCopies = (kKeyTile * kQuads + kThreads - 1) / kThreads;
+    constexpr int kMaskRows = kTensorRows / kWarps;  // rows one warp ballots for
+
+    extern __shared__ __align__(16) float smem[];
+    float* query_tile = smem;
+    float* key_tile = query_tile + kTensorRows * kTensorQueryStride;
+    float* value_tile = key_tile + kKeyTile * kTensorKeyStride;
+    float* prob_tile = value_tile + kKeyTile * kTensorValueStride;
+    float* reduce_max = prob_tile + kTensorRows * kProbStride;
+    float* reduce_sum = reduce_max + 2 * kTensorRows;
+    unsigned long long* mask_bits =
+        reinterpret_cast<unsigned long long*>(reduce_sum + 2 * kTensorRows);
+
+    const int lane = threadIdx.x;
+    const int warp = threadIdx.y;
+    const int thread = warp * kWarpSize + lane;
+    const int block_row = (warp >> 1) * 16;          // this warp's 16-row block
+    const int column_group = warp & 1;               // keys in QK, dimensions in PV
+    const int lane_row = lane >> 2;                  // MMA fragment row within eight
+    const int lane_step = lane & 3;                  // MMA fragment k offset
+
+    const int head = blockIdx.x;
+    const int split = blockIdx.y;
+    const int first_key = split * kKeyTile;
+    const int first_row = blockIdx.z * kTensorRows;
+    const int active = min(kKeyTile, key_count - first_key);
+    const int live = min(kTensorRows, rows - first_row);
+
+    const int kv = head / group;
+    const float* key_source = keys + kv * head_stride + (long long)first_key * key_stride;
+    const float* value_source = values + kv * head_stride + (long long)first_key * key_stride;
+    const float* query_source = query + ((long long)head * rows + first_row) * kDim;
+
+    // Staging, as in the float32 kernel: every copy a thread owns is in flight
+    // before any of it is consumed, and padding rows and keys are zeroed so a
+    // NaN cannot survive into a product whose weight is zero.
+#pragma unroll
+    for (int i = 0; i < kQueryCopies; ++i) {
+        const int index = thread + i * kThreads;
+        if (index < kTensorRows * kQuads) {
+            const int row = index / kQuads;
+            const int quad = index - row * kQuads;
+            float* destination = query_tile + row * kTensorQueryStride + quad * 4;
+            if (row < live) {
+                copy16(destination, query_source + (long long)row * kDim + quad * 4);
+            } else {
+                store4(destination, make_float4(0.0f, 0.0f, 0.0f, 0.0f));
+            }
+        }
+    }
+#pragma unroll
+    for (int i = 0; i < kCacheCopies; ++i) {
+        const int index = thread + i * kThreads;
+        if (index < kKeyTile * kQuads) {
+            const int key = index / kQuads;
+            const int quad = index - key * kQuads;
+            float* to_key = key_tile + key * kTensorKeyStride + quad * 4;
+            float* to_value = value_tile + key * kTensorValueStride + quad * 4;
+            if (key < active) {
+                copy16(to_key, key_source + key * key_stride + quad * 4);
+                copy16(to_value, value_source + key * key_stride + quad * 4);
+            } else {
+                store4(to_key, make_float4(0.0f, 0.0f, 0.0f, 0.0f));
+                store4(to_value, make_float4(0.0f, 0.0f, 0.0f, 0.0f));
+            }
+        }
+    }
+    // One 64-bit mask word per query row, so the epilogue tests bits instead of
+    // gathering bytes. Each warp ballots for its own eight rows over coalesced
+    // reads; kKeyTile <= 64 is what makes one word enough.
+#pragma unroll
+    for (int i = 0; i < kMaskRows; ++i) {
+        const int row = warp * kMaskRows + i;
+        const bool usable = row < live;
+        const bool low = usable && lane < active
+                         && mask[(long long)(first_row + row) * key_count + first_key + lane];
+        const unsigned low_bits = __ballot_sync(0xffffffffu, low);
+        unsigned high_bits = 0;
+        if (kKeyTile > 32) {
+            const int key = lane + 32;
+            const bool high = usable && key < active
+                              && mask[(long long)(first_row + row) * key_count + first_key
+                                      + key];
+            high_bits = __ballot_sync(0xffffffffu, high);
+        }
+        if (lane == 0) {
+            mask_bits[row] = (unsigned long long)low_bits
+                             | ((unsigned long long)high_bits << 32);
+        }
+    }
+    copy_wait();
+    __syncthreads();
+    const long long staged = kTimed ? clock64() : 0;
+
+    // QK: this warp's 16 rows against its key group, one m16n8k8 per n tile per
+    // eight dimensions.
+    float score[kQkTiles][4];
+#pragma unroll
+    for (int j = 0; j < kQkTiles; ++j) {
+#pragma unroll
+        for (int e = 0; e < 4; ++e) {
+            score[j][e] = 0.0f;
+        }
+    }
+    const int key_base = column_group * kKeysPerGroup;
+    const float* query_fragment = query_tile + (block_row + lane_row) * kTensorQueryStride
+                                  + lane_step;
+    const float* key_fragment = key_tile + (key_base + lane_row) * kTensorKeyStride + lane_step;
+#pragma unroll 2
+    for (int step = 0; step < kDim; step += 8) {
+        unsigned a[4];
+        a[0] = to_tf32(query_fragment[step]);
+        a[1] = to_tf32(query_fragment[8 * kTensorQueryStride + step]);
+        a[2] = to_tf32(query_fragment[step + 4]);
+        a[3] = to_tf32(query_fragment[8 * kTensorQueryStride + step + 4]);
+#pragma unroll
+        for (int j = 0; j < kQkTiles; ++j) {
+            unsigned b[2];
+            b[0] = to_tf32(key_fragment[8 * j * kTensorKeyStride + step]);
+            b[1] = to_tf32(key_fragment[8 * j * kTensorKeyStride + step + 4]);
+            mma_tf32(score[j], a, b);
+        }
+    }
+
+    // Softmax epilogue in the accumulator's own layout: lane (4 * g + t) holds
+    // rows g and g + 8 of the block at key columns 2t and 2t + 1 of each n tile,
+    // so a row's eight columns live in four consecutive lanes and its maximum
+    // needs two shuffles rather than a shared-memory round trip.
+    const int row_low = block_row + lane_row;
+    const int row_high = row_low + 8;
+    const unsigned long long bits_low = mask_bits[row_low];
+    const unsigned long long bits_high = mask_bits[row_high];
+    float logit[kQkTiles][4];
+    float best_low = kMaskedLogit;
+    float best_high = kMaskedLogit;
+#pragma unroll
+    for (int j = 0; j < kQkTiles; ++j) {
+#pragma unroll
+        for (int c = 0; c < 2; ++c) {
+            const int key = key_base + 8 * j + 2 * lane_step + c;
+            logit[j][c] = ((bits_low >> key) & 1ull) ? score[j][c] * scale : kMaskedLogit;
+            logit[j][2 + c] = ((bits_high >> key) & 1ull) ? score[j][2 + c] * scale
+                                                          : kMaskedLogit;
+            best_low = fmaxf(best_low, logit[j][c]);
+            best_high = fmaxf(best_high, logit[j][2 + c]);
+        }
+    }
+#pragma unroll
+    for (int offset = 1; offset < 4; offset <<= 1) {
+        best_low = fmaxf(best_low, __shfl_xor_sync(0xffffffffu, best_low, offset));
+        best_high = fmaxf(best_high, __shfl_xor_sync(0xffffffffu, best_high, offset));
+    }
+    if (lane_step == 0) {
+        reduce_max[column_group * kTensorRows + row_low] = best_low;
+        reduce_max[column_group * kTensorRows + row_high] = best_high;
+    }
+    __syncthreads();
+
+    best_low = fmaxf(reduce_max[row_low], reduce_max[kTensorRows + row_low]);
+    best_high = fmaxf(reduce_max[row_high], reduce_max[kTensorRows + row_high]);
+    float total_low = 0.0f;
+    float total_high = 0.0f;
+    float* prob_low = prob_tile + row_low * kProbStride + key_base + 2 * lane_step;
+    float* prob_high = prob_tile + row_high * kProbStride + key_base + 2 * lane_step;
+#pragma unroll
+    for (int j = 0; j < kQkTiles; ++j) {
+        float low[2];
+        float high[2];
+#pragma unroll
+        for (int c = 0; c < 2; ++c) {
+            const int key = key_base + 8 * j + 2 * lane_step + c;
+            // Past `active` the probability has to be a hard zero, not
+            // exp(sentinel - sentinel) = 1: a fully masked row has the sentinel
+            // as its maximum, and a padded key would then join its denominator.
+            low[c] = key < active ? __expf(logit[j][c] - best_low) : 0.0f;
+            high[c] = key < active ? __expf(logit[j][2 + c] - best_high) : 0.0f;
+            total_low += low[c];
+            total_high += high[c];
+        }
+        *reinterpret_cast<float2*>(prob_low + 8 * j) = make_float2(low[0], low[1]);
+        *reinterpret_cast<float2*>(prob_high + 8 * j) = make_float2(high[0], high[1]);
+    }
+#pragma unroll
+    for (int offset = 1; offset < 4; offset <<= 1) {
+        total_low += __shfl_xor_sync(0xffffffffu, total_low, offset);
+        total_high += __shfl_xor_sync(0xffffffffu, total_high, offset);
+    }
+    if (lane_step == 0) {
+        reduce_sum[column_group * kTensorRows + row_low] = total_low;
+        reduce_sum[column_group * kTensorRows + row_high] = total_high;
+    }
+    __syncthreads();
+    const long long scored = kTimed ? clock64() : 0;
+
+    const int splits = gridDim.y;
+    const long long slice = ((long long)head * rows + first_row) * splits + split;
+    if (warp == 0) {
+#pragma unroll
+        for (int r = 0; r < kTensorRows / kWarpSize; ++r) {
+            const int row = lane + r * kWarpSize;
+            if (row < live) {
+                partial_max[slice + (long long)row * splits] =
+                    fmaxf(reduce_max[row], reduce_max[kTensorRows + row]);
+                partial_sum[slice + (long long)row * splits] =
+                    reduce_sum[row] + reduce_sum[kTensorRows + row];
+            }
+        }
+    }
+
+    // PV: the same 16 rows against this warp's half of the output dimensions.
+    float context[kPvTiles][4];
+#pragma unroll
+    for (int j = 0; j < kPvTiles; ++j) {
+#pragma unroll
+        for (int e = 0; e < 4; ++e) {
+            context[j][e] = 0.0f;
+        }
+    }
+    const int dim_base = column_group * (kDim / 2);
+    const float* prob_fragment = prob_tile + (block_row + lane_row) * kProbStride + lane_step;
+    const float* value_fragment = value_tile + lane_step * kTensorValueStride + dim_base
+                                  + lane_row;
+#pragma unroll 2
+    for (int step = 0; step < kKeyTile; step += 8) {
+        unsigned a[4];
+        a[0] = to_tf32(prob_fragment[step]);
+        a[1] = to_tf32(prob_fragment[8 * kProbStride + step]);
+        a[2] = to_tf32(prob_fragment[step + 4]);
+        a[3] = to_tf32(prob_fragment[8 * kProbStride + step + 4]);
+        const float* value_step = value_fragment + step * kTensorValueStride;
+#pragma unroll
+        for (int j = 0; j < kPvTiles; ++j) {
+            unsigned b[2];
+            b[0] = to_tf32(value_step[8 * j]);
+            b[1] = to_tf32(value_step[4 * kTensorValueStride + 8 * j]);
+            mma_tf32(context[j], a, b);
+        }
+    }
+
+    // The MMA accumulator holds eight rows per warp at a two-wide column
+    // stride, so storing it straight to global memory writes sixteen 32-byte
+    // chunks per thread scattered across eight rows -- measured at 3499 of the
+    // CTA's cycles against 432 for the float32 kernel's contiguous stores (job
+    // 615490), which was the whole of the tensor mainloops' win. Land it in the
+    // query tile instead, which has been dead since the QK barrier, and let
+    // every warp make one coalesced pass over it.
+    float* out_tile = query_tile;
+#pragma unroll
+    for (int j = 0; j < kPvTiles; ++j) {
+        const int dimension = dim_base + 8 * j + 2 * lane_step;
+        *reinterpret_cast<float2*>(out_tile + row_low * kTensorQueryStride + dimension) =
+            make_float2(context[j][0], context[j][1]);
+        *reinterpret_cast<float2*>(out_tile + row_high * kTensorQueryStride + dimension) =
+            make_float2(context[j][2], context[j][3]);
+    }
+    __syncthreads();
+
+    const long long weighted = kTimed ? clock64() : 0;
+    float* out = partial + slice * kDim;
+#pragma unroll
+    for (int i = 0; i < kQueryCopies; ++i) {
+        const int index = thread + i * kThreads;
+        if (index < kTensorRows * kQuads) {
+            const int row = index / kQuads;
+            const int quad = index - row * kQuads;
+            if (row < live) {
+                store4(out + (long long)row * splits * kDim + quad * 4,
+                       load4(out_tile + row * kTensorQueryStride + quad * 4));
+            }
+        }
+    }
+
+    if (kTimed && thread == 0) {
+        long long* record = timing + 4 * (split * gridDim.x + head);
+        record[0] = staged - entered;
+        record[1] = scored - staged;
+        record[2] = weighted - scored;
+        record[3] = clock64() - entered;
+    }
+}
+
 // Rescale one (head, row)'s slices onto their common maximum and write the
 // transposed, rounded result.
 //
@@ -537,6 +913,31 @@ int launch_tile(const void* query, const void* keys, const void* values, const v
         key_count, head_stride, key_stride, scale, splits, stream);
 }
 
+template <int kKeyTile, bool kTimed = false>
+int launch_tensor(const void* query, const void* keys, const void* values, const void* mask,
+                  void* partial, void* partial_max, void* partial_sum,
+                  int rows, int heads, int group, int key_count,
+                  long long head_stride, long long key_stride, float scale,
+                  int splits, cudaStream_t stream, long long* timing = nullptr) {
+    constexpr int kShared = tensor_shared_bytes(kKeyTile);
+    auto kernel = split_attention_tensor_kernel<kKeyTile, kTimed>;
+    static bool opted_in = false;
+    if (!opted_in) {
+        const cudaError_t status = cudaFuncSetAttribute(
+            kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, kShared);
+        if (status != cudaSuccess) {
+            return (int)status;
+        }
+        opted_in = true;
+    }
+    const int row_tiles = (rows + kTensorRows - 1) / kTensorRows;
+    kernel<<<dim3(heads, splits, row_tiles), dim3(kWarpSize, kWarps), kShared, stream>>>(
+        (const float*)query, (const float*)keys, (const float*)values, (const bool*)mask,
+        (float*)partial, (float*)partial_max, (float*)partial_sum, timing,
+        rows, heads, group, key_count, head_stride, key_stride, scale);
+    return (int)cudaPeekAtLastError();
+}
+
 #define SPLIT_CASE(tile, rowtile, groups, perwarp)                                          \
     if (key_tile == (tile) && row_tile == (rowtile) && row_groups == (groups)) {            \
         return launch_tile<(perwarp), (groups), (rowtile)>(                                 \
@@ -548,8 +949,26 @@ int dispatch(const void* query, const void* keys, const void* values, const void
              void* partial, void* partial_max, void* partial_sum,
              int rows, int heads, int group, int key_count,
              long long head_stride, long long key_stride, float scale,
-             int splits, int key_tile, int row_tile, int row_groups, int unroll,
+             int splits, int key_tile, int row_tile, int row_groups, int unroll, int tensor,
              cudaStream_t handle) {
+    // The TF32 path fixes the CTA at 64 query rows and four 16-row MMA blocks,
+    // so row_tile, row_groups and unroll do not apply to it. The key tile must
+    // divide into two groups of whole 8-wide n tiles and fit one 64-bit mask
+    // word, which leaves 32, 48 and 64.
+    if (tensor) {
+        switch (key_tile) {
+            case 32: return launch_tensor<32>(query, keys, values, mask, partial, partial_max,
+                                              partial_sum, rows, heads, group, key_count,
+                                              head_stride, key_stride, scale, splits, handle);
+            case 48: return launch_tensor<48>(query, keys, values, mask, partial, partial_max,
+                                              partial_sum, rows, heads, group, key_count,
+                                              head_stride, key_stride, scale, splits, handle);
+            case 64: return launch_tensor<64>(query, keys, values, mask, partial, partial_max,
+                                              partial_sum, rows, heads, group, key_count,
+                                              head_stride, key_stride, scale, splits, handle);
+            default: return -6;
+        }
+    }
     // Instantiated grid shapes. kKeysPerWarp is key_tile / (8 / row_groups).
     // Deeper unrolling of the QK mainloop puts more shared-memory loads in
     // flight at the cost of registers; measured only for the shipped shape.
@@ -583,7 +1002,7 @@ extern "C" int split_attention_partials(
     void* partial, void* partial_max, void* partial_sum,
     int rows, int heads, int kv_heads, int key_count, int dim,
     long long head_stride, long long key_stride, float scale,
-    int key_tile, int row_tile, int row_groups, int unroll, void* stream) {
+    int key_tile, int row_tile, int row_groups, int unroll, int tensor, void* stream) {
     if (dim != kDim || kv_heads <= 0 || heads % kv_heads != 0) {
         return -1;
     }
@@ -595,7 +1014,7 @@ extern "C" int split_attention_partials(
     return dispatch(query, keys, values, mask, partial, partial_max, partial_sum, rows, heads,
                     heads / kv_heads, key_count, head_stride, key_stride, scale,
                     (key_count + key_tile - 1) / key_tile, key_tile, row_tile, row_groups,
-                    unroll, (cudaStream_t)stream);
+                    unroll, tensor, (cudaStream_t)stream);
 }
 
 // `pieces` is how many warps share one (head, row); 1, 2 and 4 are
@@ -629,7 +1048,9 @@ extern "C" int split_attention_combine(
 // `key_tile` selects the split width, `row_tile` the query rows a CTA covers,
 // `row_groups` how its eight warps divide them, `unroll` the QK mainloop's
 // unroll factor and `pieces` how many warps the combine gives one output row;
-// the combination must be one of the instantiated grid shapes.
+// the combination must be one of the instantiated grid shapes. `tensor` selects
+// the TF32 tensor-core mainloops, which the upstream reference itself uses, in
+// place of the float32 ones; it honours only `key_tile` and `pieces`.
 // `partial` must hold heads * rows * splits * dim floats and
 // `partial_max`/`partial_sum` heads * rows * splits each, indexed with the
 // slice innermost, where splits is ceil(key_count / key_tile). Returns a
@@ -639,11 +1060,12 @@ extern "C" int split_attention_launch(
     void* partial, void* partial_max, void* partial_sum, void* target,
     int rows, int heads, int kv_heads, int key_count, int dim,
     long long head_stride, long long key_stride, float scale,
-    int key_tile, int row_tile, int row_groups, int unroll, int pieces, void* stream) {
+    int key_tile, int row_tile, int row_groups, int unroll, int pieces, int tensor,
+    void* stream) {
     const int code = split_attention_partials(query, keys, values, mask, partial, partial_max,
                                               partial_sum, rows, heads, kv_heads, key_count,
                                               dim, head_stride, key_stride, scale, key_tile,
-                                              row_tile, row_groups, unroll, stream);
+                                              row_tile, row_groups, unroll, tensor, stream);
     if (code != 0) {
         return code;
     }
@@ -664,12 +1086,19 @@ extern "C" int split_attention_timed(
     const void* query, const void* keys, const void* values, const void* mask,
     void* partial, void* partial_max, void* partial_sum, void* timing,
     int rows, int heads, int kv_heads, int key_count, int dim,
-    long long head_stride, long long key_stride, float scale, int row_groups, void* stream) {
+    long long head_stride, long long key_stride, float scale, int row_groups, int tensor,
+    void* stream) {
     if (dim != kDim || kv_heads <= 0 || heads % kv_heads != 0 || rows > 7 * kWarps) {
         return -1;
     }
-    const int splits = (key_count + 39) / 40;
     const int group = heads / kv_heads;
+    if (tensor) {
+        return launch_tensor<48, true>(query, keys, values, mask, partial, partial_max,
+                                       partial_sum, rows, heads, group, key_count, head_stride,
+                                       key_stride, scale, (key_count + 47) / 48,
+                                       (cudaStream_t)stream, (long long*)timing);
+    }
+    const int splits = (key_count + 39) / 40;
     if (row_groups == 2) {
         return launch_split<10, 2, 64, 7, 2, true>(query, keys, values, mask, partial, partial_max,
                                                 partial_sum, rows, heads, group, key_count,
