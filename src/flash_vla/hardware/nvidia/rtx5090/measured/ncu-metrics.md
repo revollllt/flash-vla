@@ -113,11 +113,25 @@ The last row is the one with no sm90 precedent worth reusing: at 99 KB per block
 and 48 warps per SM, the occupancy arithmetic that shaped the sm90 kernels does
 not carry over, and it is cheap to check directly rather than re-derive.
 
-**A caveat on the method.** `--query-metrics` lists hardware counters only.
-`launch__*` names — `launch__grid_size`, `launch__waves_per_multiprocessor`,
-`launch__occupancy_per_shared_mem_size` — appear on **neither** `gb202` nor
-`gh100` in that listing, because they are launch properties NCU derives from the
-launch configuration rather than counters it collects. Their absence from the
-tables above therefore says nothing about this chip, and they are excluded here
-only because this enumeration cannot confirm them. Confirm them from an actual
-report once counter permission exists.
+**On `launch__*`, corrected against the official documentation.**
+`--query-metrics` lists hardware counters only, so `launch__*` names appear on
+neither `gb202` nor `gh100` in that listing. That is a property of the listing,
+not of the chip. Nsight Compute's own metrics reference documents them:
+
+> `launch__*` metrics are collected per kernel launch, and do not require an
+> additional replay pass. They are available as part of the kernel launch
+> parameters (such as grid size, block size, ...) or are computed using the CUDA
+> Occupancy Calculator.
+
+`launch__grid_size`, `launch__waves_per_multiprocessor`,
+`launch__occupancy_per_shared_mem_size` and `launch__occupancy_limit_shared_mem`
+are all documented, so use them. Three more are worth knowing here because this
+machine's cluster behaviour had to be established by running a probe:
+`launch__cluster_size`, `launch__cluster_max_active` and
+`launch__cluster_max_potential_size` report from the launch what
+`cluster_dsmem.cu` had to discover by trial.
+
+"Do not require an additional replay pass" also suggests these may survive the
+counter-permission block above, since they are read from launch parameters
+rather than collected from counters. Not tested — NCU may still refuse to attach
+at all.
