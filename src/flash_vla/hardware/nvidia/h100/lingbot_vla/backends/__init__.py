@@ -9,6 +9,7 @@ from . import expert_route as _expert_route
 from . import fused_attention as _fused_attention
 from . import fused_attn_kernel as _fused_attn_kernel
 from . import fused_backbone as _fused_backbone
+from . import fused_gate as _fused_gate
 from . import fused_mlp as _fused_mlp
 from . import fused_prefix as _fused_prefix
 from . import fused_rope as _fused_rope
@@ -43,6 +44,7 @@ BACKENDS = {
     "skinny-projections": _skinny_projections,
     "split-attention": _split_attention,
     "vision-attention": _vision_attention,
+    "fused-gate": _fused_gate,
     "attention-kernel": _fused_attn_kernel,
 }
 REGISTRY = Registry(BACKENDS, default="upstream-reference")

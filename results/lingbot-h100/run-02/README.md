@@ -36,8 +36,18 @@ profile:
 | `rms_norm` | vision | 4.73 | 3.52 |
 | masked softmax | backbone | 8.82 | 8.41 |
 
-In-graph total across the run: 26.847 → 23.579 ms (jobs 615421, 615538, 615555,
-615567).
+**A caveat on those attributions, found the hard way.** Per-kernel times within
+one profile are sound — these are 1.3-2.2x ratios, far outside any noise. But
+*whole-segment totals compared across profiling jobs are not*: re-profiling one
+unchanged commit measured the expert at 15.727 ms in one job and 16.455 ms in
+another, ~4%. An earlier version of this file quoted an in-graph total falling
+26.847 → 23.579 ms across the run; that sequence mixes real gains with
+job-to-job variation and has been withdrawn. Only the per-kernel numbers above
+and the deployed medians in the table are load-bearing.
+
+That caveat cost a wrong call before it was caught: the fused gated activation
+below was first judged a +0.75 ms regression from exactly such a cross-job
+profile comparison, and a paired A/B then put it at -0.034 ms.
 
 ## Where the remaining time is
 
@@ -158,17 +168,37 @@ residual-add epilogue, measured at +0.21 and +0.20 µs bit-exact on `o_proj` and
 the prologue lands and `ada_rms_add` disappears, and the prologue did not.
 
 Restoring the CTA count with the same DSMEM split-K reduction that already
-ships — `k_split=2` on K=768's twelve k-tiles gives back 172 and 80 CTAs for a
-~0.4 µs cluster reduction — is being measured.
+ships was then measured and **also fails**: `k_split=2` does give back 172 CTAs,
+and it is slower — 8.15 µs against 86 CTAs' 7.46 — as well as no longer
+bit-exact, because the split changes the K-reduction order. So the CTA count is
+not the whole cost either, and the epilogue's best remains the unsplit paired
+tile at 1.10x (7.46 against 8.19 unfused).
+
+Taken into the model behind its own plan (`lingbot_vla-fused-gate.json`) and
+measured paired against the deployed route (job 615732), that 1.10x is worth
+**-0.034 ms of 24.34**, with `min` moving the other way (+0.107). It removes 360
+launches a forward and returns essentially nothing. Not deployed; the plan stays
+reachable so the result can be re-run.
+
+Three standalone wins have now failed to transfer to the deployed route in this
+run — the prologue, split-K on the paired tile, and this. The pattern is
+consistent: a cold standalone harness measures a kernel against an evicted
+weight with nothing else in flight, and the deployed graph has neither
+property.
 
 ## Final state
 
 `shipped` = `vision-attention` on all three call sites. Verified on the
-committed source (job 615569, driver 570.86.10): every hand-written kernel
+committed source (job 615760, driver 610.43.02): every hand-written kernel
 matches its torch expression except the two noted below, full-depth ten-step
 parity against the upstream eager oracle passes with `replay_identical`, and
-three legs measure **24.393 / 24.390 / 24.394 ms** with a 0.003 ms repeat
-spread.
+three legs measure **23.497 / 23.497 / 23.492 ms** with a 0.005 ms repeat
+spread. The same source measures 24.393 ms on driver 570 (job 615569), the
+~4% difference this partition's two driver generations show throughout.
+
+On driver 610, which is what run-01's curve used, this run is **25.501 →
+23.497 ms**, and the whole effort from its original starting point is
+**58.418 → 23.497 ms, 2.49x**.
 
 Accuracy has moved and is worth stating plainly. Across run-01 and run-02 the
 deepest output, `physical_actions`, has gone from bit-identical to the oracle,

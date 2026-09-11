@@ -35,6 +35,11 @@ _SCALE = HEAD_DIM ** -0.5
 #: 1.10x cuBLAS on `o_proj` and 1.18x on `down_proj`; the packed q/k/v and
 #: gate/up projections are left on cuBLAS, which is faster for them.
 _SKINNY_GEMM = {"tile_n": 64, "depth": 6, "k_split": 8, "producer": 3}
+#: The packed gate/up projection with its gated activation in the epilogue. A
+#: CTA owns `tile_n // 2` gate columns and their partners 2752 away, which
+#: halves the CTA count to 86; restoring it with split-K measured slower (172
+#: CTAs at 8.15 us against 86 at 7.46), so the paired tile stays split=1.
+_SKINNY_SILU = {"tile_n": 64, "depth": 8, "k_split": 1}
 #: The grid the split-key attention was tuned to at 51 rows over 315 keys: 40
 #: keys per slice gives 8 slices and 128 CTAs, which covers the machine while
 #: each CTA reads only its own slice of the cache. Measured 12.56 us against
@@ -96,7 +101,7 @@ class ExpertLoop:
                  scratch, device, dtype, fused_rope: bool = False,
                  fused_attention: bool = False, fused_mlp: bool = False,
                  attention_kernel: bool = False, skinny_gemm: bool = False,
-                 split_attention: bool = False) -> None:
+                 split_attention: bool = False, fused_gate: bool = False) -> None:
         self.core = core
         self.steps = steps
         self.depth = layers
@@ -109,6 +114,7 @@ class ExpertLoop:
         # The skinny GEMM replaces two call sites that only exist on the fused
         # stack, and reads the workspace that stack allocates.
         self.skinny_gemm = skinny_gemm and fused_mlp
+        self.fused_gate = fused_gate and skinny_gemm and fused_mlp
         self.split_attention = split_attention and fused_attention
 
         expert = core.qwenvl_with_expert.qwen_expert.model
@@ -239,6 +245,9 @@ class ExpertLoop:
                               self.projected_out, **_SKINNY_GEMM)
             self._gemm.linear(self.activation, layer.mlp.down_proj.weight,
                               self.gated_out, **_SKINNY_GEMM)
+            if self.fused_gate:
+                self._gemm.silu_linear(self.normed, layer.packed_gate_up_weight,
+                                       self.activation, **_SKINNY_SILU)
 
     def _slots(self, index: int):
         """The kernel's `(query, key_slot, value_slot)` views for one layer."""
@@ -325,6 +334,14 @@ class ExpertLoop:
         out += layer.mlp.down_proj(torch.nn.functional.silu(gate_values) * up_values)
         return out
 
+    def _gated_activation(self, layer):
+        """The packed gate/up projection and its activation, `[SUFFIX_LEN, ffn]` bf16."""
+        if self.fused_gate:
+            return self._gemm.silu_linear(self.normed, layer.packed_gate_up_weight,
+                                          self.activation, **_SKINNY_SILU)
+        gate_up = torch.nn.functional.linear(self.normed, layer.packed_gate_up_weight)
+        return self._kernels.silu_multiply(gate_up, self.activation)
+
     def _output_projection(self, layer, attention):
         """The attention output projection, `[SUFFIX_LEN, H * D]` bf16 in, `[SUFFIX_LEN, D]` out."""
         if not self.skinny_gemm:
@@ -361,9 +378,7 @@ class ExpertLoop:
             projected = self._output_projection(layer, attention)
             self._modulate(layer.post_attention_layernorm, projected, self.hidden,
                            condition, self.residual)
-            gate_up = torch.nn.functional.linear(self.normed, layer.packed_gate_up_weight)
-            down = self._down_projection(
-                layer, self._kernels.silu_multiply(gate_up, self.activation))
+            down = self._down_projection(layer, self._gated_activation(layer))
             if index + 1 == self.depth:
                 return (down.view(SUFFIX_LEN, -1) + self.residual)[None]
             self._modulate(self.layers[index + 1].input_layernorm, down, self.residual,
