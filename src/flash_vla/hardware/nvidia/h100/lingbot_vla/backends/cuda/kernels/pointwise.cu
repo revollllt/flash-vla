@@ -254,6 +254,16 @@ __global__ void ada_rms_add_kernel(
 // `silu(gate) * up` over one packed gated projection, `[rows, 2 * width]` in
 // and `[rows, width]` out. torch spends two launches and one extra round trip
 // of the hidden tile on it.
+//
+// Two elements per thread through `__nv_bfloat162`: the widest tile this runs
+// on is the backbone's 264 x 11008, where the scalar form moved 17.4 MB in
+// 14.30 us against a 8.1 us streaming floor (job 615421). `width` is even at
+// every call site -- 2752, 3424 and 11008 -- and the packed halves are each a
+// whole number of pairs, so the paired path needs no scalar tail.
+__device__ __forceinline__ float silu_of(float x) {
+    return __bfloat162float(__float2bfloat16(x / (1.0f + expf(-x))));
+}
+
 __global__ void silu_multiply_kernel(
     const __nv_bfloat16* __restrict__ source, __nv_bfloat16* __restrict__ target,
     int width, int total) {
@@ -261,14 +271,16 @@ __global__ void silu_multiply_kernel(
     if (index >= total) {
         return;
     }
-    const int row = index / width;
-    const int lane = index - row * width;
-    const long long base = (long long)row * 2 * width;
-    const float gate = __bfloat162float(source[base + lane]);
-    const float activated = __bfloat162float(
-        __float2bfloat16(gate / (1.0f + expf(-gate))));
-    target[index] = __float2bfloat16(
-        activated * __bfloat162float(source[base + width + lane]));
+    const int pairs = width >> 1;
+    const int row = index / pairs;
+    const int lane = index - row * pairs;
+    const __nv_bfloat162* gate_row =
+        (const __nv_bfloat162*)(source + (long long)row * 2 * width);
+    const __nv_bfloat162 gate = gate_row[lane];
+    const __nv_bfloat162 up = gate_row[pairs + lane];
+    ((__nv_bfloat162*)target)[(long long)row * pairs + lane] = __floats2bfloat162_rn(
+        silu_of(__low2float(gate)) * __low2float(up),
+        silu_of(__high2float(gate)) * __high2float(up));
 }
 
 // `Qwen2RMSNorm` preceded by the residual add that feeds it, for the towers
@@ -403,7 +415,10 @@ extern "C" int ada_rms_add_launch(
 
 extern "C" int silu_multiply_launch(
     const void* source, void* target, int rows, int width, void* stream) {
-    const int total = rows * width;
+    if ((width & 1) != 0) {
+        return 1;
+    }
+    const int total = rows * (width >> 1);
     const int blocks = (total + kEpilogueThreads - 1) / kEpilogueThreads;
     silu_multiply_kernel<<<blocks, kEpilogueThreads, 0, (cudaStream_t)stream>>>(
         (const __nv_bfloat16*)source, (__nv_bfloat16*)target, width, total);
