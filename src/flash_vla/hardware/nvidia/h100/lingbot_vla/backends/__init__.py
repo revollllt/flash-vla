@@ -18,6 +18,7 @@ from . import rope_frequency as _rope_frequency
 from . import rope_table as _rope_table
 from . import time_modulation as _time_modulation
 from . import skinny_projections as _skinny_projections
+from . import split_attention_route as _split_attention
 from . import upstream as _upstream
 from . import vision_norm as _vision_norm
 
@@ -39,6 +40,7 @@ BACKENDS = {
     "fused-mlp": _fused_mlp,
     "fused-backbone": _fused_backbone,
     "skinny-projections": _skinny_projections,
+    "split-attention": _split_attention,
     "attention-kernel": _fused_attn_kernel,
 }
 REGISTRY = Registry(BACKENDS, default="upstream-reference")

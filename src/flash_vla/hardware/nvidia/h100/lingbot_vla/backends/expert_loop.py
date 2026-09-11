@@ -35,6 +35,12 @@ _SCALE = HEAD_DIM ** -0.5
 #: 1.10x cuBLAS on `o_proj` and 1.18x on `down_proj`; the packed q/k/v and
 #: gate/up projections are left on cuBLAS, which is faster for them.
 _SKINNY_GEMM = {"tile_n": 64, "depth": 6, "k_split": 8, "producer": 3}
+#: The grid the split-key attention was tuned to at 51 rows over 315 keys: 40
+#: keys per slice gives 8 slices and 128 CTAs, which covers the machine while
+#: each CTA reads only its own slice of the cache. Measured 12.56 us against
+#: 21.50 for the four-launch cuBLAS chain it replaces.
+_SPLIT_ATTENTION = {"key_tile": 40, "row_tile": 64, "row_groups": 1,
+                    "unroll": 4, "pieces": 2}
 
 
 def _apply_rope(values: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
@@ -89,7 +95,8 @@ class ExpertLoop:
     def __init__(self, core, *, layers: int, steps: int, conditions, time_step,
                  scratch, device, dtype, fused_rope: bool = False,
                  fused_attention: bool = False, fused_mlp: bool = False,
-                 attention_kernel: bool = False, skinny_gemm: bool = False) -> None:
+                 attention_kernel: bool = False, skinny_gemm: bool = False,
+                 split_attention: bool = False) -> None:
         self.core = core
         self.steps = steps
         self.depth = layers
@@ -102,6 +109,7 @@ class ExpertLoop:
         # The skinny GEMM replaces two call sites that only exist on the fused
         # stack, and reads the workspace that stack allocates.
         self.skinny_gemm = skinny_gemm and fused_mlp
+        self.split_attention = split_attention and fused_attention
 
         expert = core.qwenvl_with_expert.qwen_expert.model
         self.layers = tuple(expert.layers[:layers])
@@ -149,6 +157,7 @@ class ExpertLoop:
         exponents = (2.0 / HEAD_DIM) * torch.arange(half, dtype=torch.float32, device=device)
         self.inverse_timescale = 1.0 / (_ROPE_WAVELENGTH ** exponents)
         self.dt = torch.tensor(-1.0 / steps, dtype=dtype, device=device)
+        self._scratch = scratch
         if self.fused_rope:
             self._bind_kernels(device, half)
 
@@ -163,6 +172,8 @@ class ExpertLoop:
             self._gemm = skinny_gemm
             skinny_gemm.build()      # surface a compile failure before capture
             self._warm_tensor_maps()
+        if self.split_attention:
+            self._bind_split_attention(device)
         pointwise.rope_project(
             torch.zeros((SUFFIX_LEN, sum(self.layers[0].qkv_widths)),
                         dtype=torch.bfloat16, device=device),
@@ -179,6 +190,29 @@ class ExpertLoop:
                     self.query, self.key_cache[0], self.value_cache[0],
                     torch.ones((SUFFIX_LEN, _CACHE_LEN), dtype=torch.bool, device=device),
                     self.attention_out, _SCALE)
+
+    def _bind_split_attention(self, device) -> None:
+        """Bind the split-key attention and give it a workspace with a fixed address.
+
+        The kernel's own `workspace()` allocates on demand, which a captured
+        caller cannot do, so the per-slice partials come from the runner's
+        workspace allocator instead and every layer-step shares them: the two
+        launches only write then read them, and they carry nothing across a
+        layer boundary.
+        """
+        from .cuda import split_attention
+
+        self._split = split_attention
+        heads = self.query.shape[0]
+        splits = split_attention.splits_for(_CACHE_LEN, _SPLIT_ATTENTION["key_tile"])
+        self._split_buffers = (
+            self._scratch("lingbot_expert_attention_partials",
+                          (heads, SUFFIX_LEN, splits, HEAD_DIM), torch.float32, device),
+            self._scratch("lingbot_expert_attention_max",
+                          (heads, SUFFIX_LEN, splits), torch.float32, device),
+            self._scratch("lingbot_expert_attention_sum",
+                          (heads, SUFFIX_LEN, splits), torch.float32, device),
+        )
 
     def _warm_tensor_maps(self) -> None:
         """Build every TMA tensor map the skinny GEMM will need, outside capture.
@@ -245,6 +279,11 @@ class ExpertLoop:
 
     def _attention(self, query, index, mask):
         """One layer-step's masked GQA attention, as bf16 `[1, SUFFIX_LEN, H * D]`."""
+        if self.split_attention:
+            return self._split.fused_attention(
+                query, self.key_cache[index], self.value_cache[index], mask[0],
+                self.attention_out, _SCALE, buffers=self._split_buffers,
+                **_SPLIT_ATTENTION)[None]
         if self.attention_kernel:
             return self._kernels.fused_attention(
                 query, self.key_cache[index], self.value_cache[index], mask[0],

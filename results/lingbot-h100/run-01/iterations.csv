@@ -1,13 +1,15 @@
 iteration,change,latency_ms,decision,report,revision
-0,Current shipped (fused-norm),58.475,start,measurements/000.json,ef798e0
-1,Packed expert q/k/v and gate/up GEMMs + grouped attention,51.229,keep,measurements/001.json,8c5dcc8
-2,Target-owned denoising loop with a resident key/value cache,48.932,keep,measurements/002.json,8c5dcc8
-3,Fused CUDA projection epilogue (widen + RoPE + cache write),39.802,keep,measurements/003.json,8c5dcc8
-4,Head-major cache with fused softmax and attention epilogue,37.251,keep,measurements/004.json,df5665c
-5,Target-owned backbone prefix pass on the same kernels,34.854,keep,measurements/005.json,df5665c
-6,Width-aligned packed vision feed-forward,31.592,keep,measurements/006-aligned-vision.json,9adc638
-7,Single-launch vision RMSNorm,30.230,keep,measurements/007-vision-norm.json,40f1252
-8,AdaRMS absorbing its residual add and a fused gated activation,29.438,keep,measurements/008-fused-mlp.json,40f1252
-9,Fused pointwise and packed gated projection in the backbone,28.327,keep,measurements/009-fused-backbone.json,c11938a
+0,Current shipped (fused-norm),58.418,start,measurements/000.json,ef798e0
+1,Packed expert q/k/v and gate/up GEMMs + grouped attention,51.164,keep,measurements/001.json,8c5dcc8
+2,Target-owned denoising loop with a resident key/value cache,48.900,keep,measurements/002.json,8c5dcc8
+3,Fused CUDA projection epilogue (widen + RoPE + cache write),39.705,keep,measurements/003.json,8c5dcc8
+4,Head-major cache with fused softmax and attention epilogue,37.177,keep,measurements/004.json,df5665c
+5,Target-owned backbone prefix pass on the same kernels,34.782,keep,measurements/005.json,df5665c
+6,Width-aligned packed vision feed-forward,31.567,keep,measurements/006-aligned-vision.json,9adc638
+7,Single-launch vision RMSNorm,30.202,keep,measurements/007-vision-norm.json,40f1252
+8,AdaRMS absorbing its residual add and a fused gated activation,29.402,keep,measurements/008-fused-mlp.json,40f1252
+9,Fused pointwise and packed gated projection in the backbone,28.294,keep,measurements/009-fused-backbone.json,c11938a
 10,Fused flash-form attention kernel: +173.378 ms (job 614399),,revert,measurements/010-attention-kernel.json,c11938a
 11,Single-pass masked softmax: -0.004 ms (job 614448),,uncertain,measurements/011-single-pass-softmax.json,3e1f1ab
+12,Expert output projections on the hand-written skinny GEMM,27.834,keep,measurements/012-skinny-projections.json,28ed8ca
+13,Expert attention on the split-key CUDA kernel,25.501,keep,measurements/013-split-attention.json,HEAD

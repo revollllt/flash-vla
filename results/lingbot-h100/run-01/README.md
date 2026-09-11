@@ -39,9 +39,9 @@ re-imports the package in a fresh worker minutes into the job.
 
 ## Result
 
-**58.475 ms -> 28.327 ms deployed median, 2.064x**, every point measured in one
-job on one GPU (614462, ACD1-55, driver 610.43.02) so the curve is a single
-measurement condition:
+**58.418 ms -> 25.501 ms deployed median, 2.291x**, every point measured in one
+job on one GPU (614729, driver 610.43.02) so the curve is a single measurement
+condition:
 
 ```bash
 python -m benchmarks latency --target h100/lingbot_vla --seed 42 --warmup 5 --reps 100 \
@@ -70,7 +70,7 @@ Three legs of the start version, one job (614199, ACD1-6, driver 570.86.10):
 Repeat-leg spread: 0.397 ms on `min`, **1.162 ms on `median`**. A single
 unpaired median difference below ~1.2 ms is therefore not distinguishable from
 run-to-run drift; paired same-job A/B is used for every decision. (That job ran
-on the 570 driver; the consolidation ladder puts the same version at 58.475 ms
+on the 570 driver; the consolidation ladder puts the same version at 58.418 ms
 on the 610 driver.)
 
 Correctness (614205, ACD1-21, driver 610.43.02): full-depth 10-step parity
@@ -125,6 +125,7 @@ not have resolved.
 | 10 | fused flash-form attention kernel | 28.419 | 201.797 | **+173.378** | 0.002 | revert | 614399 |
 | 11 | single-pass masked softmax | 29.756 | 29.752 | −0.004 | 0.007 | uncertain | 614448 |
 | 12 | expert `o_proj` and `down_proj` on the hand-written skinny GEMM | 29.767 | 29.170 | **−0.597** | 0.016 | keep | 614587 |
+| 13 | expert attention on the split-key CUDA kernel | 27.839 | 25.505 | **−2.333** | 0.051 | keep | 614712 |
 
 Iterations 7 and 8 were run in parallel against the same retained plan on two
 GPUs, so 8 is the superset and the one deployed; 7's number attributes the
@@ -132,6 +133,22 @@ split between the vision and expert halves. Iterations 1, 2 and 7 landed on
 driver 570.86.10 and the rest on 610.43.02, which differ by ~6-8% on this
 workload — the reason every decision is a paired same-job comparison and the
 curve comes from one final ladder job rather than from these legs.
+
+### The tail in iteration 13, and why it was not the kernel
+
+Iteration 13's candidate leg reported p99 30.936 against a 25.505 median — a
+5.6 ms tail the retained version did not have. The raw samples show it was two
+adjacent samples out of 100, one of them **1240 ms**: a 1.2 second stall, which
+is orders of magnitude beyond anything kernel scheduling produces and reads as
+something else arriving on the node.
+
+That is a guess until it is measured, so the candidate was re-run three times
+with the attribution collector (job 614724): 300 samples, **zero** above
+median + 1 ms, min 25.169, median 25.498-25.503, max 25.581. p99 minus min is
+0.41 ms, inside the 0.5 ms jitter bound this Target was onboarded with. The
+stall was machine noise and the kernel's tail is clean. Recorded because a
+1.2 second stall in a control loop would have been a reason to reject the
+change outright, and the difference between "noise" and "real" was one job.
 
 ### Why iteration 10 failed
 
@@ -315,12 +332,33 @@ overhead is 0.514 ms of 28.4 ms, so there is nothing outside the segments.
 
 ## Final state
 
-`shipped` = `fused-backbone` on all three call sites. Verified on the exact
-committed source (job 614503, ACD1-30, driver 610.43.02):
+`shipped` = `split-attention` on all three call sites. Verified on the exact
+committed source (job 614771, driver 570.86.10):
 
 - every hand-written kernel matches its torch expression (bit-identical except
-  the masked softmax at 2.8e-9 and the unrouted fused attention at 9.8e-4);
+  the masked softmax at 2.8e-9 and the split-key attention at 9.8e-4, one bf16
+  ulp);
 - full-depth ten-step parity against the upstream eager oracle passes, replay
-  deterministic, `physical_actions` cos 0.9999537 against a 0.9943 threshold;
-- three legs of the deployed version: 28.370 / 28.382 / 28.372 ms median, a
-  repeat-leg spread of 0.012 ms.
+  deterministic, `physical_actions` cos 0.9999428 against a 0.9943 threshold;
+- three legs of the deployed version: 26.601 / 26.594 / 26.593 ms median, a
+  repeat-leg spread of 0.008 ms, p99 minus min at most 0.49 ms.
+
+That job landed on the 570 driver, where the same version is ~4% slower than
+the 610 the ladder used; the 25.501 ms headline and the curve are the 610
+numbers, and the two are never mixed.
+
+### Deployed kernels
+
+Eight hand-written CUDA kernels are on the deployed path, none of them through
+`torch.compile`:
+
+| kernel | replaces | shipped in |
+|---|---|---|
+| projection epilogue | float32 widen, two RoPE rotations, two cache writes (17 launches) | 3 |
+| masked softmax | scale, mask select, softmax (3 launches) | 4, 11 |
+| attention epilogue | group-major to token-major transpose plus bf16 round | 4 |
+| RMSNorm | the five-launch eager expression, twice per vision block | 7 |
+| AdaRMS with residual | the residual add and the FiLM-modulated norm after it | 8 |
+| gated activation | SiLU and the multiply over the packed projection | 8, 9 |
+| skinny GEMM | cuBLAS on the expert's two 768-wide output projections | 12 |
+| split-key attention | cuBLAS QK, softmax, cuBLAS PV, transpose (4 launches) | 13 |

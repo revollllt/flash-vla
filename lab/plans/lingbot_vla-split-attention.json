@@ -1,0 +1,5 @@
+{
+  "lingbot_vision": "split-attention",
+  "lingbot_prefix": "split-attention",
+  "lingbot_action": "split-attention"
+}

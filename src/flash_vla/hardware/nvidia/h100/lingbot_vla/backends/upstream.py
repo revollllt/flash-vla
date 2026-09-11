@@ -516,7 +516,7 @@ class _State:
                  pad_vision_ffn: bool = False, fused_vision_norm: bool = False,
                  fused_mlp: bool = False, fused_prefix_pointwise: bool = False,
                  attention_kernel: bool = False, skinny_gemm: bool = False,
-                 scratch=None) -> None:
+                 split_attention: bool = False, scratch=None) -> None:
         self.core = None
         self.loop = None
         self.specialized_loop = specialized_loop
@@ -529,6 +529,7 @@ class _State:
         self.fused_prefix_pointwise = fused_prefix_pointwise
         self.attention_kernel = attention_kernel
         self.skinny_gemm = skinny_gemm
+        self.split_attention = split_attention
         self.scratch = scratch
         self.prefix_pass = None
         self.vision_metadata = None
@@ -563,7 +564,7 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                   specialized_loop=False, fused_rope=False, fused_attention=False,
                   specialized_prefix=False, pad_vision_ffn=False, fused_vision_norm=False,
                   fused_mlp=False, fused_prefix_pointwise=False, attention_kernel=False,
-                  skinny_gemm=False):
+                  skinny_gemm=False, split_attention=False):
     state = _State(cache_rope_frequency, scratch.assets, linear_patch_embedding,
                    cache_rope_tables, precompute_time_modulation, fuse_norm,
                    pack_expert_projections=pack_expert_projections,
@@ -574,7 +575,7 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                    fused_vision_norm=fused_vision_norm, fused_mlp=fused_mlp,
                    fused_prefix_pointwise=fused_prefix_pointwise,
                    attention_kernel=attention_kernel, skinny_gemm=skinny_gemm,
-                   scratch=scratch)
+                   split_attention=split_attention, scratch=scratch)
 
     @torch.no_grad()
     def vision(pixel_values, out, layers, *weights):
@@ -670,6 +671,7 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                     fused_mlp=state.fused_mlp,
                     attention_kernel=state.attention_kernel,
                     skinny_gemm=state.skinny_gemm,
+                    split_attention=state.split_attention,
                 )
         if state.loop is not None:
             state.loop.run(state_tensor, noise, prefix_masks, prefix_k, prefix_v,
