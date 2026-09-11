@@ -72,6 +72,15 @@ Shared memory per block is **99 KB against sm90's 227**, and max warps per SM is
 **48 against 64**. A tile budget inherited from sm90 overshoots shared memory by
 2.29x and fails at launch rather than degrading.
 
+### Profiler visibility (`ncu-metrics.md`)
+
+NCU counter names moved on GB202: the whole `sm__inst_executed_pipe_tensor_op_*`
+family is gone (26 metrics on GH100, 0 here) and `dram__bytes_read` is now
+`dram__bytes_op_read`, so existing saved queries fail to resolve rather than
+returning zero. Counter access is also currently **denied on this host**
+(`ERR_NVGPUCTRPERM`), which blocks profiling entirely. See
+[ncu-metrics.md](ncu-metrics.md).
+
 ## What is NOT measured here, and what would measure it
 
 | unit | blocked | next |
