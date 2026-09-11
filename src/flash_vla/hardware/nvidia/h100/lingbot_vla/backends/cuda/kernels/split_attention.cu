@@ -31,18 +31,26 @@
 // 8-element shared-memory reductions per row for the whole 315-key row, not one
 // per key.
 //
-// The grid is too small to fill the machine more than once, so a CTA runs at
-// eight or sixteen warps on an SM and has almost no other work to hide latency
-// behind. Two things follow, and both were measured with the `kTimed`
-// instrumentation below (job 614654, key_tile 40, 1.72 GHz):
-//   - Staging cost 6650 of the CTA's 18771 cycles when each thread waited on
-//     its own global load before storing it to shared memory. The tiles are
-//     copied with `cp.async` instead, so every copy a thread owns is in flight
-//     at once and the phase becomes bandwidth- rather than latency-bound.
-//   - `row_slots` picks between one CTA per SM covering 64 query rows and two
-//     covering 32 each. The second doubles the warps available to a scheduler
-//     at the cost of reading the key and value slices twice; which wins is a
-//     measurement, not a derivation, so both are instantiated.
+// The grid is too small to fill the machine more than once -- 128 CTAs of
+// eight warps is 1024 warps where an H100 holds 8448 -- so a CTA has almost no
+// other work to hide its own latency behind, and that, not throughput, is what
+// the shape parameters are fighting. Measured with the `kTimed` instrumentation
+// below (jobs 614654 / 614692, key_tile 40, ~1.7 GHz), per CTA:
+//   - Staging cost 6650 of 18771 cycles when each thread waited on its own
+//     global load before storing it to shared memory. `cp.async` puts every
+//     copy a thread owns in flight at once and brought it to 4211, which is
+//     ~3.5 TB/s for the grid's 8.8 MB and so bandwidth-bound: the remaining
+//     lever would be reading less, and the decomposition fixes that volume.
+//   - The QK mainloop runs at ~2.3x and the PV mainloop at ~1.6x their
+//     instruction-issue bounds. Neither more warps per SM (`row_tile` 32, two
+//     CTAs per SM: 10.23 us against 9.48) nor half the wide shared-memory reads
+//     (`row_groups` 2, which trades them for broadcasts: 10.11 against 9.27)
+//     improves on the plain shape, so the cost is scheduler-level latency this
+//     grid cannot cover, not bandwidth and not code quality -- the SASS inner
+//     loops are exactly 80 FFMA + 14 LDS.128 and 224 FFMA + 22 LDS.128. Both
+//     alternatives stay instantiated so the negative result is re-runnable.
+//   - `pieces` gives the combine's 816 warps of work a second warp per output
+//     row, which is worth ~0.2 us of its ~2.8.
 //
 // Arithmetic is float32 throughout, as the upstream eager path's is. Masked
 // logits take upstream's finite sentinel rather than -inf, so a fully masked
@@ -560,7 +568,6 @@ int dispatch(const void* query, const void* keys, const void* values, const void
     SPLIT_CASE(64, 64, 1, 8)
     SPLIT_CASE(32, 64, 2, 8)
     SPLIT_CASE(40, 64, 2, 10)
-    SPLIT_CASE(48, 64, 2, 12)
     SPLIT_CASE(32, 32, 1, 4)
     SPLIT_CASE(40, 32, 1, 5)
     SPLIT_CASE(48, 32, 1, 6)

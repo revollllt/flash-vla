@@ -25,16 +25,20 @@ _SRC = _HERE / "kernels" / "split_attention.cu"
 _REPO = _HERE.parents[7]
 _DEFAULT_NVCC = "/data/apps/cuda/12.6/bin/nvcc"
 
-# The split width and rows-per-CTA the grid is sized around. 315 keys / 40 = 8
-# slices x 16 heads = 128 CTAs, one wave on an H100's 132 SMs, with all 51 rows
-# in one CTA whose eight warps each cover every row. The kernel also
-# instantiates 24, 32, 48 and 64 keys, a 32-row CTA, and a two-row-group warp
-# grid, so the choice can be re-measured.
+# The grid shape, measured on an H100 at the Target's shape (job 614698,
+# medians under graph replay, us per layer-step). 315 keys / 40 = 8 slices x 16
+# heads = 128 CTAs, one wave on the 132 SMs, with all 51 rows in one CTA whose
+# eight warps each cover every row:
+#     keys 40, unroll 4, pieces 2   12.56      keys 48   13.67
+#     keys 40, unroll 2, pieces 2   12.62      keys 64   15.62
+#     keys 40, unroll 2, pieces 1   12.76      32-row CTA (256 CTAs)   13.57
+# The kernel also instantiates 24 and 32 keys and a two-row-group warp grid;
+# both were slower, and both stay reachable so the result can be re-measured.
 DEFAULT_KEY_TILE = 40
 DEFAULT_ROW_TILE = 64
 DEFAULT_ROW_GROUPS = 1
-DEFAULT_UNROLL = 2
-DEFAULT_PIECES = 1
+DEFAULT_UNROLL = 4
+DEFAULT_PIECES = 2
 
 _LIB = None
 _WORKSPACE: dict[tuple, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}

@@ -203,6 +203,7 @@ class ExpertLoop:
         from .cuda import split_attention
 
         self._split = split_attention
+        split_attention.build()      # surface a compile failure before capture
         heads = self.query.shape[0]
         splits = split_attention.splits_for(_CACHE_LEN, _SPLIT_ATTENTION["key_tile"])
         self._split_buffers = (
@@ -213,6 +214,13 @@ class ExpertLoop:
             self._scratch("lingbot_expert_attention_sum",
                           (heads, SUFFIX_LEN, splits), torch.float32, device),
         )
+        # Each instantiation opts into its 92.7 KB of shared memory lazily, on
+        # its own first launch, through cudaFuncSetAttribute. Arm the exact
+        # config that will be captured here, while the caller is still eager;
+        # warming a different one would leave this one cold.
+        self._attention(self.query, 0,
+                        torch.ones((1, SUFFIX_LEN, _CACHE_LEN), dtype=torch.bool,
+                                   device=device))
 
     def _warm_tensor_maps(self) -> None:
         """Build every TMA tensor map the skinny GEMM will need, outside capture.

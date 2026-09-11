@@ -150,6 +150,54 @@ stall was machine noise and the kernel's tail is clean. Recorded because a
 1.2 second stall in a control loop would have been a reason to reject the
 change outright, and the difference between "noise" and "real" was one job.
 
+### How iteration 13 succeeded where 10 failed
+
+Same operation, opposite decomposition. Iteration 10 gave one warp each
+(head, query row) and had 816 warps each stream the whole cache. Iteration 13
+cuts the **key** axis into 40-key slices: 16 heads x 8 slices = 128 CTAs, one
+wave on 132 SMs, each staging its own slice of the cache into shared memory
+once with `cp.async` and letting all 51 query rows consume it there. Global
+traffic falls from ~500 MB to 8.8 MB per layer-step. Each CTA emits a
+flash-decoding partial (running maximum, denominator, unnormalized
+accumulator) and a second launch rescales a row's eight slices onto their
+common maximum and writes the transposed bf16 output.
+
+The two mainloops use deliberately disagreeing thread roles so that **neither
+contains a warp reduction**, which is what would have put shuffle latency on
+the critical path: QK gives each lane whole query rows and each warp five keys,
+so a dot product accumulates in one lane's registers along the 128-dim axis;
+PV gives each lane four output dimensions, which is already a per-lane
+accumulation over keys. The probabilities pass between them through shared
+memory. Arithmetic is float32 throughout — no TF32, no tensor cores.
+
+| | µs | vs chain |
+|---|---:|---:|
+| cuBLAS QK + masked softmax + cuBLAS PV (3 launches) | 19.93 | 1.00x |
+| the same plus the transpose/bf16 epilogue (4 launches, same output) | 21.50 | |
+| **split-key, 2 launches** (slices 9.31 + combine 2.79) | **12.54** | **1.59x / 1.71x** |
+| iteration 10's one-warp-per-row kernel (1 launch) | 305.45 | 0.07x |
+| streaming floor / float32 FMA roofline | 2.40 / 2.20 | |
+
+**The binding constraint is scheduler latency, and it was measured rather than
+assumed.** With the ncu-capable nodes all full, `clock64()` phase
+instrumentation gives, per CTA at 1.69 GHz: staging 4220 cycles, QK 7169, PV
+4128. Staging was 6650 before `cp.async` and is now bandwidth-bound at ~3.5
+TB/s, so reading less is its only lever and the decomposition already fixes
+that volume. The two mainloops run at ~2.3x and ~1.6x their instruction-issue
+bounds with SASS inner loops of exactly 80 FFMA + 14 LDS.128 and 224 FFMA + 22
+LDS.128 — nothing wasted. Two independent attempts to give the scheduler more
+to chew on both made it worse (32-row CTAs at two per SM: 10.23 against 9.48;
+a two-row-group warp grid halving the wide shared-memory reads: 10.11 against
+9.27). The grid holds 1024 warps where an H100 wants 8448, and the problem is
+too small to supply more without paying for it elsewhere. Going materially
+below ~12 µs would need tensor cores, which would leave the kernel
+staging-bound near 2.5 µs — a separate accuracy question, not opened.
+
+The same kernel is **correct but slower at the backbone's prefix shape**
+(264x264): 41.87 µs against that chain's 40.13, 0.96x. At 26x the MACs cuBLAS
+finally has enough work to be efficient while this grid becomes 4.2 waves and
+the split's re-reads stop paying. Only the expert is routed.
+
 ### Why iteration 10 failed
 
 The flash-form attention kernel is numerically fine (within one bf16 ulp of the
@@ -184,10 +232,20 @@ measure. The stable statements are that the vision and prefix drift stays at
 bf16-accumulation level and that every trial clears the tolerance with margin.
 
 The hand-written kernels are checked against their torch expressions at the
-Target's real shapes by `python -m lab.lingbot_kernel_check` (job 614461). The
-projection epilogue, the attention epilogue, the RMSNorm, the AdaRMS-with-
-residual and the gated activation are **bit-identical**; the masked softmax
-differs by 2.8e-9 and the unrouted fused attention by 9.8e-4, one bf16 ulp.
+Target's real shapes by `python -m lab.lingbot_kernel_check`. The projection
+epilogue, the attention epilogue, the RMSNorm, the AdaRMS-with-residual and the
+gated activation are **bit-identical**; the masked softmax differs by 2.8e-9
+and the attention kernels by 9.8e-4, one bf16 ulp.
+
+One methodological note worth keeping. The fully-masked row — where upstream's
+finite sentinel makes the answer uniform rather than NaN — cannot be settled by
+a tolerance: one key miscounted out of 315 is 3.2e-3 relative, which is inside
+two bf16 ulps and would pass. The split-key kernel is therefore checked with a
+**value cache of all ones**, where the answer is exactly 1.0 for every row under
+every mask because the weights cancel against their own sum, so any key counted
+in or out shows up as an exact mismatch rather than a small one. That test also
+caught a bug in an earlier version of the check itself, which had asserted a
+plain mean for rows with several live keys where the answer is softmax-weighted.
 
 ## What is left
 
@@ -333,19 +391,19 @@ overhead is 0.514 ms of 28.4 ms, so there is nothing outside the segments.
 ## Final state
 
 `shipped` = `split-attention` on all three call sites. Verified on the exact
-committed source (job 614771, driver 570.86.10):
+committed source (job 614795, driver 610.43.02):
 
 - every hand-written kernel matches its torch expression (bit-identical except
-  the masked softmax at 2.8e-9 and the split-key attention at 9.8e-4, one bf16
-  ulp);
+  the masked softmax at 2.8e-9 and the attention kernels at 9.8e-4, one bf16
+  ulp), including the rounding-free fully-masked-row check;
 - full-depth ten-step parity against the upstream eager oracle passes, replay
   deterministic, `physical_actions` cos 0.9999428 against a 0.9943 threshold;
-- three legs of the deployed version: 26.601 / 26.594 / 26.593 ms median, a
-  repeat-leg spread of 0.008 ms, p99 minus min at most 0.49 ms.
+- three legs of the deployed version: **25.518 / 25.509 / 25.502 ms** median, a
+  repeat-leg spread of 0.016 ms, p99 minus min 0.44 ms — inside the 0.5 ms
+  jitter bound this Target was onboarded with.
 
-That job landed on the 570 driver, where the same version is ~4% slower than
-the 610 the ladder used; the 25.501 ms headline and the curve are the 610
-numbers, and the two are never mixed.
+That agrees with the consolidation ladder's own leg for this version (25.501
+ms) to 0.02 ms, so the curve and the deployed source are the same thing.
 
 ### Deployed kernels
 
