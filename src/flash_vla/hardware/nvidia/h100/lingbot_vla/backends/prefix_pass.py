@@ -37,10 +37,12 @@ class PrefixPass:
     """
 
     def __init__(self, core, *, layers: int, scratch, device,
-                 fused_pointwise: bool = False, attention_kernel: bool = False) -> None:
+                 fused_pointwise: bool = False, attention_kernel: bool = False,
+                 single_pass_softmax: bool = True) -> None:
         self.core = core
         self.fused_pointwise = fused_pointwise
         self.attention_kernel = attention_kernel
+        self.single_pass_softmax = single_pass_softmax
         self.module = core.qwenvl_with_expert
         backbone = self.module.qwenvl.model
         self.layers = tuple(backbone.layers[:layers])
@@ -164,7 +166,8 @@ class PrefixPass:
         grouped = self.query.view(KV_HEADS, self.group * PREFIX_LEN, HEAD_DIM)
         weights = torch.matmul(grouped, key.transpose(-1, -2))
         self._kernels.masked_softmax(
-            weights.view(self.query_heads, PREFIX_LEN, PREFIX_LEN), mask[0], _SCALE)
+            weights.view(self.query_heads, PREFIX_LEN, PREFIX_LEN), mask[0], _SCALE,
+            self.single_pass_softmax)
         output = torch.matmul(weights, value).view(self.query_heads, PREFIX_LEN, HEAD_DIM)
         self._kernels.attention_epilogue(output, self.attention_out)
 

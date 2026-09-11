@@ -22,9 +22,11 @@
 // distribution.
 //
 // Layouts are the ones the projection epilogue already writes: `query` is
-// [heads, rows, dim] and the caches are [kv_heads, keys, dim], float32 and
-// contiguous in `dim`. The output is written transposed and rounded, as
-// [rows, heads * dim] bf16, which is what the output projection consumes.
+// [heads, rows, dim] contiguous and the caches are [kv_heads, keys, dim] with
+// caller-supplied head and key strides, because the backbone's caches are a
+// transposed view of the graph's own [keys, kv_heads, dim] buffers. Only the
+// `dim` axis has to be contiguous. The output is written transposed and
+// rounded, as [rows, heads * dim] bf16, which the output projection consumes.
 
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
@@ -44,7 +46,8 @@ __global__ void expert_attention_kernel(
     const float* __restrict__ query, const float* __restrict__ keys,
     const float* __restrict__ values, const bool* __restrict__ mask,
     __nv_bfloat16* __restrict__ target,
-    int rows, int heads, int kv_heads, int key_count, int dim, float scale) {
+    int rows, int heads, int kv_heads, int key_count, int dim,
+    long long head_stride, long long key_stride, float scale) {
     const int head = blockIdx.x;
     const int row = blockIdx.y * kRowsPerBlock + threadIdx.y;
     if (row >= rows) {
@@ -53,8 +56,8 @@ __global__ void expert_attention_kernel(
     const int lane = threadIdx.x;
     const int per_lane = dim / kWarpSize;
     const int kv = head / (heads / kv_heads);
-    const float* key_base = keys + (long long)kv * key_count * dim;
-    const float* value_base = values + (long long)kv * key_count * dim;
+    const float* key_base = keys + kv * head_stride;
+    const float* value_base = values + kv * head_stride;
     const bool* row_mask = mask + (long long)row * key_count;
 
     float q[kMaxDimPerLane];
@@ -73,7 +76,7 @@ __global__ void expert_attention_kernel(
         for (int i = 0; i < per_lane; ++i) {
             const int index = lane + i * kWarpSize;
             for (int t = 0; t < active; ++t) {
-                dots[t] = __fmaf_rn(q[i], key_base[(long long)(base + t) * dim + index],
+                dots[t] = __fmaf_rn(q[i], key_base[(base + t) * key_stride + index],
                                     dots[t]);
             }
         }
@@ -91,7 +94,7 @@ __global__ void expert_attention_kernel(
             const float weight = __expf(logit - next);
             maximum = next;
             total = __fmaf_rn(total, rescale, weight);
-            const float* v_row = value_base + (long long)(base + t) * dim;
+            const float* v_row = value_base + (base + t) * key_stride;
             for (int i = 0; i < per_lane; ++i) {
                 accumulator[i] = __fmaf_rn(accumulator[i], rescale,
                                            weight * v_row[lane + i * kWarpSize]);
@@ -111,7 +114,7 @@ __global__ void expert_attention_kernel(
 extern "C" int expert_attention_launch(
     const void* query, const void* keys, const void* values, const void* mask,
     void* target, int rows, int heads, int kv_heads, int key_count, int dim,
-    float scale, void* stream) {
+    long long head_stride, long long key_stride, float scale, void* stream) {
     if (dim % kWarpSize != 0 || dim / kWarpSize > kMaxDimPerLane) {
         return 1;
     }
@@ -120,6 +123,6 @@ extern "C" int expert_attention_launch(
     expert_attention_kernel<<<grid, block, 0, (cudaStream_t)stream>>>(
         (const float*)query, (const float*)keys, (const float*)values,
         (const bool*)mask, (__nv_bfloat16*)target,
-        rows, heads, kv_heads, key_count, dim, scale);
+        rows, heads, kv_heads, key_count, dim, head_stride, key_stride, scale);
     return (int)cudaPeekAtLastError();
 }

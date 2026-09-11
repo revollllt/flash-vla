@@ -515,7 +515,8 @@ class _State:
                  fused_attention: bool = False, specialized_prefix: bool = False,
                  pad_vision_ffn: bool = False, fused_vision_norm: bool = False,
                  fused_mlp: bool = False, fused_prefix_pointwise: bool = False,
-                 attention_kernel: bool = False, scratch=None) -> None:
+                 attention_kernel: bool = False, single_pass_softmax: bool = True,
+                 scratch=None) -> None:
         self.core = None
         self.loop = None
         self.specialized_loop = specialized_loop
@@ -527,6 +528,7 @@ class _State:
         self.fused_mlp = fused_mlp
         self.fused_prefix_pointwise = fused_prefix_pointwise
         self.attention_kernel = attention_kernel
+        self.single_pass_softmax = single_pass_softmax
         self.scratch = scratch
         self.prefix_pass = None
         self.vision_metadata = None
@@ -560,7 +562,8 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                   pack_expert_projections=False, grouped_attention=False,
                   specialized_loop=False, fused_rope=False, fused_attention=False,
                   specialized_prefix=False, pad_vision_ffn=False, fused_vision_norm=False,
-                  fused_mlp=False, fused_prefix_pointwise=False, attention_kernel=False):
+                  fused_mlp=False, fused_prefix_pointwise=False, attention_kernel=False,
+                  single_pass_softmax=True):
     state = _State(cache_rope_frequency, scratch.assets, linear_patch_embedding,
                    cache_rope_tables, precompute_time_modulation, fuse_norm,
                    pack_expert_projections=pack_expert_projections,
@@ -570,7 +573,8 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                    specialized_prefix=specialized_prefix, pad_vision_ffn=pad_vision_ffn,
                    fused_vision_norm=fused_vision_norm, fused_mlp=fused_mlp,
                    fused_prefix_pointwise=fused_prefix_pointwise,
-                   attention_kernel=attention_kernel, scratch=scratch)
+                   attention_kernel=attention_kernel,
+                   single_pass_softmax=single_pass_softmax, scratch=scratch)
 
     @torch.no_grad()
     def vision(pixel_values, out, layers, *weights):
@@ -607,7 +611,8 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                 state.prefix_pass = PrefixPass(core, layers=layers, scratch=scratch,
                                                device=vision.device,
                                                fused_pointwise=state.fused_prefix_pointwise,
-                                               attention_kernel=state.attention_kernel)
+                                               attention_kernel=state.attention_kernel,
+                                               single_pass_softmax=state.single_pass_softmax)
             state.prefix_pass.run(vision, image_masks, language_tokens, language_masks,
                                   prefix_masks, prefix_k, prefix_v)
             return
@@ -665,6 +670,7 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                     fused_attention=state.fused_attention,
                     fused_mlp=state.fused_mlp,
                     attention_kernel=state.attention_kernel,
+                    single_pass_softmax=state.single_pass_softmax,
                 )
         if state.loop is not None:
             state.loop.run(state_tensor, noise, prefix_masks, prefix_k, prefix_v,

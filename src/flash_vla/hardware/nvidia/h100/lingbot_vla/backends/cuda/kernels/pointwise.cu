@@ -92,53 +92,98 @@ __global__ void expert_rope_kernel(
     }
 }
 
-// One CTA per (head, query row). The row is 315 keys on this Target, so a
-// single 128-thread pass over it keeps the whole reduction in registers and
-// shared memory and never re-reads the score tensor from L2.
-__global__ void expert_softmax_kernel(
+// One CTA per (head, query row), for the scale, the mask select and the
+// softmax that torch issues as three kernels around a 1 MB score tensor.
+//
+// Two forms: `expert_softmax_streaming_kernel` writes the row back between each
+// of its three reductions, which is what the first version did;
+// `expert_softmax_kernel` holds the row in registers instead -- at 315 keys and
+// 128 threads that is three logits each -- so the score tensor is read once and
+// written once. Upstream's finite masked sentinel is kept in both, so a fully
+// masked row still produces its uniform distribution.
+constexpr int kLogitsPerThread = 4;        // keys <= kSoftmaxThreads * 4
+
+__device__ __forceinline__ float block_reduce_max(float value, float* shared) {
+    shared[threadIdx.x] = value;
+    __syncthreads();
+    for (int stride = kSoftmaxThreads >> 1; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            shared[threadIdx.x] = fmaxf(shared[threadIdx.x], shared[threadIdx.x + stride]);
+        }
+        __syncthreads();
+    }
+    const float result = shared[0];
+    __syncthreads();
+    return result;
+}
+
+__device__ __forceinline__ float block_reduce_sum(float value, float* shared) {
+    shared[threadIdx.x] = value;
+    __syncthreads();
+    for (int stride = kSoftmaxThreads >> 1; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            shared[threadIdx.x] += shared[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+    const float result = shared[0];
+    __syncthreads();
+    return result;
+}
+
+__global__ void expert_softmax_streaming_kernel(
     float* __restrict__ scores, const bool* __restrict__ mask,
     int keys, int q_rows, float scale) {
-    __shared__ float reduction[kSoftmaxThreads];
-    const int row = blockIdx.x;
-    const int query_row = row % q_rows;
-    float* line = scores + (long long)row * keys;
-    const bool* line_mask = mask + (long long)query_row * keys;
+    __shared__ float shared[kSoftmaxThreads];
+    float* line = scores + (long long)blockIdx.x * keys;
+    const bool* line_mask = mask + (long long)(blockIdx.x % q_rows) * keys;
 
     float best = kMaskedLogit;
-    for (int i = threadIdx.x; i < keys; i += blockDim.x) {
+    for (int i = threadIdx.x; i < keys; i += kSoftmaxThreads) {
         const float value = line_mask[i] ? line[i] * scale : kMaskedLogit;
         line[i] = value;
         best = fmaxf(best, value);
     }
-    reduction[threadIdx.x] = best;
-    __syncthreads();
-    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
-        if (threadIdx.x < stride) {
-            reduction[threadIdx.x] = fmaxf(reduction[threadIdx.x],
-                                           reduction[threadIdx.x + stride]);
-        }
-        __syncthreads();
-    }
-    const float maximum = reduction[0];
-    __syncthreads();
+    const float maximum = block_reduce_max(best, shared);
 
     float total = 0.0f;
-    for (int i = threadIdx.x; i < keys; i += blockDim.x) {
+    for (int i = threadIdx.x; i < keys; i += kSoftmaxThreads) {
         const float value = expf(line[i] - maximum);
         line[i] = value;
         total += value;
     }
-    reduction[threadIdx.x] = total;
-    __syncthreads();
-    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
-        if (threadIdx.x < stride) {
-            reduction[threadIdx.x] += reduction[threadIdx.x + stride];
-        }
-        __syncthreads();
-    }
-    const float total_sum = reduction[0];
-    for (int i = threadIdx.x; i < keys; i += blockDim.x) {
+    const float total_sum = block_reduce_sum(total, shared);
+    for (int i = threadIdx.x; i < keys; i += kSoftmaxThreads) {
         line[i] /= total_sum;
+    }
+}
+
+__global__ void expert_softmax_kernel(
+    float* __restrict__ scores, const bool* __restrict__ mask,
+    int keys, int q_rows, float scale) {
+    __shared__ float shared[kSoftmaxThreads];
+    float* line = scores + (long long)blockIdx.x * keys;
+    const bool* line_mask = mask + (long long)(blockIdx.x % q_rows) * keys;
+
+    float logits[kLogitsPerThread];
+    int held = 0;
+    float best = kMaskedLogit;
+    for (int i = threadIdx.x; i < keys; i += kSoftmaxThreads) {
+        const float value = line_mask[i] ? line[i] * scale : kMaskedLogit;
+        logits[held++] = value;
+        best = fmaxf(best, value);
+    }
+    const float maximum = block_reduce_max(best, shared);
+
+    float total = 0.0f;
+    for (int i = 0; i < held; ++i) {
+        logits[i] = expf(logits[i] - maximum);
+        total += logits[i];
+    }
+    const float total_sum = block_reduce_sum(total, shared);
+    held = 0;
+    for (int i = threadIdx.x; i < keys; i += kSoftmaxThreads) {
+        line[i] = logits[held++] / total_sum;
     }
 }
 
@@ -353,9 +398,18 @@ extern "C" int expert_rope_launch(
 
 extern "C" int expert_softmax_launch(
     void* scores, const void* mask, int heads, int q_rows, int keys, float scale,
-    void* stream) {
-    expert_softmax_kernel<<<heads * q_rows, kSoftmaxThreads, 0, (cudaStream_t)stream>>>(
-        (float*)scores, (const bool*)mask, keys, q_rows, scale);
+    int single_pass, void* stream) {
+    if (single_pass && keys > kSoftmaxThreads * kLogitsPerThread) {
+        return 1;
+    }
+    if (single_pass) {
+        expert_softmax_kernel<<<heads * q_rows, kSoftmaxThreads, 0, (cudaStream_t)stream>>>(
+            (float*)scores, (const bool*)mask, keys, q_rows, scale);
+    } else {
+        expert_softmax_streaming_kernel<<<heads * q_rows, kSoftmaxThreads, 0,
+                                          (cudaStream_t)stream>>>(
+            (float*)scores, (const bool*)mask, keys, q_rows, scale);
+    }
     return (int)cudaPeekAtLastError();
 }
 

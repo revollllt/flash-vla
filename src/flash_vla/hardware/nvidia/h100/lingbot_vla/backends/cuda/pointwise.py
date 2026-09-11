@@ -66,7 +66,7 @@ def library(verbose: bool = False):
             ctypes.c_void_p]
         lib.expert_rope_launch.restype = ctypes.c_int
         lib.expert_softmax_launch.argtypes = [ctypes.c_void_p] * 2 + [ctypes.c_int] * 3 + [
-            ctypes.c_float, ctypes.c_void_p]
+            ctypes.c_float, ctypes.c_int, ctypes.c_void_p]
         lib.expert_softmax_launch.restype = ctypes.c_int
         lib.expert_epilogue_launch.argtypes = [ctypes.c_void_p] * 2 + [ctypes.c_int] * 3 + [
             ctypes.c_void_p]
@@ -81,7 +81,7 @@ def library(verbose: bool = False):
             ctypes.c_float, ctypes.c_void_p]
         lib.rms_norm_add_launch.restype = ctypes.c_int
         lib.expert_attention_launch.argtypes = [ctypes.c_void_p] * 5 + [ctypes.c_int] * 5 + [
-            ctypes.c_float, ctypes.c_void_p]
+            ctypes.c_longlong] * 2 + [ctypes.c_float, ctypes.c_void_p]
         lib.expert_attention_launch.restype = ctypes.c_int
         lib.silu_multiply_launch.argtypes = [ctypes.c_void_p] * 2 + [ctypes.c_int] * 2 + [
             ctypes.c_void_p]
@@ -119,18 +119,21 @@ def rope_project(packed: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
         raise RuntimeError(f"expert_rope_launch failed: {code}")
 
 
-def masked_softmax(scores: torch.Tensor, mask: torch.Tensor, scale: float) -> None:
+def masked_softmax(scores: torch.Tensor, mask: torch.Tensor, scale: float,
+                   single_pass: bool = True) -> None:
     """Scale, apply `mask` and softmax `scores` in place along its last dimension.
 
     `scores` is `[heads, q_rows, keys]` float32 contiguous and `mask` is
     `[q_rows, keys]` bool; masked logits take upstream's finite sentinel before
-    the reduction. One launch, capture-safe.
+    the reduction. `single_pass` keeps the row in registers instead of writing
+    it back between the three reductions; it needs `keys <= 512`. One launch,
+    capture-safe.
     """
     lib = library()
     heads, q_rows, keys = scores.shape
     code = lib.expert_softmax_launch(
         ctypes.c_void_p(scores.data_ptr()), ctypes.c_void_p(mask.data_ptr()),
-        heads, q_rows, keys, ctypes.c_float(scale), _stream())
+        heads, q_rows, keys, ctypes.c_float(scale), int(single_pass), _stream())
     if code != 0:
         raise RuntimeError(f"expert_softmax_launch failed: {code}")
 
@@ -192,20 +195,22 @@ def fused_attention(query: torch.Tensor, keys: torch.Tensor, values: torch.Tenso
                     mask: torch.Tensor, target: torch.Tensor, scale: float) -> torch.Tensor:
     """Masked grouped-query attention over a resident cache, in one launch.
 
-    `query` is `[heads, rows, dim]` and `keys`/`values` are
-    `[kv_heads, key_count, dim]`, float32 and contiguous on CUDA; `mask` is
-    `[rows, key_count]` bool. `target` is `[rows, heads * dim]` bf16 and is
+    `query` is `[heads, rows, dim]` contiguous and `keys`/`values` are
+    `[kv_heads, key_count, dim]` float32 views sharing one head and key stride,
+    contiguous in their last axis; `mask` is `[rows, key_count]` bool. `target` is `[rows, heads * dim]` bf16 and is
     written in full, transposed and rounded for the output projection.
     Capture-safe.
     """
     lib = library()
     heads, rows, dim = query.shape
     kv_heads, key_count, _ = keys.shape
+    if keys.stride() != values.stride():
+        raise ValueError("the key and value caches must share one stride")
     code = lib.expert_attention_launch(
         ctypes.c_void_p(query.data_ptr()), ctypes.c_void_p(keys.data_ptr()),
         ctypes.c_void_p(values.data_ptr()), ctypes.c_void_p(mask.data_ptr()),
         ctypes.c_void_p(target.data_ptr()), rows, heads, kv_heads, key_count, dim,
-        ctypes.c_float(scale), _stream())
+        keys.stride(0), keys.stride(1), ctypes.c_float(scale), _stream())
     if code != 0:
         raise RuntimeError(f"expert_attention_launch failed: {code}")
     return target

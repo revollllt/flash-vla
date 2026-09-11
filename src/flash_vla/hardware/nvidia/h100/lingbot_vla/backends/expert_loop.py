@@ -83,7 +83,8 @@ class ExpertLoop:
     def __init__(self, core, *, layers: int, steps: int, conditions, time_step,
                  scratch, device, dtype, fused_rope: bool = False,
                  fused_attention: bool = False, fused_mlp: bool = False,
-                 attention_kernel: bool = False) -> None:
+                 attention_kernel: bool = False,
+                 single_pass_softmax: bool = True) -> None:
         self.core = core
         self.steps = steps
         self.depth = layers
@@ -93,6 +94,7 @@ class ExpertLoop:
         self.fused_attention = fused_attention
         self.fused_mlp = fused_mlp
         self.attention_kernel = attention_kernel
+        self.single_pass_softmax = single_pass_softmax
 
         expert = core.qwenvl_with_expert.qwen_expert.model
         self.layers = tuple(expert.layers[:layers])
@@ -218,7 +220,7 @@ class ExpertLoop:
         grouped = query.view(KV_HEADS, self.group * SUFFIX_LEN, HEAD_DIM)
         weights = torch.matmul(grouped, self.key_cache[index].transpose(-1, -2))
         self._kernels.masked_softmax(weights.view(heads, SUFFIX_LEN, _CACHE_LEN),
-                                     mask[0], _SCALE)
+                                     mask[0], _SCALE, self.single_pass_softmax)
         output = torch.matmul(weights, self.value_cache[index]).view(heads, SUFFIX_LEN, HEAD_DIM)
         self._kernels.attention_epilogue(output, self.attention_out)
         return self.attention_out[None]

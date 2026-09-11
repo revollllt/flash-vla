@@ -147,6 +147,12 @@ def check_fused_attention(device) -> bool:
     mask[:, 0] = True
     target = torch.zeros(rows, heads * dim, dtype=torch.bfloat16, device=device)
     pointwise.fused_attention(query, key, value, mask, target, SCALE)
+    # The backbone hands the kernel a transposed view of the graph's own cache,
+    # so the strided path is the one that actually ships.
+    strided_key = key.permute(1, 0, 2).contiguous().permute(1, 0, 2)
+    strided_value = value.permute(1, 0, 2).contiguous().permute(1, 0, 2)
+    strided = torch.zeros_like(target)
+    pointwise.fused_attention(query, strided_key, strided_value, mask, strided, SCALE)
     torch.cuda.synchronize()
 
     weights = torch.matmul(query.view(kv_heads, group * rows, dim),
@@ -155,7 +161,8 @@ def check_fused_attention(device) -> bool:
     probs = torch.nn.functional.softmax(weights, dim=-1)
     out = torch.matmul(probs.view(kv_heads, group * rows, keys), value)
     want = out.view(heads, rows, dim).permute(1, 0, 2).reshape(rows, -1).to(torch.bfloat16)
-    return _report("fused attention", target, want, tolerance=3.2e-2)
+    return (_report("fused attention", target, want, tolerance=3.2e-2)
+            & _report("fused attention strided", strided, want, tolerance=3.2e-2))
 
 
 def main() -> int:
