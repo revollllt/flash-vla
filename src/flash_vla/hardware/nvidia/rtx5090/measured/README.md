@@ -17,17 +17,20 @@ transfers to another architecture**, and nothing from the sm90 table transfers
 
 ## The state of this table
 
-**Bring-up only.** What is established is the *instruction set* and the *static
-limits* — both measured on the device, neither reused from a datasheet. What is
-not established is every performance number: no bandwidth, no latency, no
-throughput, no launch cost. `constants.py --validate` reports five GAPs here and
-that is the accurate picture, not an oversight.
+The instruction set, the static limits and the **`launch` unit** are measured.
+`tma`, `mma`, `atomic` and `coop` are not, and `constants.py --validate` reports
+four GAPs — that is the accurate picture, not an oversight.
 
-The consequence is worth stating plainly, because the temptation runs the other
-way: **the floor model has no denominator on this machine yet.** sm90's
-`[ld.bw.dev.dram]` — `t_us = 1.85 + MB/2.77` — is the most-cited constant in this
-repository, and it is an H100 fact. Using it here, or dividing by 1.792 TB/s and
-calling the result a floor, produces a number with no evidence behind it.
+**The floor model now has a denominator**: `[ld.bw.dev.dram]` is
+`t_us = 3.93 + MB/1.539` here, against sm90's `1.85 + MB/2.77`. Both terms are
+worse — fixed cost 2.12×, marginal rate 1.80× — while the marginal rate is 90%
+of this part's datasheet peak, so the memory system is efficient and the
+*overhead* is what moved. A launch costs 2.05 µs against sm90's 1.24 and, unlike
+sm90, does not rise with grid size: there is no ramp to amortise.
+
+Still true, and still the thing to guard: nothing else transfers. Quoting an
+sm90 `tma`, `mma`, `atomic` or `coop` constant here produces a number with no
+evidence behind it.
 
 ## Consulting
 
@@ -93,7 +96,6 @@ model profile still runs. See [ncu-metrics.md](ncu-metrics.md).
 
 | unit | blocked | next |
 |---|---|---|
-| `launch` | the floor model's fixed cost and marginal bandwidth | no probe in-repo; sm90's six constants came from absorbed job logs |
 | `tma` | ring depth, box size, CTA count for any copy pipeline | skill's `tma_ring` uses only surviving instructions; needs `arch_flags=["-gencode","arch=compute_120a,code=sm_120a"]` and a run |
 | `mma` | every tensor-core tile decision | needs a **new** probe: the skill's `mma_rate` is built on `wgmma` |
 | `atomic` | reduction layout | skill's `gmem_atomic` has no sm90-only construct; run it |

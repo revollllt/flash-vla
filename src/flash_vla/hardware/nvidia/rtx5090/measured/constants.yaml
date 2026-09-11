@@ -21,6 +21,7 @@ machine:
   dram_peak_tbs: 1.792
   l2_mb: 96
   clocks_pinned: false
+  noise_floor_pct: 6
   caution: 'Consumer Blackwell, not datacenter Blackwell: no wgmma and no tcgen05, so there is no asynchronous
     MMA on this part at all and every tensor-core mainloop is warp-level mma.sync. Shared memory per
     block is 99 KB against sm90''s 227, and max warps per SM is 48 against 64, so an sm90 tile budget
@@ -49,11 +50,13 @@ units:
   covers: 'Copy-engine delivery rate. Instructions all present; every sm90 number is void: GDDR7 at 1.792
     TB/s against HBM3 at 3.35, 96 MB of L2 against 50, 170 SMs against 132.'
 - id: launch
-  status: unmeasured
-  probe: none yet
-  reference: none yet
-  covers: 'Per-launch grid ramp and cold streaming bandwidth. Blocks the floor model: sm90''s `1.85 +
-    MB/2.77` is this repository''s most-cited constant and is an H100 fact.'
+  status: measured
+  probe: lab/sm120/launch_unit.cu
+  reference: unit-launch.md
+  covers: 'What a launch costs before it moves a byte, and what a cold read costs per byte. Launch-to-launch
+    interval against grid size (batched so per-launch event overhead is out of it), the cold-read cost
+    model t = a + MB/b with L2 evicted before every launch, and the CTA count at which a cold read stops
+    improving.'
 - id: atomic
   status: unmeasured
   probe: skill probes/units/gmem_atomic -- no sm90-only construct, not yet run here
@@ -112,3 +115,36 @@ constants:
     slower, it makes `setmaxnreg` fail to assemble; and the family target `sm_120f` is identical to `sm_120a`
     on all 51 probed instructions while covering the whole GB20x family rather than one die, so the
     architecture-conditional target buys nothing here.'
+- tag: launch.lat.dev.ramp
+  unit: launch
+  value: 2.05
+  units: us per back-to-back launch of an empty kernel, 256 threads, measured as a 200-launch batch so
+    per-launch event overhead is excluded; 1.96 at 1 CTA and 2.05 from 170 to 1024, i.e. FLAT in grid
+    size. Bracketing a single launch with two events instead reads 2.34 (1.14x), which is the event cost,
+    not the launch cost
+  short: 2.05 us/launch, flat in grid
+  rule: 'Launch COUNT is a first-class term in every fusion decision here, and a heavier one than on sm90:
+    2.05 us against that machine''s 1.24, a 1.65x penalty per launch. Unlike sm90 there is no grid ramp
+    to amortise -- one CTA costs the same as a thousand -- so a small launch is pure overhead.'
+- tag: ld.bw.dev.dram
+  unit: launch
+  value: 1.539
+  units: MB per us marginal (1.613 TB/s, 90% of the 1.792 TB/s datasheet peak) behind 3.93 us of fixed
+    cost, fitted over 16-256 MB where the curve is linear, L2 flushed with twice its 96 MB before every
+    launch, 680 CTAs x 256 threads. Fitting all 0.5-256 MB instead gives 3.45 + MB/1.532, understating
+    the marginal rate because the small sizes are fixed-cost dominated
+  short: 3.93us + MB/1.539
+  fixed_us: 3.93
+  rule: 'Replace bytes / 1.792 TB/s with 3.93 + MB/1.539 in every floor on this machine, per launch. Against
+    sm90''s 1.85 + MB/2.77 the fixed cost is 2.1x worse and the marginal rate 1.80x worse, so a phase
+    that was launch-bound on H100 is more launch-bound here, not less.'
+- tag: ld.ctas.dev.knee
+  unit: launch
+  value: 340
+  units: CTAs at which a cold 16 MB read reaches its best time (14.34 us); exactly 2x the 170 SMs, and
+    flat from there to 2720
+  short: knee @ 2x SM count
+  derate_at_1x_sm: 1.55
+  rule: 'Size a cold-streaming grid at 2x the SM count, not 1x: 170 CTAs cost 1.55x what 340 do for identical
+    bytes, 85 cost 2.00x and 42 cost 3.29x. A grid sized to an output tiling alone will usually land below
+    the knee.'
