@@ -1,0 +1,5 @@
+{
+  "lingbot_vision": "fused-mlp",
+  "lingbot_prefix": "fused-mlp",
+  "lingbot_action": "fused-mlp"
+}

@@ -190,7 +190,90 @@ __global__ void rms_norm_kernel(
     }
 }
 
+// Upstream's `AdaRMSNorm` preceded by the residual add that always feeds it.
+// The two are separate launches in torch, and the sum is needed again as the
+// next residual, so this writes both: `total` for the residual chain and
+// `target` for the projection that consumes the normalized value.
+//
+// Rounding order follows torch's: bf16 elementwise arithmetic is evaluated in
+// float32 and rounded once per operation, and the FiLM modulation stays in
+// float32 until the single store.
+__global__ void ada_rms_add_kernel(
+    const __nv_bfloat16* __restrict__ source, const __nv_bfloat16* __restrict__ residual,
+    const __nv_bfloat16* __restrict__ weight, const __nv_bfloat16* __restrict__ gamma,
+    const __nv_bfloat16* __restrict__ beta,
+    __nv_bfloat16* __restrict__ total, __nv_bfloat16* __restrict__ target,
+    int width, float epsilon) {
+    __shared__ float reduction[kNormThreads];
+    const long long base = (long long)blockIdx.x * width;
+
+    float squares = 0.0f;
+    for (int i = threadIdx.x; i < width; i += blockDim.x) {
+        const __nv_bfloat16 sum = __float2bfloat16(
+            __bfloat162float(source[base + i]) + __bfloat162float(residual[base + i]));
+        total[base + i] = sum;
+        const float value = __bfloat162float(sum);
+        squares = __fadd_rn(squares, __fmul_rn(value, value));
+    }
+    reduction[threadIdx.x] = squares;
+    __syncthreads();
+    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            reduction[threadIdx.x] += reduction[threadIdx.x + stride];
+        }
+        __syncthreads();
+    }
+    const float scale = rsqrtf(reduction[0] / (float)width + epsilon);
+    for (int i = threadIdx.x; i < width; i += blockDim.x) {
+        const float normalized =
+            __bfloat162float(total[base + i]) * scale * __bfloat162float(weight[i]);
+        target[base + i] = __float2bfloat16(
+            (1.0f + __bfloat162float(gamma[i])) * normalized + __bfloat162float(beta[i]));
+    }
+}
+
+// `silu(gate) * up` over one packed gated projection, `[rows, 2 * width]` in
+// and `[rows, width]` out. torch spends two launches and one extra round trip
+// of the hidden tile on it.
+__global__ void silu_multiply_kernel(
+    const __nv_bfloat16* __restrict__ source, __nv_bfloat16* __restrict__ target,
+    int width, int total) {
+    const int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index >= total) {
+        return;
+    }
+    const int row = index / width;
+    const int lane = index - row * width;
+    const long long base = (long long)row * 2 * width;
+    const float gate = __bfloat162float(source[base + lane]);
+    const float activated = __bfloat162float(
+        __float2bfloat16(gate / (1.0f + expf(-gate))));
+    target[index] = __float2bfloat16(
+        activated * __bfloat162float(source[base + width + lane]));
+}
+
 }  // namespace
+
+extern "C" int ada_rms_add_launch(
+    const void* source, const void* residual, const void* weight, const void* gamma,
+    const void* beta, void* total, void* target, int rows, int width, float epsilon,
+    void* stream) {
+    ada_rms_add_kernel<<<rows, kNormThreads, 0, (cudaStream_t)stream>>>(
+        (const __nv_bfloat16*)source, (const __nv_bfloat16*)residual,
+        (const __nv_bfloat16*)weight, (const __nv_bfloat16*)gamma,
+        (const __nv_bfloat16*)beta, (__nv_bfloat16*)total, (__nv_bfloat16*)target,
+        width, epsilon);
+    return (int)cudaPeekAtLastError();
+}
+
+extern "C" int silu_multiply_launch(
+    const void* source, void* target, int rows, int width, void* stream) {
+    const int total = rows * width;
+    const int blocks = (total + kEpilogueThreads - 1) / kEpilogueThreads;
+    silu_multiply_kernel<<<blocks, kEpilogueThreads, 0, (cudaStream_t)stream>>>(
+        (const __nv_bfloat16*)source, (__nv_bfloat16*)target, width, total);
+    return (int)cudaPeekAtLastError();
+}
 
 extern "C" int rms_norm_launch(
     const void* source, const void* weight, void* target,

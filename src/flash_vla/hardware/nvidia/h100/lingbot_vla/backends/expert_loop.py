@@ -82,7 +82,7 @@ class ExpertLoop:
 
     def __init__(self, core, *, layers: int, steps: int, conditions, time_step,
                  scratch, device, dtype, fused_rope: bool = False,
-                 fused_attention: bool = False) -> None:
+                 fused_attention: bool = False, fused_mlp: bool = False) -> None:
         self.core = core
         self.steps = steps
         self.depth = layers
@@ -90,6 +90,7 @@ class ExpertLoop:
         self.time_step = time_step
         self.fused_rope = fused_rope or fused_attention
         self.fused_attention = fused_attention
+        self.fused_mlp = fused_mlp
 
         expert = core.qwenvl_with_expert.qwen_expert.model
         self.layers = tuple(expert.layers[:layers])
@@ -108,6 +109,19 @@ class ExpertLoop:
         self.attention_out = scratch("lingbot_expert_attention",
                                      (SUFFIX_LEN, query_heads * HEAD_DIM),
                                      torch.bfloat16, device)
+        if fused_mlp:
+            width = self.layers[0].self_attn.o_proj.out_features
+            for role in ("hidden", "residual", "normed"):
+                setattr(self, role, scratch(f"lingbot_expert_{role}", (SUFFIX_LEN, width),
+                                            torch.bfloat16, device))
+            self.activation = scratch("lingbot_expert_activation",
+                                      (SUFFIX_LEN, self.layers[0].gate_up_widths[0]),
+                                      torch.bfloat16, device)
+            # The first AdaRMS of a step has no residual yet; a zero one keeps
+            # it on the same kernel, since bf16(x + 0) is exactly x.
+            self.no_residual = scratch("lingbot_expert_zero", (SUFFIX_LEN, width),
+                                       torch.bfloat16, device)
+            self.no_residual.zero_()
 
         self.suffix_pad = torch.ones((1, SUFFIX_LEN), dtype=torch.bool, device=device)
         # Upstream's suffix mask_ar: the state token is its own block and the
@@ -215,6 +229,36 @@ class ExpertLoop:
         out += layer.mlp.down_proj(torch.nn.functional.silu(gate_values) * up_values)
         return out
 
+    def _modulate(self, norm, source, residual, condition, total):
+        """`total = source + residual`, normalized into `self.normed`, in one launch."""
+        self._kernels.ada_rms_add(source.view(SUFFIX_LEN, -1), residual, norm.weight,
+                                  norm.gamma(condition)[0], norm.beta(condition)[0],
+                                  total, self.normed, norm.variance_epsilon)
+
+    def _stack(self, hidden, condition, mask, cos, sin):
+        """One denoise step through the whole stack, on the fused pointwise kernels.
+
+        Each AdaRMS absorbs the residual add that precedes it and publishes the
+        sum the next residual needs, so a layer issues twelve launches: four
+        GEMMs, the five attention-block kernels, two modulations and the gated
+        activation.
+        """
+        self._modulate(self.layers[0].input_layernorm, hidden, self.no_residual,
+                       condition, self.hidden)
+        for index, layer in enumerate(self.layers):
+            query = self._project(layer, self.normed[None], index, cos, sin)
+            attention = self._attention(query, index, mask)
+            projected = layer.self_attn.o_proj(attention)
+            self._modulate(layer.post_attention_layernorm, projected, self.hidden,
+                           condition, self.residual)
+            gate_up = torch.nn.functional.linear(self.normed, layer.packed_gate_up_weight)
+            down = layer.mlp.down_proj(self._kernels.silu_multiply(gate_up, self.activation))
+            if index + 1 == self.depth:
+                return (down.view(SUFFIX_LEN, -1) + self.residual)[None]
+            self._modulate(self.layers[index + 1].input_layernorm, down, self.residual,
+                           condition, self.hidden)
+        raise AssertionError("the expert stack always returns from its last layer")
+
     def _prime(self, prefix_k, prefix_v):
         """Copy this forward's prefix cache into the resident buffers, once."""
         if self.fused_attention:
@@ -240,8 +284,11 @@ class ExpertLoop:
             self.time_step[0] = step
             condition = self.conditions[step]
             hidden = self._embed(state_emb, current, condition)
-            for index, layer in enumerate(self.layers):
-                hidden = self._layer(layer, hidden, condition, index, mask, cos, sin)
+            if self.fused_mlp:
+                hidden = self._stack(hidden, condition, mask, cos, sin)
+            else:
+                for index, layer in enumerate(self.layers):
+                    hidden = self._layer(layer, hidden, condition, index, mask, cos, sin)
             velocity = self.core.action_out_proj(self.final_norm(hidden)[:, -CHUNK:])
             if step == 0:
                 velocity_step_0.copy_(velocity)

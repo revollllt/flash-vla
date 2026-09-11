@@ -92,10 +92,56 @@ def check_epilogue(device) -> bool:
     return _report("attention epilogue", target, want)
 
 
+def check_rms_norm(device) -> bool:
+    rows, width = 768, 1280
+    source = torch.randn(rows, width, dtype=torch.bfloat16, device=device)
+    weight = torch.randn(width, dtype=torch.bfloat16, device=device)
+    target = torch.empty_like(source)
+    pointwise.rms_norm(source, weight, target, 1e-6)
+    torch.cuda.synchronize()
+    values = source.float()
+    values = values * torch.rsqrt(values.pow(2).mean(-1, keepdim=True) + 1e-6)
+    want = weight * values.to(torch.bfloat16)
+    return _report("rms norm", target, want, tolerance=8e-3)
+
+
+def check_ada_rms_add(device) -> bool:
+    rows, width = SUFFIX_LEN, 768
+    source = torch.randn(rows, width, dtype=torch.bfloat16, device=device)
+    residual = torch.randn(rows, width, dtype=torch.bfloat16, device=device)
+    weight = torch.randn(width, dtype=torch.bfloat16, device=device)
+    gamma = torch.randn(width, dtype=torch.bfloat16, device=device) * 0.1
+    beta = torch.randn(width, dtype=torch.bfloat16, device=device) * 0.1
+    total = torch.empty_like(source)
+    target = torch.empty_like(source)
+    pointwise.ada_rms_add(source, residual, weight, gamma, beta, total, target, 1e-6)
+    torch.cuda.synchronize()
+
+    want_total = source + residual
+    values = want_total.float()
+    values = values * torch.rsqrt(values.pow(2).mean(-1, keepdim=True) + 1e-6)
+    values = weight * values
+    want = ((1 + gamma.float()) * values + beta.float()).to(torch.bfloat16)
+    return (_report("ada rms add total", total, want_total)
+            & _report("ada rms add norm", target, want, tolerance=8e-3))
+
+
+def check_silu_multiply(device) -> bool:
+    rows, width = SUFFIX_LEN, 2752
+    source = torch.randn(rows, 2 * width, dtype=torch.bfloat16, device=device)
+    target = torch.empty(rows, width, dtype=torch.bfloat16, device=device)
+    pointwise.silu_multiply(source, target)
+    torch.cuda.synchronize()
+    gate, up = source.split(width, dim=-1)
+    want = torch.nn.functional.silu(gate) * up
+    return _report("silu multiply", target, want, tolerance=8e-3)
+
+
 def main() -> int:
     torch.manual_seed(0)
     device = "cuda"
-    ok = check_rope(device) & check_softmax(device) & check_epilogue(device)
+    ok = (check_rope(device) & check_softmax(device) & check_epilogue(device)
+          & check_rms_norm(device) & check_ada_rms_add(device) & check_silu_multiply(device))
     print("PASS" if ok else "FAIL")
     return 0 if ok else 1
 

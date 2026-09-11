@@ -499,7 +499,7 @@ class _State:
                  specialized_loop: bool = False, fused_rope: bool = False,
                  fused_attention: bool = False, specialized_prefix: bool = False,
                  pad_vision_ffn: bool = False, fused_vision_norm: bool = False,
-                 scratch=None) -> None:
+                 fused_mlp: bool = False, scratch=None) -> None:
         self.core = None
         self.loop = None
         self.specialized_loop = specialized_loop
@@ -508,6 +508,7 @@ class _State:
         self.specialized_prefix = specialized_prefix
         self.pad_vision_ffn = pad_vision_ffn
         self.fused_vision_norm = fused_vision_norm
+        self.fused_mlp = fused_mlp
         self.scratch = scratch
         self.prefix_pass = None
         self.vision_metadata = None
@@ -540,7 +541,8 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                   precompute_time_modulation=False, fuse_norm=False,
                   pack_expert_projections=False, grouped_attention=False,
                   specialized_loop=False, fused_rope=False, fused_attention=False,
-                  specialized_prefix=False, pad_vision_ffn=False, fused_vision_norm=False):
+                  specialized_prefix=False, pad_vision_ffn=False, fused_vision_norm=False,
+                  fused_mlp=False):
     state = _State(cache_rope_frequency, scratch.assets, linear_patch_embedding,
                    cache_rope_tables, precompute_time_modulation, fuse_norm,
                    pack_expert_projections=pack_expert_projections,
@@ -548,7 +550,7 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                    specialized_loop=specialized_loop, fused_rope=fused_rope,
                    fused_attention=fused_attention,
                    specialized_prefix=specialized_prefix, pad_vision_ffn=pad_vision_ffn,
-                   fused_vision_norm=fused_vision_norm, scratch=scratch)
+                   fused_vision_norm=fused_vision_norm, fused_mlp=fused_mlp, scratch=scratch)
 
     @torch.no_grad()
     def vision(pixel_values, out, layers, *weights):
@@ -639,6 +641,7 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                     device=noise.device, dtype=noise.dtype,
                     fused_rope=state.fused_rope,
                     fused_attention=state.fused_attention,
+                    fused_mlp=state.fused_mlp,
                 )
         if state.loop is not None:
             state.loop.run(state_tensor, noise, prefix_masks, prefix_k, prefix_v,

@@ -72,6 +72,12 @@ def library(verbose: bool = False):
         lib.rms_norm_launch.argtypes = [ctypes.c_void_p] * 3 + [ctypes.c_int] * 2 + [
             ctypes.c_float, ctypes.c_void_p]
         lib.rms_norm_launch.restype = ctypes.c_int
+        lib.ada_rms_add_launch.argtypes = [ctypes.c_void_p] * 7 + [ctypes.c_int] * 2 + [
+            ctypes.c_float, ctypes.c_void_p]
+        lib.ada_rms_add_launch.restype = ctypes.c_int
+        lib.silu_multiply_launch.argtypes = [ctypes.c_void_p] * 2 + [ctypes.c_int] * 2 + [
+            ctypes.c_void_p]
+        lib.silu_multiply_launch.restype = ctypes.c_int
         _LIB = lib
     return _LIB
 
@@ -154,5 +160,41 @@ def rms_norm(source: torch.Tensor, weight: torch.Tensor, target: torch.Tensor,
     return target
 
 
-__all__ = ["attention_epilogue", "build", "library", "masked_softmax", "rms_norm",
-           "rope_project"]
+def ada_rms_add(source: torch.Tensor, residual: torch.Tensor, weight: torch.Tensor,
+                gamma: torch.Tensor, beta: torch.Tensor, total: torch.Tensor,
+                target: torch.Tensor, epsilon: float) -> None:
+    """`total = source + residual`, `target = AdaRMS(total)`, in one launch.
+
+    All tensors are bf16 on CUDA: `source`, `residual`, `total` and `target` are
+    `[rows, width]` contiguous, and `weight`, `gamma` and `beta` are `[width]`.
+    `total` and `target` are written in full. Capture-safe.
+    """
+    lib = library()
+    rows, width = source.shape
+    code = lib.ada_rms_add_launch(
+        ctypes.c_void_p(source.data_ptr()), ctypes.c_void_p(residual.data_ptr()),
+        ctypes.c_void_p(weight.data_ptr()), ctypes.c_void_p(gamma.data_ptr()),
+        ctypes.c_void_p(beta.data_ptr()), ctypes.c_void_p(total.data_ptr()),
+        ctypes.c_void_p(target.data_ptr()), rows, width, ctypes.c_float(epsilon), _stream())
+    if code != 0:
+        raise RuntimeError(f"ada_rms_add_launch failed: {code}")
+
+
+def silu_multiply(source: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """`silu(gate) * up` over a packed `[rows, 2 * width]` bf16 gated projection.
+
+    `target` is `[rows, width]` bf16 contiguous on CUDA and is written in full.
+    One launch, capture-safe.
+    """
+    lib = library()
+    rows, width = target.shape
+    code = lib.silu_multiply_launch(
+        ctypes.c_void_p(source.data_ptr()), ctypes.c_void_p(target.data_ptr()),
+        rows, width, _stream())
+    if code != 0:
+        raise RuntimeError(f"silu_multiply_launch failed: {code}")
+    return target
+
+
+__all__ = ["ada_rms_add", "attention_epilogue", "build", "library", "masked_softmax",
+           "rms_norm", "rope_project", "silu_multiply"]
