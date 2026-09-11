@@ -6,3 +6,5 @@ iteration,change,latency_ms,decision,report,revision
 4,Head-major cache with fused CUDA softmax and attention epilogue,37.300,keep,measurements/004.json,ef798e0+fused-attention
 5,Target-owned backbone prefix pass on the same kernels,34.983,keep,measurements/005.json,ef798e0+fused-prefix
 6,Width-aligned packed vision feed-forward,31.739,keep,measurements/006-aligned-vision.json,ef798e0+aligned-vision
+7,Single-launch vision RMSNorm,32.339,keep,measurements/007-vision-norm.json,ef798e0+vision-norm
+8,AdaRMS absorbing its residual add and a fused gated activation,29.799,keep,measurements/008-fused-mlp.json,ef798e0+fused-mlp
