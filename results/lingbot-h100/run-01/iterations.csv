@@ -12,4 +12,4 @@ iteration,change,latency_ms,decision,report,revision
 10,Fused flash-form attention kernel: +173.378 ms (job 614399),,revert,measurements/010-attention-kernel.json,c11938a
 11,Single-pass masked softmax: -0.004 ms (job 614448),,uncertain,measurements/011-single-pass-softmax.json,3e1f1ab
 12,Expert output projections on the hand-written skinny GEMM,27.834,keep,measurements/012-skinny-projections.json,28ed8ca
-13,Expert attention on the split-key CUDA kernel,25.501,keep,measurements/013-split-attention.json,HEAD
+13,Expert attention on the split-key CUDA kernel,25.501,keep,measurements/013-split-attention.json,02b231f

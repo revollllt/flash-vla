@@ -2,4 +2,4 @@ iteration,change,latency_ms,decision,report,revision
 0,Carried over from run-01 (split-attention),26.601,start,../run-01/measurements/012-shipped-final.json,7b23564
 1,Paired gated activation and shuffle-reduced norm kernels,25.369,keep,measurements/ladder.json,dbbd011
 2,One-launch vision q/k/v rope replacing ~11 pointwise launches,24.396,keep,measurements/ladder.json,dbbd011
-3,Gated activation in the GEMM epilogue: -0.034 ms (job 615732),,uncertain,measurements/103-fused-gate.json,HEAD
+3,Gated activation in the GEMM epilogue: -0.034 ms (job 615732),,uncertain,measurements/103-fused-gate.json,bb747bb

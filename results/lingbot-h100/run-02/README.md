@@ -20,6 +20,12 @@ driver.
 | 0 | run-01 final (`split-attention`) | 26.601 | |
 | 1 | paired gated activation, shuffle-reduced norms | 25.369 | **−1.232** |
 | 2 | one-launch vision q/k/v rope | 24.396 | **−0.973** |
+| 3 | gated activation in the GEMM epilogue | — | −0.034, not deployed |
+
+The retained version's own three-leg measurement is
+`measurements/012-shipped-final.json`: **23.497 / 23.497 / 23.492 ms on driver
+610** (job 615760). The table above is driver 570 throughout, because that is
+where iteration 0's comparable measurement sits; the two never mix within a row.
 
 Iteration 2 is paired in one job (615599). Iteration 1 is not plan-selectable —
 it changes kernels the deployed route already uses — so it is measured as the
