@@ -57,10 +57,23 @@ class Pi0RTX5090(Pi0):
     #: Each measured paired against the version before it, in one job:
     #:   the two norm-fed sites   46.828 -> 40.240 ms   -6.588
     #:   the attention glue       40.177 -> 37.040      -3.137
+    #:   the backbone's two norms  37.030 -> 34.423      -2.607
+    #:   vision LayerNorm + addmm  34.324 -> 32.753      -1.571
     plan: Mapping[str, str] = {
         "action_expert_norm_qkv_rope": "cuda",
         "action_expert_norm_gated_ffn": "cuda",
         "action_expert_attention": "cuda",
+        "action_expert_out_proj_residual": "cuda",
+        "action_expert_ffn_down_residual": "cuda",
+        "llm_backbone_norm_qkv_rope": "cuda",
+        "llm_backbone_norm_gated_ffn": "cuda",
+        "llm_backbone_out_proj_residual": "cuda",
+        "llm_backbone_ffn_down_residual": "cuda",
+        "llm_backbone_projector": "cuda",
+        "vision_encoder_norm_qkv": "cuda",
+        "vision_encoder_norm_ffn_up": "cuda",
+        "vision_encoder_out_proj_residual": "cuda",
+        "vision_encoder_ffn_down_residual": "cuda",
     }
 
     #: The numerical reference stays all-torch, so `eval.correctness` compares

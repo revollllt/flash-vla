@@ -33,7 +33,23 @@ NAMES = frozenset({
     "action_expert_norm_qkv_rope",
     "action_expert_norm_gated_ffn",
     "action_expert_attention",
+    "llm_backbone_norm_qkv_rope",
+    "llm_backbone_norm_gated_ffn",
+    "action_expert_out_proj_residual",
+    "action_expert_ffn_down_residual",
+    "llm_backbone_out_proj_residual",
+    "llm_backbone_ffn_down_residual",
+    "llm_backbone_projector",
+    "vision_encoder_norm_qkv",
+    "vision_encoder_norm_ffn_up",
+    "vision_encoder_out_proj_residual",
+    "vision_encoder_ffn_down_residual",
 })
+
+#: Pi0's vision tower: 3 views x 256 patches, 1152 wide, 4304 feed-forward.
+VISION_TOKENS = 256
+VISION_DIM = 1152
+VISION_FFN = 4304
 
 
 def action_expert_norm_qkv_rope(x, scale, weight_qkv, bias, rope, Q, K, V,
@@ -108,13 +124,171 @@ def action_expert_attention(Q, K, V, mask, out, prefix_len, *, scratch):
 #: the state token's.
 DECODER_HEADS = 8
 
+def llm_backbone_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, x_norm, *, scratch):
+    """RMSNorm, QKV projection, rotate and scatter -- the backbone's three launches.
+
+    Same three kernels as the expert's form on a different shape: 768 prefix
+    rows of 2048 rather than 51 of 1024. The backbone normalises x BEFORE the
+    GEMM where the expert folds a scale into it; both match upstream and are not
+    interchangeable, which is why this is a separate wrapper rather than a
+    shared one.
+
+    `x` is (tokens, dim) bf16, `x_norm` a caller buffer at least that size, `Q`
+    is (tokens*heads, head_dim), `K` and `V` are (tokens, head_dim). Written in
+    place; safe during CUDA-graph capture.
+    """
+    m = x.shape[0]
+    n = weight_qkv.shape[1]
+    normed = x_norm[:m]
+    packed = scratch("backbone_qkv", (m, n), x.dtype, x.device)
+    cu.rms_norm(x, normed)
+    torch.mm(normed, weight_qkv, out=packed)
+    cu.rope_scatter(packed, rope, Q, K, V)
+
+
+def llm_backbone_norm_gated_ffn(x, gate_w, up_w, out, x_norm, *, scratch):
+    """RMSNorm then the gated feed-forward -- four launches.
+
+    `x` is (tokens, dim) bf16, the weights (dim, ffn), `out` at least
+    (tokens, ffn) and `x_norm` at least (tokens, dim). Written in place; safe
+    during CUDA-graph capture.
+    """
+    m, kdim = x.shape
+    ffn = gate_w.shape[1]
+    normed = x_norm[:m]
+    gate = scratch("backbone_gate", (m, ffn), x.dtype, x.device)
+    cu.rms_norm(x, normed)
+    torch.mm(normed, gate_w, out=gate)
+    torch.mm(normed, up_w, out=out[:m])
+    cu.gelu_mul(gate, out[:m], out[:m])
+    return out
+
+
+# --------------------------------------------------------------------------
+# Residual projections: fold the add into the GEMM's beta.
+#
+# `out += x @ w` is two kernels in torch and one cuBLAS call at beta = 1. No
+# hand-written kernel is involved and the arithmetic is the same sum in a
+# different order, so these ride along with the rest of the route rather than
+# being their own iteration.
+# --------------------------------------------------------------------------
+def action_expert_out_proj_residual(x, weight, gate, out):
+    """out += x @ weight, in place. `gate` is Pi0.5's and is None here."""
+    assert gate is None, "the gate is Pi0.5's"
+    flat = out.view(x.shape[0], -1)
+    torch.addmm(flat, x, weight, beta=1, alpha=1, out=flat)
+    return out
+
+
+def action_expert_ffn_down_residual(x, weight, gate, out):
+    """out += x @ weight, in place. `gate` is Pi0.5's and is None here."""
+    assert gate is None, "the gate is Pi0.5's"
+    flat = out.view(x.shape[0], -1)
+    torch.addmm(flat, x, weight, beta=1, alpha=1, out=flat)
+    return out
+
+
+def llm_backbone_out_proj_residual(x, weight, out):
+    """out += attn @ weight, in place."""
+    flat = out.view(x.shape[0], -1)
+    torch.addmm(flat, x, weight, beta=1, alpha=1, out=flat)
+    return out
+
+
+def llm_backbone_ffn_down_residual(x, weight, out):
+    """out += hidden @ weight, in place."""
+    flat = out.view(x.shape[0], -1)
+    torch.addmm(flat, x, weight, beta=1, alpha=1, out=flat)
+    return out
+
+
+# --------------------------------------------------------------------------
+# Vision tower and projector: LayerNorm in one kernel, bias folded into the GEMM.
+# --------------------------------------------------------------------------
+def llm_backbone_projector(x, norm_w, norm_b, proj_w, proj_b, out, x_norm):
+    """LayerNorm the vision output, then project into encoder width.
+
+    `x` and `x_norm` are (views, tokens, vision_dim) bf16, `out` at least
+    (views*tokens, encoder_dim). Written in place; safe during graph capture.
+    """
+    m = x.shape[0] * VISION_TOKENS
+    x2, n2 = x.view(m, VISION_DIM), x_norm.view(m, VISION_DIM)
+    cu.layer_norm(x2, norm_w, norm_b, n2)
+    torch.addmm(proj_b, n2, proj_w, beta=1, alpha=1, out=out[:m])
+    return out
+
+
+def vision_encoder_norm_qkv(x, norm_w, norm_b, qkv_w, qkv_b, out, *, scratch):
+    """LayerNorm then the packed QKV projection -- two launches."""
+    m = x.shape[0] * VISION_TOKENS
+    x2 = x.view(m, VISION_DIM)
+    normed = scratch("vision_norm", (m, VISION_DIM), x.dtype, x.device)
+    cu.layer_norm(x2, norm_w, norm_b, normed)
+    torch.addmm(qkv_b, normed, qkv_w, beta=1, alpha=1,
+                out=out.view(m, qkv_w.shape[1]))
+    return out
+
+
+def vision_encoder_norm_ffn_up(x, norm_w, norm_b, weight, bias, out, *, scratch):
+    """LayerNorm then the GELU feed-forward expansion -- three launches."""
+    m = x.shape[0] * VISION_TOKENS
+    x2 = x.view(m, VISION_DIM)
+    normed = scratch("vision_norm", (m, VISION_DIM), x.dtype, x.device)
+    cu.layer_norm(x2, norm_w, norm_b, normed)
+    flat = out.view(m, VISION_FFN)
+    torch.addmm(bias, normed, weight, beta=1, alpha=1, out=flat)
+    cu.gelu_(flat)
+    return out
+
+
+def _proj_bias_residual(x, weight, bias, res, out):
+    """out = x @ weight + bias + res -- two launches, alias-safe.
+
+    `res` MAY BE `out`: the graph binds the residual to the buffer being written
+    on these call sites. So the residual goes in as the GEMM's beta term rather
+    than being added afterwards -- adding it afterwards reads a `res` the GEMM
+    has already overwritten, which measured cos 0.962 against the torch form.
+    The bias is added after, which is safe because by then nothing needs `res`.
+    """
+    flat = out.view(-1, weight.shape[1])
+    torch.addmm(res.view_as(flat), x.view(-1, weight.shape[0]), weight,
+                beta=1, alpha=1, out=flat)
+    flat.add_(bias)
+    return out
+
+
+def vision_encoder_out_proj_residual(x, weight, bias, res, out):
+    """out = attn @ weight + bias + res -- two launches."""
+    return _proj_bias_residual(x, weight, bias, res, out)
+
+
+def vision_encoder_ffn_down_residual(x, weight, bias, res, out):
+    """out = hidden @ weight + bias + res -- two launches."""
+    return _proj_bias_residual(x, weight, bias, res, out)
+
+
 ALL_WRAPPERS = {
     "action_expert_norm_qkv_rope": action_expert_norm_qkv_rope,
+    "action_expert_out_proj_residual": action_expert_out_proj_residual,
+    "action_expert_ffn_down_residual": action_expert_ffn_down_residual,
+    "llm_backbone_out_proj_residual": llm_backbone_out_proj_residual,
+    "llm_backbone_ffn_down_residual": llm_backbone_ffn_down_residual,
+    "llm_backbone_projector": llm_backbone_projector,
+    "vision_encoder_norm_qkv": vision_encoder_norm_qkv,
+    "vision_encoder_norm_ffn_up": vision_encoder_norm_ffn_up,
+    "vision_encoder_out_proj_residual": vision_encoder_out_proj_residual,
+    "vision_encoder_ffn_down_residual": vision_encoder_ffn_down_residual,
+    "llm_backbone_norm_qkv_rope": llm_backbone_norm_qkv_rope,
+    "llm_backbone_norm_gated_ffn": llm_backbone_norm_gated_ffn,
     "action_expert_norm_gated_ffn": action_expert_norm_gated_ffn,
     "action_expert_attention": action_expert_attention,
 }
-#: Both need workspace for the normalized activation and the packed projection.
-_TAKES_SCRATCH = tuple(ALL_WRAPPERS)
+#: Only the wrappers that stage an intermediate take the allocator; the rest
+#: write straight into the caller's buffers.
+_TAKES_SCRATCH = ("action_expert_norm_qkv_rope", "action_expert_norm_gated_ffn",
+                  "action_expert_attention", "llm_backbone_norm_qkv_rope",
+                  "llm_backbone_norm_gated_ffn", "vision_encoder_norm_qkv",
+                  "vision_encoder_norm_ffn_up")
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
@@ -123,7 +297,9 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     unknown = names - NAMES
     if unknown:
         raise KeyError(f"the rtx5090 cuda backend does not implement {sorted(unknown)}")
-    return {name: partial(ALL_WRAPPERS[name], scratch=scratch) for name in names}
+    return {name: (partial(ALL_WRAPPERS[name], scratch=scratch)
+                   if name in _TAKES_SCRATCH else ALL_WRAPPERS[name])
+            for name in names}
 
 
 __all__ = ["NAMES", "OPS", "ROUTE_CONSTRAINTS", "make_wrappers"]

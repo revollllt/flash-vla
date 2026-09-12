@@ -1,4 +1,6 @@
 iteration,change,latency_ms,decision,report,revision
 0,Every call site in torch: the bring-up route,46.794,start,measurements/000.json,14bacc0
 1,"Expert RMSNorm, RoPE scatter and gated activation as hand-written CUDA",40.240,keep,measurements/001-expert-pointwise.json,ddd8c7c
-2,Expert attention: cuBLAS GEMMs with a hand-written masked softmax between,37.040,keep,measurements/002-expert-attention.json,HEAD
+2,Expert attention: cuBLAS GEMMs with a hand-written masked softmax between,37.040,keep,measurements/002-expert-attention.json,8e42d41
+3,The same norm kernels on the backbone's two norm-fed call sites,34.423,keep,measurements/003-backbone-norm.json,8e42d41
+4,"Vision LayerNorm kernel, plain GELU, and residual adds folded into the GEMM beta",32.753,keep,measurements/004-full-cuda.json,HEAD

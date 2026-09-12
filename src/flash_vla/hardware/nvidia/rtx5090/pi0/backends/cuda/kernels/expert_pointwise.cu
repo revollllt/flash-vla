@@ -218,3 +218,108 @@ int gelu_mul_launch(const void *gate, const void *up, void *out,
 }
 
 }  // extern "C"
+
+// ---------------------------------------------------------------------------
+// LayerNorm, for the vision tower and the projector.
+//
+// The expert and the backbone normalise with RMS; SigLIP uses a full LayerNorm
+// with an affine. Torch spells it as about six launches (mean, centre, square,
+// mean, rsqrt, scale-and-shift) where this is one.
+namespace {
+
+constexpr float kLayerNormEps = 1e-5f;
+
+// out[r, :] = (x[r, :] - mean) * rsqrt(var + eps) * w + b, reduced in fp32.
+//
+// One CTA per row, 128-bit loads, and the mean and the mean of squares taken in
+// the same pass so the row is read once rather than twice.
+__global__ void layer_norm_kernel(const __nv_bfloat16 *__restrict__ x,
+                                  const __nv_bfloat16 *__restrict__ w,
+                                  const __nv_bfloat16 *__restrict__ b,
+                                  __nv_bfloat16 *__restrict__ out,
+                                  int32_t rows, int32_t cols) {
+  __shared__ float reduction[32];
+  __shared__ float shift, scale;
+  const int32_t row = blockIdx.x;
+  if (row >= rows) return;
+
+  const int32_t vec = cols >> 3;
+  const int4 *in4 = reinterpret_cast<const int4 *>(x + int64_t(row) * cols);
+  int4 *out4 = reinterpret_cast<int4 *>(out + int64_t(row) * cols);
+
+  float s = 0.f, sq = 0.f;
+  for (int32_t i = threadIdx.x; i < vec; i += blockDim.x) {
+    const int4 raw = in4[i];
+    const __nv_bfloat16 *vv = reinterpret_cast<const __nv_bfloat16 *>(&raw);
+#pragma unroll
+    for (int32_t j = 0; j < 8; ++j) {
+      const float f = __bfloat162float(vv[j]);
+      s += f;
+      sq += f * f;
+    }
+  }
+  s = block_sum(s, reduction);
+  __syncthreads();
+  sq = block_sum(sq, reduction);
+  if (threadIdx.x == 0) {
+    const float mean = s / float(cols);
+    shift = mean;
+    scale = rsqrtf(fmaxf(sq / float(cols) - mean * mean, 0.f) + kLayerNormEps);
+  }
+  __syncthreads();
+  const float mu = shift, inv = scale;
+
+  for (int32_t i = threadIdx.x; i < vec; i += blockDim.x) {
+    int4 raw = in4[i];
+    __nv_bfloat16 *vv = reinterpret_cast<__nv_bfloat16 *>(&raw);
+    const int32_t base = i << 3;
+#pragma unroll
+    for (int32_t j = 0; j < 8; ++j) {
+      const float n = (__bfloat162float(vv[j]) - mu) * inv;
+      vv[j] = __float2bfloat16(n * __bfloat162float(w[base + j])
+                               + __bfloat162float(b[base + j]));
+    }
+    out4[i] = raw;
+  }
+}
+
+}  // namespace
+
+extern "C" int layer_norm_launch(const void *x, const void *w, const void *b,
+                                 void *out, int rows, int cols, void *stream) {
+  if ((cols & 7) != 0) return cudaErrorInvalidValue;
+  const int32_t threads = (cols >= 2048) ? 512 : 256;
+  layer_norm_kernel<<<rows, threads, 0, (cudaStream_t)stream>>>(
+      (const __nv_bfloat16 *)x, (const __nv_bfloat16 *)w,
+      (const __nv_bfloat16 *)b, (__nv_bfloat16 *)out, rows, cols);
+  return (int)cudaGetLastError();
+}
+
+// Plain GELU in place, for the vision feed-forward expansion, whose activation
+// has no gate to multiply against.
+namespace {
+__global__ void gelu_kernel(__nv_bfloat16 *__restrict__ x, int64_t elements) {
+  const int64_t vec = elements >> 3;
+  int4 *x4 = reinterpret_cast<int4 *>(x);
+  for (int64_t i = int64_t(blockIdx.x) * blockDim.x + threadIdx.x; i < vec;
+       i += int64_t(gridDim.x) * blockDim.x) {
+    int4 raw = x4[i];
+    __nv_bfloat16 *v = reinterpret_cast<__nv_bfloat16 *>(&raw);
+#pragma unroll
+    for (int32_t j = 0; j < 8; ++j)
+      v[j] = __float2bfloat16(gelu_tanh(__bfloat162float(v[j])));
+    x4[i] = raw;
+  }
+}
+}  // namespace
+
+extern "C" int gelu_launch(void *x, long long elements, void *stream) {
+  if ((elements & 7) != 0) return cudaErrorInvalidValue;
+  const int64_t vec = elements >> 3;
+  int32_t blocks = (int32_t)((vec + 255) / 256);
+  if (blocks > 340) blocks = 340;   // 2x SM count [ld.ctas.dev.knee]
+  if (blocks < 1) blocks = 1;
+  gelu_kernel<<<blocks, 256, 0, (cudaStream_t)stream>>>((__nv_bfloat16 *)x,
+                                                        elements);
+  return (int)cudaGetLastError();
+}

@@ -88,6 +88,12 @@ def library(verbose: bool = False):
         lib.expert_masked_softmax_launch.argtypes = [ctypes.c_void_p] * 2 + [
             ctypes.c_int] * 4 + [ctypes.c_float, ctypes.c_void_p]
         lib.expert_masked_softmax_launch.restype = ctypes.c_int
+        lib.layer_norm_launch.argtypes = [ctypes.c_void_p] * 4 + [
+            ctypes.c_int] * 2 + [ctypes.c_void_p]
+        lib.layer_norm_launch.restype = ctypes.c_int
+        lib.gelu_launch.argtypes = [ctypes.c_void_p, ctypes.c_longlong,
+                                    ctypes.c_void_p]
+        lib.gelu_launch.restype = ctypes.c_int
         _LIB = lib
     return _LIB
 
@@ -143,6 +149,30 @@ def gelu_mul(gate: torch.Tensor, up: torch.Tensor, out: torch.Tensor) -> torch.T
     return out
 
 
+def gelu_(x: torch.Tensor) -> torch.Tensor:
+    """x = gelu_tanh(x), in place. Contiguous bf16 CUDA, numel a multiple of 8.
+
+    Safe during CUDA-graph capture.
+    """
+    _check(library().gelu_launch(x.data_ptr(), x.numel(), _stream()), "gelu")
+    return x
+
+
+def layer_norm(x: torch.Tensor, w: torch.Tensor, b: torch.Tensor,
+               out: torch.Tensor) -> torch.Tensor:
+    """out[r] = (x[r] - mean) * rsqrt(var + 1e-5) * w + b, bf16 in and out.
+
+    `x` and `out` are (rows, cols) contiguous bf16 on CUDA and may be the same
+    tensor; `w` and `b` are (cols,) bf16. cols must be a multiple of 8. Written
+    in place; safe during CUDA-graph capture.
+    """
+    rows, cols = x.shape
+    _check(library().layer_norm_launch(x.data_ptr(), w.data_ptr(), b.data_ptr(),
+                                       out.data_ptr(), rows, cols, _stream()),
+           "layer_norm")
+    return out
+
+
 #: Query rows per CTA. Swept by `lab/sm120/pi0_attention_bench.py`; 16 was the
 #: best of 8/16/32 at Pi0's 408 x 819 x 256 shape.
 ATTENTION_BLOCK_M = 16
@@ -183,5 +213,5 @@ def expert_masked_softmax(scores: torch.Tensor, probs: torch.Tensor, *,
 
 
 __all__ = ["ATTENTION_BLOCK_M", "build", "expert_attention",
-           "expert_masked_softmax", "gelu_mul",
+           "expert_masked_softmax", "gelu_", "gelu_mul", "layer_norm",
            "library", "rms_norm", "rope_scatter"]
