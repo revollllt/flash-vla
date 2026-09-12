@@ -98,9 +98,10 @@ verifiable by PTX equality. See [toolchain.md](toolchain.md).
 NCU counter names moved on GB202: the whole `sm__inst_executed_pipe_tensor_op_*`
 family is gone (26 metrics on GH100, 0 here) and `dram__bytes_read` is now
 `dram__bytes_op_read`, so existing saved queries fail to resolve rather than
-returning zero. Counter access is **denied on this host** (`ERR_NVGPUCTRPERM`),
-so NCU is unavailable — but the CUPTI timeline is not affected and the top-down
-model profile still runs. See [ncu-metrics.md](ncu-metrics.md).
+returning zero. Counter access is denied to an unprivileged user here
+(`ERR_NVGPUCTRPERM`), but **`sudo ncu` works with no module change and no
+reboot** — root is the admin user the restriction names. The CUPTI timeline was
+never affected and runs unprivileged. See [ncu-metrics.md](ncu-metrics.md).
 
 ## What is measured, and how far
 

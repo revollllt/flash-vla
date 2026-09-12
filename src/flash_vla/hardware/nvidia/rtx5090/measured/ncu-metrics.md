@@ -15,33 +15,48 @@ ncu --query-metrics --chip gh100     # 3691 metrics
 `--chip` needs no GPU and no permission, so this comparison can be re-run
 anywhere the toolkit is installed.
 
-## Before anything else: profiling is blocked on this machine
+## Counter access: denied to this user, available under sudo
 
 ```
 ==ERROR== ERR_NVGPUCTRPERM - The user does not have permission to access NVIDIA
 GPU Performance Counters on the target device 0.
 ```
 
-Counter access is disabled for non-root users here, so **no NCU capture and no
-Nsight Systems GPU-counter capture can run on this box**. Enabling it is a host
-configuration change (the `NVreg_RestrictProfilingToAdminUsers` module
-parameter) and belongs in user-local setup, not in this repository.
+`NVreg_RestrictProfilingToAdminUsers` defaults to 1 on this host and no
+`modprobe.d` entry overrides it, so an unprivileged `ncu` is refused. The name
+of that parameter is also the workaround: **root is an admin user**, so running
+the profiler under `sudo` works with no module change and no reboot. Verified
+here -- `--query-metrics` returns 7987 metrics against the live device, and a
+real capture collects counter values.
 
-**This does not block the timeline, and an earlier version of this file said it
-did.** `ERR_NVGPUCTRPERM` gates *counter* collection. CUPTI *activity* tracing —
-kernel start/end timestamps — is a separate mechanism and needs no such
-permission, which is what `tools/profiling/model.py:151` uses
-(`torch.profiler` with `ProfilerActivity.CUDA`). Measured here: a capture on
-this device returns kernel-level device time, naming the kernel
-(`cutlass_80_wmma_tensorop_bf16_s16816...` for a bf16 matmul).
+`sudo` resets `PATH` through `secure_path` and drops most of the environment,
+which matters because TileLang shells out to `nvcc` during JIT. Pass what the
+run needs explicitly:
 
-So step 4 of [the optimization workflow](../../../../../../docs/optimization.md)
-— the top-down model timeline — **is available**. What is lost is NCU's
-kernel-counter diagnosis: tensor-core utilisation, stall reasons, cache hit
-rates, the `ncu-report` skill's whole surface.
+```bash
+sudo env HOME=$HOME CUDA_HOME=/path/to/cuda PATH=/path/to/cuda/bin:$PATH \
+  /opt/nvidia/nsight-compute/2026.2.1/ncu --launch-count 1 --metrics <list> \
+  /path/to/.venv/bin/python -m <module>
+sudo chown $USER:$USER <report>.ncu-rep
+```
 
-Everything below was therefore established from the metric *catalogue*, not from
-a capture. The names are right; nothing here reports a measured value.
+Use `/opt/nvidia/nsight-compute/2026.2.1/ncu` rather than the one bundled with
+CUDA 13.1 (2025.4.0); it is newer and matches the documentation snapshot.
+
+Setting the module parameter instead would let an unprivileged `ncu` work, at
+the cost of making GPU performance counters readable by every local user. On a
+single-user box that is a fair trade; `sudo` per capture avoids the question.
+
+**The timeline never needed either.** `ERR_NVGPUCTRPERM` gates *counter*
+collection. CUPTI *activity* tracing -- kernel start/end timestamps -- is a
+separate mechanism and needs no permission, which is what
+`tools/profiling/model.py:151` uses (`torch.profiler` with
+`ProfilerActivity.CUDA`). Measured here: a capture returns kernel-level device
+time, naming the kernel (`cutlass_80_wmma_tensorop_bf16_s16816...` for a bf16
+matmul). So step 4 of
+[the optimization workflow](../../../../../../docs/optimization.md) runs
+unprivileged, and `sudo` is only needed once the timeline has selected a kernel
+worth NCU's attention.
 
 ## The tensor-core metric family was renamed, and lost its instruction breakdown
 
