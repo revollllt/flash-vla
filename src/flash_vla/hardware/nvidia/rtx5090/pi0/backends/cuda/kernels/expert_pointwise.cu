@@ -175,6 +175,22 @@ __global__ void gelu_mul_kernel(const __nv_bfloat16 *__restrict__ gate,
 
 }  // namespace
 
+//: Grid cap for the streaming pointwise kernels, in CTAs of 256 threads.
+//: Swept at the deployed shapes -- the backbone's 75.5 MB gated activation and
+//: the vision feed-forward's 13.2 MB -- against the 2x-SM figure these used to
+//: carry:
+//:
+//:     cap    gelu_mul   gelu_mul_packed   gelu_
+//:     340    14.55 us   16.60 us          6.32 us
+//:     680    12.49 us   12.57 us          4.84 us
+//:    1360    13.99 us   14.52 us          4.40 us
+//:    none    12.48 us   12.48 us          6.83 us
+//:
+//: 680 is 4x the SM count and is best or within noise of best in every row.
+//: [ld.ctas.dev.knee]'s 2x figure is a launch-ramp knee, not a throughput one,
+//: and it leaves these kernels short of the memory parallelism they need.
+constexpr int32_t kPointwiseCtas = 680;
+
 extern "C" {
 
 // Every entry takes raw device pointers and an explicit stream so the launch is
@@ -209,7 +225,7 @@ int gelu_mul_launch(const void *gate, const void *up, void *out,
   // grid-stride loop covers whatever is left.
   const int64_t vec = elements >> 3;
   int32_t blocks = (int32_t)((vec + threads - 1) / threads);
-  if (blocks > 340) blocks = 340;
+  if (blocks > kPointwiseCtas) blocks = kPointwiseCtas;
   if (blocks < 1) blocks = 1;
   gelu_mul_kernel<<<blocks, threads, 0, (cudaStream_t)stream>>>(
       (const __nv_bfloat16 *)gate, (const __nv_bfloat16 *)up,
@@ -317,7 +333,7 @@ extern "C" int gelu_launch(void *x, long long elements, void *stream) {
   if ((elements & 7) != 0) return cudaErrorInvalidValue;
   const int64_t vec = elements >> 3;
   int32_t blocks = (int32_t)((vec + 255) / 256);
-  if (blocks > 340) blocks = 340;   // 2x SM count [ld.ctas.dev.knee]
+  if (blocks > kPointwiseCtas) blocks = kPointwiseCtas;
   if (blocks < 1) blocks = 1;
   gelu_kernel<<<blocks, 256, 0, (cudaStream_t)stream>>>((__nv_bfloat16 *)x,
                                                         elements);
@@ -366,7 +382,7 @@ extern "C" int gelu_mul_packed_launch(const void *packed, void *out, int rows,
   const int32_t threads = 256;
   const int64_t total = int64_t(rows) * (half >> 3);
   int32_t blocks = (int32_t)((total + threads - 1) / threads);
-  if (blocks > 340) blocks = 340;   // 2x SM count [ld.ctas.dev.knee]
+  if (blocks > kPointwiseCtas) blocks = kPointwiseCtas;
   if (blocks < 1) blocks = 1;
   gelu_mul_packed_kernel<<<blocks, threads, 0, (cudaStream_t)stream>>>(
       (const __nv_bfloat16 *)packed, (__nv_bfloat16 *)out, rows, half);

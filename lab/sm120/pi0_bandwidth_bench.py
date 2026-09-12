@@ -68,6 +68,25 @@ def main() -> int:
     report("vision layer_norm", lambda: cu.layer_norm(v, w, bb, vo),
            v.numel() * 2 * 2 / 1e6)
 
+    # The two remaining hand-written kernels that still move data narrower
+    # than 128 bits: the RoPE scatter reads and writes 32-bit pairs, and the
+    # masked softmax reads the score row one bf16 per lane.
+    rows, qd, hd = 768, 2048, 256
+    packed2 = torch.randn(rows, qd + 2 * hd, device=DEV, dtype=DT)
+    rope = torch.randn(rows, hd, device=DEV, dtype=DT)
+    qq = torch.empty(rows, qd, device=DEV, dtype=DT)
+    kk = torch.empty(rows, hd, device=DEV, dtype=DT)
+    vv = torch.empty(rows, hd, device=DEV, dtype=DT)
+    report("backbone rope_scatter",
+           lambda: cu.rope_scatter(packed2, rope, qq, kk, vv),
+           packed2.numel() * 2 * 2 / 1e6)
+
+    sc = torch.randn(408, 819, device=DEV, dtype=DT)
+    report("expert masked_softmax",
+           lambda: cu.expert_masked_softmax(sc, sc, heads=8, prefix=768,
+                                            scale=0.0625),
+           sc.numel() * 2 * 2 / 1e6)
+
     # A plain copy at the largest size, as the machine's own answer for what
     # a pure streaming pass costs.
     src = torch.randn(768, 16384, device=DEV, dtype=DT)
