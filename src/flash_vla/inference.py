@@ -178,7 +178,10 @@ _ALIASES = {"h100/pi05": "hardware/nvidia/h100/pi05", "pi05": "hardware/nvidia/h
             "h100/lingbot_vla": "hardware/nvidia/h100/lingbot_vla",
             "lingbot_vla": "hardware/nvidia/h100/lingbot_vla",
             "rtx5090/pi0": "hardware/nvidia/rtx5090/pi0",
-            "5090/pi0": "hardware/nvidia/rtx5090/pi0"}
+            "5090/pi0": "hardware/nvidia/rtx5090/pi0",
+            # The `lab/plans/<target>-<name>.json` prefix form, which cannot
+            # carry a slash.
+            "rtx5090_pi0": "hardware/nvidia/rtx5090/pi0"}
 
 #: The two plan names every Target understands.
 PLAN_NAMES = ("shipped", "reference")

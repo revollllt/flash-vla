@@ -52,12 +52,20 @@ class Pi0RTX5090(Pi0):
 
     registry = REGISTRY
 
-    #: Every call site on the torch backend, which is also the registry
-    #: default, so both plans are empty. They are stated separately rather than
-    #: shared so that the first hand-written kernel can move `plan` without
-    #: silently moving the numerical reference with it.
-    plan: Mapping[str, str] = {}
+    #: The expert's two norm-fed call sites on hand-written pointwise kernels;
+    #: everything else on the torch backend, which is the registry default.
+    #: Each measured paired against the version before it, in one job:
+    #:   the two norm-fed sites   46.828 -> 40.240 ms   -6.588
+    #:   the attention glue       40.177 -> 37.040      -3.137
+    plan: Mapping[str, str] = {
+        "action_expert_norm_qkv_rope": "cuda",
+        "action_expert_norm_gated_ffn": "cuda",
+        "action_expert_attention": "cuda",
+    }
 
+    #: The numerical reference stays all-torch, so `eval.correctness` compares
+    #: the hand-written kernels against the implementation they replaced rather
+    #: than against themselves.
     reference_plan: Mapping[str, str] = {}
 
 

@@ -1,2 +1,4 @@
 iteration,change,latency_ms,decision,report,revision
-0,Every call site in torch: the bring-up route,46.794,start,measurements/000.json,HEAD
+0,Every call site in torch: the bring-up route,46.794,start,measurements/000.json,14bacc0
+1,"Expert RMSNorm, RoPE scatter and gated activation as hand-written CUDA",40.240,keep,measurements/001-expert-pointwise.json,ddd8c7c
+2,Expert attention: cuBLAS GEMMs with a hand-written masked softmax between,37.040,keep,measurements/002-expert-attention.json,HEAD

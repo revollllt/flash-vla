@@ -21,9 +21,13 @@ from __future__ import annotations
 
 from flash_vla.runtime.registry import Registry
 
+from . import cuda as _cuda
 from . import torch_ops as _torch
 
-BACKENDS = {"torch": _torch}
+BACKENDS = {
+    "torch": _torch,
+    "cuda": _cuda,
+}
 
 REGISTRY = Registry(BACKENDS, default="torch")
 
