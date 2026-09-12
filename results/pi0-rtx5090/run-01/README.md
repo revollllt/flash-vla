@@ -206,59 +206,55 @@ uses proves nothing about it.**
 
 ## Where the time goes now
 
-Floor model after iteration 13 (`artifacts/profile/floor5.json`), ceiling built
+Floor model after iteration 15 (`artifacts/profile/floor6.json`), ceiling built
 from this machine's measured constants:
 
 | segment | measured | ceiling | % | launches |
 |---|---:|---:|---:|---:|
-| `llm_backbone` | 15.50 | 11.74 | 132% | 244 |
-| `action_expert` | 10.52 | 7.64 | 138% | 2293 |
+| `llm_backbone` | 15.15 | 11.74 | 129% | 244 |
+| `action_expert` | 10.53 | 7.64 | 138% | 2293 |
 | `vision_encoder` | 4.75 | 2.73 | 174% | 303 |
-| **total** | **30.76** | **22.11** | **139%** | **2850** |
+| **total** | **30.43** | **22.11** | **138%** | **2850** |
 
-The twelve largest remaining gaps, and what each one actually is:
+The ten largest remaining gaps:
 
 | call site | gap | what is in the way |
 |---|---:|---|
-| `action_expert_attention` | 2.108 | settled below: 26 CTAs is all this shape offers |
-| `llm_backbone_norm_gated_ffn` | 1.882 | its two GEMMs, cuBLAS at ~85% of the tensor ceiling |
-| `llm_backbone_ffn_down_residual` | 0.654 | one GEMM, cuBLAS at 85% |
-| `vision_encoder_ffn_down_residual` | 0.651 | one GEMM at ~60%, wave quantization |
-| `action_expert_norm_qkv_rope` | 0.583 | the fused kernel, 18% over its own ceiling |
-| `vision_encoder_norm_ffn_up` | 0.557 | one GEMM at ~74% |
-| `llm_backbone_norm_qkv_rope` | 0.442 | one GEMM at ~79% plus two pointwise passes |
-| `llm_backbone_out_proj_residual` | 0.418 | one GEMM at ~51%, wave quantization |
-| `llm_backbone_attention` | 0.350 | still torch |
-| `vision_encoder_norm_qkv` | 0.327 | one GEMM at ~76% |
-| `vision_encoder_out_proj_residual` | 0.275 | one GEMM at ~56%, wave quantization |
-| `vision_encoder_attention` | 0.189 | still torch |
+| `action_expert_attention` | 2.111 | 26 CTAs is all this shape offers; settled above |
+| `llm_backbone_norm_gated_ffn` | 1.794 | two GEMMs, cuBLAS at 85% of the tensor ceiling |
+| `vision_encoder_ffn_down_residual` | 0.651 | one GEMM; K=4304 does not tile at 32 |
+| `llm_backbone_ffn_down_residual` | 0.623 | one GEMM; cuBLAS splits K and wins by 1.37x |
+| `action_expert_norm_qkv_rope` | 0.585 | the fused kernel, 18% over its own ceiling |
+| `vision_encoder_norm_ffn_up` | 0.556 | one GEMM; N=4304 does not tile at 64 |
+| `llm_backbone_attention` | 0.357 | still torch |
+| `llm_backbone_norm_qkv_rope` | 0.336 | the hand-written GEMM plus two pointwise passes |
+| `vision_encoder_norm_qkv` | 0.329 | one GEMM; cuBLAS wins by 1.14x |
+| `llm_backbone_out_proj_residual` | 0.294 | the hand-written GEMM |
 
-**Nine of the twelve are inside a cuBLAS GEMM**, and the pointwise glue around
-them has been measured out: `lab/sm120/pi0_bandwidth_bench.py` puts every
-hand-written streaming kernel between 2700 and 6000 GB/s, and the norms and
-activations together are now a few percent of their call sites.
+**Everything except the attention site and the fused QKV kernel is now a GEMM**,
+and the pointwise glue around them has been measured out:
+`lab/sm120/pi0_bandwidth_bench.py` puts every hand-written streaming kernel
+between 2700 and 6000 GB/s.
 
-Two distinct things hold those GEMMs back, and neither is addressable without
-replacing cuBLAS:
-
-- **The large ones are near the ceiling already.** The backbone's gate/up pair
-  runs at 207–214 TFLOP/s against [mma.tflops.dev.bf16]'s 253, which is 83–85%,
-  and `mma.sync` is the only tensor-core path on this part [isa-support].
-- **The small ones cannot fill the part.** `llm_backbone_out_proj_residual` is
-  768 x 2048 x 2048: at 128 x 128 tiles that is 6 x 16 = 96 CTAs on a 170-SM
-  machine, one wave at 56% occupancy, and 51% of peak is what that predicts.
-  The three vision sites at 1152 output width are the same shape of problem.
-  Splitting K does not help, because 2 x 96 = 192 CTAs is a second wave for
-  22 more.
+The hand-written GEMM in `kernels/tiled_gemm.cu` says where the remaining line
+is. Its mainloop reaches **92% of cuBLAS** at a large shape (191 against 208
+TFLOP/s at 768 x 2048 x 16384), so it is not a weak kernel -- and it still only
+beats cuBLAS at two of the nine shapes, the two where a 64 x 64 tile converts a
+96-CTA wave into a 384-CTA one. Everywhere else cuBLAS picks a better tile than
+any single fixed choice can. Beating it across the board needs per-shape tile
+selection at minimum, and for the shapes that are one wave short, stream-K:
+a decomposition that hands exactly 170 CTAs an even share of the MAC work and
+fixes up the tiles that straddle a boundary. Fixed tilings cannot reach it --
+768 x 2048 at 128 x 128 is 96 CTAs and at 64 x 128 is 192, and 192 CTAs on 170
+SMs is two waves for the same total work.
 
 ## Next, in order of expected value
 
-1. **A hand-written GEMM for the 1152- and 2048-wide sites.** The win is not
-   arithmetic but tile shape: a tiling chosen for 170 SMs rather than for a
-   128 x 128 default would put `llm_backbone_out_proj_residual` and the three
-   vision projections in one full wave instead of one 56%-full one. Worth about
-   1.6 ms across those four. It has to beat cuBLAS at ~200 TFLOP/s on the large
-   shapes too, or it can only be routed to the small ones.
+1. **Stream-K in `tiled_gemm.cu`.** The fixed-tile version of this kernel is
+   done and takes the two shapes it can; the remaining GEMM gaps need a
+   decomposition that fills the part exactly rather than one that happens to.
+   Worth roughly 1.5 ms across the vision projections and the backbone's gated
+   feed-forward, and it is the only idea left that addresses them.
 2. **`llm_backbone_attention` and `vision_encoder_attention`**, the last two
    sites on torch, 0.54 ms between them. Both have enough queries to fill the
    machine, unlike the expert's attention -- but both also re-read a large
