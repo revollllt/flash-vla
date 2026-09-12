@@ -258,44 +258,65 @@ uses proves nothing about it.**
 
 ## Where the time goes now
 
-Floor model after iteration 18 (`artifacts/profile/floor8.json`):
+Floor model after iteration 20 (`artifacts/profile/floor9.json`), and a second
+column the floor model does not carry.
 
-| segment | measured | ceiling | % | launches |
-|---|---:|---:|---:|---:|
-| `llm_backbone` | 13.85 | 11.74 | 118% | — |
-| `action_expert` | 10.45 | 7.64 | 137% | — |
-| `vision_encoder` | 4.15 | 2.73 | 152% | — |
-| **total** | **28.45** | **22.11** | **129%** | **2112** |
+| segment | measured | ceiling | % |
+|---|---:|---:|---:|
+| `llm_backbone` | 13.93 | 11.74 | 119% |
+| `action_expert` | 10.08 | 7.64 | 132% |
+| `vision_encoder` | 4.05 | 2.73 | 148% |
+| **attributed total** | **28.06** | **22.07** | **127%** |
 
-**Read the per-site attribution carefully now that PDL is on.** The attributed
-total is 28.45 ms against a wall clock of 27.96: kernels deliberately overlap,
-so their durations overlap too and the sum exceeds the forward. Per-site numbers
-are still useful for ranking, but a site that "grew" between iteration 17 and 18
-mostly started earlier, not took longer.
+Wall clock is 27.56 ms; the attributed total exceeds it because PDL makes
+kernels overlap deliberately, so their durations overlap too.
 
-The eight largest remaining gaps:
+**The 22.07 ms ceiling is not reachable and should not be quoted as a target.**
+It divides every compute-bound site by [mma.tflops.dev.bf16]'s 253 TFLOP/s,
+which is 100% of the measured tensor peak. The best GEMM in this route reaches
+**228 TFLOP/s, 90%** -- backbone gate/up, 8 distinct 67 MB weights cycled so
+none is cached. Re-deriving the ceiling with compute sites at 90% instead of
+100%:
 
-| call site | gap | what is in the way |
-|---|---:|---|
-| `action_expert_attention` | 1.391 | 11.90 us against a ceiling that assumes no split |
-| `llm_backbone_norm_gated_ffn` | 1.055 | two GEMMs at 225 us each, CUTLASS at 1.10x cuBLAS |
-| `action_expert_norm_qkv_rope` | 0.827 | the fused kernel; every CTA re-reads all of x |
-| `vision_encoder_norm_ffn_up` | 0.487 | GEMM plus a separate GELU pass |
-| `llm_backbone_attention` | 0.343 | still torch |
-| `action_expert_norm_gated_ffn` | 0.313 | weight-bandwidth bound |
-| `llm_backbone_ffn_down_residual` | 0.275 | one GEMM, now one launch |
-| `llm_backbone_norm_qkv_rope` | 0.274 | GEMM plus two pointwise passes |
+| | |
+|---|---:|
+| attributed total | 28.06 ms |
+| floor model ceiling, compute at 100% of peak | 22.07 ms |
+| ceiling at the 90% this stack reaches | **23.76 ms** |
+| genuinely addressable | **4.40 ms** |
 
-Launches are down from 12831 at the start of the run to **2112**.
+And that 4.40 ms is concentrated, not spread:
+
+| call site | measured | floor at 90% | left |
+|---|---:|---:|---:|
+| `action_expert_attention` | 2.134 | 0.835 | 1.299 |
+| `action_expert_norm_qkv_rope` | 1.972 | 1.268 | 0.703 |
+| `llm_backbone_norm_gated_ffn` | 8.028 | 7.696 | 0.332 |
+| `action_expert_norm_gated_ffn` | 2.966 | 2.646 | 0.320 |
+| `llm_backbone_attention` | 0.669 | 0.361 | 0.308 |
+| `vision_encoder_norm_ffn_up` | 1.202 | 0.903 | 0.299 |
+| everything else | — | — | ≤0.22 each |
+
+Two caveats on the top row. `action_expert_attention`'s floor assumes a single
+kernel touching 1.26 MB, and the shipped form splits the key axis eight ways and
+writes 3.3 MB of fp32 partials; costing that honestly puts its floor near 1.55 ms
+and its real headroom near 0.58, not 1.30. And the two vision residual sites look
+like they still carry a separate bias pass, but the site measures 16.77 us against
+a 16.14 us standalone GEMM -- **PDL has already hidden it**, which is why folding
+the bias into the epilogue was not pursued.
 
 ## Next, in order of expected value
 
-1. **`action_expert_attention` and `action_expert_norm_qkv_rope`**, 2.2 ms
-   between them and both this repo's own kernels, so both are open to work that
-   needs no vendor cooperation. The attention kernel is at 11.90 us against a
-   4.17 us ceiling that assumes no split; the QKV kernel has every CTA re-read
-   all of x, 8.3 MB of L2 traffic against 5.24 MB of weight.
-2. **fp8.** Measured, not adopted: 2.34x on the backbone's gated feed-forward
+1. **`action_expert_norm_qkv_rope`**, 0.70 ms and the largest honest item. It
+   is memory bound and reaches 920 GB/s cold against [ld.bw.dev.dram]'s 1524.
+   The reason is visible in the arithmetic: each of its 80 CTAs reads all of x,
+   so the site moves 8.3 MB of activation against 5.24 MB of weight where its
+   ceiling assumes 5.97 MB total. Fewer CTAs would fix the redundancy and cost
+   warps; the tiling was re-swept cold and does not move, so this needs a
+   different decomposition rather than a different constant.
+2. **`action_expert_attention`**, about 0.58 ms once the split-KV partials are
+   costed into its floor.
+3. **fp8.** Measured, not adopted: 2.34x on the backbone's gated feed-forward
    (244.04 -> 104.88 us, 493 TFLOP/s against a 506 ceiling) and 2.15x on its
    down projection. It costs a relative error of 3.7e-02 against an fp32
    reference where bf16 is 1.7e-03, and row-wise scaling does not improve it --
@@ -304,7 +325,7 @@ Launches are down from 12831 at the start of the run to **2112**.
    is explicit that a kernel task does not invent one, so this is a decision
    about the deployment's numerical contract rather than a patch.
    `lab/sm120/pi0_fp8_probe.py`.
-3. **PDL.** Available on this part -- ptxas accepts `griddepcontrol` for
+4. **PDL.** Now shipped; see the section above.  Formerly: available on this part -- ptxas accepts `griddepcontrol` for
    sm_120, sm_120f and sm_120a -- and worth 1.166x under graph replay on a
    chain shaped like Pi0's (`lab/sm120/pdl_unit.cu`). It needs the producer to
    trigger early AND the consumer to wait late, so both must be hand-written,
