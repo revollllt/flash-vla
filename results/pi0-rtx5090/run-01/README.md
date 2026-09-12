@@ -134,6 +134,34 @@ model's 4.17 us ceiling for this call site assumes a fusion that this shape
 cannot afford. Kept unrouted in `kernels/expert_attention_mma.cu`; the sweep is
 `bench_mma_scaling` in `lab/sm120/pi0_attention_bench.py`.
 
+**Storing the vision feed-forward's down-projection weight K-contiguous.**
+Re-storing that one weight (N, K) so cuBLAS sees a TN GEMM is **1.21x** at
+768 x 4304 x 1152 -- 49.29 us against 59.49 for the addmm and its bias add --
+and deployed it measured **30.854 -> 30.638 ms, the largest single win still
+on the table**. It is rejected because it is not a layout win at all. Against
+an fp32 reference the TN kernel's relative error is **2.35e-03 where the NN
+kernel's is 1.66e-03**, and with
+`torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction` turned off
+the two errors agree to the digit and TN becomes the *slower* of the pair,
+53.35 us against 51.88. The speed is bf16 split-K accumulation, and the model
+gate saw it: the shallow cosine fell 0.99983 -> 0.99977 against its 0.99978
+floor, the only failing gate of this run. Measurement kept at
+`measurements/014-rejected-vision-ffn-down-tn.json`.
+
+The same swap was measured across all eleven deployed GEMM shapes: 1.00x on
+nine, 0.79x on the vision feed-forward's up projection, and this one.
+
+**Filling the half-empty wave with a batched K split.** At M=768 cuBLAS leaves
+most of the part idle -- `lab/sm120/pi0_gemm_wave_probe.py` shows
+768 x 2048 x 2048 and 768 x 1024 x 2048 taking **the same 49.4 us for 33%
+different work**, which is one wave of 128x128 tiles at 56% occupancy. Splitting
+K into S independent GEMMs multiplies the tile count without changing the
+arithmetic, and `torch.bmm` asks for exactly that in one kernel. It is slower in
+every case, before the partial sum is even added: 2 splits of the backbone
+out-projection take 53.46 us of GEMM against 49.36 for the whole thing, and the
+vision up-projection goes 45.36 -> 89.16.
+`lab/sm120/pi0_gemm_splitk_probe.py`.
+
 **Three of the four small action-token projections.** All four were measured as
 a paired A/B, one site per leg, against the same job's shipped leg.
 `action_expert_action_out_proj` is a win and is routed: 11 launches to 3, and
