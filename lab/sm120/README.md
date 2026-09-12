@@ -46,3 +46,15 @@ wall-clock throughput against a datasheet-derived peak and turned a kernel
 running at 100% of the hardware into one apparently running at 60%. It also
 measures the fp16-accumulate and fp8 forms, which is how the half-rate
 fp32-accumulate rule was established.
+
+**`pi0_torch_parity.py`** -- the RTX 5090 torch backend against the H100
+TileLang wrappers it was written from. `eval.correctness` on this Target
+compares its reference plan with its candidate plan and both are the torch
+route, so it proves the model runs and replays deterministically and nothing
+about the arithmetic; Pi0 has no official oracle on this machine either. This
+closes the gap for every operator whose TileLang configuration fits 99 KB of
+shared memory, and names the ones it cannot reach rather than passing silently.
+
+**`tile_ptx_gate.sh`** -- compiles the seven kernels that reach the shared tile
+library to `sm_90a` PTX and diffs against a baseline. The gate that made the
+`tile/common/` split verifiable without an H100.
