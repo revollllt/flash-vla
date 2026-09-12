@@ -135,6 +135,14 @@ back, and that costs 1.4x on these shapes -- 49.20 us against 34.68 at
 768 x 2048 x 2048 when the two were first compared. The norm pass it would save
 is 2 to 4 us.
 
+**Generalizing the fused QKV kernel's staging.** Its
+`static_assert(kXVecs == kThreads)` ties kChunkK to 2 * kTileN and so reduces
+the tile space to a line -- every point swept before this was on it. The staging
+was generalized to carry any number of vectors per thread so the whole grid
+could be reached, and the shipped point still won (below). The generalized form
+is **0.060 ms slower** end to end, measured paired on a clean machine, so the
+constraint went back in with the search recorded next to it.
+
 **Full weight-staging participation in the fused QKV kernel.** That kernel
 stages its weight with half its threads -- kWVecs / kThreads is kChunkK / 128,
 so at kChunkK 64 only 256 of 512 threads carry a weight vector -- and the kernel

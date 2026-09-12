@@ -87,19 +87,21 @@ constexpr int32_t kLdX = kChunkK + 8;
 //: groups, covering all 32.
 constexpr int32_t kLdW = kTileN + 8;
 
-// Vectors each stage moves, and how many each thread therefore carries.
+// x vectors per shared stage -- exactly one per thread at this tiling.
 //
-// These used to be tied by `static_assert(kXVecs == kThreads)`, which forces
-// kChunkK = 2 * kTileN and collapses the tile space to a line -- every point
-// swept earlier was on it. It also left the WEIGHT staged by half the threads,
-// because kWVecs / kThreads is kChunkK / 128: at kChunkK 64 only 256 of 512
-// threads ever had a weight vector in flight, and weight bandwidth is what this
-// kernel is bound by. Both counts are independent now and either may be
-// fractional in either direction.
+// This assert ties kChunkK to 2 * kTileN and so reduces the tile space to a
+// line. That was worth checking rather than assuming: the staging was
+// generalized to carry any number of vectors per thread, the whole
+// (kTileN, kChunkK) grid was swept with COLD weights, and this point won --
+// 9.87 us against 10.54 for the kChunkK 128 point that gives every thread a
+// weight vector, and 10.55 to 14.63 for the rest. The generalized form also
+// measured 0.060 ms slower end to end on a clean machine, so the constraint is
+// back and the search is recorded in the run README instead.
 constexpr int32_t kXVecs = kTileM * kChunkK / kVec;
+static_assert(kXVecs == kThreads, "x staging assumes one vector per thread");
+//: weight vectors per shared stage; fewer than there are threads, so this one
+//: is a guarded stride loop rather than a fixed count.
 constexpr int32_t kWVecs = kChunkK * kTileN / kVec;
-constexpr int32_t kXPer = (kXVecs + kThreads - 1) / kThreads;
-constexpr int32_t kWPer = (kWVecs + kThreads - 1) / kThreads;
 //: Threads sharing one x row while staging, an aligned octet of one warp.
 constexpr int32_t kRowThreads = kChunkK / kVec;
 
@@ -145,11 +147,12 @@ __global__ __launch_bounds__(kThreads) void expert_qkv_kernel(
   // unpipelined form issued a chunk's loads, waited the full DRAM latency and
   // only then had 12 instructions of mma to run, sixteen times over; this puts
   // the next chunk's loads in flight before the current chunk's compute.
-  //: A thread's t-th vector of each operand. A thread's x row is
-  //: i / kRowThreads, and kThreads is a multiple of kRowThreads, so the threads
-  //: sharing a row are an aligned lane group for every t -- which is what the
-  //: sum-of-squares shuffle below needs.
-  int4 xreg[kXPer], wreg[kWPer];
+  //: x: exactly one 16-byte vector per thread. w: fewer vectors than threads.
+  const int32_t xr = threadIdx.x / kRowThreads;
+  const int32_t xd = (threadIdx.x % kRowThreads) * kVec;
+  const int32_t wk = threadIdx.x / (kTileN / kVec);
+  const int32_t wn = (threadIdx.x % (kTileN / kVec)) * kVec;
+  int4 xreg, wreg = make_int4(0, 0, 0, 0);
 
   // The two operands are staged apart because only one of them is the
   // producer's. The weight is 5.24 MB and has nothing to do with the kernel
@@ -157,24 +160,13 @@ __global__ __launch_bounds__(kThreads) void expert_qkv_kernel(
   // while the producer is still finishing; the activation is 104 KB and is
   // exactly what the producer wrote, so it is issued below.
   auto stage_w = [&](int32_t k0) {
-#pragma unroll
-    for (int32_t t = 0; t < kWPer; ++t) {
-      const int32_t i = threadIdx.x + t * kThreads;
-      wreg[t] = make_int4(0, 0, 0, 0);
-      if (i < kWVecs)
-        wreg[t] = *(const int4 *)(w + int64_t(k0 + i / (kTileN / kVec)) * n
-                                  + n0 + (i % (kTileN / kVec)) * kVec);
-    }
+    if (threadIdx.x < kWVecs)
+      wreg = *(const int4 *)(w + int64_t(k0 + wk) * n + n0 + wn);
   };
   auto stage_x = [&](int32_t k0) {
-#pragma unroll
-    for (int32_t t = 0; t < kXPer; ++t) {
-      const int32_t i = threadIdx.x + t * kThreads;
-      xreg[t] = make_int4(0, 0, 0, 0);
-      if (i < kXVecs && m0 + i / kRowThreads < m)
-        xreg[t] = *(const int4 *)(x + int64_t(m0 + i / kRowThreads) * kdim + k0
-                                  + (i % kRowThreads) * kVec);
-    }
+    xreg = make_int4(0, 0, 0, 0);
+    if (m0 + xr < m)
+      xreg = *(const int4 *)(x + int64_t(m0 + xr) * kdim + k0 + xd);
   };
   auto stage = [&](int32_t k0) { stage_w(k0); stage_x(k0); };
 
@@ -188,30 +180,18 @@ __global__ __launch_bounds__(kThreads) void expert_qkv_kernel(
     // here rather than in a separate pass: the bytes are already in registers,
     // and the eight threads holding one row are an aligned lane octet, so the
     // row reduction is three shuffles and one thread's update per row.
-#pragma unroll
-    for (int32_t t = 0; t < kXPer; ++t) {
-      const int32_t i = threadIdx.x + t * kThreads;
-      const int32_t xr = i / kRowThreads, xd = (i % kRowThreads) * kVec;
-      const bool live = i < kXVecs;
-      if (live) *(int4 *)(&xs[xr * kLdX + xd]) = xreg[t];
-      //: Every lane reaches the shuffle, so the full mask stays correct even
-      //: when some of them carry no vector.
-      float sq = live ? sumsq(xreg[t]) : 0.f;
+    *(int4 *)(&xs[xr * kLdX + xd]) = xreg;
+    {
+      float sq = sumsq(xreg);
 #pragma unroll
       for (int32_t o = 1; o < kRowThreads; o <<= 1)
         sq += __shfl_xor_sync(0xffffffffu, sq, o);
-      if (live && (i % kRowThreads) == 0) row_sq[xr] += sq;
+      if ((threadIdx.x % kRowThreads) == 0) row_sq[xr] += sq;
     }
 
     // Publish the weight in its natural [k][n] order: one 16-byte store, and
     // `ldmatrix.trans` does the transpose the `.col` B operand needs.
-#pragma unroll
-    for (int32_t t = 0; t < kWPer; ++t) {
-      const int32_t i = threadIdx.x + t * kThreads;
-      if (i < kWVecs)
-        *(int4 *)(&ws[(i / (kTileN / kVec)) * kLdW
-                      + (i % (kTileN / kVec)) * kVec]) = wreg[t];
-    }
+    if (threadIdx.x < kWVecs) *(int4 *)(&ws[wk * kLdW + wn]) = wreg;
     __syncthreads();
     if (k0 + kChunkK < kdim) stage(k0 + kChunkK);
 

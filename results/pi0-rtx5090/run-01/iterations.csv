@@ -20,3 +20,4 @@ iteration,change,latency_ms,decision,report,revision
 18,"Programmatic dependent launch across the whole chain, trigger swept to `last`; projector off cuBLAS too",27.964,keep,measurements/018-pdl.json,HEAD
 19,"Vision feed-forward GELU folded into the GEMM epilogue; the same fusion for the backbone gated FFN measured neutral",27.862,keep,measurements/019-gelu-epilogue.json,HEAD
 20,"Tiles re-picked with cold weights, which is how the expert deploys: three of nine moved",27.556,keep,measurements/020-cold-tile-repick.json,HEAD
+21,"Kernel-structure round: QKV tile space opened and swept cold, attention in-kernel fixup, layernorm mainloop fusion -- all three negative, none routed",27.631,revert,measurements/021-qkv-tile-space.json,HEAD
