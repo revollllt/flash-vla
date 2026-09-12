@@ -27,6 +27,7 @@ import torch
 _HERE = Path(__file__).resolve().parent
 _SRC = _HERE / "kernels" / "expert_pointwise.cu"
 _ATTN_SRC = _HERE / "kernels" / "expert_attention.cu"
+_MMA_SRC = _HERE / "kernels" / "expert_attention_mma.cu"
 _REPO = _HERE.parents[7]
 _ARCH = "sm_120f"
 
@@ -52,7 +53,8 @@ def build(verbose: bool = False) -> Path:
     """Compile the shared library if this source and toolchain have not been built."""
     nvcc = _nvcc()
     tag = hashlib.sha256(_SRC.read_bytes() + _ATTN_SRC.read_bytes()
-                         + nvcc.encode() + _ARCH.encode()).hexdigest()[:16]
+                         + _MMA_SRC.read_bytes() + nvcc.encode()
+                         + _ARCH.encode()).hexdigest()[:16]
     directory = _REPO / ".cache" / "cuda_ext" / f"rtx5090_pi0_pointwise_{tag}"
     directory.mkdir(parents=True, exist_ok=True)
     out = directory / "libexpert_pointwise.so"
@@ -60,7 +62,7 @@ def build(verbose: bool = False) -> Path:
         return out
     command = [nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
                "-gencode", f"arch=compute_{_ARCH[3:]},code={_ARCH}",
-               "-o", str(out), str(_SRC), str(_ATTN_SRC)]
+               "-o", str(out), str(_SRC), str(_ATTN_SRC), str(_MMA_SRC)]
     if verbose:
         print("[rtx5090 pi0 pointwise build]", " ".join(command), flush=True)
     result = subprocess.run(command, capture_output=True, text=True)
@@ -88,6 +90,9 @@ def library(verbose: bool = False):
         lib.expert_masked_softmax_launch.argtypes = [ctypes.c_void_p] * 2 + [
             ctypes.c_int] * 4 + [ctypes.c_float, ctypes.c_void_p]
         lib.expert_masked_softmax_launch.restype = ctypes.c_int
+        lib.expert_attention_mma_launch.argtypes = [ctypes.c_void_p] * 4 + [
+            ctypes.c_int] * 5 + [ctypes.c_float, ctypes.c_void_p]
+        lib.expert_attention_mma_launch.restype = ctypes.c_int
         lib.layer_norm_launch.argtypes = [ctypes.c_void_p] * 4 + [
             ctypes.c_int] * 2 + [ctypes.c_void_p]
         lib.layer_norm_launch.restype = ctypes.c_int
@@ -214,6 +219,23 @@ def expert_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
     return out
 
 
+def expert_attention_mma(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
+                        out: torch.Tensor, *, heads: int, prefix: int) -> torch.Tensor:
+    """out = softmax(mask(q @ k^T * scale)) @ v on the tensor core, one launch.
+
+    `q` and `out` are (queries, 256), `k` and `v` are (keys, 256), contiguous
+    bf16 on CUDA. `out` must NOT alias `q`: the accumulator is written per tile.
+    The mask keeps key j for flat row r when `r >= heads or j <= prefix`. Safe
+    during CUDA-graph capture.
+    """
+    queries, head_dim = q.shape
+    _check(library().expert_attention_mma_launch(
+        q.data_ptr(), k.data_ptr(), v.data_ptr(), out.data_ptr(), queries,
+        k.shape[0], head_dim, heads, prefix, float(head_dim ** -0.5),
+        _stream()), "expert_attention_mma")
+    return out
+
+
 def expert_masked_softmax(scores: torch.Tensor, probs: torch.Tensor, *,
                           heads: int, prefix: int, scale: float) -> torch.Tensor:
     """probs[r] = softmax(mask(r, :) ? scores[r] * scale : -inf), one launch.
@@ -230,6 +252,6 @@ def expert_masked_softmax(scores: torch.Tensor, probs: torch.Tensor, *,
 
 
 __all__ = ["ATTENTION_BLOCK_M", "build", "expert_attention",
-           "expert_masked_softmax", "gelu_", "gelu_mul", "gelu_mul_packed",
+           "expert_attention_mma", "expert_masked_softmax", "gelu_", "gelu_mul", "gelu_mul_packed",
            "layer_norm",
            "library", "rms_norm", "rope_scatter"]

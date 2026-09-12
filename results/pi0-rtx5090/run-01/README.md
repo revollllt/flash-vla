@@ -86,6 +86,46 @@ conflict, then padding the rows, moved 214 µs to 201. **The instruction count i
 the wall, not the conflicts**, and only a tensor-core mainloop clears it. Kept
 unrouted in `kernels/expert_attention.cu` so the negative can be re-run.
 
+**A tensor-core single-kernel attention.** `mma.sync` clears the instruction
+wall the CUDA-core attempt hit -- and the kernel is still **3.1x slower than
+the split form**, 79.5 us against 25.3 at the same shape, correct at cos
+0.999994 / rel 3.4e-03. Four rounds of tuning took it 210 -> 79.5 us: padding
+the shared tiles so a fragment load spreads over all 32 banks (210 -> 155),
+16-byte vector loads in place of per-element ones (155 -> 131), a softmax
+reduced by eight threads per row through shuffles instead of one thread walking
+32 columns (131 -> 89.7), four independent mma accumulator chains (89.7 -> 87.7),
+and staging the next key tile in registers a tile ahead (87.7 -> 79.5). 203
+registers, no spills, 47296 B smem.
+
+**The limit is structural, and it is measured.** Pi0's 408 flat queries are 26
+mma M-tiles, so a design that keeps a softmax row in registers has 26 CTAs to
+offer a 170-SM part. A sweep of the same kernel over larger query counts:
+
+| CTAs | wall | work |
+|---:|---:|---:|
+| 26 | 79.6 us | 1x |
+| 51 | 81.3 us | 2x |
+| 102 | 81.6 us | 4x |
+| 153 | 83.5 us | 6x |
+| 204 | 145.1 us | 8x |
+
+**Six times the work for 1.05x the time** -- 85% of the machine is idle and
+cannot be given anything, and the jump at 204 is the second wave. Per-CTA time
+is what sets the wall, and it is dominated by re-reading all of K and V: with
+the per-tile global load ablated the kernel runs 38.6 us, so **49 of 87.7 us
+was that load**, which every query-tile CTA must do in full because the softmax
+cannot be split across CTAs without a partial round-trip. Buying the
+parallelism back costs more than it saves: a 6-way key split writes 6 x 408 x
+256 fp32 partials, 5.2 MB of round-trip, **6.8 us at [ld.bw.dev.dram]** against
+a ~13 us main loop.
+
+Meanwhile the split form is near its own floor. Its three passes cost 1.3 MB,
+1.34 MB and 1.3 MB of traffic, 4.2 us each at [ld.bw.dev.dram], so **12.6 us is
+structural and it measures 15.9 us in the graph -- 79% of it**. The floor
+model's 4.17 us ceiling for this call site assumes a fusion that this shape
+cannot afford. Kept unrouted in `kernels/expert_attention_mma.cu`; the sweep is
+`bench_mma_scaling` in `lab/sm120/pi0_attention_bench.py`.
+
 **`F.scaled_dot_product_attention` with a precomputed mask**: 90.3 µs against
 the torch chain's 73.0 at this shape. Slower than what it would replace.
 

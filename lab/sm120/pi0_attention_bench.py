@@ -59,10 +59,7 @@ def main() -> int:
     return 0 if ok else 1
 
 
-def _run_all() -> int:
-    rc = main()
-    bench_split()
-    return rc
+
 
 
 def bench_split() -> None:
@@ -90,6 +87,77 @@ def bench_split() -> None:
     t_split = time_us(split)
     print(f"  {'cuBLAS + fused softmax':<22} {t_split:8.2f} us  "
           f"{t_torch / t_split:5.2f}x  cos {cos:.6f}")
+
+
+
+
+
+def bench_mma() -> None:
+    """The tensor-core single kernel, against the shipped split form."""
+    torch.manual_seed(0)
+    q = torch.randn(QUERIES, HEAD_DIM, device=DEV, dtype=DT) * 0.1
+    k = torch.randn(KEYS, HEAD_DIM, device=DEV, dtype=DT) * 0.1
+    v = torch.randn(KEYS, HEAD_DIM, device=DEV, dtype=DT) * 0.1
+    ref = torch.empty(QUERIES, HEAD_DIM, device=DEV, dtype=DT)
+    got = torch.empty_like(ref)
+    scores = torch.empty(QUERIES, KEYS, device=DEV, dtype=DT)
+
+    def split():
+        torch.mm(q, k.t(), out=scores)
+        cu.expert_masked_softmax(scores, scores, heads=HEADS, prefix=PREFIX,
+                                 scale=float(HEAD_DIM ** -0.5))
+        torch.mm(scores, v, out=ref)
+
+    def mma():
+        cu.expert_attention_mma(q, k, v, got, heads=HEADS, prefix=PREFIX)
+
+    split(); mma(); torch.cuda.synchronize()
+    cos = torch.nn.functional.cosine_similarity(
+        ref.float().flatten(), got.float().flatten(), dim=0).item()
+    rel = (torch.linalg.vector_norm(ref.float() - got.float())
+           / torch.linalg.vector_norm(ref.float())).item()
+    ts, tm = time_us(split), time_us(mma)
+    print(f"  {'cuBLAS + fused softmax':<24} {ts:8.2f} us")
+    print(f"  {'tensor-core one kernel':<24} {tm:8.2f} us  {ts / tm:5.2f}x  "
+          f"{'PASS' if cos >= 0.999 and rel <= 2e-2 else '*** FAIL ***'}  "
+          f"cos {cos:.6f} rel {rel:.2e}")
+
+
+
+
+def bench_mma_scaling() -> None:
+    """Does the tensor-core kernel's wall time track its CTA count?
+
+    Pi0's shape gives 408/16 = 26 CTAs on a 170-SM part, so 85% of the machine
+    is idle and a warp scheduler holds one warp -- every instruction latency is
+    exposed. If that is the binding constraint, multiplying the query count
+    should cost far less than proportionally until the grid fills the part.
+    """
+    torch.manual_seed(0)
+    k = torch.randn(KEYS, HEAD_DIM, device=DEV, dtype=DT) * 0.1
+    v = torch.randn(KEYS, HEAD_DIM, device=DEV, dtype=DT) * 0.1
+    print("  query tiles (CTAs) -> wall time, one CTA per SM either way")
+    base = None
+    for mult in (1, 2, 4, 6, 8, 12):
+        rows = QUERIES * mult
+        q = torch.randn(rows, HEAD_DIM, device=DEV, dtype=DT) * 0.1
+        out = torch.empty(rows, HEAD_DIM, device=DEV, dtype=DT)
+        fn = lambda: cu.expert_attention_mma(q, k, v, out, heads=HEADS,
+                                             prefix=PREFIX)
+        fn(); torch.cuda.synchronize()
+        t = time_us(fn)
+        base = base or t
+        ctas = (rows + 15) // 16
+        print(f"  {ctas:5d} CTAs  {t:8.2f} us   {t / base:5.2f}x time for "
+              f"{mult}x work")
+
+
+def _run_all() -> int:
+    rc = main()
+    bench_split()
+    bench_mma()
+    bench_mma_scaling()
+    return rc
 
 
 if __name__ == "__main__":
