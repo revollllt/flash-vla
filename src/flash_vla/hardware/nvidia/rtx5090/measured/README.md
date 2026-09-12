@@ -125,6 +125,20 @@ Two units needed new probes. `launch` because sm90's six constants came from
 absorbed job logs rather than an in-repo probe, and `mma` because the skill's
 `mma_rate` is built on `wgmma`, which does not exist here.
 
+## A floor-model assumption that does not hold on this axis
+
+`tools.profiling.floor` treats "roofline above ceiling" as a model error, on the
+reasoning that a datasheet peak is always optimistic against what a machine
+delivers. **That is false here.** `spec.py`'s dense peaks are quoted at the
+2.407 GHz marketed boost, and this part runs at ~2.89 GHz under load
+[mma.clock.sm] -- so the measured tensor ceiling (253 TFLOP/s) is 21% ABOVE the
+datasheet figure it is compared against, and any tensor-bound segment trips the
+check.
+
+The rule is not wrong so much as sm90-shaped. Read a `valid: false` on this axis
+against the per-segment `pct_of_ceiling` before concluding anything: the ceiling
+column is the one built from measured constants and it is the one to use.
+
 ## The biggest thing still untested here
 
 **The `tma` unit, beyond sweep A.** Four of the five units are as complete as

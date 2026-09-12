@@ -349,3 +349,15 @@ constants:
   rule: 'TMA reaches essentially the same ceiling as a plain load here, so the copy engine is not the
     constraint that the box size is. Divide bytes by 1.50 TB/s for an optimistic TMA floor and say that
     only sweep A was run.'
+- tag: mma.tflops.dev.bf16
+  unit: mma
+  value: 253
+  units: TFLOP/s bf16 with fp32 accumulate, sustained across the whole device, from wall time rather than
+    a clock assumption; 248.8 at 4 warps per SM rising to 253.2 at 12, register-resident operands. This
+    is mma.rate.sm.bf16's 512 FLOP/cycle/SM at the 2.89 GHz this part was observed running (mma.clock.sm),
+    and the two must move together
+  short: 253 TFLOP/s observed
+  rule: 'Use this where a LATENCY model needs a rate -- it is what tools.profiling.floor divides FLOPs
+    by. Use mma.rate.sm.bf16 instead wherever the clock is not fixed, because this figure carries an
+    observed 2.89 GHz inside it and that is 20% above the marketed boost. Never divide by a datasheet
+    419.4: that is the fp16-ACCUMULATE peak.'
