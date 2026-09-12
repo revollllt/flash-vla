@@ -171,7 +171,12 @@ def llm_backbone_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, x_norm, *, scratch)
     normed = x_norm[:m]
     packed = scratch("backbone_qkv", (m, n), x.dtype, x.device)
     cu.rms_norm(x, normed)
-    torch.mm(normed, weight_qkv, out=packed)
+    if cu.tiles(m, x.shape[1], n):
+        # 46.40 us against cuBLAS's 55.47 at 768 x 2048 x 2560; see
+        # `llm_backbone_out_proj_residual` for why the tile is what it is.
+        cu.tiled_gemm(normed, weight_qkv, packed)
+    else:
+        torch.mm(normed, weight_qkv, out=packed)
     cu.rope_scatter(packed, rope, Q, K, V)
 
 
@@ -223,9 +228,20 @@ def action_expert_ffn_down_residual(x, weight, gate, out):
 
 
 def llm_backbone_out_proj_residual(x, weight, out):
-    """out += attn @ weight, in place."""
+    """out += attn @ weight, in place -- one launch.
+
+    The hand-written GEMM takes this one: 43.23 us against cuBLAS's 49.33 at
+    768 x 2048 x 2048, because a 64 x 64 tile puts 384 CTAs on the output where
+    cuBLAS's 128 x 128 puts 96 on a 170-SM part. The residual rides in its
+    epilogue, aliased to the destination, which is safe because each element is
+    read by the one thread that writes it.
+    """
     flat = out.view(x.shape[0], -1)
-    torch.addmm(flat, x, weight, beta=1, alpha=1, out=flat)
+    m, k = x.shape
+    if cu.tiles(m, k, weight.shape[1]):
+        cu.tiled_gemm(x, weight, flat, res=flat)
+    else:
+        torch.addmm(flat, x, weight, beta=1, alpha=1, out=flat)
     return out
 
 

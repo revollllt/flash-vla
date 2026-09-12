@@ -1,7 +1,7 @@
 # Pi0 · RTX 5090 · run-01
 
 First optimization run of `rtx5090/pi0`, from the all-torch bring-up route to a
-hand-written CUDA route: **46.794 → 30.854 ms, 1.52×**.
+hand-written CUDA route: **46.794 → 30.596 ms, 1.53×**.
 
 ![Optimization progress](progress.svg)
 
@@ -41,6 +41,7 @@ different comparison context; this run starts its own curve.
 | 11 | action-token output projection off torch | 30.999 | **−0.079** |
 | 12 | packed gated activation vectorized to 128-bit | 30.867 | **−0.132** |
 | 13 | streaming pointwise grid cap 340 → 680 CTAs | 30.854 | *min −0.10, p99 −0.15* |
+| 15 | hand-written 64×64 GEMM on two backbone shapes | 30.596 | **−0.249** |
 
 Every delta in rows 1–4 is a **paired A/B in one job**: the retained route and
 the candidate measured back to back, same process family, same driver, with the

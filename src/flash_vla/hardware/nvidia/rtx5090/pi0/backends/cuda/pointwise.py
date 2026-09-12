@@ -29,6 +29,7 @@ _SRC = _HERE / "kernels" / "expert_pointwise.cu"
 _ATTN_SRC = _HERE / "kernels" / "expert_attention.cu"
 _MMA_SRC = _HERE / "kernels" / "expert_attention_mma.cu"
 _QKV_SRC = _HERE / "kernels" / "expert_qkv.cu"
+_GEMM_SRC = _HERE / "kernels" / "tiled_gemm.cu"
 _REPO = _HERE.parents[7]
 _ARCH = "sm_120f"
 
@@ -54,7 +55,7 @@ def build(verbose: bool = False) -> Path:
     """Compile the shared library if this source and toolchain have not been built."""
     nvcc = _nvcc()
     tag = hashlib.sha256(_SRC.read_bytes() + _ATTN_SRC.read_bytes()
-                         + _MMA_SRC.read_bytes() + _QKV_SRC.read_bytes() + nvcc.encode()
+                         + _MMA_SRC.read_bytes() + _QKV_SRC.read_bytes() + _GEMM_SRC.read_bytes() + nvcc.encode()
                          + _ARCH.encode()).hexdigest()[:16]
     directory = _REPO / ".cache" / "cuda_ext" / f"rtx5090_pi0_pointwise_{tag}"
     directory.mkdir(parents=True, exist_ok=True)
@@ -63,7 +64,7 @@ def build(verbose: bool = False) -> Path:
         return out
     command = [nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
                "-gencode", f"arch=compute_{_ARCH[3:]},code={_ARCH}",
-               "-o", str(out), str(_SRC), str(_ATTN_SRC), str(_MMA_SRC), str(_QKV_SRC)]
+               "-o", str(out), str(_SRC), str(_ATTN_SRC), str(_MMA_SRC), str(_QKV_SRC), str(_GEMM_SRC)]
     if verbose:
         print("[rtx5090 pi0 pointwise build]", " ".join(command), flush=True)
     result = subprocess.run(command, capture_output=True, text=True)
@@ -85,6 +86,9 @@ def library(verbose: bool = False):
         lib.gelu_mul_launch.argtypes = [ctypes.c_void_p] * 3 + [ctypes.c_longlong] + [
             ctypes.c_void_p]
         lib.gelu_mul_launch.restype = ctypes.c_int
+        lib.tiled_gemm_launch.argtypes = [ctypes.c_void_p] * 4 + [
+            ctypes.c_int] * 3 + [ctypes.c_void_p]
+        lib.tiled_gemm_launch.restype = ctypes.c_int
         lib.expert_qkv_launch.argtypes = [ctypes.c_void_p] * 6 + [
             ctypes.c_int] * 5 + [ctypes.c_void_p]
         lib.expert_qkv_launch.restype = ctypes.c_int
@@ -146,6 +150,33 @@ def rope_scatter(packed: torch.Tensor, rope: torch.Tensor, q: torch.Tensor,
     _check(library().rope_scatter_launch(
         packed.data_ptr(), rope.data_ptr(), q.data_ptr(), k.data_ptr(),
         v.data_ptr(), rows, q_dim, head_dim, _stream()), "rope_scatter")
+
+
+#: Shapes `tiled_gemm` accepts: its tile is 64 x 64 x 32 and it has no tail
+#: path, by design -- these are fixed model shapes.
+TILE_M, TILE_N, TILE_K = 64, 64, 32
+
+
+def tiles(m: int, k: int, n: int) -> bool:
+    """Whether `tiled_gemm` can take this shape."""
+    return m % TILE_M == 0 and n % TILE_N == 0 and k % TILE_K == 0
+
+
+def tiled_gemm(a: torch.Tensor, b: torch.Tensor, c: torch.Tensor,
+               res: torch.Tensor | None = None) -> torch.Tensor:
+    """c = (res +) a @ b, bf16 in and out, fp32 accumulate.
+
+    `a` is (m, k), `b` is (k, n), `c` is (m, n), all contiguous bf16 on CUDA.
+    `res` is optional and MAY ALIAS `c`. Writes `c` in place; safe during
+    CUDA-graph capture. Call `tiles()` first: a shape that does not tile is
+    rejected rather than handled slowly.
+    """
+    m, k = a.shape
+    n = b.shape[1]
+    _check(library().tiled_gemm_launch(
+        a.data_ptr(), b.data_ptr(), 0 if res is None else res.data_ptr(),
+        c.data_ptr(), m, k, n, _stream()), "tiled_gemm")
+    return c
 
 
 def expert_qkv(x: torch.Tensor, weight: torch.Tensor, rope: torch.Tensor,

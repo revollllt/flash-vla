@@ -13,3 +13,5 @@ iteration,change,latency_ms,decision,report,revision
 11,"Action-token output projection off torch: 11 launches to 3. Its three siblings measured neutral or worse and were left alone",30.999,keep,measurements/011-action-out-proj.json,HEAD
 12,"Packed gated activation vectorized to 128-bit: it was moving one bf16 per access, a quarter of gelu_mul's rate",30.867,keep,measurements/012-packed-gelu-vector.json,HEAD
 13,"Streaming pointwise grid cap 340 -> 680 CTAs: min -0.10 and p99 -0.15 ms, median inside noise",30.854,keep,measurements/013-pointwise-grid.json,HEAD
+14,"K-contiguous vision weight: 1.21x from bf16 split-K accumulation, failed the correctness gate",,revert,measurements/014-rejected-vision-ffn-down-tn.json,a20ffae
+15,"Hand-written 64x64 GEMM on the two backbone shapes cuBLAS cannot fill the part with",30.596,keep,measurements/015-tiled-gemm.json,HEAD
