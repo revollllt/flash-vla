@@ -35,6 +35,8 @@
 #include "cutlass/gemm/threadblock/threadblock_swizzle_streamk.h"
 #include "cutlass/epilogue/thread/linear_combination.h"
 
+#include "pdl.cuh"
+
 namespace {
 
 using Element = cutlass::bfloat16_t;
@@ -84,15 +86,72 @@ using Gemm = cutlass::gemm::device::GemmUniversal<
 //: for a workspace the caller sized wrong, and those are not the same bug.
 constexpr int kCannotImplement = 1000;
 
+//: This library's own PDL switch. The pointwise library has a separate one;
+//: they are set together from the host.
+bool g_pdl = false;
+
+// CUTLASS's own entry point with the two `griddepcontrol` instructions around
+// it. The wait can only go at the very top here, because the mainloop is not
+// this repo's to open -- and that is the honest limit of wrapping somebody
+// else's kernel. It still pays: measured on a chain shaped like Pi0's, a wait
+// at the top is 1.120x under graph replay against 1.164x for a wait placed
+// after the producer-independent weight read (`lab/sm120/pdl_unit.cu`). Most
+// of the gain is the launch and CTA-scheduling overlap, and that part needs no
+// access to the mainloop.
+template <class Operator>
+__global__ void pdl_kernel_entry(typename Operator::Params params) {
+  extern __shared__ int shared_base[];
+  auto *storage = reinterpret_cast<typename Operator::SharedStorage *>(shared_base);
+  // NOT `cutlass::arch::wait_on_dependent_grids()`. That one is behind
+  // CUTLASS_GDC_ENABLED, which needs CUTLASS_ENABLE_GDC_FOR_SM100 defined, and
+  // without it BOTH the wait and the trigger compile to nothing -- so the
+  // kernel is launched early by the attribute and never waits. That is a race,
+  // not a slow kernel, and it showed up as `replay_identical: false` with the
+  // model's cosine down at 0.99973. These two are unconditional.
+  flash_vla::rtx5090::pdl_wait();
+  Operator::invoke(params, *storage);
+  flash_vla::rtx5090::pdl_trigger();
+}
+
 struct Plan {
   virtual ~Plan() = default;
   virtual cutlass::Status run(cudaStream_t stream) = 0;
 };
 
+//: Reaches `params_`, which `GemmUniversalBase` keeps protected, so the launch
+//: can be made with the PDL attribute and this file's entry point instead of
+//: CUTLASS's.
+template <class G>
+struct PdlGemm : G {
+  using GemmKernel = typename G::GemmKernel;
+
+  cutlass::Status run_pdl(cudaStream_t stream) {
+    constexpr int kSmem = int(sizeof(typename GemmKernel::SharedStorage));
+    if (kSmem >= (48 << 10)) {
+      static bool opted = false;
+      if (!opted) {
+        if (cudaFuncSetAttribute(pdl_kernel_entry<GemmKernel>,
+                                 cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                 kSmem) != cudaSuccess)
+          return cutlass::Status::kErrorInternal;
+        opted = true;
+      }
+    }
+    const dim3 grid = this->params_.get_grid_dims();
+    const dim3 block(GemmKernel::kThreadCount, 1, 1);
+    if (pdl_launch(true, pdl_kernel_entry<GemmKernel>, grid, block, kSmem,
+                   stream, this->params_) != cudaSuccess)
+      return cutlass::Status::kErrorInternal;
+    return cutlass::Status::kSuccess;
+  }
+};
+
 template <class G>
 struct PlanImpl : Plan {
-  G gemm;
-  cutlass::Status run(cudaStream_t stream) override { return gemm.run(stream); }
+  PdlGemm<G> gemm;
+  cutlass::Status run(cudaStream_t stream) override {
+    return g_pdl ? gemm.run_pdl(stream) : gemm.run(stream);
+  }
 };
 
 //: A tile whose shared storage does not fit is rejected here rather than
@@ -186,6 +245,11 @@ int cutlass_gemm_run(void *handle, void *stream) {
   cutlass::Status s = ((Plan *)handle)->run((cudaStream_t)stream);
   if (s != cutlass::Status::kSuccess) return (int)cudaErrorLaunchFailure;
   return (int)cudaGetLastError();
+}
+
+int cutlass_gemm_set_pdl(int on) {
+  g_pdl = on != 0;
+  return 0;
 }
 
 int cutlass_gemm_destroy(void *handle) {

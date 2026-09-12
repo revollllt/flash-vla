@@ -1,7 +1,7 @@
 # Pi0 · RTX 5090 · run-01
 
 First optimization run of `rtx5090/pi0`, from the all-torch bring-up route to a
-hand-written CUDA route: **46.794 → 27.980 ms, 1.67×**.
+hand-written CUDA route: **46.794 → 28.004 ms, 1.67×**.
 
 ![Optimization progress](progress.svg)
 
@@ -44,6 +44,7 @@ different comparison context; this run starts its own curve.
 | 15 | hand-written 64×64 GEMM on two backbone shapes | 30.596 | **−0.249** |
 | 16 | fused attention, rebuilt and split 8 ways over the keys | 29.749 | **−0.847** |
 | 17 | every GEMM off cuBLAS onto CUTLASS stream-K | 27.980 | **−1.769** |
+| 18 | programmatic dependent launch across the chain | 28.004 | **−0.114** paired |
 
 Every delta in rows 1–4 is a **paired A/B in one job**: the retained route and
 the candidate measured back to back, same process family, same driver, with the
@@ -151,6 +152,49 @@ route was rewritten): ran end to end and returned cos 0.898 with
 `replay_identical` false. Three of those configs feed warp-specialised builders
 where the stages *are* the producer buffer; at one stage the producer has
 nothing to fill while the consumer reads. A race, not a tolerance.
+
+## PDL, and why the trigger had to be swept
+
+Every kernel in the route now carries `griddepcontrol`, so a dependent grid
+starts when its producer says so rather than when the producer's last CTA
+exits. The two halves are set differently because they are not symmetric.
+
+**The wait is derived.** It sits immediately before the first read of producer
+data. In most of these kernels every read is the producer's output, so it is
+the first statement; `expert_qkv` is the exception worth having, because its
+5.24 MB weight has nothing to do with the kernel before it and is issued
+ABOVE the wait while the 104 KB activation is issued below.
+
+**The trigger is swept**, and the sweep changed the answer. Three legs a side,
+against PDL off at 28.147 ms:
+
+| trigger | deployed | vs off |
+|---|---:|---:|
+| `last` | 27.913 | **−0.162** |
+| `early` | 27.992 | −0.083 |
+| `mid` | 28.037 | −0.038 |
+
+`last` wins, which is the opposite of the obvious guess. A trigger on the last
+line is close to a no-op -- the kickoff already fires when every CTA has exited
+-- so what this route gets from PDL is the WAIT: the consumer's CTAs are
+scheduled and its producer-independent work runs while the producer finishes.
+Releasing the dependent grid any earlier only hands it SMs the producer still
+wants.
+
+**It needs both sides, and that is why it went in after the GEMMs moved.** With
+cuBLAS still in the route, PDL was a *regression* at every trigger position --
+28.166/28.177/28.287 against 28.054 off -- because a cuBLAS kernel carries
+neither instruction, so no chain forms and the wait is pure cost. The CUTLASS
+GEMMs are launched through this repo's own entry point, which wraps
+`Operator::invoke` with the pair.
+
+**One bug worth recording.** The first version of that wrapper used
+`cutlass::arch::wait_on_dependent_grids()`. That is behind `CUTLASS_GDC_ENABLED`,
+which needs `CUTLASS_ENABLE_GDC_FOR_SM100` defined, and without it BOTH the wait
+and the trigger compile to nothing -- so the GEMM was launched early by the
+attribute and never waited. `replay_identical` went false and the model cosine
+fell to 0.99973. A wait that is compiled out is a race, not a slow kernel, which
+is the same failure mode the wiki warns about for a wait placed too late.
 
 ## One negative that was wrong, and how it was caught
 

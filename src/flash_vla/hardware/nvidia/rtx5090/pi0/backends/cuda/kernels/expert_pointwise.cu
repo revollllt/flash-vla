@@ -20,7 +20,12 @@
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
 
+#include "pdl.cuh"
+
 namespace {
+
+using flash_vla::rtx5090::pdl_trigger;
+using flash_vla::rtx5090::pdl_wait;
 
 //: RMSNorm epsilon, inside the mean. Matches the reference `tl_rms_factor`.
 constexpr float kRmsEps = 1e-6f;
@@ -64,6 +69,10 @@ __device__ __forceinline__ float gelu_tanh(float x) {
 __global__ void rms_norm_kernel(const __nv_bfloat16 *__restrict__ x,
                                 __nv_bfloat16 *__restrict__ out,
                                 int32_t rows, int32_t cols) {
+  //: Derived: every read in this kernel is of `x`, which is
+  //: what the producer wrote, so the wait is the first statement.
+  pdl_wait();
+
   __shared__ float reduction[32];
   const int32_t row = blockIdx.x;
   if (row >= rows) return;
@@ -96,6 +105,7 @@ __global__ void rms_norm_kernel(const __nv_bfloat16 *__restrict__ x,
       v[j] = __float2bfloat16(__bfloat162float(v[j]) * s);
     out4[i] = raw;
   }
+  pdl_trigger();
 }
 
 // Split a packed (rows, q_dim + 2 * head_dim) projection into Q, K and V,
@@ -112,6 +122,10 @@ __global__ void rope_scatter_kernel(const __nv_bfloat16 *__restrict__ packed,
                                     __nv_bfloat16 *__restrict__ v,
                                     int32_t rows, int32_t q_dim,
                                     int32_t head_dim) {
+  //: Derived: every read in this kernel is of `packed`, which is
+  //: what the producer wrote, so the wait is the first statement.
+  pdl_wait();
+
   const int32_t row = blockIdx.x;
   if (row >= rows) return;
   const int32_t n = q_dim + 2 * head_dim;
@@ -144,6 +158,7 @@ __global__ void rope_scatter_kernel(const __nv_bfloat16 *__restrict__ packed,
           [p - ((q_dim + head_dim) >> 1)] = in;
     }
   }
+  pdl_trigger();
 }
 
 // out = gelu_tanh(gate) * up, element-wise over (rows, cols).
@@ -155,6 +170,10 @@ __global__ void gelu_mul_kernel(const __nv_bfloat16 *__restrict__ gate,
                                 const __nv_bfloat16 *__restrict__ up,
                                 __nv_bfloat16 *__restrict__ out,
                                 int64_t elements) {
+  //: Derived: every read in this kernel is of `gate`, which is
+  //: what the producer wrote, so the wait is the first statement.
+  pdl_wait();
+
   const int64_t vec = elements >> 3;
   const int4 *g4 = reinterpret_cast<const int4 *>(gate);
   const int4 *u4 = reinterpret_cast<const int4 *>(up);
@@ -171,6 +190,7 @@ __global__ void gelu_mul_kernel(const __nv_bfloat16 *__restrict__ gate,
                                * __bfloat162float(uv[j]));
     o4[i] = gr;
   }
+  pdl_trigger();
 }
 
 }  // namespace
@@ -191,6 +211,22 @@ __global__ void gelu_mul_kernel(const __nv_bfloat16 *__restrict__ gate,
 //: and it leaves these kernels short of the memory parallelism they need.
 constexpr int32_t kPointwiseCtas = 680;
 
+//: One switch for every launcher in this library, so PDL can be measured
+//: against itself without a recompile. The device-side wait and trigger are
+//: compiled in unconditionally: both are no-ops on a grid that was not
+//: launched with programmatic serialization.
+namespace {
+bool g_pdl = false;
+}
+
+extern "C" int flash_vla_pdl_set(int on) {
+  g_pdl = on != 0;
+  return 0;
+}
+
+//: Declared in each translation unit of this library that launches.
+bool flash_vla_pdl_enabled() { return g_pdl; }
+
 extern "C" {
 
 // Every entry takes raw device pointers and an explicit stream so the launch is
@@ -199,7 +235,7 @@ int rms_norm_launch(const void *x, void *out, int rows, int cols,
                     void *stream) {
   if ((cols & 7) != 0) return cudaErrorInvalidValue;  // needs 128-bit chunks
   const int32_t threads = (cols >= 2048) ? 512 : 256;
-  rms_norm_kernel<<<rows, threads, 0, (cudaStream_t)stream>>>(
+  return (int)pdl_launch(flash_vla_pdl_enabled(), rms_norm_kernel, dim3(rows), dim3(threads), 0, (cudaStream_t)stream,
       (const __nv_bfloat16 *)x, (__nv_bfloat16 *)out, rows, cols);
   return (int)cudaGetLastError();
 }
@@ -210,10 +246,12 @@ int rope_scatter_launch(const void *packed, const void *rope, void *q, void *k,
   if ((head_dim & 1) != 0 || (q_dim & 1) != 0) return cudaErrorInvalidValue;
   const int32_t n = q_dim + 2 * head_dim;
   const int32_t threads = (n >> 1) >= 512 ? 512 : 256;
-  rope_scatter_kernel<<<rows, threads, 0, (cudaStream_t)stream>>>(
-      (const __nv_bfloat16 *)packed, (const __nv_bfloat16 *)rope,
-      (__nv_bfloat16 *)q, (__nv_bfloat16 *)k, (__nv_bfloat16 *)v, rows, q_dim,
-      head_dim);
+  cudaError_t e = pdl_launch(
+      flash_vla_pdl_enabled(), rope_scatter_kernel, dim3(rows), dim3(threads), 0,
+      (cudaStream_t)stream, (const __nv_bfloat16 *)packed,
+      (const __nv_bfloat16 *)rope, (__nv_bfloat16 *)q, (__nv_bfloat16 *)k,
+      (__nv_bfloat16 *)v, rows, q_dim, head_dim);
+  if (e != cudaSuccess) return (int)e;
   return (int)cudaGetLastError();
 }
 
@@ -227,9 +265,11 @@ int gelu_mul_launch(const void *gate, const void *up, void *out,
   int32_t blocks = (int32_t)((vec + threads - 1) / threads);
   if (blocks > kPointwiseCtas) blocks = kPointwiseCtas;
   if (blocks < 1) blocks = 1;
-  gelu_mul_kernel<<<blocks, threads, 0, (cudaStream_t)stream>>>(
-      (const __nv_bfloat16 *)gate, (const __nv_bfloat16 *)up,
-      (__nv_bfloat16 *)out, elements);
+  cudaError_t e = pdl_launch(
+      flash_vla_pdl_enabled(), gelu_mul_kernel, dim3(blocks), dim3(threads), 0,
+      (cudaStream_t)stream, (const __nv_bfloat16 *)gate,
+      (const __nv_bfloat16 *)up, (__nv_bfloat16 *)out, elements);
+  if (e != cudaSuccess) return (int)e;
   return (int)cudaGetLastError();
 }
 
@@ -254,6 +294,10 @@ __global__ void layer_norm_kernel(const __nv_bfloat16 *__restrict__ x,
                                   const __nv_bfloat16 *__restrict__ b,
                                   __nv_bfloat16 *__restrict__ out,
                                   int32_t rows, int32_t cols) {
+  //: Derived: every read in this kernel is of `x`, which is
+  //: what the producer wrote, so the wait is the first statement.
+  pdl_wait();
+
   __shared__ float reduction[32];
   __shared__ float shift, scale;
   const int32_t row = blockIdx.x;
@@ -297,6 +341,7 @@ __global__ void layer_norm_kernel(const __nv_bfloat16 *__restrict__ x,
     }
     out4[i] = raw;
   }
+  pdl_trigger();
 }
 
 }  // namespace
@@ -305,9 +350,11 @@ extern "C" int layer_norm_launch(const void *x, const void *w, const void *b,
                                  void *out, int rows, int cols, void *stream) {
   if ((cols & 7) != 0) return cudaErrorInvalidValue;
   const int32_t threads = (cols >= 2048) ? 512 : 256;
-  layer_norm_kernel<<<rows, threads, 0, (cudaStream_t)stream>>>(
-      (const __nv_bfloat16 *)x, (const __nv_bfloat16 *)w,
+  cudaError_t e = pdl_launch(
+      flash_vla_pdl_enabled(), layer_norm_kernel, dim3(rows), dim3(threads), 0,
+      (cudaStream_t)stream, (const __nv_bfloat16 *)x, (const __nv_bfloat16 *)w,
       (const __nv_bfloat16 *)b, (__nv_bfloat16 *)out, rows, cols);
+  if (e != cudaSuccess) return (int)e;
   return (int)cudaGetLastError();
 }
 
@@ -315,6 +362,10 @@ extern "C" int layer_norm_launch(const void *x, const void *w, const void *b,
 // has no gate to multiply against.
 namespace {
 __global__ void gelu_kernel(__nv_bfloat16 *__restrict__ x, int64_t elements) {
+  //: Derived: every read in this kernel is of `x`, which is
+  //: what the producer wrote, so the wait is the first statement.
+  pdl_wait();
+
   const int64_t vec = elements >> 3;
   int4 *x4 = reinterpret_cast<int4 *>(x);
   for (int64_t i = int64_t(blockIdx.x) * blockDim.x + threadIdx.x; i < vec;
@@ -326,6 +377,7 @@ __global__ void gelu_kernel(__nv_bfloat16 *__restrict__ x, int64_t elements) {
       v[j] = __float2bfloat16(gelu_tanh(__bfloat162float(v[j])));
     x4[i] = raw;
   }
+  pdl_trigger();
 }
 }  // namespace
 
@@ -335,8 +387,10 @@ extern "C" int gelu_launch(void *x, long long elements, void *stream) {
   int32_t blocks = (int32_t)((vec + 255) / 256);
   if (blocks > kPointwiseCtas) blocks = kPointwiseCtas;
   if (blocks < 1) blocks = 1;
-  gelu_kernel<<<blocks, 256, 0, (cudaStream_t)stream>>>((__nv_bfloat16 *)x,
-                                                        elements);
+  cudaError_t e = pdl_launch(flash_vla_pdl_enabled(), gelu_kernel, dim3(blocks),
+                             dim3(256), 0, (cudaStream_t)stream,
+                             (__nv_bfloat16 *)x, elements);
+  if (e != cudaSuccess) return (int)e;
   return (int)cudaGetLastError();
 }
 
@@ -352,6 +406,10 @@ namespace {
 __global__ void gelu_mul_packed_kernel(const __nv_bfloat16 *__restrict__ packed,
                                        __nv_bfloat16 *__restrict__ out,
                                        int32_t rows, int32_t half) {
+  //: Derived: every read in this kernel is of `packed`, which is
+  //: what the producer wrote, so the wait is the first statement.
+  pdl_wait();
+
   // Eight columns per thread, so every access is 128-bit. The scalar form this
   // replaced moved the same bytes at a quarter of the rate -- 61.72 us against
   // `gelu_mul`'s 14.52 for the same 75.5 MB -- purely because it issued one
@@ -373,6 +431,7 @@ __global__ void gelu_mul_packed_kernel(const __nv_bfloat16 *__restrict__ packed,
                                * __bfloat162float(uv[j]));
     *(int4 *)(out + int64_t(r) * half + c) = g;
   }
+  pdl_trigger();
 }
 }  // namespace
 
@@ -384,7 +443,10 @@ extern "C" int gelu_mul_packed_launch(const void *packed, void *out, int rows,
   int32_t blocks = (int32_t)((total + threads - 1) / threads);
   if (blocks > kPointwiseCtas) blocks = kPointwiseCtas;
   if (blocks < 1) blocks = 1;
-  gelu_mul_packed_kernel<<<blocks, threads, 0, (cudaStream_t)stream>>>(
-      (const __nv_bfloat16 *)packed, (__nv_bfloat16 *)out, rows, half);
+  cudaError_t e = pdl_launch(
+      flash_vla_pdl_enabled(), gelu_mul_packed_kernel, dim3(blocks),
+      dim3(threads), 0, (cudaStream_t)stream, (const __nv_bfloat16 *)packed,
+      (__nv_bfloat16 *)out, rows, half);
+  if (e != cudaSuccess) return (int)e;
   return (int)cudaGetLastError();
 }

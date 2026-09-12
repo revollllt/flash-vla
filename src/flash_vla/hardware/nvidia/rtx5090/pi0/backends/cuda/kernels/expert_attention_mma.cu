@@ -46,10 +46,17 @@
 #include <cuda_runtime.h>
 
 #include "mma_bf16.cuh"
+#include "pdl.cuh"
+
+//: Owned by expert_pointwise.cu, which holds this library's PDL switch.
+bool flash_vla_pdl_enabled();
 
 namespace {
 
 using flash_vla::rtx5090::ldmatrix_a;
+using flash_vla::rtx5090::pdl_trigger;
+using flash_vla::rtx5090::pdl_trigger_at;
+using flash_vla::rtx5090::pdl_wait;
 using flash_vla::rtx5090::ldmatrix_b;
 using flash_vla::rtx5090::ldmatrix_b_trans;
 using flash_vla::rtx5090::mma_m16n8k16;
@@ -108,6 +115,10 @@ __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
       smem + kQBytes + kKBytes + kVBytes + kSBytes + kPBytes);
   float *row_sum = row_max + kBlockM;
   float *row_corr = row_sum + kBlockM;
+
+  //: Derived: Q, K and V are all the QKV projection's output, so there is no
+  //: producer-independent work to hoist and the wait is the first statement.
+  pdl_wait();
 
   const int32_t q0 = blockIdx.x * kBlockM;
   const int32_t rows = min(kBlockM, queries - q0);
@@ -270,6 +281,9 @@ __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
     __syncthreads();
   }
 
+  //: The key loop is done and only the epilogue remains.
+  pdl_trigger_at<FLASH_VLA_PDL_TRIGGER_EARLY>();
+
   const int32_t r0 = lane >> 2, c0 = (lane & 3) * 2;
 
   if (splits > 1) {
@@ -292,6 +306,7 @@ __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
       part_m[row] = row_max[threadIdx.x];
       part_l[row] = row_sum[threadIdx.x];
     }
+    pdl_trigger_at<FLASH_VLA_PDL_TRIGGER_LAST>();
     return;
   }
 
@@ -318,6 +333,8 @@ __global__ __launch_bounds__(kHeadDim) void attention_merge_kernel(
     const float *__restrict__ part_o, const float *__restrict__ part_m,
     const float *__restrict__ part_l, __nv_bfloat16 *__restrict__ out,
     int32_t queries, int32_t splits) {
+  //: Derived: the partials are the split kernel's output.
+  pdl_wait();
   const int32_t row = blockIdx.x;
   if (row >= queries) return;
   const int32_t d = threadIdx.x;
@@ -337,6 +354,7 @@ __global__ __launch_bounds__(kHeadDim) void attention_merge_kernel(
   }
   out[int64_t(row) * kHeadDim + d] =
       __float2bfloat16(den > 0.f ? num / den : 0.f);
+  pdl_trigger();
 }
 
 }  // namespace
@@ -375,16 +393,22 @@ extern "C" int expert_attention_mma_launch(const void *q, const void *k,
   float *part_m = part_o + (splits > 1 ? int64_t(splits) * queries * kHeadDim : 0);
   float *part_l = part_m + (splits > 1 ? int64_t(splits) * queries : 0);
 
-  attention_mma_kernel<<<dim3(tiles, splits), kThreads, kSmemBytes,
-                         (cudaStream_t)stream>>>(
-      (const __nv_bfloat16 *)q, (const __nv_bfloat16 *)k,
-      (const __nv_bfloat16 *)v, (__nv_bfloat16 *)out, queries, keys, heads,
-      prefix, scale, part_o, part_m, part_l, splits, chunk);
+  const bool pdl = flash_vla_pdl_enabled();
+  cudaError_t e = pdl_launch(
+      pdl, attention_mma_kernel, dim3(tiles, splits), dim3(kThreads),
+      kSmemBytes, (cudaStream_t)stream, (const __nv_bfloat16 *)q,
+      (const __nv_bfloat16 *)k, (const __nv_bfloat16 *)v, (__nv_bfloat16 *)out,
+      queries, keys, heads, prefix, scale, part_o, part_m, part_l, splits,
+      chunk);
+  if (e != cudaSuccess) return (int)e;
   if (splits > 1) {
-    cudaError_t e = cudaGetLastError();
+    e = cudaGetLastError();
     if (e != cudaSuccess) return (int)e;
-    attention_merge_kernel<<<queries, kHeadDim, 0, (cudaStream_t)stream>>>(
-        part_o, part_m, part_l, (__nv_bfloat16 *)out, queries, splits);
+    e = pdl_launch(pdl, attention_merge_kernel, dim3(queries), dim3(kHeadDim), 0,
+                   (cudaStream_t)stream, (const float *)part_o,
+                   (const float *)part_m, (const float *)part_l,
+                   (__nv_bfloat16 *)out, queries, splits);
+    if (e != cudaSuccess) return (int)e;
   }
   return (int)cudaGetLastError();
 }

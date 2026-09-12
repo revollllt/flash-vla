@@ -18,6 +18,7 @@ from this machine's measured constants:
 """
 from __future__ import annotations
 
+import os
 from functools import partial
 
 import torch
@@ -435,8 +436,16 @@ _TAKES_SCRATCH = ("action_expert_norm_gated_ffn",
                   "vision_encoder_norm_ffn_up", "action_expert_action_out_proj")
 
 
+#: FLASH_VLA_PDL=0 turns programmatic dependent launch off for the A/B. The
+#: trigger POSITION is a separate, compile-time knob; see
+#: `pointwise.FLASH_VLA_PDL_TRIGGER`.
+PDL_ENABLED = os.environ.get("FLASH_VLA_PDL", "1") != "0"
+
+
 def make_wrappers(scratch, selected_names=None) -> dict:
     """The wrappers of `selected_names` (default: all), bound to `scratch`."""
+    cu.set_pdl(PDL_ENABLED)
+    cg.set_pdl(PDL_ENABLED)
     names = set(NAMES) if selected_names is None else set(selected_names)
     unknown = names - NAMES
     if unknown:

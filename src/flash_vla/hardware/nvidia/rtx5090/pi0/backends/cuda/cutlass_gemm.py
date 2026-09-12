@@ -110,6 +110,8 @@ def library(verbose: bool = False):
         lib.cutlass_gemm_plan.restype = ctypes.c_int
         lib.cutlass_gemm_run.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
         lib.cutlass_gemm_run.restype = ctypes.c_int
+        lib.cutlass_gemm_set_pdl.argtypes = [ctypes.c_int]
+        lib.cutlass_gemm_set_pdl.restype = ctypes.c_int
         lib.cutlass_gemm_destroy.argtypes = [ctypes.c_void_p]
         lib.cutlass_gemm_destroy.restype = ctypes.c_int
         _LIB = lib
@@ -134,6 +136,16 @@ def _check(status: int, what: str) -> None:
 
 def _stream() -> int:
     return torch.cuda.current_stream().cuda_stream
+
+
+def set_pdl(on: bool) -> None:
+    """Turn programmatic dependent launch on or off for these GEMMs.
+
+    Only the launch changes: the entry point carries the wait and the trigger
+    either way, and both are no-ops on a grid launched without programmatic
+    serialization.
+    """
+    _check(library().cutlass_gemm_set_pdl(1 if on else 0), "cutlass_gemm_set_pdl")
 
 
 #: Planned operators, keyed by everything that changes what the launch does.

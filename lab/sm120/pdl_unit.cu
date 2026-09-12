@@ -33,9 +33,19 @@ constexpr int64_t kWeightElems = 5'242'880 / 4;
 //: Producer-dependent bytes. 51 x 1024 bf16 is the expert's activation.
 constexpr int64_t kActElems = 51 * 1024 / 2;
 
-template <int kMode>  // 0 plain, 1 wait early + trigger late, 2 wait early + trigger mid
+// 0 plain
+// 1 wait derived (after the producer-independent read) + trigger last
+// 2 wait derived + trigger right after the producer-independent read
+// 3 wait at the very TOP, trigger last -- what a wrapper around somebody
+//   else's kernel can do, since it cannot reach inside to place the wait
+template <int kMode>
 __global__ void chain_kernel(const float *__restrict__ w, const float *__restrict__ in,
                              float *__restrict__ out, int64_t wn, int64_t an) {
+  if (kMode == 3) {
+#if __CUDA_ARCH__ >= 900
+    cudaGridDependencySynchronize();
+#endif
+  }
   // Producer-INDEPENDENT work. Above the wait, so PDL overlaps it with the
   // producer's tail. This is the weight stream.
   float acc = 0.f;
@@ -51,7 +61,7 @@ __global__ void chain_kernel(const float *__restrict__ w, const float *__restric
 
   // The wait is DERIVED, not swept: it sits immediately before the first read
   // of producer data. Later would be a race, not a slower kernel.
-  if (kMode != 0) {
+  if (kMode == 1 || kMode == 2) {
 #if __CUDA_ARCH__ >= 900
     cudaGridDependencySynchronize();
 #endif
@@ -67,7 +77,7 @@ __global__ void chain_kernel(const float *__restrict__ w, const float *__restric
   if (blockIdx.x < 64 && threadIdx.x < 64)
     out[blockIdx.x * 64 + threadIdx.x] = acc * 1e-9f + dep;
 
-  if (kMode == 1) {
+  if (kMode == 1 || kMode == 3) {
 #if __CUDA_ARCH__ >= 900
     cudaTriggerProgrammaticLaunchCompletion();
 #endif
@@ -115,7 +125,8 @@ int main() {
         float *out = bufs[(i + 1) & 1];
         cudaError_t e = (mode == 0) ? launch<0>(grid, block, s, pdl, w, in, out)
                       : (mode == 1) ? launch<1>(grid, block, s, pdl, w, in, out)
-                                    : launch<2>(grid, block, s, pdl, w, in, out);
+                      : (mode == 2) ? launch<2>(grid, block, s, pdl, w, in, out)
+                                    : launch<3>(grid, block, s, pdl, w, in, out);
         if (e != cudaSuccess) { printf("launch: %s\n", cudaGetErrorString(e)); }
       }
     };
@@ -158,6 +169,7 @@ int main() {
       {"graph, no PDL", 0, false, true},
       {"graph, PDL trigger at end", 1, true, true},
       {"graph, PDL trigger after weights", 2, true, true},
+      {"graph, PDL wait at the very top", 3, true, true},
   };
   double base_stream = 0, base_graph = 0;
   for (const Row &r : rows) {

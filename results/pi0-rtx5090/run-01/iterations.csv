@@ -17,3 +17,4 @@ iteration,change,latency_ms,decision,report,revision
 15,"Hand-written 64x64 GEMM on the two backbone shapes cuBLAS cannot fill the part with",30.596,keep,measurements/015-tiled-gemm.json,HEAD
 16,"Tensor-core attention rebuilt with ldmatrix + 8 warps + natural layouts (2.46x), then split 8 ways across the key axis",29.749,keep,measurements/016-fused-attention.json,HEAD
 17,"Every GEMM off cuBLAS onto CUTLASS stream-K, tile picked per shape",27.980,keep,measurements/017-cutlass-streamk.json,HEAD
+18,"Programmatic dependent launch across the whole chain, trigger swept to `last`",28.004,keep,measurements/018-pdl.json,HEAD

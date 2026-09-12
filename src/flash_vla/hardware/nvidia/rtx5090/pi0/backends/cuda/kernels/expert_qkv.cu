@@ -45,10 +45,16 @@
 #include <cuda_runtime.h>
 
 #include "mma_bf16.cuh"
+#include "pdl.cuh"
+
+//: Owned by expert_pointwise.cu, which holds this library's PDL switch.
+bool flash_vla_pdl_enabled();
 
 namespace {
 
 using flash_vla::rtx5090::ldmatrix_a;
+using flash_vla::rtx5090::pdl_trigger_at;
+using flash_vla::rtx5090::pdl_wait;
 using flash_vla::rtx5090::ldmatrix_b_trans;
 using flash_vla::rtx5090::mma_m16n8k16;
 
@@ -139,14 +145,26 @@ __global__ __launch_bounds__(kThreads) void expert_qkv_kernel(
   const int32_t wn = (threadIdx.x % (kTileN / kVec)) * kVec;
   int4 xreg, wreg = make_int4(0, 0, 0, 0);
 
-  auto stage = [&](int32_t k0) {
-    xreg = make_int4(0, 0, 0, 0);
-    if (m0 + xr < m)
-      xreg = *(const int4 *)(x + int64_t(m0 + xr) * kdim + k0 + xd);
+  // The two operands are staged apart because only one of them is the
+  // producer's. The weight is 5.24 MB and has nothing to do with the kernel
+  // that ran before this one, so it is issued ABOVE the PDL wait and streams
+  // while the producer is still finishing; the activation is 104 KB and is
+  // exactly what the producer wrote, so it is issued below.
+  auto stage_w = [&](int32_t k0) {
     if (threadIdx.x < kWVecs)
       wreg = *(const int4 *)(w + int64_t(k0 + wk) * n + n0 + wn);
   };
-  stage(0);
+  auto stage_x = [&](int32_t k0) {
+    xreg = make_int4(0, 0, 0, 0);
+    if (m0 + xr < m)
+      xreg = *(const int4 *)(x + int64_t(m0 + xr) * kdim + k0 + xd);
+  };
+  auto stage = [&](int32_t k0) { stage_w(k0); stage_x(k0); };
+
+  stage_w(0);
+  //: Derived, not swept: the first read of producer data is the next line.
+  pdl_wait();
+  stage_x(0);
 
   for (int32_t k0 = 0; k0 < kdim; k0 += kChunkK) {
     // Publish x. The sum of squares this row needs for the norm is accumulated
@@ -215,6 +233,7 @@ __global__ __launch_bounds__(kThreads) void expert_qkv_kernel(
             [(col - q_dim - head_dim) >> 1] = o;
     }
   }
+  pdl_trigger_at<FLASH_VLA_PDL_TRIGGER_LAST>();
 }
 
 }  // namespace
@@ -227,9 +246,11 @@ extern "C" int expert_qkv_launch(const void *x, const void *w, const void *rope,
   if (n % kTileN || kdim % kChunkK || head_dim % 16 || q_dim % kTileN)
     return cudaErrorInvalidValue;
   const dim3 grid(n / kTileN, (m + kTileM - 1) / kTileM);
-  expert_qkv_kernel<<<grid, kThreads, 0, (cudaStream_t)stream>>>(
-      (const __nv_bfloat16 *)x, (const __nv_bfloat16 *)w,
+  cudaError_t e = pdl_launch(
+      flash_vla_pdl_enabled(), expert_qkv_kernel, grid, dim3(kThreads), 0,
+      (cudaStream_t)stream, (const __nv_bfloat16 *)x, (const __nv_bfloat16 *)w,
       (const __nv_bfloat16 *)rope, (__nv_bfloat16 *)q, (__nv_bfloat16 *)k,
       (__nv_bfloat16 *)v, m, kdim, n, q_dim, head_dim);
+  if (e != cudaSuccess) return (int)e;
   return (int)cudaGetLastError();
 }
