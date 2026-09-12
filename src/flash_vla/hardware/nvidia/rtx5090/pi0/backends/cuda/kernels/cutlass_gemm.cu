@@ -34,6 +34,9 @@
 #include "cutlass/gemm/device/gemm_universal.h"
 #include "cutlass/gemm/threadblock/threadblock_swizzle_streamk.h"
 #include "cutlass/epilogue/thread/linear_combination.h"
+#include "cutlass/epilogue/thread/linear_combination_generic.h"
+
+#include "cutlass_epilogue.cuh"
 
 #include "pdl.cuh"
 
@@ -44,40 +47,58 @@ using Acc = float;
 using RowMajor = cutlass::layout::RowMajor;
 //: 8 bf16 is a 16-byte access; every leading dimension Pi0 uses is a multiple.
 constexpr int kAlign = 8;
-using Epilogue = cutlass::epilogue::thread::LinearCombination<Element, kAlign,
-                                                              Acc, Acc>;
 using StreamK = cutlass::gemm::threadblock::ThreadblockSwizzleStreamK;
 
-template <class Tile, class Warp, int kStages>
+// The three epilogues the route needs. Each one removes a launch and a pass
+// over the output from the call site that uses it.
+//: D = alpha * AB + beta * C. C is a residual when ldc is n, and a bias when
+//: ldc is 0.
+using EpiLinear = cutlass::epilogue::thread::LinearCombination<Element, kAlign,
+                                                               Acc, Acc>;
+//: D = gelu_tanh(alpha * AB + beta * C) -- the feed-forward expansion with its
+//: bias and activation folded in, where the route had a separate GELU pass.
+//: `GELU_taylor` is the tanh approximation Pi0 uses; CUTLASS's plain `GELU` is
+//: the erf form and is a different function.
+using EpiGelu = cutlass::epilogue::thread::LinearCombinationGeneric<
+    cutlass::epilogue::thread::GELU_taylor, Element, kAlign, Acc, Acc>;
+//: D = gelu_tanh(alpha * AB) * C -- the gated feed-forward finished in the
+//: second of its two GEMMs. See `cutlass_epilogue.cuh`.
+using EpiGeluMul = flash_vla::rtx5090::GeluMul<Element, kAlign, Acc, Acc>;
+
+template <class Tile, class Warp, int kStages, class Epi>
 using Gemm = cutlass::gemm::device::GemmUniversal<
     Element, RowMajor, Element, RowMajor, Element, RowMajor, Acc,
     cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80, Tile, Warp,
-    cutlass::gemm::GemmShape<16, 8, 16>, Epilogue, StreamK, kStages, kAlign,
+    cutlass::gemm::GemmShape<16, 8, 16>, Epi, StreamK, kStages, kAlign,
     kAlign>;
 
 //: Tile and warp shapes go through the macro as plain integers: a
 //: `GemmShape<a, b, c>` in a macro argument is three preprocessor arguments.
-#define FLASH_VLA_GEMM_T(tm, tn, tk, wm, wn, wk, st)                           \
+#define FLASH_VLA_GEMM_T(tm, tn, tk, wm, wn, wk, st, epi)                      \
   Gemm<cutlass::gemm::GemmShape<tm, tn, tk>,                                   \
-       cutlass::gemm::GemmShape<wm, wn, wk>, st>
+       cutlass::gemm::GemmShape<wm, wn, wk>, st, epi>
 
 // The tiles this route needs, one per distinct winner in the sweep over every
 // deployed shape (`lab/sm120/pi0_cutlass_sweep.py`). A bigger tile is more
 // efficient per SM and a smaller one puts more CTAs on the part; stream-K
 // removes the wave quantization but not that trade, so the shape still picks.
 #define FLASH_VLA_CUTLASS_CONFIGS(X)                                           \
-  X(0, 128, 128, 64, 64, 64, 64, 3)                                            \
-  X(1, 128, 64, 64, 64, 32, 64, 4)                                             \
-  X(2, 64, 128, 64, 32, 64, 64, 4)                                             \
-  X(3, 64, 64, 64, 32, 32, 64, 5)                                              \
-  X(4, 32, 64, 64, 32, 32, 64, 6)                                              \
-  X(5, 128, 128, 32, 64, 64, 32, 4)                                            \
-  X(6, 32, 128, 32, 32, 64, 32, 5)                                             \
-  X(7, 16, 128, 64, 16, 64, 64, 4)                                             \
-  X(8, 64, 64, 32, 32, 32, 32, 6)                                              \
-  X(9, 32, 64, 32, 32, 32, 32, 8)                                              \
-  X(10, 64, 128, 32, 32, 64, 32, 5)                                            \
-  X(11, 32, 128, 32, 32, 32, 32, 4)
+  X(0, 128, 128, 64, 64, 64, 64, 3, EpiLinear)                                            \
+  X(1, 128, 64, 64, 64, 32, 64, 4, EpiLinear)                                             \
+  X(2, 64, 128, 64, 32, 64, 64, 4, EpiLinear)                                             \
+  X(3, 64, 64, 64, 32, 32, 64, 5, EpiLinear)                                              \
+  X(4, 32, 64, 64, 32, 32, 64, 6, EpiLinear)                                              \
+  X(5, 128, 128, 32, 64, 64, 32, 4, EpiLinear)                                            \
+  X(6, 32, 128, 32, 32, 64, 32, 5, EpiLinear)                                             \
+  X(7, 16, 128, 64, 16, 64, 64, 4, EpiLinear)                                             \
+  X(8, 64, 64, 32, 32, 32, 32, 6, EpiLinear)                                              \
+  X(9, 32, 64, 32, 32, 32, 32, 8, EpiLinear)                                              \
+  X(10, 64, 128, 32, 32, 64, 32, 5, EpiLinear)                                            \
+  X(11, 32, 128, 32, 32, 32, 32, 4, EpiLinear)                                 \
+  /* The fused epilogues, on the tile their call site picked. */               \
+  X(12, 128, 128, 32, 64, 64, 32, 4, EpiGelu)                                  \
+  X(13, 128, 128, 32, 64, 64, 32, 4, EpiGeluMul)                               \
+  X(14, 128, 128, 64, 64, 64, 64, 3, EpiGeluMul)
 
 //: Distinct from a CUDA error: this tile does not apply to this shape, which
 //: is an ordinary answer when the host is choosing a config, not a failure.
@@ -187,7 +208,7 @@ typename G::Arguments make_args(int m, int k, int n, int ldc, float beta,
 extern "C" {
 
 int cutlass_gemm_config_count() {
-#define FLASH_VLA_COUNT(id, tm, tn, tk, wm, wn, wk, st) +1
+#define FLASH_VLA_COUNT(id, tm, tn, tk, wm, wn, wk, st, epi) +1
   return 0 FLASH_VLA_CUTLASS_CONFIGS(FLASH_VLA_COUNT);
 #undef FLASH_VLA_COUNT
 }
@@ -195,9 +216,9 @@ int cutlass_gemm_config_count() {
 //: Bytes of stream-K barrier and partial workspace this shape needs.
 int cutlass_gemm_workspace(int config, int m, int k, int n, long long *bytes) {
   switch (config) {
-#define FLASH_VLA_WS(id, tm, tn, tk, wm, wn, wk, st)                           \
+#define FLASH_VLA_WS(id, tm, tn, tk, wm, wn, wk, st, epi)                           \
   case id: {                                                                   \
-    using G = FLASH_VLA_GEMM_T(tm, tn, tk, wm, wn, wk, st);                     \
+    using G = FLASH_VLA_GEMM_T(tm, tn, tk, wm, wn, wk, st, epi);                     \
     *bytes = (long long)G::get_workspace_size(                                 \
         make_args<G>(m, k, n, n, 1.0f, nullptr, nullptr, nullptr, nullptr));   \
     return 0;                                                                  \
@@ -215,9 +236,9 @@ int cutlass_gemm_plan(int config, int m, int k, int n, int ldc, float beta,
                       const void *a, const void *b, const void *c, void *d,
                       void *ws, void **handle) {
   switch (config) {
-#define FLASH_VLA_PLAN(id, tm, tn, tk, wm, wn, wk, st)                         \
+#define FLASH_VLA_PLAN(id, tm, tn, tk, wm, wn, wk, st, epi)                         \
   case id: {                                                                   \
-    using G = FLASH_VLA_GEMM_T(tm, tn, tk, wm, wn, wk, st);                     \
+    using G = FLASH_VLA_GEMM_T(tm, tn, tk, wm, wn, wk, st, epi);                     \
     if (!fits_shared_memory<G>()) return kCannotImplement;                     \
     auto args = make_args<G>(m, k, n, ldc, beta, a, b, c, d);                  \
     auto *p = new PlanImpl<G>();                                               \

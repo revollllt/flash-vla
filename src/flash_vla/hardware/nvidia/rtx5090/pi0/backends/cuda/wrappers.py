@@ -69,7 +69,13 @@ def _packed_gate_up(gate_w, up_w):
 GEMM_CONFIG = {
     "vision_qkv": 5,
     "vision_out_proj": 10,
-    "vision_ffn_up": 5,
+    #: The GELU rides in the epilogue here, so this config is a fused one and
+    #: the call site launches no activation pass. Measured 45.77 -> 42.11 us
+    #: against the addmm-then-gelu_ form it replaces. The same fusion for the
+    #: backbone's GATED feed-forward was written and measured neutral (0.99x
+    #: and 1.01x on two tiles): its `gelu_mul` pass was already cheap because
+    #: the expansion stays in L2, so the epilogue only moved the cost.
+    "vision_ffn_up": 12,
     "vision_ffn_down": 10,
     "backbone_qkv": 10,
     "backbone_gate": 5,
@@ -335,7 +341,12 @@ def vision_encoder_norm_qkv(x, norm_w, norm_b, qkv_w, qkv_b, out, *, scratch):
 
 
 def vision_encoder_norm_ffn_up(x, norm_w, norm_b, weight, bias, out, *, scratch):
-    """LayerNorm then the GELU feed-forward expansion -- three launches."""
+    """LayerNorm then the GELU feed-forward expansion -- two launches.
+
+    The bias and the activation both ride in the GEMM's epilogue, so the third
+    launch this used to take -- a full pass over the 768 x 4304 expansion for
+    one elementwise function -- is gone.
+    """
     m = x.shape[0] * VISION_TOKENS
     x2 = x.view(m, VISION_DIM)
     normed = scratch("vision_norm", (m, VISION_DIM), x.dtype, x.device)
@@ -344,7 +355,7 @@ def vision_encoder_norm_ffn_up(x, norm_w, norm_b, weight, bias, out, *, scratch)
     if not cg.gemm(normed, weight, flat, config=GEMM_CONFIG["vision_ffn_up"],
                    c=bias, beta=1.0, broadcast_c=True):
         torch.addmm(bias, normed, weight, beta=1, alpha=1, out=flat)
-    cu.gelu_(flat)
+        cu.gelu_(flat)
     return out
 
 

@@ -1,7 +1,7 @@
 # Pi0 · RTX 5090 · run-01
 
 First optimization run of `rtx5090/pi0`, from the all-torch bring-up route to a
-hand-written CUDA route: **46.794 → 27.964 ms, 1.67×**.
+hand-written CUDA route: **46.794 → 27.862 ms, 1.68×**.
 
 ![Optimization progress](progress.svg)
 
@@ -45,6 +45,7 @@ different comparison context; this run starts its own curve.
 | 16 | fused attention, rebuilt and split 8 ways over the keys | 29.749 | **−0.847** |
 | 17 | every GEMM off cuBLAS onto CUTLASS stream-K | 27.980 | **−1.769** |
 | 18 | programmatic dependent launch across the chain | 27.964 | **−0.114** paired |
+| 19 | vision feed-forward GELU into the GEMM epilogue | 27.862 | **−0.102** |
 
 Every delta in rows 1–4 is a **paired A/B in one job**: the retained route and
 the candidate measured back to back, same process family, same driver, with the
@@ -97,6 +98,18 @@ also negative — transposing K in shared memory to fix a measured 16-way bank
 conflict, then padding the rows, moved 214 µs to 201. **The instruction count is
 the wall, not the conflicts**, and only a tensor-core mainloop clears it. Kept
 unrouted in `kernels/expert_attention.cu` so the negative can be re-run.
+
+**Folding the backbone's gated feed-forward into its second GEMM's epilogue.**
+The two GEMMs write the same tile coordinates, so the gate projection's
+epilogue can read the up projection's output as its C operand and compute
+`gelu(gate) * up` there, removing a launch and a 75.5 MB pass. Written
+(`kernels/cutlass_epilogue.cuh`, kept) and **measured neutral**: 479.74 us
+against 476.93 on one tile and 484.24 against 487.76 on another, correct at
+cos 0.999997 either way. The pass it removes was already cheap because the
+768 x 16384 expansion stays in L2 -- the traffic argument that motivated it
+assumed DRAM -- so the epilogue only moved the cost. The same fusion IS a win
+on the vision feed-forward, where the activation follows a bias rather than a
+second matrix, and that one is routed.
 
 **Storing the vision feed-forward's down-projection weight K-contiguous.**
 Re-storing that one weight (N, K) so cuBLAS sees a TN GEMM is **1.21x** at

@@ -18,3 +18,4 @@ iteration,change,latency_ms,decision,report,revision
 16,"Tensor-core attention rebuilt with ldmatrix + 8 warps + natural layouts (2.46x), then split 8 ways across the key axis",29.749,keep,measurements/016-fused-attention.json,HEAD
 17,"Every GEMM off cuBLAS onto CUTLASS stream-K, tile picked per shape",27.980,keep,measurements/017-cutlass-streamk.json,HEAD
 18,"Programmatic dependent launch across the whole chain, trigger swept to `last`; projector off cuBLAS too",27.964,keep,measurements/018-pdl.json,HEAD
+19,"Vision feed-forward GELU folded into the GEMM epilogue; the same fusion for the backbone gated FFN measured neutral",27.862,keep,measurements/019-gelu-epilogue.json,HEAD
