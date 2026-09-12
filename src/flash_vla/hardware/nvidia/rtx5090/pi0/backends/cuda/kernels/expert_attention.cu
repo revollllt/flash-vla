@@ -243,6 +243,15 @@ __global__ void masked_softmax_kernel(const __nv_bfloat16 *__restrict__ scores,
                                       int32_t queries, int32_t keys,
                                       int32_t heads, int32_t prefix,
                                       float scale) {
+  // The row is read ONCE and the exponentials are held in registers until the
+  // sum is known. The first version made three passes over it -- max, then
+  // exp-and-write, then a normalising read-modify-write -- which is 3 reads and
+  // 2 writes of a 408 x 819 bf16 buffer where this is one of each. At
+  // [ld.bw.dev.dram] that is 3.3 MB against 1.3 per call.
+  //
+  // kMaxPerThread bounds `keys` at blockDim.x * 8 = 2048, which covers Pi0's
+  // 819. A longer key axis would need the three-pass form back.
+  constexpr int32_t kMaxPerThread = 8;
   __shared__ float reduction[32];
   const int32_t r = blockIdx.x;
   if (r >= queries) return;
@@ -250,17 +259,22 @@ __global__ void masked_softmax_kernel(const __nv_bfloat16 *__restrict__ scores,
   // The state token's heads see only the prefix; the action tokens see all.
   const bool all_keys = (r >= heads);
 
+  float held[kMaxPerThread];
+  int32_t n = 0;
   float m = -FLT_MAX;
-  for (int32_t j = threadIdx.x; j < keys; j += blockDim.x)
-    if (all_keys || j <= prefix)
-      m = fmaxf(m, __bfloat162float(scores[base + j]) * scale);
+  for (int32_t j = threadIdx.x; j < keys; j += blockDim.x) {
+    const float s = (all_keys || j <= prefix)
+        ? __bfloat162float(scores[base + j]) * scale : -FLT_MAX;
+    held[n++] = s;
+    m = fmaxf(m, s);
+  }
 
   const int32_t lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+  const int32_t warps = (blockDim.x + 31) >> 5;
 #pragma unroll
   for (int32_t o = 16; o > 0; o >>= 1) m = fmaxf(m, __shfl_xor_sync(~0u, m, o));
   if (lane == 0) reduction[warp] = m;
   __syncthreads();
-  const int32_t warps = (blockDim.x + 31) >> 5;
   m = (threadIdx.x < warps) ? reduction[threadIdx.x] : -FLT_MAX;
 #pragma unroll
   for (int32_t o = 16; o > 0; o >>= 1) m = fmaxf(m, __shfl_xor_sync(~0u, m, o));
@@ -270,11 +284,11 @@ __global__ void masked_softmax_kernel(const __nv_bfloat16 *__restrict__ scores,
   const float mx = row_max;
 
   float sum = 0.f;
-  for (int32_t j = threadIdx.x; j < keys; j += blockDim.x) {
-    const float e = (all_keys || j <= prefix)
-        ? __expf(__bfloat162float(scores[base + j]) * scale - mx) : 0.f;
-    probs[base + j] = __float2bfloat16(e);
-    sum += e;
+#pragma unroll
+  for (int32_t i = 0; i < kMaxPerThread; ++i) {
+    if (i >= n) break;
+    held[i] = (held[i] == -FLT_MAX) ? 0.f : __expf(held[i] - mx);
+    sum += held[i];
   }
 #pragma unroll
   for (int32_t o = 16; o > 0; o >>= 1) sum += __shfl_xor_sync(~0u, sum, o);
@@ -288,8 +302,9 @@ __global__ void masked_softmax_kernel(const __nv_bfloat16 *__restrict__ scores,
   __syncthreads();
   const float inv = row_inv;
 
-  for (int32_t j = threadIdx.x; j < keys; j += blockDim.x)
-    probs[base + j] = __float2bfloat16(__bfloat162float(probs[base + j]) * inv);
+  int32_t i = 0;
+  for (int32_t j = threadIdx.x; j < keys; j += blockDim.x, ++i)
+    probs[base + j] = __float2bfloat16(held[i] * inv);
 }
 
 }  // namespace

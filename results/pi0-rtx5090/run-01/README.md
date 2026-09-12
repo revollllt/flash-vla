@@ -1,9 +1,9 @@
 # Pi0 · RTX 5090 · run-01
 
-The first end-to-end measurement of `rtx5090/pi0`. It is an **anchor, not a
-result**: every call site runs in plain torch, nothing is fused and nothing is
-tuned. The point is to have a number the optimization workflow can start from,
-on this machine, under this repository's protocol.
+First optimization run of `rtx5090/pi0`, from the all-torch bring-up route to a
+hand-written CUDA route: **46.794 → 32.886 ms, 1.42×**.
+
+![Optimization progress](progress.svg)
 
 ## Workload and measurement conditions
 
@@ -13,127 +13,143 @@ on this machine, under this repository's protocol.
 | Checkpoint | seeded synthetic weights, `seed=0` — Pi0 needs no asset |
 | Fixture | `flash-vla/pi0-inputs-v1/seed-0` |
 | Shape | 3 views × 224², 768 visual + 200 prompt tokens, chunk 50 |
-| Environment | RTX 5090, driver 580.142, torch 2.13.0+cu130, CUDA 13.1 |
-| Protocol | `latency-v2`: fresh process, first capture, warmup 5, 100 reps, median |
+| Environment | RTX 5090, driver 580.142, torch 2.13.0+cu130, CUDA 13.1, `sm_120f` |
+| Protocol | `latency-v2`: fresh process, first capture per leg, warmup 5, 100 reps, median |
 
 ```bash
 python -m benchmarks latency --target rtx5090/pi0 --plan shipped --seed 0 \
-  --warmup 5 --reps 100 --out results/pi0-rtx5090/run-01/measurements/000.json
+  --warmup 5 --reps 100 --out results/pi0-rtx5090/run-01/measurements/005-shipped-final.json
+python -m eval.correctness --target rtx5090/pi0 --plan shipped --steps 1 --layers 1
 ```
+
+**Do not compare any of this with an H100 figure.** A different GPU is a
+different comparison context; this run starts its own curve.
 
 ## Result
 
 | # | change | median | delta |
 |---|---|---:|---:|
-| 0 | every call site in torch | **46.794 ms** | |
+| 0 | every call site in torch | 46.794 | |
+| 1 | expert RMSNorm, RoPE scatter, gated activation in CUDA | 40.240 | **−6.588** |
+| 2 | expert attention: cuBLAS GEMMs + hand-written masked softmax | 37.040 | **−3.137** |
+| 3 | the same norm kernels on the backbone | 34.423 | **−2.607** |
+| 4 | vision LayerNorm + GELU kernels, residual folded into GEMM beta | 32.753 | **−1.571** |
+| 5 | single-pass masked softmax | 32.886 | *neutral* |
 
-`min` 46.731 ms over 100 reps, so the run itself is quiet — well inside the 6%
-noise floor the [measured table](../../../src/flash_vla/hardware/nvidia/rtx5090/measured/README.md)
-records. The GPU sat at P1, 55 °C, 459 W during the run.
+Every delta in rows 1–4 is a **paired A/B in one job**: the retained route and
+the candidate measured back to back, same process family, same driver, with the
+retained route as leg 0. `min` and `p99` moved with the median in all four.
 
-**Do not compare this with any H100 figure.** A different GPU is a different
-comparison context; the two machines differ by 1.8x on streaming bandwidth, 3.4x
-on tensor-core throughput and 2.29x on shared memory per block. This run starts
-its own curve.
+Row 5 is not plan-selectable — it changes a kernel the deployed route already
+uses — so it is measured as the same route before and after. The final number
+comes from three legs in one job at **32.886 / 32.888 / 32.887 ms, a 0.002 ms
+spread**, and 32.753 is the previous job's figure for the route without it. The
+0.13 ms between them is cross-job variation, not a regression, and the change is
+kept for a numerical reason rather than a latency one: it removes a bf16
+round-trip and moves the operator's cosine from 0.999992 to 0.999999.
 
-## What the correctness check does and does not say
+Launches fell from **12831 to 3460**, −73%.
 
-`eval.correctness` compares a Target's **reference plan against its candidate
-plan**. Both are the torch route here, so it reports cosine 1.0 and zero error
-by construction:
+## Correctness
 
-```bash
-python -m eval.correctness --target rtx5090/pi0 --plan reference --steps 1 --layers 1
-# passed: true, min_cosine 1.0, replay_identical: true
-```
+The reference route stays all-torch, so `eval.correctness` compares the
+hand-written kernels against the implementation they replaced rather than
+against themselves.
 
-That is worth exactly three things, and they are not nothing: the model **runs
-end to end** on sm_120, its CUDA graph **replays deterministically**, and every
-output is **finite**. It is not evidence about the arithmetic.
+| | shallow gate | full depth (10 steps × 18 layers) |
+|---|---|---|
+| cosine | **0.99983** | **0.99793** (budget 0.9943) |
+| rel_rms | 0.0034 | **0.0643** (budget 0.34) |
+| verdict | **passed** | inside the deepest tolerance |
 
-Pi0 has no official oracle on this machine — `eval.pi0.reference` needs
-`OPENPI_PI0_CHECKPOINT` and the OpenPI interpreter, neither configured here. The
-arithmetic is instead checked per operator against the TileLang wrappers the
-torch backend was written from, wherever their tile configuration fits this
-part's shared memory: `lab/sm120/pi0_torch_parity.py`. See
-`correctness/000-op-parity.txt`.
+`replay_identical` is true. The full-depth cosine drifted from 0.99976 after
+iteration 1 to 0.99793 now — 36% of the deepest budget spent, all of it bf16
+rounding and reduction order. Nothing in the route computes at a lower precision
+than the torch form it replaced.
 
-## Where the time goes
+Operator-level checks are in `correctness/`:
+`lab/sm120/pi0_torch_parity.py` pins the torch backend against the TileLang
+wrappers it was written from, and `lab/sm120/pi0_wrapper_bisect.py` pins each
+CUDA wrapper against its torch counterpart — including with the residual buffer
+deliberately aliased to the output, which is how the one real bug below was
+caught.
 
-Top-down timeline, CUPTI activity tracing, unprivileged
-(`artifacts/profile/overview/`). GPU activity 46.879 ms against the benchmark's
-46.794, so the profile is not distorting much.
+## What was tried and rejected
 
-```bash
-python -m tools.profiling.model --target rtx5090/pi0 --plan shipped --seed 0 \
-  --overview --trace-dir artifacts/profile/overview
-```
+**A fully fused single-kernel attention.** Correct, and **8× slower than the
+split form** — 201 µs against 25 at Pi0's shape, on a torch chain of 70. ncu
+says why: 32.09M instructions for 342 MFLOP, because a CUDA-core dot product
+costs two shared-memory loads and an FFMA per two FLOP where one `mma.sync`
+does 4096 FLOP in one instruction [mma.rate.sm.bf16]. Two rounds of tuning were
+also negative — transposing K in shared memory to fix a measured 16-way bank
+conflict, then padding the rows, moved 214 µs to 201. **The instruction count is
+the wall, not the conflicts**, and only a tensor-core mainloop clears it. Kept
+unrouted in `kernels/expert_attention.cu` so the negative can be re-run.
 
-| segment | GPU ms | % | launches | launch cost at 0.45 µs |
+**`F.scaled_dot_product_attention` with a precomputed mask**: 90.3 µs against
+the torch chain's 73.0 at this shape. Slower than what it would replace.
+
+**Reducing `NUM_STAGES` to fit H100's TileLang tiles into 99 KB** (before the
+route was rewritten): ran end to end and returned cos 0.898 with
+`replay_identical` false. Three of those configs feed warp-specialised builders
+where the stages *are* the producer buffer; at one stage the producer has
+nothing to fill while the consumer reads. A race, not a tolerance.
+
+## One bug worth recording
+
+The first form of the vision residual projections computed `out = x @ w + bias`
+and then added `res`. The graph binds `res` to the buffer being written on those
+call sites, so the add read a residual the GEMM had already overwritten: model
+correctness came back at **cos 0.057**. The torch form it replaced evaluates the
+whole expression before copying and is alias-safe by construction. The fix puts
+the residual in as the GEMM's beta term.
+
+The operator bisect passed the whole time with distinct buffers. It only
+reproduced the failure once `res` was deliberately aliased to `out`, at cos
+0.962. **A parity test that does not exercise the aliasing the graph actually
+uses proves nothing about it.**
+
+## Where the time goes now
+
+Floor model after iteration 4 (`artifacts/profile/floor2.json`), ceiling built
+from this machine's measured constants:
+
+| segment | measured | ceiling | % | launches |
 |---|---:|---:|---:|---:|
-| `action_expert` | 22.701 | 48.4% | **11193** | **5.04 ms — 22% of the segment** |
-| `llm_backbone` | 18.145 | 38.7% | 832 | 0.37 ms |
-| `vision_encoder` | 6.050 | 12.9% | 789 | 0.36 ms |
+| `llm_backbone` | 15.57 | 11.74 | 133% | 244 |
+| `action_expert` | 12.91 | 7.64 | 169% | 2913 |
+| `vision_encoder` | 4.80 | 2.73 | 176% | 303 |
+| **total** | **33.29** | **22.11** | **151%** | **3460** |
 
-**The two big segments are bound by opposite things**, which is the whole result.
+**`llm_backbone` is done.** Its largest call site, `llm_backbone_norm_gated_ffn`
+at 8.814 ms, *is* its two GEMMs, and cuBLAS runs them at **82–85% of this
+machine's measured tensor ceiling** (207 and 214 TFLOP/s against
+[mma.tflops.dev.bf16]'s 253). `mma.sync` is the only tensor-core path on this
+part and already reaches 100% of 512 FLOP/cycle/SM [mma.rate.sm.bf16], so a
+hand-written GEMM has nothing to find there. Measured directly:
 
-`action_expert` holds **87% of all launches for 48% of the time**. Its GEMMs
-average 7.88 µs and its element-wise kernels 1.20 µs — 18 layers × 10 denoise
-steps is 180 layer-steps, so it runs ~62 launches per layer-step on tiny
-matrices. At `[launch.lat.dev.ramp]`'s 0.45 µs, a fifth of the segment is launch
-overhead before any work happens. This is the deep-and-narrow shape run-02
-diagnosed on LingBot's H100 expert, on a different model and a different machine.
+| GEMM | µs | TFLOP/s | of 253 |
+|---|---:|---:|---:|
+| backbone gate/up, 768×2048×16384 | 248.9 | 207.1 | 82% |
+| backbone ffn down, 768×16384×2048 | 240.8 | 214.0 | 85% |
+| expert gate/up, 51×1024×4096 | 14.9 | 28.7 | **11%** |
+| expert QK^T, 408×256×819 | 13.9 | 12.3 | **5%** |
 
-| `action_expert` | ms | % | launches | µs each |
-|---|---:|---:|---:|---:|
-| cuBLAS GEMM | 10.168 | 44.8% | 1290 | 7.88 |
-| element-wise (torch, unfused) | 9.001 | 39.7% | **7511** | 1.20 |
-| cuBLAS splitKreduce | 1.219 | 5.4% | 730 | 1.67 |
-| reduce (torch) | 0.916 | 4.0% | 370 | 2.48 |
-| memcpy | 0.513 | 2.3% | 571 | 0.90 |
+**`action_expert` is where the remaining headroom is**, 5.3 ms of it, and its
+GEMMs sit at 5–11% of the tensor ceiling because they are tiny and
+weight-bandwidth bound, not FLOP bound. At `[ld.bw.dev.dram]`'s
+`3.35 + MB/1.524` µs, one 8.4 MB expert weight is an 8.9 µs read against a
+1.7 µs compute. Ten denoise steps re-read all 18 layers' weights — 5.8 GB per
+forward — which no kernel removes.
 
-`llm_backbone` is the opposite: **121 GEMMs at 121.93 µs each carry 81% of it**,
-in 832 launches total. Big matrices, launch cost irrelevant.
+## Next, in order of expected value
 
-| `llm_backbone` | ms | % | launches | µs each |
-|---|---:|---:|---:|---:|
-| cuBLAS GEMM | 14.754 | 81.3% | 121 | 121.93 |
-| element-wise (torch, unfused) | 2.708 | 14.9% | 569 | 4.76 |
-
-`vision_encoder` sits between them: 109 GEMMs at 35.07 µs for 63%, plus 0.367 ms
-of `flash_fwd_kernel` — the one call site that was already torch on H100 and is
-already a fused SDPA here.
-
-## What to do about it
-
-Two different problems, so two different levers, and they should not be
-confused:
-
-1. **`action_expert`: fuse, to delete launches.** 7511 element-wise launches for
-   9.0 ms is 1.20 µs apiece against a 0.45 µs floor — these are not doing work,
-   they are paying tolls. The norms, activations, residual adds and RoPE that
-   torch spells as separate kernels are the obvious first fusion, and this is
-   where a hand-written kernel earns the most.
-2. **`llm_backbone`: check the GEMM against the tensor core before touching it.**
-   14.754 ms of cuBLAS at 122 µs per launch may already be at the hardware
-   ceiling — `[mma.rate.sm.bf16]` says `mma.sync` reaches 100% of 512
-   FLOP/cycle/SM and cuBLAS is not obviously leaving that on the table. If it is
-   at the roofline, no kernel written here can beat it and the segment is done.
-
-The floor model settles (2) and is the next thing to run:
-
-```bash
-python -m tools.profiling.floor --target rtx5090/pi0 --plan shipped --seed 0
-```
-
-Machine facts that will shape whatever gets written:
-
-* **99 KB of shared memory per block**, not 227 [smem.bytes.cta.max].
-* **`mma.sync` is the only tensor-core path** and already runs at 100% of
-  512 FLOP/cycle/SM for bf16 with fp32 accumulate [mma.rate.sm.bf16]. fp16
-  accumulation and fp8 input are 2× levers H100 does not have
-  [mma.ratio.sm.acc].
-* **A cold read costs `3.35 + MB/1.524` µs** [ld.bw.dev.dram]; an in-graph
-  launch costs 0.45 µs [launch.lat.dev.ramp].
-* NCU counters need `sudo` here, but no reboot — see
-  [ncu-metrics.md](../../../src/flash_vla/hardware/nvidia/rtx5090/measured/ncu-metrics.md).
+1. **Pack the expert's gate and up projections into one GEMM.** Two 8.4 MB
+   weight reads become one 16.8 MB read and pay `[ld.bw.dev.dram]`'s 3.35 µs
+   fixed cost once instead of twice. Needs the two weights contiguous, which is
+   a checkpoint-loading change rather than a kernel.
+2. **A tensor-core attention mainloop.** The remaining 2.1 ms on
+   `action_expert_attention` needs `mma.sync` fragments fed by `ldmatrix`; the
+   CUDA-core attempt above establishes that nothing less will do.
+3. **`vision_encoder`**, 2.1 ms at 176%, is the smallest of the three and has
+   had the least attention.

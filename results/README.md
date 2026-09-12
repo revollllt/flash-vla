@@ -11,3 +11,9 @@ Performance comparisons are local to the representative checkpoint/fixture segme
 
 - [lingbot-h100/run-01](lingbot-h100/run-01/README.md)
 - [lingbot-h100/run-02](lingbot-h100/run-02/README.md)
+- [pi0-rtx5090/run-01](pi0-rtx5090/run-01/README.md) — Pi0 on consumer Blackwell,
+  46.794 → 32.886 ms from the all-torch bring-up route. A different GPU is a
+  different comparison context; this curve does not join the H100 ones.
+
+The table above renders the retired Campaign controller's legacy entries under
+`targets/` and is historical. The runs listed here carry the current numbers.

@@ -1,0 +1,481 @@
+{
+  "identity": {
+    "reference": {
+      "schema_version": 3,
+      "target": "hardware/nvidia/rtx5090/pi0",
+      "hardware": "rtx5090-32gb",
+      "model": "pi0",
+      "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens51-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers18-num_views3-prefix_len768-prompt_len0-qkv_width2560-query_heads8-state_dim32-steps10-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+      "shape": {
+        "batch": 1,
+        "num_views": 3,
+        "image_height": 224,
+        "image_width": 224,
+        "image_channels": 3,
+        "visual_tokens_per_view": 256,
+        "visual_tokens": 768,
+        "vision_dim": 1152,
+        "vision_ffn_dim": 4304,
+        "vision_heads": 16,
+        "vision_head_dim": 72,
+        "vision_layers": 27,
+        "prompt_len": 0,
+        "prefix_len": 768,
+        "chunk": 50,
+        "expert_tokens": 51,
+        "state_dim": 32,
+        "action_dim": 32,
+        "steps": 10,
+        "layers": 18,
+        "encoder_dim": 2048,
+        "encoder_ffn_dim": 16384,
+        "query_heads": 8,
+        "kv_heads": 1,
+        "head_dim": 256,
+        "qkv_width": 2560,
+        "expert_dim": 1024,
+        "expert_ffn_dim": 4096
+      },
+      "plan": {
+        "vision_encoder_patch_embed": "torch",
+        "vision_encoder_norm_qkv": "torch",
+        "vision_encoder_attention": "torch",
+        "vision_encoder_out_proj_residual": "torch",
+        "vision_encoder_norm_ffn_up": "torch",
+        "vision_encoder_ffn_down_residual": "torch",
+        "llm_backbone_embed_prompt": "torch",
+        "llm_backbone_projector": "torch",
+        "llm_backbone_norm_qkv_rope": "torch",
+        "llm_backbone_attention": "torch",
+        "llm_backbone_out_proj_residual": "torch",
+        "llm_backbone_norm_gated_ffn": "torch",
+        "llm_backbone_ffn_down_residual": "torch",
+        "action_expert_state_proj": "torch",
+        "action_expert_action_in_proj": "torch",
+        "action_expert_action_mlp": "torch",
+        "action_expert_norm_qkv_rope": "torch",
+        "action_expert_attention": "torch",
+        "action_expert_out_proj_residual": "torch",
+        "action_expert_norm_gated_ffn": "torch",
+        "action_expert_ffn_down_residual": "torch",
+        "action_expert_action_out_proj": "torch"
+      },
+      "model_revision": "pi0-r1",
+      "engine_revision": null,
+      "inference_signature": "sha256:6dab55f09043d7e1353d8b7fbb11de064f702408ef8311042ecb74dd02005583",
+      "execution_variant": {
+        "quantization": {
+          "mode": "bf16"
+        },
+        "cache": {
+          "mode": "none"
+        }
+      }
+    },
+    "candidate": {
+      "schema_version": 3,
+      "target": "hardware/nvidia/rtx5090/pi0",
+      "hardware": "rtx5090-32gb",
+      "model": "pi0",
+      "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens51-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers18-num_views3-prefix_len768-prompt_len0-qkv_width2560-query_heads8-state_dim32-steps10-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+      "shape": {
+        "batch": 1,
+        "num_views": 3,
+        "image_height": 224,
+        "image_width": 224,
+        "image_channels": 3,
+        "visual_tokens_per_view": 256,
+        "visual_tokens": 768,
+        "vision_dim": 1152,
+        "vision_ffn_dim": 4304,
+        "vision_heads": 16,
+        "vision_head_dim": 72,
+        "vision_layers": 27,
+        "prompt_len": 0,
+        "prefix_len": 768,
+        "chunk": 50,
+        "expert_tokens": 51,
+        "state_dim": 32,
+        "action_dim": 32,
+        "steps": 10,
+        "layers": 18,
+        "encoder_dim": 2048,
+        "encoder_ffn_dim": 16384,
+        "query_heads": 8,
+        "kv_heads": 1,
+        "head_dim": 256,
+        "qkv_width": 2560,
+        "expert_dim": 1024,
+        "expert_ffn_dim": 4096
+      },
+      "plan": {
+        "vision_encoder_patch_embed": "torch",
+        "vision_encoder_norm_qkv": "cuda",
+        "vision_encoder_attention": "torch",
+        "vision_encoder_out_proj_residual": "cuda",
+        "vision_encoder_norm_ffn_up": "cuda",
+        "vision_encoder_ffn_down_residual": "cuda",
+        "llm_backbone_embed_prompt": "torch",
+        "llm_backbone_projector": "cuda",
+        "llm_backbone_norm_qkv_rope": "cuda",
+        "llm_backbone_attention": "torch",
+        "llm_backbone_out_proj_residual": "cuda",
+        "llm_backbone_norm_gated_ffn": "cuda",
+        "llm_backbone_ffn_down_residual": "cuda",
+        "action_expert_state_proj": "torch",
+        "action_expert_action_in_proj": "torch",
+        "action_expert_action_mlp": "torch",
+        "action_expert_norm_qkv_rope": "cuda",
+        "action_expert_attention": "cuda",
+        "action_expert_out_proj_residual": "cuda",
+        "action_expert_norm_gated_ffn": "cuda",
+        "action_expert_ffn_down_residual": "cuda",
+        "action_expert_action_out_proj": "torch"
+      },
+      "model_revision": "pi0-r1",
+      "engine_revision": null,
+      "inference_signature": "sha256:6dab55f09043d7e1353d8b7fbb11de064f702408ef8311042ecb74dd02005583",
+      "execution_variant": {
+        "quantization": {
+          "mode": "bf16"
+        },
+        "cache": {
+          "mode": "none"
+        }
+      }
+    }
+  },
+  "measurement_context": {
+    "reference": {
+      "weights": {
+        "checkpoint_id": "flash-vla/pi0-random-checkpoint/v1/seed-0",
+        "checkpoint_digest": "flash-vla/pi0-random-checkpoint/v1/seed-0"
+      },
+      "fixture": {
+        "id": "flash-vla/pi0-inputs-v1/seed-0",
+        "digest": "sha256:34224a50b89400f5fff842d016888f3fe58a43287faa70f38af88aa5b8833721"
+      },
+      "environment": {
+        "gpu_sku": "NVIDIA GeForce RTX 5090",
+        "driver": "580.142",
+        "cuda_runtime": "13.0",
+        "pytorch": "2.13.0+cu130",
+        "tilelang": "0.1.11",
+        "clock_policy": {
+          "benchmark_control": "inherit",
+          "slurm_gpu_freq_request": null,
+          "effective_locked_clocks": "unobserved"
+        },
+        "power_policy": {
+          "requested_limit_w": 600.0,
+          "enforced_limit_w": 600.0
+        },
+        "capture_regime": "cuda_graph",
+        "clock_observation": {
+          "application_graphics_mhz": "[N/A]",
+          "application_memory_mhz": "[N/A]"
+        }
+      },
+      "hostname": "ubun",
+      "slurm_job_id": null,
+      "timestamp": 1789204664.2363265,
+      "reference_provenance": {}
+    },
+    "candidate": {
+      "weights": {
+        "checkpoint_id": "flash-vla/pi0-random-checkpoint/v1/seed-0",
+        "checkpoint_digest": "flash-vla/pi0-random-checkpoint/v1/seed-0"
+      },
+      "fixture": {
+        "id": "flash-vla/pi0-inputs-v1/seed-0",
+        "digest": "sha256:34224a50b89400f5fff842d016888f3fe58a43287faa70f38af88aa5b8833721"
+      },
+      "environment": {
+        "gpu_sku": "NVIDIA GeForce RTX 5090",
+        "driver": "580.142",
+        "cuda_runtime": "13.0",
+        "pytorch": "2.13.0+cu130",
+        "tilelang": "0.1.11",
+        "clock_policy": {
+          "benchmark_control": "inherit",
+          "slurm_gpu_freq_request": null,
+          "effective_locked_clocks": "unobserved"
+        },
+        "power_policy": {
+          "requested_limit_w": 600.0,
+          "enforced_limit_w": 600.0
+        },
+        "capture_regime": "cuda_graph",
+        "clock_observation": {
+          "application_graphics_mhz": "[N/A]",
+          "application_memory_mhz": "[N/A]"
+        }
+      },
+      "hostname": "ubun",
+      "slurm_job_id": null,
+      "timestamp": 1789204664.2363381,
+      "reference_provenance": {}
+    }
+  },
+  "numerical_oracle": {
+    "identity": {
+      "schema_version": 3,
+      "target": "hardware/nvidia/rtx5090/pi0",
+      "hardware": "rtx5090-32gb",
+      "model": "pi0",
+      "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens51-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers18-num_views3-prefix_len768-prompt_len0-qkv_width2560-query_heads8-state_dim32-steps10-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+      "shape": {
+        "batch": 1,
+        "num_views": 3,
+        "image_height": 224,
+        "image_width": 224,
+        "image_channels": 3,
+        "visual_tokens_per_view": 256,
+        "visual_tokens": 768,
+        "vision_dim": 1152,
+        "vision_ffn_dim": 4304,
+        "vision_heads": 16,
+        "vision_head_dim": 72,
+        "vision_layers": 27,
+        "prompt_len": 0,
+        "prefix_len": 768,
+        "chunk": 50,
+        "expert_tokens": 51,
+        "state_dim": 32,
+        "action_dim": 32,
+        "steps": 10,
+        "layers": 18,
+        "encoder_dim": 2048,
+        "encoder_ffn_dim": 16384,
+        "query_heads": 8,
+        "kv_heads": 1,
+        "head_dim": 256,
+        "qkv_width": 2560,
+        "expert_dim": 1024,
+        "expert_ffn_dim": 4096
+      },
+      "plan": {
+        "vision_encoder_patch_embed": "torch",
+        "vision_encoder_norm_qkv": "torch",
+        "vision_encoder_attention": "torch",
+        "vision_encoder_out_proj_residual": "torch",
+        "vision_encoder_norm_ffn_up": "torch",
+        "vision_encoder_ffn_down_residual": "torch",
+        "llm_backbone_embed_prompt": "torch",
+        "llm_backbone_projector": "torch",
+        "llm_backbone_norm_qkv_rope": "torch",
+        "llm_backbone_attention": "torch",
+        "llm_backbone_out_proj_residual": "torch",
+        "llm_backbone_norm_gated_ffn": "torch",
+        "llm_backbone_ffn_down_residual": "torch",
+        "action_expert_state_proj": "torch",
+        "action_expert_action_in_proj": "torch",
+        "action_expert_action_mlp": "torch",
+        "action_expert_norm_qkv_rope": "torch",
+        "action_expert_attention": "torch",
+        "action_expert_out_proj_residual": "torch",
+        "action_expert_norm_gated_ffn": "torch",
+        "action_expert_ffn_down_residual": "torch",
+        "action_expert_action_out_proj": "torch"
+      },
+      "model_revision": "pi0-r1",
+      "engine_revision": null,
+      "inference_signature": "sha256:6dab55f09043d7e1353d8b7fbb11de064f702408ef8311042ecb74dd02005583",
+      "execution_variant": {
+        "quantization": {
+          "mode": "bf16"
+        },
+        "cache": {
+          "mode": "none"
+        }
+      }
+    }
+  },
+  "config": {
+    "steps": 10,
+    "layers": 18,
+    "seed": 0,
+    "isolate": false,
+    "oracle": "in_engine_reference"
+  },
+  "stages": {
+    "vision_encoder": {
+      "vision_encoder_x": {
+        "metrics": {
+          "max_abs": 0.4375,
+          "mean_abs": 0.02598197677353811,
+          "rms_error": 0.03665174711116021,
+          "rel_rms": 0.018623580162739264,
+          "p99_abs": 0.125,
+          "cosine_similarity": 0.9998265860328179
+        },
+        "finite_allocation": true
+      }
+    },
+    "llm_backbone": {
+      "prefix_k": {
+        "metrics": {
+          "max_abs": 1.12109375,
+          "mean_abs": 0.09443649788210205,
+          "rms_error": 0.1270714338418649,
+          "rel_rms": 0.0559991501831729,
+          "p99_abs": 0.375,
+          "cosine_similarity": 0.9984322083719526
+        },
+        "per_layer_cosine": [
+          0.9999081849498161,
+          0.9997221323506906,
+          0.9996216497452346,
+          0.9993808359923695,
+          0.9992774308732411,
+          0.9991835794195416,
+          0.9989366381211695,
+          0.9988473188964095,
+          0.9985424087059858,
+          0.9984258340612071,
+          0.9982269568142054,
+          0.9980212909727508,
+          0.9977515951114192,
+          0.9977565245577826,
+          0.9973432660489503,
+          0.9972176754345574,
+          0.9971164385573756,
+          0.9966894766394351
+        ],
+        "max_cosine_step": 0.0004269619179405604,
+        "finite_allocation": true
+      },
+      "prefix_v": {
+        "metrics": {
+          "max_abs": 0.9765625,
+          "mean_abs": 0.09429406885532089,
+          "rms_error": 0.1269032500420793,
+          "rel_rms": 0.05636903422030046,
+          "p99_abs": 0.375,
+          "cosine_similarity": 0.9984114676693843
+        },
+        "per_layer_cosine": [
+          0.9999153658742264,
+          0.9997571600224877,
+          0.9995563511944844,
+          0.9994591572194543,
+          0.9993265232432454,
+          0.9992158126347506,
+          0.9989022797590773,
+          0.9988025487701138,
+          0.9985486826908104,
+          0.9984139638301637,
+          0.9982046163309349,
+          0.9977847156950278,
+          0.9977919872530119,
+          0.9976446322343133,
+          0.9972044697908609,
+          0.9970439164194468,
+          0.9967711421747688,
+          0.9965451338766455
+        ],
+        "max_cosine_step": 0.00044016244345246314,
+        "finite_allocation": true
+      }
+    },
+    "action_expert": {
+      "actions": {
+        "metrics": {
+          "max_abs": 3.3125,
+          "mean_abs": 0.618388671875,
+          "rms_error": 0.7864071847480723,
+          "rel_rms": 0.05355463261467006,
+          "p99_abs": 2.109375,
+          "cosine_similarity": 0.9985652866800289
+        },
+        "finite_allocation": true
+      },
+      "suffix_k": {
+        "metrics": {
+          "max_abs": 0.5703125,
+          "mean_abs": 0.07950044441907332,
+          "rms_error": 0.10267260607078114,
+          "rel_rms": 0.06434921536764743,
+          "p99_abs": 0.2890625,
+          "cosine_similarity": 0.9979300308639754
+        },
+        "per_layer_cosine": [
+          0.9985589545416668,
+          0.9987651678148532,
+          0.9987333304291793,
+          0.9984866533612471,
+          0.9985439116932385,
+          0.9984736185586571,
+          0.9983907291890568,
+          0.9980577462205609,
+          0.9980874797020838,
+          0.9978006759637689,
+          0.9980826796626059,
+          0.9977553387485611,
+          0.9974016857527229,
+          0.9975601580779051,
+          0.9973322576599576,
+          0.9973591530674579,
+          0.9965734583664833,
+          0.9964453676917145
+        ],
+        "max_cosine_step": 0.0007856947009746706,
+        "finite_allocation": true
+      },
+      "suffix_v": {
+        "metrics": {
+          "max_abs": 0.69921875,
+          "mean_abs": 0.07969381524709486,
+          "rms_error": 0.10294748144947467,
+          "rel_rms": 0.06420849928940725,
+          "p99_abs": 0.2890625,
+          "cosine_similarity": 0.9979395706406471
+        },
+        "per_layer_cosine": [
+          0.9987632202640905,
+          0.9989717198429534,
+          0.9987163630942134,
+          0.9986063110639758,
+          0.9984928207453856,
+          0.9982871513710433,
+          0.9982918396245788,
+          0.9983374485619395,
+          0.9979286146453398,
+          0.9980385342739968,
+          0.9975726394270268,
+          0.9978401163340596,
+          0.9975716315313399,
+          0.9969184038499707,
+          0.997222220891133,
+          0.997364422034504,
+          0.9965582458777308,
+          0.9968771577630217
+        ],
+        "max_cosine_step": 0.0008061761567732528,
+        "finite_allocation": true
+      }
+    }
+  },
+  "output": {
+    "metrics": {
+      "max_abs": 3.3125,
+      "mean_abs": 0.618388671875,
+      "rms_error": 0.7864071847480723,
+      "rel_rms": 0.05355463261467006,
+      "p99_abs": 2.109375,
+      "cosine_similarity": 0.9985652866800289
+    }
+  },
+  "replay_identical": true,
+  "finite": true,
+  "min_cosine": 0.9979300308639754,
+  "max_rel_rms": 0.06434921536764743,
+  "tolerance": {
+    "rel_rms_max": 0.066,
+    "cosine_min": 0.99978
+  },
+  "threshold_key": "shallow",
+  "within_tolerance": false,
+  "mode": "report",
+  "passed": true
+}
