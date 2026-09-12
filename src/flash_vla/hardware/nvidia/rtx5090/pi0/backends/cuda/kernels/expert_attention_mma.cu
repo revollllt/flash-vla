@@ -26,7 +26,13 @@
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
 
+#include "mma_bf16.cuh"
+
 namespace {
+
+using flash_vla::rtx5090::load_a;
+using flash_vla::rtx5090::load_b;
+using flash_vla::rtx5090::mma_m16n8k16;
 
 constexpr int32_t kHeadDim = 256;
 constexpr int32_t kBlockM = 16;   // one mma M tile
@@ -59,45 +65,6 @@ constexpr int32_t kLdQ = kHeadDim + 8;
 constexpr int32_t kLdK = kHeadDim + 8;
 constexpr int32_t kLdV = kBlockN + 4;
 constexpr int32_t kLdP = kBlockN + 8;
-
-__device__ __forceinline__ void mma_m16n8k16(float (&d)[4], const uint32_t (&a)[4],
-                                             const uint32_t (&b)[2]) {
-  asm volatile(
-      "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 "
-      "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
-      : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3])
-      : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
-}
-
-__device__ __forceinline__ uint32_t pack(const __nv_bfloat16 *p) {
-  return (uint32_t(__bfloat16_as_ushort(p[1])) << 16) | __bfloat16_as_ushort(p[0]);
-}
-
-// The m16n8k16 operand layouts, read straight out of a row-major tile.
-//
-// A (16 x 16): lane L holds rows L/4 and L/4+8, at column pairs (L%4)*2 and
-// (L%4)*2+8. B (16 x 8, .col so it is indexed [n][k]): lane L holds column L/4
-// at the same two row pairs. D (16 x 8 fp32): lane L holds rows L/4 and L/4+8
-// at columns (L%4)*2 and +1. `ldmatrix` produces the A layout directly and is
-// the next thing to try here; these indexed reads are 12 loads per mma against
-// the CUDA-core form's 512, which is already the point.
-__device__ __forceinline__ void load_a(uint32_t (&a)[4],
-                                       const __nv_bfloat16 *tile, int32_t ld,
-                                       int32_t k0, int32_t lane) {
-  const int32_t r = lane >> 2, c = (lane & 3) * 2;
-  a[0] = pack(tile + int64_t(r) * ld + k0 + c);
-  a[1] = pack(tile + int64_t(r + 8) * ld + k0 + c);
-  a[2] = pack(tile + int64_t(r) * ld + k0 + c + 8);
-  a[3] = pack(tile + int64_t(r + 8) * ld + k0 + c + 8);
-}
-
-__device__ __forceinline__ void load_b(uint32_t (&b)[2],
-                                       const __nv_bfloat16 *tile, int32_t ld,
-                                       int32_t n0, int32_t k0, int32_t lane) {
-  const int32_t n = n0 + (lane >> 2), c = (lane & 3) * 2;
-  b[0] = pack(tile + int64_t(n) * ld + k0 + c);
-  b[1] = pack(tile + int64_t(n) * ld + k0 + c + 8);
-}
 
 // out[q, :] = softmax_j(mask(q, j) ? Q[q,:].K[j,:] * scale : -inf) . V[j, :]
 //

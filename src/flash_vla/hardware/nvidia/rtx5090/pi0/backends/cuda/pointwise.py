@@ -28,6 +28,7 @@ _HERE = Path(__file__).resolve().parent
 _SRC = _HERE / "kernels" / "expert_pointwise.cu"
 _ATTN_SRC = _HERE / "kernels" / "expert_attention.cu"
 _MMA_SRC = _HERE / "kernels" / "expert_attention_mma.cu"
+_QKV_SRC = _HERE / "kernels" / "expert_qkv.cu"
 _REPO = _HERE.parents[7]
 _ARCH = "sm_120f"
 
@@ -53,7 +54,7 @@ def build(verbose: bool = False) -> Path:
     """Compile the shared library if this source and toolchain have not been built."""
     nvcc = _nvcc()
     tag = hashlib.sha256(_SRC.read_bytes() + _ATTN_SRC.read_bytes()
-                         + _MMA_SRC.read_bytes() + nvcc.encode()
+                         + _MMA_SRC.read_bytes() + _QKV_SRC.read_bytes() + nvcc.encode()
                          + _ARCH.encode()).hexdigest()[:16]
     directory = _REPO / ".cache" / "cuda_ext" / f"rtx5090_pi0_pointwise_{tag}"
     directory.mkdir(parents=True, exist_ok=True)
@@ -62,7 +63,7 @@ def build(verbose: bool = False) -> Path:
         return out
     command = [nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
                "-gencode", f"arch=compute_{_ARCH[3:]},code={_ARCH}",
-               "-o", str(out), str(_SRC), str(_ATTN_SRC), str(_MMA_SRC)]
+               "-o", str(out), str(_SRC), str(_ATTN_SRC), str(_MMA_SRC), str(_QKV_SRC)]
     if verbose:
         print("[rtx5090 pi0 pointwise build]", " ".join(command), flush=True)
     result = subprocess.run(command, capture_output=True, text=True)
@@ -84,6 +85,9 @@ def library(verbose: bool = False):
         lib.gelu_mul_launch.argtypes = [ctypes.c_void_p] * 3 + [ctypes.c_longlong] + [
             ctypes.c_void_p]
         lib.gelu_mul_launch.restype = ctypes.c_int
+        lib.expert_qkv_launch.argtypes = [ctypes.c_void_p] * 6 + [
+            ctypes.c_int] * 5 + [ctypes.c_void_p]
+        lib.expert_qkv_launch.restype = ctypes.c_int
         lib.expert_attention_launch.argtypes = [ctypes.c_void_p] * 4 + [
             ctypes.c_int] * 5 + [ctypes.c_float, ctypes.c_int, ctypes.c_void_p]
         lib.expert_attention_launch.restype = ctypes.c_int
@@ -142,6 +146,28 @@ def rope_scatter(packed: torch.Tensor, rope: torch.Tensor, q: torch.Tensor,
     _check(library().rope_scatter_launch(
         packed.data_ptr(), rope.data_ptr(), q.data_ptr(), k.data_ptr(),
         v.data_ptr(), rows, q_dim, head_dim, _stream()), "rope_scatter")
+
+
+def expert_qkv(x: torch.Tensor, weight: torch.Tensor, rope: torch.Tensor,
+               q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> None:
+    """RMS-scale x, project to QKV, rotate and scatter -- one launch.
+
+    `x` is (rows, dim) bf16 and `weight` is (dim, q_dim + 2 * head_dim) bf16;
+    `rope` is (rows, head_dim) holding interleaved [cos, sin] pairs. `q` is any
+    contiguous view of (rows, q_dim), `k` and `v` are (rows, head_dim). All on
+    CUDA, written in place; safe during CUDA-graph capture.
+
+    The normalized activations are never materialized: Pi0's expert RMSNorm has
+    no learnable gain, so it is a per-row scalar that commutes with the
+    projection and is applied in the kernel's epilogue.
+    """
+    rows, dim = x.shape
+    n = weight.shape[1]
+    head_dim = k.shape[-1]
+    _check(library().expert_qkv_launch(
+        x.data_ptr(), weight.data_ptr(), rope.data_ptr(), q.data_ptr(),
+        k.data_ptr(), v.data_ptr(), rows, dim, n, n - 2 * head_dim, head_dim,
+        _stream()), "expert_qkv")
 
 
 def gelu_mul(gate: torch.Tensor, up: torch.Tensor, out: torch.Tensor) -> torch.Tensor:

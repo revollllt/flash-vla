@@ -77,21 +77,20 @@ VISION_FFN = 4304
 
 def action_expert_norm_qkv_rope(x, scale, weight_qkv, bias, rope, Q, K, V,
                                 norm_factor, *, scratch):
-    """RMS-scale x, project to QKV, rotate and scatter -- three launches.
+    """RMS-scale x, project to QKV, rotate and scatter -- one launch.
 
     `x` is (tokens, dim) bf16; `weight_qkv` is (dim, heads*head_dim + 2*head_dim).
     Q is (tokens*heads, head_dim), K and V are (tokens, head_dim), all written in
     place. `scale` and `bias` are Pi0.5's AdaRMS terms and are None here.
     Safe during CUDA-graph capture.
+
+    The normalized activations are never materialized. Pi0's expert RMSNorm has
+    no learnable gain, so it is a per-row scalar that commutes with the
+    projection, and the kernel folds it into its epilogue -- which is also one
+    fewer bf16 rounding than the three-launch form.
     """
     assert scale is None and bias is None, "Pi0 has no AdaRMS scale or shift"
-    m, kdim = x.shape
-    n = weight_qkv.shape[1]
-    normed = scratch("expert_norm", (m, kdim), x.dtype, x.device)
-    packed = scratch("expert_qkv", (m, n), x.dtype, x.device)
-    cu.rms_norm(x, normed)
-    torch.mm(normed, weight_qkv, out=packed)
-    cu.rope_scatter(packed, rope, Q, K, V)
+    cu.expert_qkv(x, weight_qkv, rope, Q, K, V)
 
 
 def action_expert_norm_gated_ffn(x, scale, gate_w, up_w, gate_b, up_b, out,
