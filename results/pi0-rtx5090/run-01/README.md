@@ -22,6 +22,10 @@ python -m benchmarks latency --target rtx5090/pi0 --plan shipped --seed 0 \
 python -m eval.correctness --target rtx5090/pi0 --plan shipped --steps 1 --layers 1
 ```
 
+The shipped route re-verified on a clean card at 46 °C with no throttle:
+**27.560 / 27.562 / 27.632 ms**, three legs, zero samples more than 5% off the
+median. The run-to-run band across jobs is about 0.1 ms.
+
 **Do not compare any of this with an H100 figure.** A different GPU is a
 different comparison context; this run starts its own curve.
 
@@ -47,6 +51,7 @@ different comparison context; this run starts its own curve.
 | 18 | programmatic dependent launch across the chain | 27.964 | **−0.114** paired |
 | 19 | vision feed-forward GELU into the GEMM epilogue | 27.862 | **−0.102** |
 | 20 | tiles re-picked with cold weights | 27.556 | **−0.306** |
+| 21 | three kernel-structure changes, all negative | — | *reverted* |
 
 Every delta in rows 1–4 is a **paired A/B in one job**: the retained route and
 the candidate measured back to back, same process family, same driver, with the
