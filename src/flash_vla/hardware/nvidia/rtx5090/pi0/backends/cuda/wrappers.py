@@ -76,6 +76,7 @@ GEMM_CONFIG = {
     "backbone_up": 5,
     "backbone_out_proj": 10,
     "backbone_ffn_down": 5,
+    "backbone_projector": 0,
     "expert_gate_up": 3,
     "expert_ffn_down": 8,
     "expert_out_proj": 9,
@@ -192,6 +193,11 @@ def action_expert_attention(Q, K, V, mask, out, prefix_len, *, scratch):
     return out
 
 
+#: `action_expert_action_out_proj` stays on cuBLAS. Its N is 32, below the
+#: narrowest tile compiled here, and at 10 calls a forward against a 3.5 us
+#: ceiling it is 0.117 ms of gap -- not worth a tile of its own. It is the one
+#: place in this backend where the PDL chain still has a cuBLAS link.
+#:
 #: Slices of the key axis, swept at Pi0's shape; see the wrapper above.
 ATTENTION_SPLITS = 8
 
@@ -308,7 +314,10 @@ def llm_backbone_projector(x, norm_w, norm_b, proj_w, proj_b, out, x_norm):
     m = x.shape[0] * VISION_TOKENS
     x2, n2 = x.view(m, VISION_DIM), x_norm.view(m, VISION_DIM)
     cu.layer_norm(x2, norm_w, norm_b, n2)
-    torch.addmm(proj_b, n2, proj_w, beta=1, alpha=1, out=out[:m])
+    flat = out[:m]
+    if not cg.gemm(n2, proj_w, flat, config=GEMM_CONFIG["backbone_projector"],
+                   c=proj_b, beta=1.0, broadcast_c=True):
+        torch.addmm(proj_b, n2, proj_w, beta=1, alpha=1, out=flat)
     return out
 
 

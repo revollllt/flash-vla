@@ -1,7 +1,7 @@
 # Pi0 · RTX 5090 · run-01
 
 First optimization run of `rtx5090/pi0`, from the all-torch bring-up route to a
-hand-written CUDA route: **46.794 → 28.004 ms, 1.67×**.
+hand-written CUDA route: **46.794 → 27.964 ms, 1.67×**.
 
 ![Optimization progress](progress.svg)
 
@@ -44,7 +44,7 @@ different comparison context; this run starts its own curve.
 | 15 | hand-written 64×64 GEMM on two backbone shapes | 30.596 | **−0.249** |
 | 16 | fused attention, rebuilt and split 8 ways over the keys | 29.749 | **−0.847** |
 | 17 | every GEMM off cuBLAS onto CUTLASS stream-K | 27.980 | **−1.769** |
-| 18 | programmatic dependent launch across the chain | 28.004 | **−0.114** paired |
+| 18 | programmatic dependent launch across the chain | 27.964 | **−0.114** paired |
 
 Every delta in rows 1–4 is a **paired A/B in one job**: the retained route and
 the candidate measured back to back, same process family, same driver, with the
@@ -244,56 +244,43 @@ uses proves nothing about it.**
 
 ## Where the time goes now
 
-Floor model after iteration 16 (`artifacts/profile/floor7.json`), ceiling built
-from this machine's measured constants:
+Floor model after iteration 18 (`artifacts/profile/floor8.json`):
 
 | segment | measured | ceiling | % | launches |
 |---|---:|---:|---:|---:|
-| `llm_backbone` | 15.15 | 11.74 | 129% | 244 |
-| `action_expert` | 9.70 | 7.64 | 127% | 1933 |
-| `vision_encoder` | 4.74 | 2.73 | 174% | 303 |
-| **total** | **29.59** | **22.11** | **134%** | **2490** |
+| `llm_backbone` | 13.85 | 11.74 | 118% | — |
+| `action_expert` | 10.45 | 7.64 | 137% | — |
+| `vision_encoder` | 4.15 | 2.73 | 152% | — |
+| **total** | **28.45** | **22.11** | **129%** | **2112** |
+
+**Read the per-site attribution carefully now that PDL is on.** The attributed
+total is 28.45 ms against a wall clock of 27.96: kernels deliberately overlap,
+so their durations overlap too and the sum exceeds the forward. Per-site numbers
+are still useful for ranking, but a site that "grew" between iteration 17 and 18
+mostly started earlier, not took longer.
 
 The eight largest remaining gaps:
 
 | call site | gap | what is in the way |
 |---|---:|---|
-| `llm_backbone_norm_gated_ffn` | 1.795 | two GEMMs, cuBLAS at 85% of the tensor ceiling |
-| `action_expert_attention` | 1.303 | 11.41 us against a 4.17 us ceiling that assumes no split |
-| `vision_encoder_ffn_down_residual` | 0.652 | one GEMM; K=4304 does not tile at 32 |
-| `llm_backbone_ffn_down_residual` | 0.618 | one GEMM; cuBLAS splits K and wins by 1.37x |
-| `action_expert_norm_qkv_rope` | 0.578 | the fused kernel, 18% over its own ceiling |
-| `vision_encoder_norm_ffn_up` | 0.553 | one GEMM; N=4304 does not tile at 64 |
-| `llm_backbone_attention` | 0.350 | still torch |
-| `llm_backbone_norm_qkv_rope` | 0.337 | the hand-written GEMM plus two pointwise passes |
+| `action_expert_attention` | 1.391 | 11.90 us against a ceiling that assumes no split |
+| `llm_backbone_norm_gated_ffn` | 1.055 | two GEMMs at 225 us each, CUTLASS at 1.10x cuBLAS |
+| `action_expert_norm_qkv_rope` | 0.827 | the fused kernel; every CTA re-reads all of x |
+| `vision_encoder_norm_ffn_up` | 0.487 | GEMM plus a separate GELU pass |
+| `llm_backbone_attention` | 0.343 | still torch |
+| `action_expert_norm_gated_ffn` | 0.313 | weight-bandwidth bound |
+| `llm_backbone_ffn_down_residual` | 0.275 | one GEMM, now one launch |
+| `llm_backbone_norm_qkv_rope` | 0.274 | GEMM plus two pointwise passes |
 
-Five of the eight are a GEMM. The hand-written GEMM in `kernels/tiled_gemm.cu`
-says where that line is: its mainloop reaches **92% of cuBLAS** at a large shape
-(191 against 208 TFLOP/s at 768 x 2048 x 16384), and it still only beats cuBLAS
-at two of nine shapes -- the two where a 64 x 64 tile converts a 96-CTA wave
-into a 384-CTA one. Everywhere else cuBLAS picks a better tile than any single
-fixed choice can.
-
-**Stream-K was implemented and is not routed.** Pure stream-K -- exactly one
-slice of the iteration space per CTA -- splits every tile, and the fixup traffic
-costs more than the balance buys: 45.42 us against the data-parallel 43.23 at
-768 x 2048 x 2048, and far worse on the deep-K shapes. Two things were learned
-that any retry needs. The finisher must be the CTA owning a tile's FIRST
-iteration, for which that tile is its LAST work; giving the role to the owner of
-the last iteration makes every CTA block at its own first tile and serializes
-the grid, measured at **48x**. And the grid has to be sized by occupancy, not by
-SM count, or it throws away the latency hiding the data-parallel form got from
-having 2.26 CTAs per SM. The form worth trying next is the hybrid: the bulk of
-the tiles data-parallel, stream-K over the remainder only, so only the tail pays
-fixup.
+Launches are down from 12831 at the start of the run to **2112**.
 
 ## Next, in order of expected value
 
-1. **Hybrid stream-K in `tiled_gemm.cu`**, per the note above: data-parallel
-   bulk, stream-K remainder. Predicted from wave utilization at the 64 x 64
-   tile: 1.33x on `llm_backbone_out_proj_residual`, 1.57x on
-   `vision_encoder_out_proj_residual` -- which would make that a new win -- and
-   1.06x on the backbone QKV. About 0.36 ms.
+1. **`action_expert_attention` and `action_expert_norm_qkv_rope`**, 2.2 ms
+   between them and both this repo's own kernels, so both are open to work that
+   needs no vendor cooperation. The attention kernel is at 11.90 us against a
+   4.17 us ceiling that assumes no split; the QKV kernel has every CTA re-read
+   all of x, 8.3 MB of L2 traffic against 5.24 MB of weight.
 2. **fp8.** Measured, not adopted: 2.34x on the backbone's gated feed-forward
    (244.04 -> 104.88 us, 493 TFLOP/s against a 506 ceiling) and 2.15x on its
    down projection. It costs a relative error of 3.7e-02 against an fp32
