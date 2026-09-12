@@ -126,6 +126,15 @@ all 208 CTAs of a tile merge together would need a full rendezvous, which is
 only safe while every CTA is resident, and 208 CTAs do not fit 170 SMs; it would
 need the split count dropped to 6, which is itself 2 us worse.
 
+**CUTLASS's layernorm mainloop fusion for the vision tower.** Two vision sites
+spend a launch and a 3.5 MB pass normalizing before their GEMM, and
+`GemmLayernormMainloopFusion` applies the norm as A is loaded instead, which
+would remove both. Rejected on inspection rather than measured: its kernel
+builder has no stream-K path, so taking it means taking the identity swizzle
+back, and that costs 1.4x on these shapes -- 49.20 us against 34.68 at
+768 x 2048 x 2048 when the two were first compared. The norm pass it would save
+is 2 to 4 us.
+
 **Full weight-staging participation in the fused QKV kernel.** That kernel
 stages its weight with half its threads -- kWVecs / kThreads is kChunkK / 128,
 so at kChunkK 64 only 256 of 512 threads carry a weight vector -- and the kernel
