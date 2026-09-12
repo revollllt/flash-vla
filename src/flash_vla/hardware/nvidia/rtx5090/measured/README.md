@@ -28,12 +28,15 @@ of this part's datasheet peak, so the memory system is efficient and the
 *overhead* is what moved. A launch costs 2.05 µs against sm90's 1.24 and, unlike
 sm90, does not rise with grid size: there is no ramp to amortise.
 
-**The tensor core has one path and it reaches 60% of peak.** `mma.sync` sustains
-253 TFLOP/s bf16 against the 419.4 `spec.py` derives, and fp8 measures 1.97x
-that at the same 59% efficiency — so the derived ladder holds and the shortfall
-belongs to the instruction. On sm90 a kernel needing more than `mma.sync`'s 63%
-could reach for `wgmma` and get 95%; here 60% is the whole ceiling. See
-[unit-mma.md](unit-mma.md).
+**The tensor core has one path and it already runs at the peak.** `mma.sync`
+reaches 512 FLOP/cycle/SM for bf16 with fp32 accumulate — 99.9% of the hardware
+ceiling, not a fraction of it. The ceiling itself is the news: fp32 accumulate
+runs at **half** the fp16-accumulate rate on this part, so NVIDIA's published
+419 TF dense is the fp16-accumulate figure and an fp32 mainloop's peak is 209.6
+at the marketed clock. fp8 input doubles the rate again. A kernel that is
+tensor-bound here cannot be tuned out of it, but fp16 accumulation and fp8 input
+are 2x levers that do not exist on H100. See [unit-mma.md](unit-mma.md), which
+also records the mistake this replaced.
 
 Still true, and still the thing to guard: nothing else transfers. Quoting an
 sm90 `tma`, `atomic` or `coop` constant here produces a number with no evidence

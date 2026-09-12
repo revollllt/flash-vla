@@ -174,26 +174,46 @@ constants:
   rule: 'Do NOT carry sm90''s "hold at least 4 independent accumulator sets" across: there it bought 4x
     because a single chain was latency-bound, here it buys 7%. The instruction is issue-limited rather
     than latency-limited on this part, so spend the registers on something else.'
-- tag: mma.ceiling.dev.bf16
+- tag: mma.rate.sm.bf16
   unit: mma
-  value: 253
-  units: TFLOP/s bf16 with fp32 accumulate, sustained, 8 accumulator sets, register-resident; 60% of the
-    419.4 TFLOP/s spec.py derives. Reached already at 4 warps per SM (248.8) and flat to 12 warps (253.2)
-    and to 2 CTAs per SM
-  short: 253 TFLOP/s, 60% of peak
-  rule: 'Never target a bf16 FLOP/s figure derived from 419.4 -- mma.sync reaches 60% of it and there is
-    no second instruction to reach higher with. On sm90 the same instruction reaches 63% and wgmma reaches
-    95%; here 60% is the whole ceiling. Four warps per SM already saturates it.'
-- tag: mma.ratio.dev.fp8
+  value: 512
+  units: FLOP per cycle per SM, bf16 with fp32 accumulate, sustained; measured 511.5 at 8 and 12 warps
+    per SM and 507.5 at 4. Clock-free by construction -- taken from per-SM clock64() spans, not from wall
+    time against an assumed boost. At the marketed 2.407 GHz that is 209.6 TFLOP/s; this part was observed
+    running at 2.88-2.91 GHz under this load, which is why the wall-clock figure reads 253
+  short: 512 FLOP/cyc/SM = the peak
+  rule: 'This IS the hardware peak, not a fraction of it: `mma.sync` leaves nothing on the table for bf16
+    with fp32 accumulate. Size a tensor-core budget as 512 x SMs x the observed clock, and never against
+    NVIDIA''s published 419 TF, which is the fp16-ACCUMULATE figure and twice what an fp32 mainloop can
+    reach.'
+- tag: mma.ratio.sm.acc
   unit: mma
-  value: 1.97
-  units: sustained fp8 e4m3 throughput over bf16 at the same shape family; 497.8 TFLOP/s against 253,
-    which is 59% of the 838.8 spec.py derives for fp8 -- the same efficiency bf16 shows against its own
-    peak
-  short: fp8 is 1.97x bf16, same 59% efficiency
-  rule: 'Two things at once: spec.py''s derived peak ladder is correct, since halving the element width
-    measurably doubles throughput; and the 60% shortfall is a property of `mma.sync`, not an error in
-    the peak, since it is the same at both widths. An fp8 path is worth what the ladder says it is worth.'
+  value: 2.0
+  units: fp16-accumulate over fp32-accumulate at the same m16n8k16 shape; 1023.9 against 511.5 FLOP/cycle/SM
+  short: fp32 accumulate is HALF rate
+  rule: 'The accumulator width is part of the peak on this part, and this is a lever H100 does not have
+    -- there fp32 accumulate is full rate. A mainloop that can tolerate fp16 accumulation doubles its tensor
+    throughput here. Whether the numerics are acceptable is a separate question this constant does not
+    answer.'
+- tag: mma.ratio.sm.fp8
+  unit: mma
+  value: 2.0
+  units: fp8 e4m3 over bf16, both with fp32 accumulate; 1023.0 against 511.5 FLOP/cycle/SM
+  short: fp8 is 2x bf16 at equal accumulate
+  rule: 'An fp8 path doubles tensor throughput at equal accumulator width, exactly as the width ladder
+    implies. Note the marketed 838 TFLOP/s dense fp8 needs 2048 FLOP/cycle/SM, twice this -- consistent
+    with the same fp32-accumulate halving applying to fp8, but the narrower-accumulator fp8 form was not
+    measured.'
+- tag: mma.clock.sm
+  unit: mma
+  value: 2.89
+  units: GHz observed under a pure register-resident tensor load, derived as device FLOP/s over (FLOP/cycle/SM
+    x SMs); 2.84-2.91 across bf16, fp8 and fp16-accumulate runs. Above the 2.407 GHz marketed boost AND
+    above the 2.550 GHz the driver reports as this device's maximum
+  short: ~2.89 GHz under tensor load
+  rule: 'Do not convert a FLOP/cycle constant to TFLOP/s with a datasheet clock -- this part runs 20% above
+    its marketed boost on this workload, which is exactly how a measured 253 TFLOP/s gets mistaken for
+    121% of a 209.5 "peak". Quote the per-cycle rate, or quote TFLOP/s with the clock it was taken at.'
 - tag: mma.feedtax.warp.ldmatrix
   unit: mma
   value: 1.27

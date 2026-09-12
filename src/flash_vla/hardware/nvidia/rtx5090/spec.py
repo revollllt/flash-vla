@@ -10,11 +10,16 @@ instruction set from datacenter Blackwell (10.0) and from Hopper (9.0). See
 ``measured/isa-support.md`` for what that costs a kernel ported from sm_90a.
 
 Fields marked DRIVER were read from ``cudaGetDeviceProperties`` on the RTX 5090
-this file was written against; fields marked DERIVED are computed from a
-published peak and stated here so the arithmetic is visible rather than
-implied. NVIDIA publishes no dense tensor-core FLOP/s table for this SKU -- only
-"3352 AI TOPS", which is FP4 *with* sparsity -- so the dense ladder below is
-derived from the FP32 peak and marked as such.
+this file was written against; fields marked MEASURED come from a probe under
+``lab/sm120/`` and name it.
+
+The tensor-core ladder is MEASURED rather than derived, and it is stated as
+FLOP per cycle per SM rather than as TFLOP/s. An earlier version of this file
+derived it from the FP32 peak, omitted the accumulator width, and was wrong by
+2x for every kernel in this repository -- all of which accumulate in fp32.
+Consumer Blackwell runs fp32 accumulate at half the rate of fp16 accumulate,
+which is the difference between NVIDIA's published 419 TF and the 209.6 a fp32
+mainloop can reach.
 """
 
 from __future__ import annotations
@@ -84,33 +89,48 @@ class RTX5090Spec:
         {"fp32": 104_800_000_000_000}
     )
 
-    # DERIVED dense tensor-core ladder. Consumer Blackwell runs FP16/BF16 with
-    # FP32 accumulate at 4x the FP32 lane peak, and each halving of element
-    # width doubles it. The ladder is cross-checked two ways against figures
-    # NVIDIA does publish: FP8 lands on the quoted 838 TFLOP/s, and FP4 with
-    # 2:4 sparsity lands on the marketed 3352 "AI TOPS".
+    # MEASURED dense tensor-core ladder, expressed the way the hardware
+    # actually works: FLOP per cycle per SM. That is clock-free, and every
+    # TFLOP/s figure -- NVIDIA's or anyone's -- is it multiplied by a clock.
     #
-    # There is NO FP64 tensor path worth using on this part: consumer Blackwell
-    # runs FP64 at 1/64 rate, which is why fp64 is absent rather than zero.
+    # THE ACCUMULATOR WIDTH IS PART OF THE PEAK, and an earlier version of this
+    # file omitted it. Consumer Blackwell runs fp32 accumulate at HALF the rate
+    # of fp16 accumulate, which is why NVIDIA's published "419 TF dense" for
+    # this part -- confirmed on their forums as the FP16-with-FP16-accumulate
+    # figure -- is twice what a kernel accumulating in fp32 can reach. Every
+    # mainloop in this repository accumulates in fp32.
+    #
+    # Measured by lab/sm120/mma_clock.cu; see measured/unit-mma.md.
+    TENSOR_FLOP_PER_CYCLE_PER_SM: Mapping[str, int] = MappingProxyType(
+        {
+            "fp16_acc_fp16": 1024,  # measured 1023.9
+            "fp16_acc_fp32": 512,   # measured 511.5
+            "bf16_acc_fp32": 512,   # measured 511.5
+            "fp8_acc_fp32": 1024,   # measured 1023.0
+        }
+    )
+
+    #: Dense peaks at the marketed boost clock. Quoted for comparison with
+    #: NVIDIA's published figures, NOT as a target: this part was observed
+    #: running at 2.84-2.91 GHz under a pure tensor load, well above both the
+    #: marketed boost and the driver-reported maximum, so a real ceiling is
+    #: higher than these and varies with the clock. Use
+    #: TENSOR_FLOP_PER_CYCLE_PER_SM with an observed clock instead.
     TENSOR_CORE_DENSE_PEAK_FLOPS: Mapping[str, int] = MappingProxyType(
         {
-            "bf16": 419_400_000_000_000,
-            "fp16": 419_400_000_000_000,
-            "fp8": 838_800_000_000_000,
-            "fp4": 1_676_600_000_000_000,
+            "fp16_acc_fp16": 419_200_000_000_000,   # matches NVIDIA's 419 TF
+            "fp16_acc_fp32": 209_600_000_000_000,
+            "bf16_acc_fp32": 209_600_000_000_000,
+            "fp8_acc_fp32": 419_200_000_000_000,
         }
     )
-    TENSOR_CORE_2_TO_4_SPARSE_PEAK_FLOPS: Mapping[str, int] = MappingProxyType(
-        {
-            "bf16": 838_800_000_000_000,
-            "fp16": 838_800_000_000_000,
-            "fp8": 1_676_600_000_000_000,
-            "fp4": 3_352_000_000_000_000,
-        }
-    )
-    # TF32 is accepted by `mma.sync.aligned.m16n8k8...tf32` on this target, but
-    # NVIDIA publishes no TF32 peak for it; left unset rather than guessed.
-    TENSOR_CORE_TF32_PEAK_FLOPS: int | None = None
+    #: The marketed "3352 AI TOPS" is FP4 with 2:4 sparsity. Halving twice gives
+    #: 838 TFLOP/s dense fp8, which needs 2048 FLOP/cycle/SM -- twice what fp8
+    #: with fp32 accumulate measures. Consistent with the same half-rate rule
+    #: applying to fp8, but the narrower-accumulator fp8 form was not measured,
+    #: so the fp4 and sparse rows are left out rather than derived.
+    MARKETED_FP4_SPARSE_OPS = 3_352_000_000_000_000
+
     TENSOR_CORE_SUPPORTED_INPUT_DTYPES = (
         "tf32",
         "bf16",

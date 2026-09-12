@@ -33,3 +33,16 @@ on Hopper uses `setmaxnreg` and ptxas refuses that on plain `sm_120`.
 capture. The graph check is the load-bearing one: the runtime replays a captured
 graph, so capture failing would invalidate the execution model rather than one
 kernel.
+
+**`mma_unit.cu`** -- warp-level `mma.sync` issue interval against independent
+accumulator sets, and the `ldmatrix` feed tax against reuse. Counts its own SASS
+expectations, because a flat accumulator curve is also what an eliminated loop
+body looks like.
+
+**`mma_clock.cu`** -- the tensor-core ceiling measured **clock-free**, as FLOP
+per cycle per SM from per-SM `clock64()` spans, with the achieved clock derived
+rather than assumed. It exists because the first attempt compared a measured
+wall-clock throughput against a datasheet-derived peak and turned a kernel
+running at 100% of the hardware into one apparently running at 60%. It also
+measures the fp16-accumulate and fp8 forms, which is how the half-rate
+fp32-accumulate rule was established.

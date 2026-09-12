@@ -1,116 +1,133 @@
-# unit: mma — the only tensor-core path, and what it reaches
+# unit: mma — the only tensor-core path, and it already runs at the peak
 
-On sm90 this unit has two halves and the choice between them is the interesting
-part: `[mma.xover.n.wgmma]` says tile N below 32 favours `mma.sync`, above it
-favours `wgmma`. **Neither half of that survives here.** ptxas refuses every
-`wgmma` form on `sm_120a` and `tcgen05` is datacenter Blackwell only
-[isa.wgmma.absent], so there is one tensor-core instruction and no crossover to
-measure. The question becomes how close that one instruction gets to the peak.
+On sm90 this unit is half about `wgmma` and half about the crossover between it
+and `mma.sync`. Neither survives here: ptxas refuses every `wgmma` form on
+`sm_120a` and `tcgen05` is datacenter Blackwell only [isa.wgmma.absent], so
+there is one tensor-core instruction and no crossover to measure.
 
-Probe: `lab/sm120/mma_unit.cu`.
+Probes: `lab/sm120/mma_unit.cu` (issue interval, accumulator knee, ldmatrix tax)
+and `lab/sm120/mma_clock.cu` (the ceiling, measured clock-free).
 
 ```bash
-nvcc -O3 -std=c++17 -gencode arch=compute_120f,code=sm_120f -o /tmp/mma_unit lab/sm120/mma_unit.cu
-/tmp/mma_unit 20
+nvcc -O3 -std=c++17 -gencode arch=compute_120f,code=sm_120f -o /tmp/mma_clock lab/sm120/mma_clock.cu
+/tmp/mma_clock 20
 ```
 
-## Claims, and what would have refuted them
+## The correction this unit exists to record
 
-**`[mma.issue.warp]` — 32.1 cycles per `m16n8k16`, and the accumulator count
-barely moves it.**
+An earlier version of this file said `mma.sync` reaches **60% of peak** and that
+there is nothing to reach past it with. **Both halves were wrong**, and the way
+they were wrong is worth more than the number.
 
-| independent accumulator sets | cycles/mma | vs best |
-|---:|---:|---:|
-| 1 | 34.45 | 1.07× |
-| 2 | 33.10 | 1.03× |
-| 4 | 32.57 | 1.01× |
-| 8 | 32.28 | 1.00× |
-| 16 | 32.13 | 1.00× |
+The claim compared a *measured* 253 TFLOP/s against a *derived* 419.4 TFLOP/s
+peak. Two independent errors, in opposite directions:
 
-*Isolation*: operands register-resident, one warp alone on the device, no shared
-memory and no memory system in the number. The accumulators are summed into a
-value stored only under a condition that is false, so ptxas cannot drop the
-chain and no store traffic enters the measurement.
+1. **The peak had no accumulator width.** `spec.py` derived 419.4 from the FP32
+   lane peak. NVIDIA does publish 419 TF dense for this part — and on their own
+   forums it is stated to be the **FP16-with-FP16-accumulate** figure. Consumer
+   Blackwell runs **fp32 accumulate at half rate**. Every mainloop in this
+   repository accumulates in fp32, so its peak was 209.6, not 419.4.
+2. **The measurement used wall time against an assumed clock.** 253 TFLOP/s is
+   real, and it is *above* the 209.6 that the marketed 2.407 GHz boost implies —
+   which should have been the tell, since a kernel cannot exceed the peak. This
+   part runs at ~2.89 GHz under a pure tensor load.
 
-*Falsifier, and it was checked*: a flat curve is exactly what an eliminated loop
-body looks like, so the SASS was counted rather than trusted. Each
-`mma_issue<NACC>` kernel contains exactly `NACC` `HMMA.16816.F32.BF16`
-instructions in its loop body — 1, 2, 4, 8, 16 — and nothing was hoisted.
+Multiplying a measured numerator by a datasheet denominator is how a kernel at
+100% of the hardware looks like it is at 60% of it.
 
-**The flatness is the finding.** sm90's `[mma.stages.warp.knee]` says hold four
-independent accumulator sets, and there it is worth 4×: a single chain is
-latency-bound at 25.14 cycles against an issue interval of 6.26. Here one chain
-costs 34.45 and sixteen cost 32.13. The instruction is **issue-limited, not
-latency-limited**, on this part, so the sm90 rule buys 7% and the registers it
-reserves are better spent elsewhere.
+**The fix is to measure the clock-free quantity.** FLOP per cycle per SM is a
+property of the hardware; every TFLOP/s figure, NVIDIA's included, is it times a
+clock.
 
-**`[mma.ceiling.dev.bf16]` — 253 TFLOP/s, 60% of the derived peak.**
+## The measurement
 
-| CTAs | warps/CTA | TFLOP/s | of 419.4 |
-|---:|---:|---:|---:|
-| 170 (1/SM) | 4 | 248.8 | 59% |
-| 170 | 8 | 252.5 | 60% |
-| 170 | 12 | 253.2 | 60% |
-| 340 (2/SM) | 4 | 249.7 | 60% |
-| 340 | 8 | 251.8 | 60% |
-| 340 | 12 | 249.9 | 60% |
+`mma_clock.cu` records per-SM `clock64()` spans alongside host wall time, so the
+per-cycle rate and the achieved clock both fall out and neither is assumed.
 
-Four warps per SM already saturates it; twelve warps and a second CTA per SM add
-nothing. That much mirrors sm90's "one warpgroup saturates the tensor core".
+| dtype | accumulate | warps/SM | FLOP/cycle/SM | TFLOP/s | GHz |
+|---|---|---:|---:|---:|---:|
+| bf16 | fp32 | 4 | 507.5 | 248.9 | 2.884 |
+| bf16 | fp32 | 8 | **511.5** | 252.4 | 2.903 |
+| bf16 | fp32 | 12 | **511.5** | 253.2 | 2.912 |
+| fp8 e4m3 | fp32 | 4 | 1015.6 | 497.9 | 2.884 |
+| fp8 e4m3 | fp32 | 8 | **1023.0** | 497.9 | 2.863 |
+| fp16 | **fp16** | 4 | 929.5 | 449.2 | 2.842 |
+| fp16 | **fp16** | 8 | **1023.9** | 496.9 | 2.855 |
 
-**`[mma.ratio.dev.fp8]` — fp8 is 1.97× bf16, at the same 59% efficiency.**
+Three clean powers of two: **512**, **1024**, **1024**.
 
-A 60% shortfall invites two different explanations: the instruction is
-inefficient, or `spec.py`'s derived peak is wrong. NVIDIA publishes no dense
-tensor table for this SKU — only "3352 AI TOPS", which is FP4 with sparsity — so
-the ladder in `spec.py` is derived, and a derived denominator is exactly the kind
-of thing that should be checked before a 60% is quoted.
+**`[mma.rate.sm.bf16]` — 512 FLOP/cycle/SM is the peak, and `mma.sync` reaches
+it.** Not 60% of something; 99.9% of 512. The instruction leaves nothing on the
+table.
 
-| | measured | derived peak | efficiency |
-|---|---:|---:|---:|
-| bf16 → fp32 | 253 TFLOP/s | 419.4 | 60% |
-| fp8 e4m3 → fp32 | 497.8 TFLOP/s | 838.8 | 59% |
+**`[mma.ratio.sm.acc]` — fp32 accumulate is exactly half rate.** 1023.9 against
+511.5 at the same shape. This confirms NVIDIA's 419 TF as the fp16-accumulate
+figure (1024 × 170 × 2.407 GHz = 419.2) and settles that a fp32 mainloop's peak
+is 209.6 at that clock.
 
-fp8 measures **1.97×** bf16. The ladder's premise — each halving of element
-width doubles throughput — is therefore measured rather than assumed, and the
-efficiency is the *same* at both widths. So the 60% belongs to `mma.sync` and
-not to an error in the peak.
+**`[mma.ratio.sm.fp8]` — fp8 is exactly 2× bf16** at equal accumulator width,
+as the width ladder implies.
 
-**`[mma.feedtax.warp.ldmatrix]` — 1.27× at low reuse, 1.03× at high.**
+**`[mma.clock.sm]` — ~2.89 GHz under load**, above the 2.407 GHz marketed boost
+*and* above the 2.550 GHz the driver reports as this device's maximum. That is
+20% of headroom that a datasheet-derived TFLOP/s figure silently loses.
 
-| mmas per `ldmatrix` pair | cycles/mma | vs register-resident |
-|---:|---:|---:|
-| 8 | 41.03 | 1.27× |
-| 16 | 36.97 | 1.15× |
-| 32 | 34.44 | 1.07× |
-| 64 | 33.34 | 1.03× |
+## Everything is internally consistent
 
-Comparable to sm90's ≤1.18× but it bites at a lower reuse factor, so a mainloop
-that reloads every 8 mmas pays 27% here.
+The single-warp figure from `mma_unit.cu` closes the loop. Each SM has four
+sub-partitions with one tensor core each; one warp gets one of them.
+
+- One warp measured **32.13 cycles** per `m16n8k16`.
+- 4096 FLOP ÷ 32 cycles = 128 FLOP/cycle per tensor core.
+- × 4 tensor cores = **512 FLOP/cycle/SM**. ✓
+
+It also explains the one result that looked anomalous before:
+
+**`[mma.stages.warp.knee]` — accumulator count barely matters (1.07× from 1 set
+to 16).** sm90's rule says hold four independent accumulator sets, and there it
+is worth 4× because a single chain is latency-bound. Here the tensor core is
+**issue**-limited at 32 cycles per instruction, so one dependence chain already
+saturates it and there is nothing for more chains to overlap with. The registers
+that rule reserves are better spent elsewhere.
+
+**`[mma.issue.warp]` — 32.1 cycles per mma per warp**, against sm90's 6.26. That
+is not inefficiency, it is a smaller tensor core: 128 FLOP/cycle per tensor core
+here against Hopper's ~946.
+
+**`[mma.feedtax.warp.ldmatrix]` — 1.27× at 8 mmas per `ldmatrix` pair**, 1.15×
+at 16, 1.07× at 32, 1.03× at 64. Comparable to sm90's ≤1.18× but biting at a
+lower reuse factor.
 
 ## What this says against sm90
 
 | | sm90 (H100) | sm_120 (RTX 5090) |
 |---|---|---|
 | instructions available | `mma.sync` **and** `wgmma` | `mma.sync` only |
-| `mma.sync` per-warp issue | 6.26 cyc | **32.1 cyc** |
-| accumulator sets needed | 4 (worth 4×) | **1** (worth 1.07×) |
-| `mma.sync` ceiling | 63% of peak | **60% of peak** |
-| best reachable | **95%**, via `wgmma` | **60%** |
+| bf16 fp32-acc peak, FLOP/cycle/SM | ~3784 | **512** |
+| what the best instruction reaches | 95% of peak, via `wgmma` | **~100% of peak**, via `mma.sync` |
+| device bf16 fp32-acc, sustained | ~850 TFLOP/s | **~253 TFLOP/s** |
+| fp32 accumulate penalty | none | **2×** |
 
-The per-instruction efficiency is nearly the same on both machines — 63% against
-60% — which is the reassuring half. The unforgiving half is the last row: on
-H100 a kernel that needed more than 63% could reach for `wgmma` and get 95%. Here
-60% is the whole ceiling, because the instruction that would have gone higher
-does not exist.
+The corrected picture is more useful than the wrong one, and points somewhere
+different. There is no instruction to switch to and no efficiency to recover:
+`mma.sync` is already at the hardware ceiling, and the ceiling is simply 3.4×
+lower than H100's device-wide. A kernel that is tensor-bound here cannot be
+tuned out of it.
+
+What *is* available, and is not available on H100, is the accumulator and the
+input width. fp16 accumulation doubles the rate; fp8 input doubles it again.
+Both are real 2× levers on this part and neither exists on Hopper, where fp32
+accumulate runs at full rate.
 
 ## What is not established
 
-That 60% is the *hardware's* limit rather than this shape's. Only
-`m16n8k16` bf16 and `m16n8k32` fp8 were measured, both with register-resident
-operands. `spec.py` also lists FP6 and FP4 inputs and a block-scaled
-`mma.sync.kind::mxf8f6f4` form that needs `sm_120a`/`sm_120f`
-[isa.target.a_required]; none of those was measured, and the block-scaled path
-is the one NVIDIA built this tensor core around. A kernel that needs more than
-253 TFLOP/s of bf16 has nowhere to go, but a kernel that can use narrower inputs
-has the ladder available and the ladder is now measured to hold at one step.
+The fp4 and block-scaled forms, which need `sm_120a`/`sm_120f`
+[isa.target.a_required] and are what NVIDIA built this tensor core around. The
+marketed 838 TFLOP/s dense fp8 implies 2048 FLOP/cycle/SM — twice what fp8 with
+fp32 accumulate measures — which is consistent with the half-rate rule applying
+to fp8 too, but the narrower-accumulator fp8 form was not measured. Nor was
+`tf32`, which the instruction accepts.
+
+Whether fp16 accumulation is numerically acceptable for any call site in this
+repository is a correctness question, not a hardware one, and nothing here
+answers it.
