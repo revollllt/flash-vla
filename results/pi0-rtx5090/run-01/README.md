@@ -112,6 +112,28 @@ assumed DRAM -- so the epilogue only moved the cost. The same fusion IS a win
 on the vision feed-forward, where the activation follows a bias rather than a
 second matrix, and that one is routed.
 
+**Merging the attention splits inside the split kernel.** The separate merge
+kernel costs **4.26 of the call site's 19.04 us** -- ablated by skipping it --
+and moves 3.55 MB, which is 833 GB/s: it looked like a kernel paying a launch
+and a cold ramp rather than bandwidth. A stream-K style fixup removes that
+launch: the last split writes its partial, waits on an arrival counter, and
+merges in place. Correct at cos 0.999994 and **40.48 us against 18.88**.
+
+The merge is not launch-bound, it is parallelism-bound. The separate kernel
+merges with one CTA per query -- 408 of them -- and the fixup leaves only the 26
+finishers, sixteen times less, for the same 3.3 MB. A cooperative fixup where
+all 208 CTAs of a tile merge together would need a full rendezvous, which is
+only safe while every CTA is resident, and 208 CTAs do not fit 170 SMs; it would
+need the split count dropped to 6, which is itself 2 us worse.
+
+**Full weight-staging participation in the fused QKV kernel.** That kernel
+stages its weight with half its threads -- kWVecs / kThreads is kChunkK / 128,
+so at kChunkK 64 only 256 of 512 threads carry a weight vector -- and the kernel
+is weight-bandwidth bound, so this looked like the bottleneck. kChunkK 128 makes
+every thread carry one and measures **10.54 us cold against 9.87**. The whole
+(kTileN, kChunkK) grid was swept cold after the staging was generalized and the
+shipped point is still best; the hypothesis was simply wrong.
+
 **Storing the vision feed-forward's down-projection weight K-contiguous.**
 Re-storing that one weight (N, K) so cuBLAS sees a TN GEMM is **1.21x** at
 768 x 4304 x 1152 -- 49.29 us against 59.49 for the addmm and its bias add --
