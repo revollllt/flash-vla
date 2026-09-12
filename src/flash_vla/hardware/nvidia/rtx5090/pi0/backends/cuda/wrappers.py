@@ -25,6 +25,7 @@ import torch
 from flash_vla.hardware.nvidia.h100.pi0.backends.tilelang.wrappers import (
     OPS, ROUTE_CONSTRAINTS)
 
+from . import cutlass_gemm as cg
 from . import pointwise as cu
 
 #: Gate and up projections concatenated into one (dim, 2*ffn) weight, keyed by
@@ -49,6 +50,36 @@ def _packed_gate_up(gate_w, up_w):
         packed = torch.cat((gate_w, up_w), dim=1).contiguous()
         _PACKED_GATE_UP[key] = packed
     return packed
+
+# --------------------------------------------------------------------------
+# The route's GEMMs run on CUTLASS stream-K, not cuBLAS.
+#
+# Speed is half the reason -- 10 of the 11 shapes are at or above cuBLAS and
+# four are 1.2x to 1.5x, because stream-K fills a 170-SM part that no power-of-
+# two tile grid lands on. The other half is control: programmatic dependent
+# launch needs the producer AND the consumer to carry `griddepcontrol`, and a
+# cuBLAS call between two hand-written kernels breaks the chain.
+#
+# The tile per site is measured, not derived: stream-K removes the wave
+# quantization but not the mainloop's own trade, where a big tile is more
+# efficient per SM and a small one puts more CTAs on the part. The sweep is
+# `lab/sm120/pi0_cutlass_sweep.py` and these are its picks.
+# --------------------------------------------------------------------------
+GEMM_CONFIG = {
+    "vision_qkv": 5,
+    "vision_out_proj": 10,
+    "vision_ffn_up": 5,
+    "vision_ffn_down": 10,
+    "backbone_qkv": 10,
+    "backbone_gate": 5,
+    "backbone_up": 5,
+    "backbone_out_proj": 10,
+    "backbone_ffn_down": 5,
+    "expert_gate_up": 3,
+    "expert_ffn_down": 8,
+    "expert_out_proj": 9,
+}
+
 
 #: Only the call sites this backend implements. A plan naming any other site
 #: for this backend is a routing error and `make_wrappers` says so.
@@ -115,7 +146,8 @@ def action_expert_norm_gated_ffn(x, scale, gate_w, up_w, gate_b, up_b, out,
         cu.gelu_mul(gate, out, out)
         return out
     both = scratch("expert_gate_up", (m, 2 * ffn), x.dtype, x.device)
-    torch.mm(normed, packed_w, out=both)
+    if not cg.gemm(normed, packed_w, both, config=GEMM_CONFIG["expert_gate_up"]):
+        torch.mm(normed, packed_w, out=both)
     cu.gelu_mul_packed(both, out)
     return out
 
@@ -186,11 +218,8 @@ def llm_backbone_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, x_norm, *, scratch)
     normed = x_norm[:m]
     packed = scratch("backbone_qkv", (m, n), x.dtype, x.device)
     cu.rms_norm(x, normed)
-    if cu.tiles(m, x.shape[1], n):
-        # 46.40 us against cuBLAS's 55.47 at 768 x 2048 x 2560; see
-        # `llm_backbone_out_proj_residual` for why the tile is what it is.
-        cu.tiled_gemm(normed, weight_qkv, packed)
-    else:
+    if not cg.gemm(normed, weight_qkv, packed,
+                   config=GEMM_CONFIG["backbone_qkv"]):
         torch.mm(normed, weight_qkv, out=packed)
     cu.rope_scatter(packed, rope, Q, K, V)
 
@@ -212,9 +241,12 @@ def llm_backbone_norm_gated_ffn(x, gate_w, up_w, out, x_norm, *, scratch):
     normed = x_norm[:m]
     gate = scratch("backbone_gate", (m, ffn), x.dtype, x.device)
     cu.rms_norm(x, normed)
-    torch.mm(normed, gate_w, out=gate)
-    torch.mm(normed, up_w, out=out[:m])
-    cu.gelu_mul(gate, out[:m], out[:m])
+    up = out[:m]
+    if not (cg.gemm(normed, gate_w, gate, config=GEMM_CONFIG["backbone_gate"])
+            and cg.gemm(normed, up_w, up, config=GEMM_CONFIG["backbone_up"])):
+        torch.mm(normed, gate_w, out=gate)
+        torch.mm(normed, up_w, out=up)
+    cu.gelu_mul(gate, up, up)
     return out
 
 
@@ -230,7 +262,7 @@ def action_expert_out_proj_residual(x, weight, gate, out):
     """out += x @ weight, in place. `gate` is Pi0.5's and is None here."""
     assert gate is None, "the gate is Pi0.5's"
     flat = out.view(x.shape[0], -1)
-    torch.addmm(flat, x, weight, beta=1, alpha=1, out=flat)
+    _residual_gemm(x, weight, flat, "expert_out_proj")
     return out
 
 
@@ -238,7 +270,7 @@ def action_expert_ffn_down_residual(x, weight, gate, out):
     """out += x @ weight, in place. `gate` is Pi0.5's and is None here."""
     assert gate is None, "the gate is Pi0.5's"
     flat = out.view(x.shape[0], -1)
-    torch.addmm(flat, x, weight, beta=1, alpha=1, out=flat)
+    _residual_gemm(x, weight, flat, "expert_ffn_down")
     return out
 
 
@@ -252,18 +284,14 @@ def llm_backbone_out_proj_residual(x, weight, out):
     read by the one thread that writes it.
     """
     flat = out.view(x.shape[0], -1)
-    m, k = x.shape
-    if cu.tiles(m, k, weight.shape[1]):
-        cu.tiled_gemm(x, weight, flat, res=flat)
-    else:
-        torch.addmm(flat, x, weight, beta=1, alpha=1, out=flat)
+    _residual_gemm(x, weight, flat, "backbone_out_proj")
     return out
 
 
 def llm_backbone_ffn_down_residual(x, weight, out):
     """out += hidden @ weight, in place."""
     flat = out.view(x.shape[0], -1)
-    torch.addmm(flat, x, weight, beta=1, alpha=1, out=flat)
+    _residual_gemm(x, weight, flat, "backbone_ffn_down")
     return out
 
 
@@ -289,8 +317,10 @@ def vision_encoder_norm_qkv(x, norm_w, norm_b, qkv_w, qkv_b, out, *, scratch):
     x2 = x.view(m, VISION_DIM)
     normed = scratch("vision_norm", (m, VISION_DIM), x.dtype, x.device)
     cu.layer_norm(x2, norm_w, norm_b, normed)
-    torch.addmm(qkv_b, normed, qkv_w, beta=1, alpha=1,
-                out=out.view(m, qkv_w.shape[1]))
+    flat = out.view(m, qkv_w.shape[1])
+    if not cg.gemm(normed, qkv_w, flat, config=GEMM_CONFIG["vision_qkv"],
+                   c=qkv_b, beta=1.0, broadcast_c=True):
+        torch.addmm(qkv_b, normed, qkv_w, beta=1, alpha=1, out=flat)
     return out
 
 
@@ -301,12 +331,28 @@ def vision_encoder_norm_ffn_up(x, norm_w, norm_b, weight, bias, out, *, scratch)
     normed = scratch("vision_norm", (m, VISION_DIM), x.dtype, x.device)
     cu.layer_norm(x2, norm_w, norm_b, normed)
     flat = out.view(m, VISION_FFN)
-    torch.addmm(bias, normed, weight, beta=1, alpha=1, out=flat)
+    if not cg.gemm(normed, weight, flat, config=GEMM_CONFIG["vision_ffn_up"],
+                   c=bias, beta=1.0, broadcast_c=True):
+        torch.addmm(bias, normed, weight, beta=1, alpha=1, out=flat)
     cu.gelu_(flat)
     return out
 
 
-def _proj_bias_residual(x, weight, bias, res, out):
+def _residual_gemm(x, weight, out_flat, key):
+    """out_flat = res + x @ weight, where `res` is already in `out_flat`.
+
+    The residual goes in as the epilogue's C, aliased to D. That is the same
+    aliasing `_proj_bias_residual` documents and the reason it exists: adding
+    the residual afterwards reads a buffer the GEMM has already overwritten.
+    """
+    a = x.view(-1, weight.shape[0])
+    if not cg.gemm(a, weight, out_flat, config=GEMM_CONFIG[key], c=out_flat,
+                   beta=1.0):
+        torch.addmm(out_flat, a, weight, beta=1, alpha=1, out=out_flat)
+    return out_flat
+
+
+def _proj_bias_residual(x, weight, bias, res, out, key):
     """out = x @ weight + bias + res -- two launches, alias-safe.
 
     `res` MAY BE `out`: the graph binds the residual to the buffer being written
@@ -316,20 +362,22 @@ def _proj_bias_residual(x, weight, bias, res, out):
     The bias is added after, which is safe because by then nothing needs `res`.
     """
     flat = out.view(-1, weight.shape[1])
-    torch.addmm(res.view_as(flat), x.view(-1, weight.shape[0]), weight,
-                beta=1, alpha=1, out=flat)
+    a = x.view(-1, weight.shape[0])
+    r = res.view_as(flat)
+    if not cg.gemm(a, weight, flat, config=GEMM_CONFIG[key], c=r, beta=1.0):
+        torch.addmm(r, a, weight, beta=1, alpha=1, out=flat)
     flat.add_(bias)
     return out
 
 
 def vision_encoder_out_proj_residual(x, weight, bias, res, out):
     """out = attn @ weight + bias + res -- two launches."""
-    return _proj_bias_residual(x, weight, bias, res, out)
+    return _proj_bias_residual(x, weight, bias, res, out, "vision_out_proj")
 
 
 def vision_encoder_ffn_down_residual(x, weight, bias, res, out):
     """out = hidden @ weight + bias + res -- two launches."""
-    return _proj_bias_residual(x, weight, bias, res, out)
+    return _proj_bias_residual(x, weight, bias, res, out, "vision_ffn_down")
 
 
 # The action tokens' output projection. What it costs is launches, not
