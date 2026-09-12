@@ -56,6 +56,7 @@ NAMES = frozenset({
     "action_expert_norm_qkv_rope",
     "action_expert_norm_gated_ffn",
     "action_expert_attention",
+    "action_expert_action_out_proj",
     "llm_backbone_norm_qkv_rope",
     "llm_backbone_norm_gated_ffn",
     "action_expert_out_proj_residual",
@@ -76,7 +77,7 @@ VISION_FFN = 4304
 
 
 def action_expert_norm_qkv_rope(x, scale, weight_qkv, bias, rope, Q, K, V,
-                                norm_factor, *, scratch):
+                                norm_factor):
     """RMS-scale x, project to QKV, rotate and scatter -- one launch.
 
     `x` is (tokens, dim) bf16; `weight_qkv` is (dim, heads*head_dim + 2*head_dim).
@@ -300,6 +301,36 @@ def vision_encoder_ffn_down_residual(x, weight, bias, res, out):
     return _proj_bias_residual(x, weight, bias, res, out)
 
 
+# The action tokens' output projection. What it costs is launches, not
+# arithmetic: the torch spelling takes eleven of them because it writes through
+# a fresh temporary for the norm, the projection and the bias, and the site
+# measured 15.14 us per call against a 3.5 us ceiling.
+#
+# The three sibling projections were measured the same way and are NOT routed
+# here. `action_expert_state_proj` and `action_expert_action_in_proj` came back
+# inside the noise floor, +0.015 and +0.007 ms on a 31.1 ms forward, so the
+# launches they save do not show. `action_expert_action_mlp` as a single
+# `torch.addmm` was 0.202 ms SLOWER than torch's mm-add-copy at its 50 x 1024 x
+# 1024 shape, which is a larger effect than the launches it removes; whatever
+# cuBLAS picks for that shape through `addmm` is worse than what `mm` gets.
+
+
+def action_expert_action_out_proj(x, weight, bias, out, norm_factor, *, scratch):
+    """out += rms(x) @ weight + bias -- three launches.
+
+    `out` is the residual as well as the destination, so it goes in as the
+    GEMM's beta term for the same aliasing reason `_proj_bias_residual`
+    documents.
+    """
+    m, kdim = x.shape
+    normed = scratch("action_out_norm", (m, kdim), x.dtype, x.device)
+    cu.rms_norm(x, normed)
+    flat = out.view(-1, weight.shape[1])
+    torch.addmm(flat, normed, weight, beta=1, alpha=1, out=flat)
+    flat.add_(bias)
+    return out
+
+
 ALL_WRAPPERS = {
     "action_expert_norm_qkv_rope": action_expert_norm_qkv_rope,
     "action_expert_out_proj_residual": action_expert_out_proj_residual,
@@ -315,13 +346,14 @@ ALL_WRAPPERS = {
     "llm_backbone_norm_gated_ffn": llm_backbone_norm_gated_ffn,
     "action_expert_norm_gated_ffn": action_expert_norm_gated_ffn,
     "action_expert_attention": action_expert_attention,
+    "action_expert_action_out_proj": action_expert_action_out_proj,
 }
 #: Only the wrappers that stage an intermediate take the allocator; the rest
 #: write straight into the caller's buffers.
-_TAKES_SCRATCH = ("action_expert_norm_qkv_rope", "action_expert_norm_gated_ffn",
+_TAKES_SCRATCH = ("action_expert_norm_gated_ffn",
                   "action_expert_attention", "llm_backbone_norm_qkv_rope",
                   "llm_backbone_norm_gated_ffn", "vision_encoder_norm_qkv",
-                  "vision_encoder_norm_ffn_up")
+                  "vision_encoder_norm_ffn_up", "action_expert_action_out_proj")
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:

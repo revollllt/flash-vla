@@ -10,3 +10,4 @@ iteration,change,latency_ms,decision,report,revision
 8,"Tensor-core fused attention: 79.5 us against the split form's 25.3, six times the work for 1.05x the time",,revert,,576d396
 9,"Expert norm+QKV+RoPE fused into one kernel: the RMS gain-free scalar commutes with the GEMM",31.220,keep,measurements/009-fused-qkv.json,HEAD
 10,"Weight tile staged in natural [k][n] order and transposed by ldmatrix.trans: removes an 8-way shared bank conflict",31.078,keep,measurements/010-qkv-ldmatrix-trans.json,HEAD
+11,"Action-token output projection off torch: 11 launches to 3. Its three siblings measured neutral or worse and were left alone",30.999,keep,measurements/011-action-out-proj.json,HEAD

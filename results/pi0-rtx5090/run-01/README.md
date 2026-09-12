@@ -1,7 +1,7 @@
 # Pi0 · RTX 5090 · run-01
 
 First optimization run of `rtx5090/pi0`, from the all-torch bring-up route to a
-hand-written CUDA route: **46.794 → 31.078 ms, 1.51×**.
+hand-written CUDA route: **46.794 → 30.999 ms, 1.51×**.
 
 ![Optimization progress](progress.svg)
 
@@ -38,6 +38,7 @@ different comparison context; this run starts its own curve.
 | 6 | expert gate and up packed into one GEMM | 31.396 | **−1.490** |
 | 9 | expert norm + QKV + RoPE fused into one kernel | 31.220 | **−0.176** |
 | 10 | that kernel's weight tile transposed by `ldmatrix.trans` | 31.078 | **−0.142** |
+| 11 | action-token output projection off torch | 30.999 | **−0.079** |
 
 Every delta in rows 1–4 is a **paired A/B in one job**: the retained route and
 the candidate measured back to back, same process family, same driver, with the
@@ -128,6 +129,24 @@ structural and it measures 15.9 us in the graph -- 79% of it**. The floor
 model's 4.17 us ceiling for this call site assumes a fusion that this shape
 cannot afford. Kept unrouted in `kernels/expert_attention_mma.cu`; the sweep is
 `bench_mma_scaling` in `lab/sm120/pi0_attention_bench.py`.
+
+**Three of the four small action-token projections.** All four were measured as
+a paired A/B, one site per leg, against the same job's shipped leg.
+`action_expert_action_out_proj` is a win and is routed: 11 launches to 3, and
+−0.065 ms with both candidate legs under both control legs in an A/B/A/B.
+`action_expert_state_proj` (3 launches to 1) and `action_expert_action_in_proj`
+(6 to 2) came back at +0.015 and +0.007 ms, inside a ~0.05 ms cross-job spread
+-- the launches they save do not show, so they stay on torch rather than add
+code for nothing. `action_expert_action_mlp` as a single `torch.addmm` was
+**0.202 ms slower** than torch's mm-add-copy at its 50 x 1024 x 1024 shape,
+which is far more than the two launches it removes.
+
+**A cuBLASLt GELU epilogue on the vision feed-forward.** `aten::_addmm_activation`
+would fold the activation into the GEMM and save a 13.2 MB round trip, and it
+measured **57.46 us against 51.31** for the separate pass at 768 x 1152 x 4304
+-- the epilogue costs more GEMM than the pass it replaces (132.5 against 148.4
+TFLOP/s). Its GELU is also neither spelling exactly: it sits 2.7e-03 from
+tanh and 2.6e-03 from erf at bf16 output.
 
 **`F.scaled_dot_product_attention` with a precomputed mask**: 90.3 µs against
 the torch chain's 73.0 at this shape. Slower than what it would replace.

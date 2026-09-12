@@ -66,6 +66,7 @@ class Pi0RTX5090(Pi0):
         "action_expert_attention": "cuda",
         "action_expert_out_proj_residual": "cuda",
         "action_expert_ffn_down_residual": "cuda",
+        "action_expert_action_out_proj": "cuda",
         "llm_backbone_norm_qkv_rope": "cuda",
         "llm_backbone_norm_gated_ffn": "cuda",
         "llm_backbone_out_proj_residual": "cuda",
