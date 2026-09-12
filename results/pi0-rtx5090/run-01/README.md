@@ -54,7 +54,7 @@ spread**, and 32.753 is the previous job's figure for the route without it. The
 kept for a numerical reason rather than a latency one: it removes a bf16
 round-trip and moves the operator's cosine from 0.999992 to 0.999999.
 
-Launches fell from **12831 to 3460**, −73%.
+Launches fell from **12831 to 2850**, −78%.
 
 ## Correctness
 
@@ -64,14 +64,16 @@ against themselves.
 
 | | shallow gate | full depth (10 steps × 18 layers) |
 |---|---|---|
-| cosine | **0.99983** | **0.99793** (budget 0.9943) |
-| rel_rms | 0.0034 | **0.0643** (budget 0.34) |
+| cosine | **0.99983** | **0.99791** (budget 0.9943) |
+| rel_rms | 0.0034 | **0.0647** (budget 0.34) |
 | verdict | **passed** | inside the deepest tolerance |
 
 `replay_identical` is true. The full-depth cosine drifted from 0.99976 after
-iteration 1 to 0.99793 now — 36% of the deepest budget spent, all of it bf16
+iteration 1 to 0.99791 now — 37% of the deepest budget spent, all of it bf16
 rounding and reduction order. Nothing in the route computes at a lower precision
-than the torch form it replaced.
+than the torch form it replaced, and the fused QKV kernel is strictly *more*
+accurate than the three-launch form: it never rounds the normalized activations
+to bf16 because it never materializes them.
 
 Operator-level checks are in `correctness/`:
 `lab/sm120/pi0_torch_parity.py` pins the torch backend against the TileLang
@@ -175,45 +177,63 @@ uses proves nothing about it.**
 
 ## Where the time goes now
 
-Floor model after iteration 4 (`artifacts/profile/floor2.json`), ceiling built
+Floor model after iteration 13 (`artifacts/profile/floor5.json`), ceiling built
 from this machine's measured constants:
 
 | segment | measured | ceiling | % | launches |
 |---|---:|---:|---:|---:|
-| `llm_backbone` | 15.57 | 11.74 | 133% | 244 |
-| `action_expert` | 12.91 | 7.64 | 169% | 2913 |
-| `vision_encoder` | 4.80 | 2.73 | 176% | 303 |
-| **total** | **33.29** | **22.11** | **151%** | **3460** |
+| `llm_backbone` | 15.50 | 11.74 | 132% | 244 |
+| `action_expert` | 10.52 | 7.64 | 138% | 2293 |
+| `vision_encoder` | 4.75 | 2.73 | 174% | 303 |
+| **total** | **30.76** | **22.11** | **139%** | **2850** |
 
-**`llm_backbone` is done.** Its largest call site, `llm_backbone_norm_gated_ffn`
-at 8.814 ms, *is* its two GEMMs, and cuBLAS runs them at **82–85% of this
-machine's measured tensor ceiling** (207 and 214 TFLOP/s against
-[mma.tflops.dev.bf16]'s 253). `mma.sync` is the only tensor-core path on this
-part and already reaches 100% of 512 FLOP/cycle/SM [mma.rate.sm.bf16], so a
-hand-written GEMM has nothing to find there. Measured directly:
+The twelve largest remaining gaps, and what each one actually is:
 
-| GEMM | µs | TFLOP/s | of 253 |
-|---|---:|---:|---:|
-| backbone gate/up, 768×2048×16384 | 248.9 | 207.1 | 82% |
-| backbone ffn down, 768×16384×2048 | 240.8 | 214.0 | 85% |
-| expert gate/up, 51×1024×4096 | 14.9 | 28.7 | **11%** |
-| expert QK^T, 408×256×819 | 13.9 | 12.3 | **5%** |
+| call site | gap | what is in the way |
+|---|---:|---|
+| `action_expert_attention` | 2.108 | settled below: 26 CTAs is all this shape offers |
+| `llm_backbone_norm_gated_ffn` | 1.882 | its two GEMMs, cuBLAS at ~85% of the tensor ceiling |
+| `llm_backbone_ffn_down_residual` | 0.654 | one GEMM, cuBLAS at 85% |
+| `vision_encoder_ffn_down_residual` | 0.651 | one GEMM at ~60%, wave quantization |
+| `action_expert_norm_qkv_rope` | 0.583 | the fused kernel, 18% over its own ceiling |
+| `vision_encoder_norm_ffn_up` | 0.557 | one GEMM at ~74% |
+| `llm_backbone_norm_qkv_rope` | 0.442 | one GEMM at ~79% plus two pointwise passes |
+| `llm_backbone_out_proj_residual` | 0.418 | one GEMM at ~51%, wave quantization |
+| `llm_backbone_attention` | 0.350 | still torch |
+| `vision_encoder_norm_qkv` | 0.327 | one GEMM at ~76% |
+| `vision_encoder_out_proj_residual` | 0.275 | one GEMM at ~56%, wave quantization |
+| `vision_encoder_attention` | 0.189 | still torch |
 
-**`action_expert` is where the remaining headroom is**, 5.3 ms of it, and its
-GEMMs sit at 5–11% of the tensor ceiling because they are tiny and
-weight-bandwidth bound, not FLOP bound. At `[ld.bw.dev.dram]`'s
-`3.35 + MB/1.524` µs, one 8.4 MB expert weight is an 8.9 µs read against a
-1.7 µs compute. Ten denoise steps re-read all 18 layers' weights — 5.8 GB per
-forward — which no kernel removes.
+**Nine of the twelve are inside a cuBLAS GEMM**, and the pointwise glue around
+them has been measured out: `lab/sm120/pi0_bandwidth_bench.py` puts every
+hand-written streaming kernel between 2700 and 6000 GB/s, and the norms and
+activations together are now a few percent of their call sites.
+
+Two distinct things hold those GEMMs back, and neither is addressable without
+replacing cuBLAS:
+
+- **The large ones are near the ceiling already.** The backbone's gate/up pair
+  runs at 207–214 TFLOP/s against [mma.tflops.dev.bf16]'s 253, which is 83–85%,
+  and `mma.sync` is the only tensor-core path on this part [isa-support].
+- **The small ones cannot fill the part.** `llm_backbone_out_proj_residual` is
+  768 x 2048 x 2048: at 128 x 128 tiles that is 6 x 16 = 96 CTAs on a 170-SM
+  machine, one wave at 56% occupancy, and 51% of peak is what that predicts.
+  The three vision sites at 1152 output width are the same shape of problem.
+  Splitting K does not help, because 2 x 96 = 192 CTAs is a second wave for
+  22 more.
 
 ## Next, in order of expected value
 
-1. **Pack the expert's gate and up projections into one GEMM.** Two 8.4 MB
-   weight reads become one 16.8 MB read and pay `[ld.bw.dev.dram]`'s 3.35 µs
-   fixed cost once instead of twice. Needs the two weights contiguous, which is
-   a checkpoint-loading change rather than a kernel.
-2. **A tensor-core attention mainloop.** The remaining 2.1 ms on
-   `action_expert_attention` needs `mma.sync` fragments fed by `ldmatrix`; the
-   CUDA-core attempt above establishes that nothing less will do.
-3. **`vision_encoder`**, 2.1 ms at 176%, is the smallest of the three and has
-   had the least attention.
+1. **A hand-written GEMM for the 1152- and 2048-wide sites.** The win is not
+   arithmetic but tile shape: a tiling chosen for 170 SMs rather than for a
+   128 x 128 default would put `llm_backbone_out_proj_residual` and the three
+   vision projections in one full wave instead of one 56%-full one. Worth about
+   1.6 ms across those four. It has to beat cuBLAS at ~200 TFLOP/s on the large
+   shapes too, or it can only be routed to the small ones.
+2. **`llm_backbone_attention` and `vision_encoder_attention`**, the last two
+   sites on torch, 0.54 ms between them. Both have enough queries to fill the
+   machine, unlike the expert's attention -- but both also re-read a large
+   shared K/V per query tile, which is what the expert's kernel died on.
+3. **`action_expert_norm_qkv_rope`'s last 0.583 ms.** The fused kernel is at
+   1210 GB/s against the 1524 of [ld.bw.dev.dram]; every CTA reads all of x,
+   which is 8.3 MB of L2 traffic against 5.24 MB of weight.
