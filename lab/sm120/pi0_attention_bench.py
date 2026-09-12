@@ -111,12 +111,31 @@ def bench_mma() -> None:
     def mma():
         cu.expert_attention_mma(q, k, v, got, heads=HEADS, prefix=PREFIX)
 
+    def split_sweep():
+        """Split-KV: 26 query tiles times S slices of the key axis."""
+        print("  key splits -> wall time, against the split form's "
+              f"{time_us(split):.2f} us")
+        for s in (1, 2, 3, 4, 6, 8, 12):
+            out_s = torch.empty_like(ref)
+            fn = lambda: cu.expert_attention_mma(q, k, v, out_s, heads=HEADS,
+                                                 prefix=PREFIX, splits=s)
+            fn(); torch.cuda.synchronize()
+            c = torch.nn.functional.cosine_similarity(
+                ref.float().flatten(), out_s.float().flatten(), dim=0).item()
+            r = (torch.linalg.vector_norm(ref.float() - out_s.float())
+                 / torch.linalg.vector_norm(ref.float())).item()
+            t = time_us(fn)
+            ok = "PASS" if c >= 0.999 and r <= 2e-2 else "*** FAIL ***"
+            print(f"  {s:3d} splits, {26 * s:4d} CTAs  {t:7.2f} us  "
+                  f"{ts / t:5.2f}x  {ok}  cos {c:.6f} rel {r:.2e}")
+
     split(); mma(); torch.cuda.synchronize()
     cos = torch.nn.functional.cosine_similarity(
         ref.float().flatten(), got.float().flatten(), dim=0).item()
     rel = (torch.linalg.vector_norm(ref.float() - got.float())
            / torch.linalg.vector_norm(ref.float())).item()
     ts, tm = time_us(split), time_us(mma)
+    split_sweep()
     print(f"  {'cuBLAS + fused softmax':<24} {ts:8.2f} us")
     print(f"  {'tensor-core one kernel':<24} {tm:8.2f} us  {ts / tm:5.2f}x  "
           f"{'PASS' if cos >= 0.999 and rel <= 2e-2 else '*** FAIL ***'}  "

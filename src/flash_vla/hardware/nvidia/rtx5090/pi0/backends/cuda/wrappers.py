@@ -121,23 +121,34 @@ def action_expert_norm_gated_ffn(x, scale, gate_w, up_w, gate_b, up_b, out,
 
 
 def action_expert_attention(Q, K, V, mask, out, prefix_len, *, scratch):
-    """out = softmax(mask(Q @ K^T * scale)) @ V, multi-query, three launches.
+    """out = softmax(mask(Q @ K^T * scale)) @ V, multi-query, one fused kernel.
 
-    Both GEMMs stay on cuBLAS, which already reaches the tensor core; only the
-    glue between them is hand-written. The torch chain spells that glue as two
-    `arange`s, three comparisons, a `masked_fill`, a softmax and a cast, and
-    rebuilds the mask on every one of the 180 calls per forward.
+    `Q` and `out` are (queries, head_dim) bf16 and MAY ALIAS: a CTA reads its
+    own sixteen query rows into shared memory before anything is written, and
+    writes only those same rows. `K` and `V` are (keys, head_dim). Safe during
+    CUDA-graph capture.
 
-    `Q` and `out` are (queries, head_dim) bf16 and MAY ALIAS -- the scores
-    workspace breaks the dependence, so the final GEMM does not read Q. `K` and
-    `V` are (keys, head_dim). Safe during CUDA-graph capture.
+    The kernel splits the KEY axis eight ways. 408 flat queries is 26 mma M
+    tiles and therefore 26 CTAs on a 170-SM part; the key axis is the only
+    other source of parallelism, and the fp32 partials it costs stay in L2.
+    Measured against the cuBLAS-plus-softmax form it replaces, at Pi0's shape:
 
-    A fully fused single-kernel form was written and measured first
-    (`kernels/expert_attention.cu`): 201 us against the torch chain's 70, because
-    a CUDA-core dot product costs two shared loads and an FFMA per two FLOP. It
-    is not routed here.
+        splits   CTAs   fused    vs split form
+             1     26   33.34 us      0.76x
+             4    104   21.12 us      1.19x
+             8    208   19.04 us      1.32x
+            12    312   20.90 us      1.21x
+
+    A CUDA-core version of this fusion is in `kernels/expert_attention.cu` and
+    is 8x slower than the split form; the instruction count is the wall there
+    and only `mma.sync` clears it.
     """
     assert mask is None, "Pi0 has no key mask; the prefix length is the integer"
+    if cu.expert_attention_mma(Q, K, V, out, heads=DECODER_HEADS,
+                               prefix=prefix_len, splits=ATTENTION_SPLITS):
+        return out
+    # The split-KV workspace is built on the first call, which the runner makes
+    # during warmup; a miss inside a capture falls back rather than allocating.
     queries, head_dim = Q.shape
     keys = K.shape[0]
     scores = scratch("expert_scores", (queries, keys), Q.dtype, Q.device)
@@ -146,6 +157,10 @@ def action_expert_attention(Q, K, V, mask, out, prefix_len, *, scratch):
                              prefix=prefix_len, scale=float(head_dim ** -0.5))
     torch.mm(scores, V, out=out)
     return out
+
+
+#: Slices of the key axis, swept at Pi0's shape; see the wrapper above.
+ATTENTION_SPLITS = 8
 
 
 #: Pi0's action expert is multi-query: eight query heads over one KV head, so

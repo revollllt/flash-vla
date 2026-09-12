@@ -98,8 +98,12 @@ def library(verbose: bool = False):
         lib.expert_masked_softmax_launch.argtypes = [ctypes.c_void_p] * 2 + [
             ctypes.c_int] * 4 + [ctypes.c_float, ctypes.c_void_p]
         lib.expert_masked_softmax_launch.restype = ctypes.c_int
+        lib.expert_attention_mma_workspace.argtypes = [
+            ctypes.c_int] * 2 + [ctypes.POINTER(ctypes.c_longlong)]
+        lib.expert_attention_mma_workspace.restype = ctypes.c_int
         lib.expert_attention_mma_launch.argtypes = [ctypes.c_void_p] * 4 + [
-            ctypes.c_int] * 5 + [ctypes.c_float, ctypes.c_void_p]
+            ctypes.c_int] * 5 + [ctypes.c_float, ctypes.c_void_p,
+                                 ctypes.c_int, ctypes.c_void_p]
         lib.expert_attention_mma_launch.restype = ctypes.c_int
         lib.layer_norm_launch.argtypes = [ctypes.c_void_p] * 4 + [
             ctypes.c_int] * 2 + [ctypes.c_void_p]
@@ -276,21 +280,52 @@ def expert_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
     return out
 
 
+#: Split-KV partials, per (queries, splits). 408 queries is 26 mma M tiles and
+#: therefore 26 CTAs; splitting the key axis is the only place more parallelism
+#: can come from, and the partials it costs are fp32 and stay in L2.
+_ATTENTION_WORKSPACE: dict[tuple[int, int], torch.Tensor] = {}
+
+
+def _attention_workspace(queries: int, splits: int, device):
+    """The fp32 partial buffer for this shape, or None inside a capture."""
+    if splits <= 1:
+        return torch.empty(0)
+    got = _ATTENTION_WORKSPACE.get((queries, splits))
+    if got is None:
+        if torch.cuda.is_current_stream_capturing():
+            return None
+        floats = ctypes.c_longlong(0)
+        _check(library().expert_attention_mma_workspace(
+            queries, splits, ctypes.byref(floats)), "attention_workspace")
+        got = torch.empty(floats.value, dtype=torch.float32, device=device)
+        _ATTENTION_WORKSPACE[(queries, splits)] = got
+    return got
+
+
 def expert_attention_mma(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
-                        out: torch.Tensor, *, heads: int, prefix: int) -> torch.Tensor:
-    """out = softmax(mask(q @ k^T * scale)) @ v on the tensor core, one launch.
+                         out: torch.Tensor, *, heads: int, prefix: int,
+                         splits: int = 1) -> bool:
+    """out = softmax(mask(q @ k^T * scale)) @ v on the tensor core.
 
     `q` and `out` are (queries, 256), `k` and `v` are (keys, 256), contiguous
     bf16 on CUDA. `out` must NOT alias `q`: the accumulator is written per tile.
-    The mask keeps key j for flat row r when `r >= heads or j <= prefix`. Safe
-    during CUDA-graph capture.
+    The mask keeps key j for flat row r when `r >= heads or j <= prefix`.
+
+    `splits` divides the KEY axis across that many extra CTAs, each producing an
+    unnormalized partial that a second kernel merges. Safe during CUDA-graph
+    capture once the workspace exists; returns False without touching `out` if
+    it is missing inside a capture, so the caller can fall back.
     """
     queries, head_dim = q.shape
+    ws = _attention_workspace(queries, splits, q.device)
+    if ws is None:
+        return False
     _check(library().expert_attention_mma_launch(
         q.data_ptr(), k.data_ptr(), v.data_ptr(), out.data_ptr(), queries,
         k.shape[0], head_dim, heads, prefix, float(head_dim ** -0.5),
-        _stream()), "expert_attention_mma")
-    return out
+        ws.data_ptr() if splits > 1 else 0, splits, _stream()),
+        "expert_attention_mma")
+    return True
 
 
 def expert_masked_softmax(scores: torch.Tensor, probs: torch.Tensor, *,

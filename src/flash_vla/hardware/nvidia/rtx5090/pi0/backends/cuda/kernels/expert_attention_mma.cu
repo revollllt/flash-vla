@@ -3,24 +3,43 @@
 // The CUDA-core attempt in `expert_attention.cu` is correct and 8x slower than
 // splitting the work across cuBLAS and a softmax kernel. ncu settled why: 32.09M
 // instructions for 342 MFLOP, because a dot product out of shared memory costs
-// two loads and an FFMA per two FLOP. Even perfectly spread over the machine
-// that is 32M / (170 SMs x 4 schedulers) = 16 us, which is what the split form
-// already costs -- so no amount of tiling or occupancy work on CUDA cores can
-// win, and only `mma.sync` clears it [mma.rate.sm.bf16].
+// two loads and an FFMA per two FLOP. Only `mma.sync` clears that
+// [mma.rate.sm.bf16], and this is the `mma.sync` form.
 //
-// One `mma.sync.m16n8k16` does 4096 FLOP for 12 shared-memory loads, against the
-// CUDA-core form's 512 for the same FLOP: a factor of 40 in instruction count.
+// An earlier version of this kernel measured 79.5 us and was recorded as a
+// second negative. That reading did not survive: it was written before the
+// fused QKV projection established what this part actually needs, and it used
+// none of it. Three things it was missing, each worth its own factor there:
+//
+//   - fragments built by `ldmatrix` rather than twelve scalar shared loads
+//   - one job per warp, so a scheduler has more than one warp to issue from
+//   - operands staged in their natural order, because the transposed form's
+//     scatter store is an 8-way bank conflict that no padding removes
+//
+// The last one is free here. `mma`'s B operand is `.col`, indexed [n][k]:
+// Q@K^T wants [key][dim], which is K's own layout, and P@V wants [dim][key],
+// which `ldmatrix.trans` produces FROM [key][dim]. So both stage naturally and
+// neither pays a transpose.
 //
 // Shape: 51 tokens x 8 query heads = 408 flat queries, 768 prefix + 51 suffix =
 // 819 keys, head dimension 256, multi-query so all eight heads share one KV.
 //
-// Tiling, and why. BLOCK_M is 16 because that is one mma M tile. BLOCK_N is 32
-// so the whole working set -- Q, K, V-transposed, the scores and the
-// probabilities -- fits the 48 KB of STATIC shared memory rather than needing
-// the 99 KB opt-in [smem.bytes.cta.max]. That gives 408/16 = 26 CTAs, and the
-// compute floor at 26 SMs is 342 MFLOP / (26 x 512 FLOP/cycle x 2.89 GHz) =
-// 8.9 us. Splitting keys across CTAs would buy more SMs but a 16 x 256 fp32
-// partial per split costs more in round-trip than it saves.
+// Splitting. 408 queries is 26 mma M tiles, and 26 CTAs on a 170-SM part is
+// 15% of the machine. The key axis is the only other place parallelism can
+// come from, so the kernel takes a split count: CTA (tile, s) walks its own
+// slice of the keys and writes an UNNORMALIZED partial plus that slice's
+// running max and sum, and a second kernel merges the slices by the usual
+// log-sum-exp. The cost is that round trip -- S x 408 x 256 fp32 -- and at
+// 2.5 MB for S=6 it stays in L2, which this machine serves at a measured
+// 4879 GB/s rather than [ld.bw.dev.dram]'s 1524.
+//
+// Tiling. BLOCK_M is 16 because that is one mma M tile and 408 queries is all
+// there is. BLOCK_N is 64, which is eight mma N tiles and therefore eight
+// warps with one tile each in the Q@K^T stage, and which halves the key-tile
+// count to 13. That needs 82.6 KB of shared memory, over the 48 KB static
+// limit, so the tiles are carved out of a dynamic allocation
+// [smem.bytes.cta.max].
+#include <algorithm>
 #include <cstdint>
 #include <cfloat>
 #include <cuda_bf16.h>
@@ -30,41 +49,42 @@
 
 namespace {
 
-using flash_vla::rtx5090::load_a;
-using flash_vla::rtx5090::load_b;
+using flash_vla::rtx5090::ldmatrix_a;
+using flash_vla::rtx5090::ldmatrix_b;
+using flash_vla::rtx5090::ldmatrix_b_trans;
 using flash_vla::rtx5090::mma_m16n8k16;
 
 constexpr int32_t kHeadDim = 256;
 constexpr int32_t kBlockM = 16;   // one mma M tile
-constexpr int32_t kBlockN = 32;   // keys per tile
-constexpr int32_t kWarps = 4;
+constexpr int32_t kBlockN = 64;   // keys per tile, eight mma N tiles
+constexpr int32_t kWarps = 8;
 constexpr int32_t kThreads = kWarps * 32;
-//: Output columns each warp owns in the P@V stage: 256 / 4.
-constexpr int32_t kColsPerWarp = kHeadDim / kWarps;
-//: Score columns each warp owns in the Q@K^T stage: 32 / 4, one mma N tile.
-constexpr int32_t kKeysPerWarp = kBlockN / kWarps;
-
-// Shared row padding, and why each value. A fragment load has lane L reading
-// row L/4 of a tile, so the ROW STRIDE in 4-byte banks decides the spread: an
-// unpadded 256-bf16 row is 128 words and 128 % 32 == 0, putting all eight row
-// groups on one bank. That is an 8-way conflict on every one of the twelve
-// loads per mma, and the unpadded kernel measured 210 us against the split
-// form's 25.
-//   264 bf16 -> 132 words, 132 % 32 == 4  -> 8 groups x 4 = 32 distinct banks
-//    36 bf16 ->  18 words,  18 % 32 == 18 -> odd multiple, spreads likewise
-// The vt padding is 4 rather than 8 only to keep the total inside the 48 KB of
-// static shared memory: 8448 + 16896 + 18432 + 2048 + 1280 = 47.3 KB.
-// Tiles move in 16-byte units: 8 bf16 per thread per instruction. The row
-// strides below are all multiples of 8 elements so every vector store to
-// shared memory stays 16-byte aligned, and the global rows are 256 elements so
-// their starts are too.
-constexpr int32_t kVec = 8;
+constexpr int32_t kVec = 8;                       // bf16 per 16-byte access
 constexpr int32_t kVecs = kHeadDim / kVec;
+//: Output columns each warp owns in the P@V stage: 256 / 8, four mma N tiles.
+constexpr int32_t kColsPerWarp = kHeadDim / kWarps;
+constexpr int32_t kAccTiles = kColsPerWarp / 8;
+//: Threads sharing one score row in the softmax, an aligned lane group.
+constexpr int32_t kRowThreads = kThreads / kBlockM;
+constexpr int32_t kTileCols = kBlockN / kRowThreads;
 
-constexpr int32_t kLdQ = kHeadDim + 8;
+// Row strides. Every one is a multiple of 8 bf16 so that an `ldmatrix` row
+// address is 16-byte aligned, and every one is 4 (mod 32) in 4-byte banks so
+// the eight rows an `ldmatrix` gathers land on eight different bank groups and
+// cover all 32.
+constexpr int32_t kLdQ = kHeadDim + 8;   // 264 elements, 132 words, 132 % 32 == 4
 constexpr int32_t kLdK = kHeadDim + 8;
-constexpr int32_t kLdV = kBlockN + 4;
-constexpr int32_t kLdP = kBlockN + 8;
+constexpr int32_t kLdV = kHeadDim + 8;
+constexpr int32_t kLdP = kBlockN + 8;    // 72 elements, 36 words, 36 % 32 == 4
+
+constexpr int32_t kQBytes = kBlockM * kLdQ * 2;
+constexpr int32_t kKBytes = kBlockN * kLdK * 2;
+constexpr int32_t kVBytes = kBlockN * kLdV * 2;
+constexpr int32_t kSBytes = kBlockM * kBlockN * 4;
+constexpr int32_t kPBytes = kBlockM * kLdP * 2;
+constexpr int32_t kRowBytes = kBlockM * 4 * 3;
+constexpr int32_t kSmemBytes =
+    kQBytes + kKBytes + kVBytes + kSBytes + kPBytes + kRowBytes;
 
 // out[q, :] = softmax_j(mask(q, j) ? Q[q,:].K[j,:] * scale : -inf) . V[j, :]
 //
@@ -72,19 +92,32 @@ constexpr int32_t kLdP = kBlockN + 8;
 __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
     const __nv_bfloat16 *__restrict__ q, const __nv_bfloat16 *__restrict__ k,
     const __nv_bfloat16 *__restrict__ v, __nv_bfloat16 *__restrict__ out,
-    int32_t queries, int32_t keys, int32_t heads, int32_t prefix, float scale) {
-  // 8 + 16 + 16 + 2 + 1 = 43 KB, inside the 48 KB static budget.
-  __shared__ __nv_bfloat16 q_tile[kBlockM * kLdQ];
-  __shared__ __nv_bfloat16 k_tile[kBlockN * kLdK];
-  __shared__ __nv_bfloat16 vt_tile[kHeadDim * kLdV];  // V TRANSPOSED: [dim][key]
-  __shared__ float s_tile[kBlockM * kBlockN];
-  __shared__ __nv_bfloat16 p_tile[kBlockM * kLdP];
-  __shared__ float row_max[kBlockM], row_sum[kBlockM], row_corr[kBlockM];
+    int32_t queries, int32_t keys, int32_t heads, int32_t prefix, float scale,
+    float *__restrict__ part_o, float *__restrict__ part_m,
+    float *__restrict__ part_l, int32_t splits, int32_t chunk) {
+  extern __shared__ __align__(16) char smem[];
+  __nv_bfloat16 *q_tile = reinterpret_cast<__nv_bfloat16 *>(smem);
+  __nv_bfloat16 *k_tile = reinterpret_cast<__nv_bfloat16 *>(smem + kQBytes);
+  __nv_bfloat16 *v_tile =
+      reinterpret_cast<__nv_bfloat16 *>(smem + kQBytes + kKBytes);
+  float *s_tile =
+      reinterpret_cast<float *>(smem + kQBytes + kKBytes + kVBytes);
+  __nv_bfloat16 *p_tile = reinterpret_cast<__nv_bfloat16 *>(
+      smem + kQBytes + kKBytes + kVBytes + kSBytes);
+  float *row_max = reinterpret_cast<float *>(
+      smem + kQBytes + kKBytes + kVBytes + kSBytes + kPBytes);
+  float *row_sum = row_max + kBlockM;
+  float *row_corr = row_sum + kBlockM;
 
   const int32_t q0 = blockIdx.x * kBlockM;
   const int32_t rows = min(kBlockM, queries - q0);
   if (rows <= 0) return;
   const int32_t warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+  //: This CTA's slice of the key axis. `chunk` is a multiple of kBlockN, so a
+  //: slice boundary never falls inside a tile.
+  const int32_t split = blockIdx.y;
+  const int32_t j_beg = split * chunk;
+  const int32_t j_end = min(keys, j_beg + chunk);
 
   for (int32_t i = threadIdx.x; i < kBlockM * kVecs; i += kThreads) {
     const int32_t r = i / kVecs, d = (i - r * kVecs) * kVec;
@@ -97,25 +130,21 @@ __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
     row_sum[threadIdx.x] = 0.f;
   }
 
-  // Each warp owns kColsPerWarp output columns; its accumulator is
-  // 16 x 64 fp32 spread over 32 lanes, so 8 mma tiles of 4 registers each.
-  constexpr int32_t kAccTiles = kColsPerWarp / 8;
+  //: This warp's slice of the output: kColsPerWarp columns, kAccTiles mma
+  //: tiles of 4 registers each.
   float acc[kAccTiles][4];
 #pragma unroll
   for (int32_t t = 0; t < kAccTiles; ++t)
 #pragma unroll
     for (int32_t i = 0; i < 4; ++i) acc[t][i] = 0.f;
 
-  // K and V are staged global -> register -> shared, one key tile ahead of the
-  // tile being computed. Ablating the per-tile global load entirely cost 49 of
-  // 87.65 us, so more than half the kernel was standing in front of that load:
-  // this CTA has four warps and one warp per scheduler, so nothing else was
-  // available to issue into the latency. Prefetching into registers puts the
-  // next tile's loads in flight before this tile's mma work instead.
+  // K and V are staged global -> register -> shared one key tile ahead, both
+  // in their natural [key][dim] order: one 16-byte load and one 16-byte store
+  // each, no transpose on either side.
   constexpr int32_t kStage = kBlockN * kVecs / kThreads;
   int4 kreg[kStage], vreg[kStage];
   auto stage_tile = [&](int32_t j) {
-    const int32_t m = min(kBlockN, keys - j);
+    const int32_t m = min(kBlockN, j_end - j);
 #pragma unroll
     for (int32_t t = 0; t < kStage; ++t) {
       const int32_t i = threadIdx.x + t * kThreads;
@@ -128,36 +157,25 @@ __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
       }
     }
   };
-  stage_tile(0);
+  stage_tile(j_beg);
   __syncthreads();
 
-  for (int32_t j0 = 0; j0 < keys; j0 += kBlockN) {
-    const int32_t n = min(kBlockN, keys - j0);
-    // Publish the staged tile. The loop's last barrier is what makes this safe:
-    // every warp has finished reading the previous tile out of these buffers.
+  for (int32_t j0 = j_beg; j0 < j_end; j0 += kBlockN) {
+    const int32_t n = min(kBlockN, j_end - j0);
 #pragma unroll
     for (int32_t t = 0; t < kStage; ++t) {
       const int32_t i = threadIdx.x + t * kThreads;
       const int32_t c = i / kVecs, d = (i - c * kVecs) * kVec;
       *(int4 *)(&k_tile[c * kLdK + d]) = kreg[t];
-      // V is transposed on the way in, so the store side scatters: the P@V
-      // mma needs B indexed [dim][key] (.col), and only the global side can be
-      // made contiguous. Eight 2-byte shared stores, one 16-byte global load.
-      const __nv_bfloat16 *e = (const __nv_bfloat16 *)&vreg[t];
-#pragma unroll
-      for (int32_t w = 0; w < kVec; ++w) vt_tile[(d + w) * kLdV + c] = e[w];
+      *(int4 *)(&v_tile[c * kLdV + d]) = vreg[t];
     }
     __syncthreads();
-    if (j0 + kBlockN < keys) stage_tile(j0 + kBlockN);
+    if (j0 + kBlockN < j_end) stage_tile(j0 + kBlockN);
 
-    // Q @ K^T. Warp w takes score columns [w*8, w*8+8) -- one mma N tile -- and
-    // walks the whole 256-deep head dimension.
+    // Q @ K^T. Warp w takes score columns [w*8, w*8+8) -- one mma N tile --
+    // and walks the whole 256-deep head dimension. Four independent chains,
+    // summed at the end: one would be sixteen mma each waiting on the last.
     {
-      // Four independent accumulators, summed at the end. One chain would be
-      // 16 mma each waiting on the previous instruction's result, and with a
-      // single warp per scheduler there is nothing else to issue into that
-      // latency. Partial sums are exact here: each chain covers a disjoint
-      // quarter of the head dimension, so this only reassociates the reduction.
       constexpr int32_t kChains = 4;
       float sp[kChains][4] = {};
       uint32_t a[kChains][4], b[kChains][2];
@@ -165,16 +183,12 @@ __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
       for (int32_t kd = 0; kd < kHeadDim; kd += 16 * kChains) {
 #pragma unroll
         for (int32_t c = 0; c < kChains; ++c) {
-          load_a(a[c], q_tile, kLdQ, kd + c * 16, lane);
-          load_b(b[c], k_tile, kLdK, warp * kKeysPerWarp, kd + c * 16, lane);
+          ldmatrix_a(a[c], q_tile, kLdQ, kd + c * 16, lane);
+          ldmatrix_b(b[c], k_tile, kLdK, warp * 8, kd + c * 16, lane);
         }
 #pragma unroll
         for (int32_t c = 0; c < kChains; ++c) mma_m16n8k16(sp[c], a[c], b[c]);
       }
-      float s[4];
-#pragma unroll
-      for (int32_t i = 0; i < 4; ++i)
-        s[i] = (sp[0][i] + sp[1][i]) + (sp[2][i] + sp[3][i]);
       const int32_t r0 = lane >> 2, c0 = (lane & 3) * 2;
       const int32_t col = warp * 8 + c0;
 #pragma unroll
@@ -183,23 +197,17 @@ __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
         const int32_t key = j0 + c;
         const bool keep = (q0 + r < queries) && (c < n)
                        && ((q0 + r >= heads) || (key <= prefix));
-        s_tile[r * kBlockN + c] = keep ? s[i] * scale : -FLT_MAX;
+        const float s = (sp[0][i] + sp[1][i]) + (sp[2][i] + sp[3][i]);
+        s_tile[r * kBlockN + c] = keep ? s * scale : -FLT_MAX;
       }
     }
     __syncthreads();
 
-    // Online softmax over the tile, eight threads per row. Thread (r, j) owns
-    // columns j, j+8, j+16, j+24, and the eight threads of a row are an aligned
-    // lane octet of one warp, so the two row reductions are shuffles inside
-    // that octet rather than a serial scan. The form this replaced had 16
-    // threads walk 32 columns twice while the other 112 waited at the barrier;
-    // with one warp per scheduler that scan was exposed latency, not work.
+    // Online softmax, kRowThreads threads per row, reduced by shuffles inside
+    // an aligned lane group rather than by one thread walking the row.
     {
-      constexpr int32_t kColThreads = 8;
-      constexpr int32_t kTileCols = kBlockN / kColThreads;
-      const int32_t r = threadIdx.x / kColThreads;
-      const int32_t j = threadIdx.x % kColThreads;
-      //: Rows past the query tail carry no probability mass and no correction.
+      const int32_t r = threadIdx.x / kRowThreads;
+      const int32_t j = threadIdx.x % kRowThreads;
       const bool live = r < rows;
       const float prev = live ? row_max[r] : -FLT_MAX;
       const float prev_sum = live ? row_sum[r] : 0.f;
@@ -208,14 +216,12 @@ __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
       float m = prev;
 #pragma unroll
       for (int32_t t = 0; t < kTileCols; ++t) {
-        const int32_t c = j + t * kColThreads;
+        const int32_t c = j + t * kRowThreads;
         vals[t] = (live && c < n) ? s_tile[r * kBlockN + c] : -FLT_MAX;
         m = fmaxf(m, vals[t]);
       }
-      // Every lane of the warp reaches these, so the full mask is correct even
-      // though each octet reduces independently.
 #pragma unroll
-      for (int32_t d = 1; d < kColThreads; d <<= 1)
+      for (int32_t d = 1; d < kRowThreads; d <<= 1)
         m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, d));
 
       const float corr = (prev == -FLT_MAX) ? 0.f : __expf(prev - m);
@@ -223,11 +229,11 @@ __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
 #pragma unroll
       for (int32_t t = 0; t < kTileCols; ++t) {
         const float e = (vals[t] == -FLT_MAX) ? 0.f : __expf(vals[t] - m);
-        p_tile[r * kLdP + j + t * kColThreads] = __float2bfloat16(e);
+        p_tile[r * kLdP + j + t * kRowThreads] = __float2bfloat16(e);
         sum += e;
       }
 #pragma unroll
-      for (int32_t d = 1; d < kColThreads; d <<= 1)
+      for (int32_t d = 1; d < kRowThreads; d <<= 1)
         sum += __shfl_xor_sync(0xffffffffu, sum, d);
 
       if (j == 0) {
@@ -238,11 +244,10 @@ __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
     }
     __syncthreads();
 
-    // P @ V. Warp w takes output columns [w*64, w*64+64), which is kAccTiles
-    // mma N tiles, over the kBlockN keys of this tile.
+    // P @ V. Warp w takes output columns [w*32, w*32+32), which is kAccTiles
+    // mma N tiles, over the kBlockN keys of this tile. V is read straight out
+    // of its natural [key][dim] tile by `ldmatrix.trans`.
     {
-      // Rescale the running accumulator by this tile's softmax correction.
-      // A lane's rows are fixed by the mma D layout: L/4 and L/4+8.
       const int32_t r0 = lane >> 2;
       const float c_lo = row_corr[r0], c_hi = row_corr[r0 + 8];
 #pragma unroll
@@ -250,17 +255,14 @@ __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
         acc[t][0] *= c_lo; acc[t][1] *= c_lo;
         acc[t][2] *= c_hi; acc[t][3] *= c_hi;
       }
-      // The kAccTiles accumulators are already independent; hoisting their B
-      // fragments above the mma block lets the shared loads pipeline instead
-      // of each one standing immediately in front of the instruction that
-      // consumes it.
       uint32_t a[4], b[kAccTiles][2];
 #pragma unroll
-      for (int32_t kd = 0; kd < kBlockN; kd += 16) {
-        load_a(a, p_tile, kLdP, kd, lane);
+      for (int32_t kk = 0; kk < kBlockN; kk += 16) {
+        ldmatrix_a(a, p_tile, kLdP, kk, lane);
 #pragma unroll
         for (int32_t t = 0; t < kAccTiles; ++t)
-          load_b(b[t], vt_tile, kLdV, warp * kColsPerWarp + t * 8, kd, lane);
+          ldmatrix_b_trans(b[t], v_tile, kLdV, warp * kColsPerWarp + t * 8, kk,
+                           lane);
 #pragma unroll
         for (int32_t t = 0; t < kAccTiles; ++t) mma_m16n8k16(acc[t], a, b[t]);
       }
@@ -269,6 +271,30 @@ __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
   }
 
   const int32_t r0 = lane >> 2, c0 = (lane & 3) * 2;
+
+  if (splits > 1) {
+    // Hand the slice on unnormalized, with the numbers the merge needs. A
+    // slice that starts past the last key contributes nothing and says so
+    // with sum 0, which the merge skips.
+    const int64_t base = int64_t(split) * queries * kHeadDim;
+#pragma unroll
+    for (int32_t t = 0; t < kAccTiles; ++t) {
+      const int32_t col = warp * kColsPerWarp + t * 8 + c0;
+#pragma unroll
+      for (int32_t i = 0; i < 4; ++i) {
+        const int32_t r = r0 + (i >> 1) * 8;
+        if (q0 + r >= queries) continue;
+        part_o[base + int64_t(q0 + r) * kHeadDim + col + (i & 1)] = acc[t][i];
+      }
+    }
+    if (threadIdx.x < kBlockM && q0 + threadIdx.x < queries) {
+      const int32_t row = int32_t(split) * queries + q0 + threadIdx.x;
+      part_m[row] = row_max[threadIdx.x];
+      part_l[row] = row_sum[threadIdx.x];
+    }
+    return;
+  }
+
   const float inv_lo = (row_sum[r0] > 0.f) ? __frcp_rn(row_sum[r0]) : 0.f;
   const float inv_hi = (row_sum[r0 + 8] > 0.f) ? __frcp_rn(row_sum[r0 + 8]) : 0.f;
 #pragma unroll
@@ -285,18 +311,80 @@ __global__ __launch_bounds__(kThreads) void attention_mma_kernel(
   }
 }
 
+// Merge the splits: standard log-sum-exp over slices, one CTA per query row.
+//
+//   m = max_s m_s;  w_s = exp(m_s - m);  out = sum_s w_s o_s / sum_s w_s l_s
+__global__ __launch_bounds__(kHeadDim) void attention_merge_kernel(
+    const float *__restrict__ part_o, const float *__restrict__ part_m,
+    const float *__restrict__ part_l, __nv_bfloat16 *__restrict__ out,
+    int32_t queries, int32_t splits) {
+  const int32_t row = blockIdx.x;
+  if (row >= queries) return;
+  const int32_t d = threadIdx.x;
+
+  float m = -FLT_MAX;
+  for (int32_t s = 0; s < splits; ++s)
+    if (part_l[int64_t(s) * queries + row] > 0.f)
+      m = fmaxf(m, part_m[int64_t(s) * queries + row]);
+
+  float num = 0.f, den = 0.f;
+  for (int32_t s = 0; s < splits; ++s) {
+    const float l = part_l[int64_t(s) * queries + row];
+    if (l <= 0.f) continue;
+    const float w = __expf(part_m[int64_t(s) * queries + row] - m);
+    num += w * part_o[(int64_t(s) * queries + row) * kHeadDim + d];
+    den += w * l;
+  }
+  out[int64_t(row) * kHeadDim + d] =
+      __float2bfloat16(den > 0.f ? num / den : 0.f);
+}
+
 }  // namespace
+
+extern "C" int expert_attention_mma_workspace(int queries, int splits,
+                                              long long *floats) {
+  //: partial outputs, then the per-slice max and sum.
+  *floats = int64_t(splits) * queries * (kHeadDim + 2);
+  return cudaSuccess;
+}
 
 extern "C" int expert_attention_mma_launch(const void *q, const void *k,
                                            const void *v, void *out,
                                            int queries, int keys, int head_dim,
                                            int heads, int prefix, float scale,
-                                           void *stream) {
+                                           void *ws, int splits, void *stream) {
   if (head_dim != kHeadDim) return cudaErrorInvalidValue;
-  const int32_t grid = (queries + kBlockM - 1) / kBlockM;
-  attention_mma_kernel<<<grid, kThreads, 0, (cudaStream_t)stream>>>(
+  if (splits < 1) splits = 1;
+  if (splits > 1 && ws == nullptr) return cudaErrorInvalidValue;
+  // 82.6 KB is over the 48 KB a kernel gets without asking, and inside the
+  // 99 KB this part allows [smem.bytes.cta.max].
+  static bool opted = false;
+  if (!opted) {
+    cudaError_t e = cudaFuncSetAttribute(
+        attention_mma_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
+        kSmemBytes);
+    if (e != cudaSuccess) return (int)e;
+    opted = true;
+  }
+  const int32_t tiles = (queries + kBlockM - 1) / kBlockM;
+  //: Rounded up to a whole number of key tiles so a slice boundary never
+  //: falls inside one.
+  const int32_t chunk =
+      ((keys + splits - 1) / splits + kBlockN - 1) / kBlockN * kBlockN;
+  float *part_o = (float *)ws;
+  float *part_m = part_o + (splits > 1 ? int64_t(splits) * queries * kHeadDim : 0);
+  float *part_l = part_m + (splits > 1 ? int64_t(splits) * queries : 0);
+
+  attention_mma_kernel<<<dim3(tiles, splits), kThreads, kSmemBytes,
+                         (cudaStream_t)stream>>>(
       (const __nv_bfloat16 *)q, (const __nv_bfloat16 *)k,
       (const __nv_bfloat16 *)v, (__nv_bfloat16 *)out, queries, keys, heads,
-      prefix, scale);
+      prefix, scale, part_o, part_m, part_l, splits, chunk);
+  if (splits > 1) {
+    cudaError_t e = cudaGetLastError();
+    if (e != cudaSuccess) return (int)e;
+    attention_merge_kernel<<<queries, kHeadDim, 0, (cudaStream_t)stream>>>(
+        part_o, part_m, part_l, (__nv_bfloat16 *)out, queries, splits);
+  }
   return (int)cudaGetLastError();
 }

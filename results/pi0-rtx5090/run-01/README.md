@@ -1,7 +1,7 @@
 # Pi0 · RTX 5090 · run-01
 
 First optimization run of `rtx5090/pi0`, from the all-torch bring-up route to a
-hand-written CUDA route: **46.794 → 30.596 ms, 1.53×**.
+hand-written CUDA route: **46.794 → 29.749 ms, 1.57×**.
 
 ![Optimization progress](progress.svg)
 
@@ -42,6 +42,7 @@ different comparison context; this run starts its own curve.
 | 12 | packed gated activation vectorized to 128-bit | 30.867 | **−0.132** |
 | 13 | streaming pointwise grid cap 340 → 680 CTAs | 30.854 | *min −0.10, p99 −0.15* |
 | 15 | hand-written 64×64 GEMM on two backbone shapes | 30.596 | **−0.249** |
+| 16 | fused attention, rebuilt and split 8 ways over the keys | 29.749 | **−0.847** |
 
 Every delta in rows 1–4 is a **paired A/B in one job**: the retained route and
 the candidate measured back to back, same process family, same driver, with the
@@ -94,46 +95,6 @@ also negative — transposing K in shared memory to fix a measured 16-way bank
 conflict, then padding the rows, moved 214 µs to 201. **The instruction count is
 the wall, not the conflicts**, and only a tensor-core mainloop clears it. Kept
 unrouted in `kernels/expert_attention.cu` so the negative can be re-run.
-
-**A tensor-core single-kernel attention.** `mma.sync` clears the instruction
-wall the CUDA-core attempt hit -- and the kernel is still **3.1x slower than
-the split form**, 79.5 us against 25.3 at the same shape, correct at cos
-0.999994 / rel 3.4e-03. Four rounds of tuning took it 210 -> 79.5 us: padding
-the shared tiles so a fragment load spreads over all 32 banks (210 -> 155),
-16-byte vector loads in place of per-element ones (155 -> 131), a softmax
-reduced by eight threads per row through shuffles instead of one thread walking
-32 columns (131 -> 89.7), four independent mma accumulator chains (89.7 -> 87.7),
-and staging the next key tile in registers a tile ahead (87.7 -> 79.5). 203
-registers, no spills, 47296 B smem.
-
-**The limit is structural, and it is measured.** Pi0's 408 flat queries are 26
-mma M-tiles, so a design that keeps a softmax row in registers has 26 CTAs to
-offer a 170-SM part. A sweep of the same kernel over larger query counts:
-
-| CTAs | wall | work |
-|---:|---:|---:|
-| 26 | 79.6 us | 1x |
-| 51 | 81.3 us | 2x |
-| 102 | 81.6 us | 4x |
-| 153 | 83.5 us | 6x |
-| 204 | 145.1 us | 8x |
-
-**Six times the work for 1.05x the time** -- 85% of the machine is idle and
-cannot be given anything, and the jump at 204 is the second wave. Per-CTA time
-is what sets the wall, and it is dominated by re-reading all of K and V: with
-the per-tile global load ablated the kernel runs 38.6 us, so **49 of 87.7 us
-was that load**, which every query-tile CTA must do in full because the softmax
-cannot be split across CTAs without a partial round-trip. Buying the
-parallelism back costs more than it saves: a 6-way key split writes 6 x 408 x
-256 fp32 partials, 5.2 MB of round-trip, **6.8 us at [ld.bw.dev.dram]** against
-a ~13 us main loop.
-
-Meanwhile the split form is near its own floor. Its three passes cost 1.3 MB,
-1.34 MB and 1.3 MB of traffic, 4.2 us each at [ld.bw.dev.dram], so **12.6 us is
-structural and it measures 15.9 us in the graph -- 79% of it**. The floor
-model's 4.17 us ceiling for this call site assumes a fusion that this shape
-cannot afford. Kept unrouted in `kernels/expert_attention_mma.cu`; the sweep is
-`bench_mma_scaling` in `lab/sm120/pi0_attention_bench.py`.
 
 **Storing the vision feed-forward's down-projection weight K-contiguous.**
 Re-storing that one weight (N, K) so cuBLAS sees a TN GEMM is **1.21x** at
@@ -189,6 +150,38 @@ route was rewritten): ran end to end and returned cos 0.898 with
 `replay_identical` false. Three of those configs feed warp-specialised builders
 where the stages *are* the producer buffer; at one stage the producer has
 nothing to fill while the consumer reads. A race, not a tolerance.
+
+## One negative that was wrong, and how it was caught
+
+**A tensor-core single-kernel attention was recorded here as rejected at
+79.5 us, 3.1x slower than the split form.** That was wrong twice over, and the
+review that caught it named both.
+
+*The baseline had not been brought forward.* The 79.5 us kernel predated the
+fused QKV projection and used none of what that work established: it built
+fragments from twelve scalar shared loads instead of `ldmatrix`, ran four warps
+so a scheduler had exactly one, and stored V transposed by scatter -- which is
+the same 8-way bank conflict `ldmatrix.trans` was introduced to remove. Re-doing
+it with all three took the same kernel to **32.3 us, 2.46x**, with no change to
+its numerics. A negative measured on a baseline that predates its own fixes is
+not a negative.
+
+*The round-trip cost was estimated against the wrong memory.* Split-KV was
+dismissed on a combine cost of 6.8 us, computed by putting a 5.2 MB partial
+buffer through [ld.bw.dev.dram]'s 1524 GB/s. That buffer fits L2, and this
+machine's own `copy_` measures **4879 GB/s** in `pi0_bandwidth_bench.py` -- the
+estimate was 3x too expensive, against a main loop it was being compared to.
+
+With both corrected the site is a win, not a loss. See the table in
+`action_expert_attention`'s wrapper for the split sweep; the shipped form is
+8 splits at **18.94 us against the split form's 25.2**, and **−0.847 ms
+deployed**, the largest single step of this run.
+
+What stands from the original analysis is narrower and still true: 408 flat
+queries is 26 mma M tiles, so the QUERY axis alone cannot fill a 170-SM part,
+and `pattern-tail-effect` is right that no scheduler invents tiles. The error
+was concluding from that that the call site had no room, when the key axis was
+sitting there unused.
 
 ## One bug worth recording
 

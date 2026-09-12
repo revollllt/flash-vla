@@ -1,0 +1,963 @@
+{
+  "identity": {
+    "schema_version": 3,
+    "target": "hardware/nvidia/rtx5090/pi0",
+    "hardware": "rtx5090-32gb",
+    "model": "pi0",
+    "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens51-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers18-num_views3-prefix_len768-prompt_len0-qkv_width2560-query_heads8-state_dim32-steps10-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+    "shape": {
+      "batch": 1,
+      "num_views": 3,
+      "image_height": 224,
+      "image_width": 224,
+      "image_channels": 3,
+      "visual_tokens_per_view": 256,
+      "visual_tokens": 768,
+      "vision_dim": 1152,
+      "vision_ffn_dim": 4304,
+      "vision_heads": 16,
+      "vision_head_dim": 72,
+      "vision_layers": 27,
+      "prompt_len": 0,
+      "prefix_len": 768,
+      "chunk": 50,
+      "expert_tokens": 51,
+      "state_dim": 32,
+      "action_dim": 32,
+      "steps": 10,
+      "layers": 18,
+      "encoder_dim": 2048,
+      "encoder_ffn_dim": 16384,
+      "query_heads": 8,
+      "kv_heads": 1,
+      "head_dim": 256,
+      "qkv_width": 2560,
+      "expert_dim": 1024,
+      "expert_ffn_dim": 4096
+    },
+    "plan": {
+      "vision_encoder_patch_embed": "torch",
+      "vision_encoder_norm_qkv": "cuda",
+      "vision_encoder_attention": "torch",
+      "vision_encoder_out_proj_residual": "cuda",
+      "vision_encoder_norm_ffn_up": "cuda",
+      "vision_encoder_ffn_down_residual": "cuda",
+      "llm_backbone_embed_prompt": "torch",
+      "llm_backbone_projector": "cuda",
+      "llm_backbone_norm_qkv_rope": "cuda",
+      "llm_backbone_attention": "torch",
+      "llm_backbone_out_proj_residual": "cuda",
+      "llm_backbone_norm_gated_ffn": "cuda",
+      "llm_backbone_ffn_down_residual": "cuda",
+      "action_expert_state_proj": "torch",
+      "action_expert_action_in_proj": "torch",
+      "action_expert_action_mlp": "torch",
+      "action_expert_norm_qkv_rope": "cuda",
+      "action_expert_attention": "cuda",
+      "action_expert_out_proj_residual": "cuda",
+      "action_expert_norm_gated_ffn": "cuda",
+      "action_expert_ffn_down_residual": "cuda",
+      "action_expert_action_out_proj": "cuda"
+    },
+    "model_revision": "pi0-r1",
+    "engine_revision": null,
+    "inference_signature": "sha256:6dab55f09043d7e1353d8b7fbb11de064f702408ef8311042ecb74dd02005583",
+    "execution_variant": {
+      "quantization": {
+        "mode": "bf16"
+      },
+      "cache": {
+        "mode": "none"
+      }
+    }
+  },
+  "protocol": "latency-v2",
+  "instrumented": false,
+  "measurement_context": {
+    "weights": {
+      "checkpoint_id": "flash-vla/pi0-random-checkpoint/v1/seed-0",
+      "checkpoint_digest": "flash-vla/pi0-random-checkpoint/v1/seed-0"
+    },
+    "fixture": {
+      "id": "flash-vla/pi0-inputs-v1/seed-0",
+      "digest": "sha256:34224a50b89400f5fff842d016888f3fe58a43287faa70f38af88aa5b8833721"
+    },
+    "environment": {
+      "gpu_sku": "NVIDIA GeForce RTX 5090",
+      "driver": "580.142",
+      "cuda_runtime": "13.0",
+      "pytorch": "2.13.0+cu130",
+      "tilelang": "0.1.11",
+      "clock_policy": {
+        "benchmark_control": "inherit",
+        "slurm_gpu_freq_request": null,
+        "effective_locked_clocks": "unobserved"
+      },
+      "power_policy": {
+        "requested_limit_w": 600.0,
+        "enforced_limit_w": 600.0
+      },
+      "capture_regime": "cuda_graph",
+      "clock_observation": {
+        "application_graphics_mhz": "[N/A]",
+        "application_memory_mhz": "[N/A]"
+      }
+    },
+    "hostname": "ubun",
+    "slurm_job_id": null,
+    "timestamp": 1789239633.2652225,
+    "reference_provenance": {}
+  },
+  "env": {
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "python": "/home/ubuntu/flash-vla/.venv/bin/python",
+    "torch": "2.13.0+cu130",
+    "torch_cuda": "13.0",
+    "tilelang": "0.1.11",
+    "gpu_uuid": "GPU-7fc626f4-bce7-9a11-81de-0eaedc93e242",
+    "runtime_observation": {
+      "clocks.sm": "2850",
+      "clocks.mem": "13801",
+      "pstate": "P1",
+      "temperature.gpu": "60",
+      "power.draw": "591.02",
+      "clocks_event_reasons.active": "0x0000000000000004"
+    },
+    "node": "ubun",
+    "job": null,
+    "driver": "580.142",
+    "clocks": "unlocked",
+    "clock_policy": {
+      "benchmark_control": "inherit",
+      "slurm_gpu_freq_request": null,
+      "effective_locked_clocks": "unobserved"
+    },
+    "clock_observation": {
+      "application_graphics_mhz": "[N/A]",
+      "application_memory_mhz": "[N/A]"
+    },
+    "power_policy": {
+      "requested_limit_w": 600.0,
+      "enforced_limit_w": 600.0
+    }
+  },
+  "config": {
+    "reps": 100,
+    "warmup": 5,
+    "seed": 0,
+    "plans": [
+      "shipped",
+      "shipped",
+      "shipped"
+    ],
+    "calibration": true,
+    "breakdown": false,
+    "primary_statistic": "median",
+    "capture_policy": "fresh-process-first-capture-per-leg",
+    "statistics": [
+      "min",
+      "median",
+      "p99"
+    ],
+    "p99_min_reps": 100,
+    "soak_s": 0,
+    "control_spread_max_ms": null,
+    "attribution": false,
+    "leg_options": [
+      {},
+      {},
+      {}
+    ]
+  },
+  "legs": [
+    {
+      "plan": "shipped",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/rtx5090/pi0",
+        "hardware": "rtx5090-32gb",
+        "model": "pi0",
+        "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens51-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers18-num_views3-prefix_len768-prompt_len0-qkv_width2560-query_heads8-state_dim32-steps10-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+        "shape": {
+          "batch": 1,
+          "num_views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "image_channels": 3,
+          "visual_tokens_per_view": 256,
+          "visual_tokens": 768,
+          "vision_dim": 1152,
+          "vision_ffn_dim": 4304,
+          "vision_heads": 16,
+          "vision_head_dim": 72,
+          "vision_layers": 27,
+          "prompt_len": 0,
+          "prefix_len": 768,
+          "chunk": 50,
+          "expert_tokens": 51,
+          "state_dim": 32,
+          "action_dim": 32,
+          "steps": 10,
+          "layers": 18,
+          "encoder_dim": 2048,
+          "encoder_ffn_dim": 16384,
+          "query_heads": 8,
+          "kv_heads": 1,
+          "head_dim": 256,
+          "qkv_width": 2560,
+          "expert_dim": 1024,
+          "expert_ffn_dim": 4096
+        },
+        "plan": {
+          "vision_encoder_patch_embed": "torch",
+          "vision_encoder_norm_qkv": "cuda",
+          "vision_encoder_attention": "torch",
+          "vision_encoder_out_proj_residual": "cuda",
+          "vision_encoder_norm_ffn_up": "cuda",
+          "vision_encoder_ffn_down_residual": "cuda",
+          "llm_backbone_embed_prompt": "torch",
+          "llm_backbone_projector": "cuda",
+          "llm_backbone_norm_qkv_rope": "cuda",
+          "llm_backbone_attention": "torch",
+          "llm_backbone_out_proj_residual": "cuda",
+          "llm_backbone_norm_gated_ffn": "cuda",
+          "llm_backbone_ffn_down_residual": "cuda",
+          "action_expert_state_proj": "torch",
+          "action_expert_action_in_proj": "torch",
+          "action_expert_action_mlp": "torch",
+          "action_expert_norm_qkv_rope": "cuda",
+          "action_expert_attention": "cuda",
+          "action_expert_out_proj_residual": "cuda",
+          "action_expert_norm_gated_ffn": "cuda",
+          "action_expert_ffn_down_residual": "cuda",
+          "action_expert_action_out_proj": "cuda"
+        },
+        "model_revision": "pi0-r1",
+        "engine_revision": null,
+        "inference_signature": "sha256:6dab55f09043d7e1353d8b7fbb11de064f702408ef8311042ecb74dd02005583",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "flash-vla/pi0-random-checkpoint/v1/seed-0",
+          "checkpoint_digest": "flash-vla/pi0-random-checkpoint/v1/seed-0"
+        },
+        "fixture": {
+          "id": "flash-vla/pi0-inputs-v1/seed-0",
+          "digest": "sha256:34224a50b89400f5fff842d016888f3fe58a43287faa70f38af88aa5b8833721"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA GeForce RTX 5090",
+          "driver": "580.142",
+          "cuda_runtime": "13.0",
+          "pytorch": "2.13.0+cu130",
+          "tilelang": "0.1.11",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 600.0,
+            "enforced_limit_w": 600.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "[N/A]",
+            "application_memory_mhz": "[N/A]"
+          }
+        },
+        "hostname": "ubun",
+        "slurm_job_id": null,
+        "timestamp": 1789239633.2652225,
+        "reference_provenance": {}
+      },
+      "metrics": {
+        "chunk_latency": {
+          "min": 29.62835319340229,
+          "median": 29.735004529356956,
+          "n": 100,
+          "samples_ms": [
+            29.685811838135123,
+            29.81579303741455,
+            29.64996313676238,
+            29.804984107613564,
+            29.661270091310143,
+            29.83147115446627,
+            29.68824002891779,
+            29.821883188560605,
+            29.671475989744067,
+            29.81419605202973,
+            29.676398960873485,
+            29.807743150740862,
+            29.733541887253523,
+            29.833076987415552,
+            29.72952788695693,
+            29.62835319340229,
+            29.649920063093305,
+            29.672353994101286,
+            29.740213183686137,
+            29.672457138076425,
+            29.74859206005931,
+            29.655016027390957,
+            29.776176903396845,
+            29.666313203051686,
+            29.76526808924973,
+            29.671299969777465,
+            29.755522031337023,
+            29.645825969055295,
+            29.767924919724464,
+            29.653124045580626,
+            29.782094061374664,
+            29.641508124768734,
+            29.831880005076528,
+            29.70211603678763,
+            29.836382949724793,
+            29.698461992666125,
+            29.83296290040016,
+            29.695147182792425,
+            29.824255034327507,
+            29.702150961384177,
+            29.8294669482857,
+            29.708106769248843,
+            29.82467506080866,
+            29.71178898587823,
+            29.81063909828663,
+            29.72013084217906,
+            29.808965977281332,
+            29.72227009013295,
+            29.817678965628147,
+            29.703717911615968,
+            29.811556916683912,
+            29.735760996118188,
+            29.81121209450066,
+            29.733645962551236,
+            29.676237842068076,
+            29.735003132373095,
+            29.66323704458773,
+            29.74951290525496,
+            29.656809056177735,
+            29.74557690322399,
+            29.6709300018847,
+            29.75350897759199,
+            29.66857608407736,
+            29.761912068352103,
+            29.651870019733906,
+            29.76929908618331,
+            29.65481486171484,
+            29.782369965687394,
+            29.64293514378369,
+            29.83994991518557,
+            29.698529979214072,
+            29.832705156877637,
+            29.695515986531973,
+            29.830118175596,
+            29.70814984291792,
+            29.81954300776124,
+            29.719570884481072,
+            29.82040890492499,
+            29.711036942899227,
+            29.817861039191484,
+            29.713320080190897,
+            29.81952205300331,
+            29.719581129029393,
+            29.81892484240234,
+            29.721815139055252,
+            29.826984042301774,
+            29.722491977736354,
+            29.81119486503303,
+            29.740215046331286,
+            29.823505086824298,
+            29.73870700225234,
+            29.82625109143555,
+            29.73500592634082,
+            29.670560965314507,
+            29.73579685203731,
+            29.670119052752852,
+            29.74535385146737,
+            29.671862022951245,
+            29.751908034086227,
+            29.665609123185277
+          ],
+          "p99": 29.836382949724793
+        }
+      },
+      "attribution": null,
+      "runtime_observation": {
+        "before": {
+          "clocks.sm": "2640",
+          "clocks.mem": "13801",
+          "pstate": "P1",
+          "temperature.gpu": "41",
+          "power.draw": "96.53",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        },
+        "after": {
+          "clocks.sm": "2850",
+          "clocks.mem": "13801",
+          "pstate": "P1",
+          "temperature.gpu": "56",
+          "power.draw": "586.68",
+          "clocks_event_reasons.active": "0x0000000000000004"
+        }
+      },
+      "options": {},
+      "process_id": 165808,
+      "gpu_uuid": "GPU-7fc626f4-bce7-9a11-81de-0eaedc93e242",
+      "implementation_source": null,
+      "leg": 0
+    },
+    {
+      "plan": "shipped",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/rtx5090/pi0",
+        "hardware": "rtx5090-32gb",
+        "model": "pi0",
+        "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens51-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers18-num_views3-prefix_len768-prompt_len0-qkv_width2560-query_heads8-state_dim32-steps10-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+        "shape": {
+          "batch": 1,
+          "num_views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "image_channels": 3,
+          "visual_tokens_per_view": 256,
+          "visual_tokens": 768,
+          "vision_dim": 1152,
+          "vision_ffn_dim": 4304,
+          "vision_heads": 16,
+          "vision_head_dim": 72,
+          "vision_layers": 27,
+          "prompt_len": 0,
+          "prefix_len": 768,
+          "chunk": 50,
+          "expert_tokens": 51,
+          "state_dim": 32,
+          "action_dim": 32,
+          "steps": 10,
+          "layers": 18,
+          "encoder_dim": 2048,
+          "encoder_ffn_dim": 16384,
+          "query_heads": 8,
+          "kv_heads": 1,
+          "head_dim": 256,
+          "qkv_width": 2560,
+          "expert_dim": 1024,
+          "expert_ffn_dim": 4096
+        },
+        "plan": {
+          "vision_encoder_patch_embed": "torch",
+          "vision_encoder_norm_qkv": "cuda",
+          "vision_encoder_attention": "torch",
+          "vision_encoder_out_proj_residual": "cuda",
+          "vision_encoder_norm_ffn_up": "cuda",
+          "vision_encoder_ffn_down_residual": "cuda",
+          "llm_backbone_embed_prompt": "torch",
+          "llm_backbone_projector": "cuda",
+          "llm_backbone_norm_qkv_rope": "cuda",
+          "llm_backbone_attention": "torch",
+          "llm_backbone_out_proj_residual": "cuda",
+          "llm_backbone_norm_gated_ffn": "cuda",
+          "llm_backbone_ffn_down_residual": "cuda",
+          "action_expert_state_proj": "torch",
+          "action_expert_action_in_proj": "torch",
+          "action_expert_action_mlp": "torch",
+          "action_expert_norm_qkv_rope": "cuda",
+          "action_expert_attention": "cuda",
+          "action_expert_out_proj_residual": "cuda",
+          "action_expert_norm_gated_ffn": "cuda",
+          "action_expert_ffn_down_residual": "cuda",
+          "action_expert_action_out_proj": "cuda"
+        },
+        "model_revision": "pi0-r1",
+        "engine_revision": null,
+        "inference_signature": "sha256:6dab55f09043d7e1353d8b7fbb11de064f702408ef8311042ecb74dd02005583",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "flash-vla/pi0-random-checkpoint/v1/seed-0",
+          "checkpoint_digest": "flash-vla/pi0-random-checkpoint/v1/seed-0"
+        },
+        "fixture": {
+          "id": "flash-vla/pi0-inputs-v1/seed-0",
+          "digest": "sha256:34224a50b89400f5fff842d016888f3fe58a43287faa70f38af88aa5b8833721"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA GeForce RTX 5090",
+          "driver": "580.142",
+          "cuda_runtime": "13.0",
+          "pytorch": "2.13.0+cu130",
+          "tilelang": "0.1.11",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 600.0,
+            "enforced_limit_w": 600.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "[N/A]",
+            "application_memory_mhz": "[N/A]"
+          }
+        },
+        "hostname": "ubun",
+        "slurm_job_id": null,
+        "timestamp": 1789239640.2988274,
+        "reference_provenance": {}
+      },
+      "metrics": {
+        "chunk_latency": {
+          "min": 29.65124393813312,
+          "median": 29.761884594336152,
+          "n": 100,
+          "samples_ms": [
+            29.812552966177464,
+            29.743489110842347,
+            29.86180502921343,
+            29.73539801314473,
+            29.839792987331748,
+            29.744398081675172,
+            29.901138972491026,
+            29.744920087978244,
+            29.86556990072131,
+            29.731594026088715,
+            29.857845045626163,
+            29.717480996623635,
+            29.873947147279978,
+            29.735685093328357,
+            29.92555918172002,
+            29.778799042105675,
+            29.890172882005572,
+            29.745189007371664,
+            29.849532060325146,
+            29.760414035990834,
+            29.860162176191807,
+            29.750556917861104,
+            29.950237134471536,
+            29.83437804505229,
+            29.85645388253033,
+            29.730341164395213,
+            29.83235497958958,
+            29.73317401483655,
+            29.834080021828413,
+            29.73990305326879,
+            29.827511170879006,
+            29.786280822008848,
+            29.854438034817576,
+            29.760994017124176,
+            29.814067063853145,
+            29.750209068879485,
+            29.694722965359688,
+            29.66120094060898,
+            29.697596095502377,
+            29.80598690919578,
+            29.688021168112755,
+            29.759276192635298,
+            29.676541918888688,
+            29.796590097248554,
+            29.71729403361678,
+            29.793360037729144,
+            29.702394036576152,
+            29.79745506308973,
+            29.701999854296446,
+            29.804201098158956,
+            29.703218955546618,
+            29.81256414204836,
+            29.6700200997293,
+            29.784165089949965,
+            29.679783154278994,
+            29.85483594238758,
+            29.72692484036088,
+            29.85439612530172,
+            29.725152999162674,
+            29.837477020919323,
+            29.717062832787633,
+            29.838930116966367,
+            29.738857178017497,
+            29.843125957995653,
+            29.726081993430853,
+            29.825913021340966,
+            29.72508012317121,
+            29.829315142706037,
+            29.725583968684077,
+            29.82423105277121,
+            29.721429105848074,
+            29.83613801188767,
+            29.737533070147038,
+            29.81784613803029,
+            29.734135139733553,
+            29.83304113149643,
+            29.754113871604204,
+            29.816612834110856,
+            29.749906854704022,
+            29.810006031766534,
+            29.736779164522886,
+            29.680152190849185,
+            29.7375509981066,
+            29.672311851754785,
+            29.848732985556126,
+            29.848153004422784,
+            29.836378060281277,
+            29.72129895351827,
+            29.762775171548128,
+            29.67029996216297,
+            29.765193117782474,
+            29.679734027013183,
+            29.786130180582404,
+            29.658491956070065,
+            29.775071889162064,
+            29.65124393813312,
+            29.794578906148672,
+            29.66055297292769,
+            29.843402095139027,
+            29.72300606779754
+          ],
+          "p99": 29.92555918172002
+        }
+      },
+      "attribution": null,
+      "runtime_observation": {
+        "before": {
+          "clocks.sm": "2505",
+          "clocks.mem": "13801",
+          "pstate": "P1",
+          "temperature.gpu": "43",
+          "power.draw": "107.77",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        },
+        "after": {
+          "clocks.sm": "2850",
+          "clocks.mem": "13801",
+          "pstate": "P1",
+          "temperature.gpu": "60",
+          "power.draw": "584.89",
+          "clocks_event_reasons.active": "0x0000000000000004"
+        }
+      },
+      "options": {},
+      "process_id": 166003,
+      "gpu_uuid": "GPU-7fc626f4-bce7-9a11-81de-0eaedc93e242",
+      "implementation_source": null,
+      "leg": 1
+    },
+    {
+      "plan": "shipped",
+      "identity": {
+        "schema_version": 3,
+        "target": "hardware/nvidia/rtx5090/pi0",
+        "hardware": "rtx5090-32gb",
+        "model": "pi0",
+        "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens51-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers18-num_views3-prefix_len768-prompt_len0-qkv_width2560-query_heads8-state_dim32-steps10-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+        "shape": {
+          "batch": 1,
+          "num_views": 3,
+          "image_height": 224,
+          "image_width": 224,
+          "image_channels": 3,
+          "visual_tokens_per_view": 256,
+          "visual_tokens": 768,
+          "vision_dim": 1152,
+          "vision_ffn_dim": 4304,
+          "vision_heads": 16,
+          "vision_head_dim": 72,
+          "vision_layers": 27,
+          "prompt_len": 0,
+          "prefix_len": 768,
+          "chunk": 50,
+          "expert_tokens": 51,
+          "state_dim": 32,
+          "action_dim": 32,
+          "steps": 10,
+          "layers": 18,
+          "encoder_dim": 2048,
+          "encoder_ffn_dim": 16384,
+          "query_heads": 8,
+          "kv_heads": 1,
+          "head_dim": 256,
+          "qkv_width": 2560,
+          "expert_dim": 1024,
+          "expert_ffn_dim": 4096
+        },
+        "plan": {
+          "vision_encoder_patch_embed": "torch",
+          "vision_encoder_norm_qkv": "cuda",
+          "vision_encoder_attention": "torch",
+          "vision_encoder_out_proj_residual": "cuda",
+          "vision_encoder_norm_ffn_up": "cuda",
+          "vision_encoder_ffn_down_residual": "cuda",
+          "llm_backbone_embed_prompt": "torch",
+          "llm_backbone_projector": "cuda",
+          "llm_backbone_norm_qkv_rope": "cuda",
+          "llm_backbone_attention": "torch",
+          "llm_backbone_out_proj_residual": "cuda",
+          "llm_backbone_norm_gated_ffn": "cuda",
+          "llm_backbone_ffn_down_residual": "cuda",
+          "action_expert_state_proj": "torch",
+          "action_expert_action_in_proj": "torch",
+          "action_expert_action_mlp": "torch",
+          "action_expert_norm_qkv_rope": "cuda",
+          "action_expert_attention": "cuda",
+          "action_expert_out_proj_residual": "cuda",
+          "action_expert_norm_gated_ffn": "cuda",
+          "action_expert_ffn_down_residual": "cuda",
+          "action_expert_action_out_proj": "cuda"
+        },
+        "model_revision": "pi0-r1",
+        "engine_revision": null,
+        "inference_signature": "sha256:6dab55f09043d7e1353d8b7fbb11de064f702408ef8311042ecb74dd02005583",
+        "execution_variant": {
+          "quantization": {
+            "mode": "bf16"
+          },
+          "cache": {
+            "mode": "none"
+          }
+        }
+      },
+      "measurement_context": {
+        "weights": {
+          "checkpoint_id": "flash-vla/pi0-random-checkpoint/v1/seed-0",
+          "checkpoint_digest": "flash-vla/pi0-random-checkpoint/v1/seed-0"
+        },
+        "fixture": {
+          "id": "flash-vla/pi0-inputs-v1/seed-0",
+          "digest": "sha256:34224a50b89400f5fff842d016888f3fe58a43287faa70f38af88aa5b8833721"
+        },
+        "environment": {
+          "gpu_sku": "NVIDIA GeForce RTX 5090",
+          "driver": "580.142",
+          "cuda_runtime": "13.0",
+          "pytorch": "2.13.0+cu130",
+          "tilelang": "0.1.11",
+          "clock_policy": {
+            "benchmark_control": "inherit",
+            "slurm_gpu_freq_request": null,
+            "effective_locked_clocks": "unobserved"
+          },
+          "power_policy": {
+            "requested_limit_w": 600.0,
+            "enforced_limit_w": 600.0
+          },
+          "capture_regime": "cuda_graph",
+          "clock_observation": {
+            "application_graphics_mhz": "[N/A]",
+            "application_memory_mhz": "[N/A]"
+          }
+        },
+        "hostname": "ubun",
+        "slurm_job_id": null,
+        "timestamp": 1789239647.293963,
+        "reference_provenance": {}
+      },
+      "metrics": {
+        "chunk_latency": {
+          "min": 29.654401121661067,
+          "median": 29.748695553280413,
+          "n": 100,
+          "samples_ms": [
+            29.840124072507024,
+            29.718642821535468,
+            29.822152107954025,
+            29.740058816969395,
+            29.825104866176844,
+            29.731157002970576,
+            29.84539302997291,
+            29.73143314011395,
+            29.828350991010666,
+            29.783903853967786,
+            29.678948922082782,
+            29.748267028480768,
+            29.694037977606058,
+            29.771207133308053,
+            29.679094208404422,
+            29.751986963674426,
+            29.670893913134933,
+            29.774588998407125,
+            29.671204974874854,
+            29.76185898296535,
+            29.67639802955091,
+            29.763967962935567,
+            29.663965106010437,
+            29.801321914419532,
+            29.69149313867092,
+            29.789203079417348,
+            29.662743909284472,
+            29.836348025128245,
+            29.73672212101519,
+            29.825846198946238,
+            29.71580601297319,
+            29.854093212634325,
+            29.737693956121802,
+            29.82850791886449,
+            29.721984872594476,
+            29.83542298898101,
+            29.713189927861094,
+            29.820442898198962,
+            29.724400956183672,
+            29.8252219799906,
+            29.711242066696286,
+            29.83079105615616,
+            29.73225712776184,
+            29.812233988195658,
+            29.740205965936184,
+            29.82461196370423,
+            29.748799046501517,
+            29.83072097413242,
+            29.74834991618991,
+            29.815640999004245,
+            29.75693205371499,
+            29.821555130183697,
+            29.74415011703968,
+            29.669542098417878,
+            29.75713601335883,
+            29.675803147256374,
+            29.74909101612866,
+            29.671717900782824,
+            29.748953878879547,
+            29.67254794202745,
+            29.773443937301636,
+            29.662586050108075,
+            29.7604501247406,
+            29.670785879716277,
+            29.77808006107807,
+            29.654401121661067,
+            29.775790870189667,
+            29.66100792400539,
+            29.837809968739748,
+            29.710507951676846,
+            29.840918956324458,
+            29.716146178543568,
+            29.835531022399664,
+            29.711280949413776,
+            29.841423965990543,
+            29.721040977165103,
+            29.82772095128894,
+            29.733286006376147,
+            29.83516314998269,
+            29.724661959335208,
+            29.821310890838504,
+            29.734315117821097,
+            29.839355032891035,
+            29.726857086643577,
+            29.828881146386266,
+            29.728630091995,
+            29.83402507379651,
+            29.74434499628842,
+            29.826095094904304,
+            29.742456041276455,
+            29.823339078575373,
+            29.74859206005931,
+            29.675153084099293,
+            29.746199026703835,
+            29.676416190341115,
+            29.752490110695362,
+            29.688005102798343,
+            29.761337907984853,
+            29.660496162250638,
+            29.83834408223629
+          ],
+          "p99": 29.84539302997291
+        }
+      },
+      "attribution": null,
+      "runtime_observation": {
+        "before": {
+          "clocks.sm": "2407",
+          "clocks.mem": "13801",
+          "pstate": "P1",
+          "temperature.gpu": "44",
+          "power.draw": "108.23",
+          "clocks_event_reasons.active": "0x0000000000000000"
+        },
+        "after": {
+          "clocks.sm": "2850",
+          "clocks.mem": "13801",
+          "pstate": "P1",
+          "temperature.gpu": "60",
+          "power.draw": "591.02",
+          "clocks_event_reasons.active": "0x0000000000000004"
+        }
+      },
+      "options": {},
+      "process_id": 166233,
+      "gpu_uuid": "GPU-7fc626f4-bce7-9a11-81de-0eaedc93e242",
+      "implementation_source": null,
+      "leg": 2
+    }
+  ],
+  "deltas": {
+    "reference_leg": 0,
+    "control_legs": 2,
+    "minimum_detectable_effect": {
+      "chunk_latency.min": 0.026047928258776665,
+      "chunk_latency.median": 0.026880064979195595,
+      "chunk_latency.p99": 0.08917623199522495
+    },
+    "control_spread_ms": 0.026047928258776665,
+    "control_spread_max_ms": null,
+    "valid": null,
+    "legs": [
+      {
+        "leg": 1,
+        "plan": "shipped",
+        "same_as_reference": true,
+        "deltas": {
+          "chunk_latency.min": {
+            "delta": 0.022890744730830193,
+            "distinguishable": false
+          },
+          "chunk_latency.median": {
+            "delta": 0.026880064979195595,
+            "distinguishable": false
+          },
+          "chunk_latency.p99": {
+            "delta": 0.08917623199522495,
+            "distinguishable": false
+          }
+        }
+      },
+      {
+        "leg": 2,
+        "plan": "shipped",
+        "same_as_reference": true,
+        "deltas": {
+          "chunk_latency.min": {
+            "delta": 0.026047928258776665,
+            "distinguishable": false
+          },
+          "chunk_latency.median": {
+            "delta": 0.013691023923456669,
+            "distinguishable": false
+          },
+          "chunk_latency.p99": {
+            "delta": 0.009010080248117447,
+            "distinguishable": false
+          }
+        }
+      }
+    ]
+  },
+  "calibration": {
+    "chunk_latency.min": 0.026047928258776665,
+    "chunk_latency.median": 0.026880064979195595,
+    "chunk_latency.p99": 0.08917623199522495
+  }
+}

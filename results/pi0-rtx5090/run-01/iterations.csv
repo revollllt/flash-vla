@@ -15,3 +15,4 @@ iteration,change,latency_ms,decision,report,revision
 13,"Streaming pointwise grid cap 340 -> 680 CTAs: min -0.10 and p99 -0.15 ms, median inside noise",30.854,keep,measurements/013-pointwise-grid.json,HEAD
 14,"K-contiguous vision weight: 1.21x from bf16 split-K accumulation, failed the correctness gate",,revert,measurements/014-rejected-vision-ffn-down-tn.json,a20ffae
 15,"Hand-written 64x64 GEMM on the two backbone shapes cuBLAS cannot fill the part with",30.596,keep,measurements/015-tiled-gemm.json,HEAD
+16,"Tensor-core attention rebuilt with ldmatrix + 8 warps + natural layouts (2.46x), then split 8 ways across the key axis",29.749,keep,measurements/016-fused-attention.json,HEAD
