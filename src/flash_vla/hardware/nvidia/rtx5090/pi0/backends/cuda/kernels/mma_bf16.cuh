@@ -96,6 +96,23 @@ __device__ __forceinline__ void ldmatrix_b(uint32_t (&b)[2],
                : "=r"(b[0]), "=r"(b[1]) : "r"(s));
 }
 
+//: B (16 x 8) from a tile stored [k][n] -- the layout a row-major weight
+//: already has. `.trans` transposes each 8x8 as it loads, so the staging path
+//: never has to: storing [n][k] means scattering eight 2-byte values per
+//: thread, and with any 16-byte-aligned row stride the n step of 8 puts all of
+//: them in one bank. Here the store is one 16-byte vector in natural order.
+__device__ __forceinline__ void ldmatrix_b_trans(uint32_t (&b)[2],
+                                                 const __nv_bfloat16 *tile,
+                                                 int32_t ldn, int32_t n0,
+                                                 int32_t k0, int32_t lane) {
+  const __nv_bfloat16 *p =
+      tile + int64_t(k0 + (lane & 7) + (((lane >> 3) & 1) << 3)) * ldn + n0;
+  const uint32_t s = static_cast<uint32_t>(__cvta_generic_to_shared(p));
+  asm volatile(
+      "ldmatrix.sync.aligned.m8n8.x2.trans.shared.b16 {%0,%1}, [%2];\n"
+      : "=r"(b[0]), "=r"(b[1]) : "r"(s));
+}
+
 //: D (16 x 8 fp32): lane L holds rows L/4 and L/4+8 at columns (L%4)*2 and +1.
 //: The two columns are adjacent, which is what lets a RoPE epilogue rotate a
 //: pair without leaving registers.

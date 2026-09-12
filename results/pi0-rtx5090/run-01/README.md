@@ -1,7 +1,7 @@
 # Pi0 · RTX 5090 · run-01
 
 First optimization run of `rtx5090/pi0`, from the all-torch bring-up route to a
-hand-written CUDA route: **46.794 → 31.220 ms, 1.50×**.
+hand-written CUDA route: **46.794 → 31.078 ms, 1.51×**.
 
 ![Optimization progress](progress.svg)
 
@@ -37,6 +37,7 @@ different comparison context; this run starts its own curve.
 | 5 | single-pass masked softmax | 32.886 | *neutral* |
 | 6 | expert gate and up packed into one GEMM | 31.396 | **−1.490** |
 | 9 | expert norm + QKV + RoPE fused into one kernel | 31.220 | **−0.176** |
+| 10 | that kernel's weight tile transposed by `ldmatrix.trans` | 31.078 | **−0.142** |
 
 Every delta in rows 1–4 is a **paired A/B in one job**: the retained route and
 the candidate measured back to back, same process family, same driver, with the

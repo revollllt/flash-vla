@@ -34,11 +34,12 @@
 //
 //     kTileN  kChunkK  threads  CTAs  warps/CTA   fused
 //         16       32      256   160          8   12.40 us
-//         32       64      512    80         16   10.35 us
-//         64      128     1024    40         32   16.49 us
+//         32       64      512    80         16    8.29 us
+//         64      128     1024    40         32   12.40 us
 //
 // Warps per scheduler is what moves this, not the number of SMs given work:
-// the 160-CTA form spreads over twice the part and still loses.
+// the 160-CTA form spreads over twice the part and still loses. The sweep was
+// re-run after the weight staging changed and the middle row is still best.
 #include <cstdint>
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
@@ -48,7 +49,7 @@
 namespace {
 
 using flash_vla::rtx5090::ldmatrix_a;
-using flash_vla::rtx5090::ldmatrix_b;
+using flash_vla::rtx5090::ldmatrix_b_trans;
 using flash_vla::rtx5090::mma_m16n8k16;
 
 //: Inside the mean, matching `tl_rms_factor` and the `rms_norm` kernel.
@@ -74,7 +75,11 @@ constexpr int32_t kVec = 8;  // bf16 per 16-byte access
 // in banks is ld/2, and 72/2 = 36 == 4 (mod 32), so the eight row groups of an
 // A or B fragment land 4 banks apart and cover all of them.
 constexpr int32_t kLdX = kChunkK + 8;
-constexpr int32_t kLdW = kChunkK + 8;
+//: The weight tile is staged in its natural [k][n] order and transposed by
+//: `ldmatrix.trans` on the way into the fragment, so this stride is over n.
+//: 40 puts the eight k rows an `ldmatrix` gathers on eight different bank
+//: groups, covering all 32.
+constexpr int32_t kLdW = kTileN + 8;
 
 //: x vectors per shared stage -- exactly one per thread at this tiling.
 constexpr int32_t kXVecs = kTileM * kChunkK / kVec;
@@ -109,7 +114,7 @@ __global__ __launch_bounds__(kThreads) void expert_qkv_kernel(
     __nv_bfloat16 *__restrict__ k_out, __nv_bfloat16 *__restrict__ v_out,
     int32_t m, int32_t kdim, int32_t n, int32_t q_dim, int32_t head_dim) {
   __shared__ __nv_bfloat16 xs[kTileM * kLdX];
-  __shared__ __nv_bfloat16 ws[kTileN * kLdW];
+  __shared__ __nv_bfloat16 ws[kChunkK * kLdW];
   __shared__ float row_sq[kTileM], row_scale[kTileM];
 
   const int32_t n0 = blockIdx.x * kTileN;
@@ -157,14 +162,9 @@ __global__ __launch_bounds__(kThreads) void expert_qkv_kernel(
       if ((threadIdx.x % kRowThreads) == 0) row_sq[xr] += sq;
     }
 
-    // Publish the weight, transposed. `mma`'s B operand is `.col`, meaning it
-    // is indexed [n][k], and the weight is stored [k][n] -- so the global side
-    // is contiguous along n and the shared side scatters along k.
-    if (threadIdx.x < kWVecs) {
-      const __nv_bfloat16 *e = (const __nv_bfloat16 *)&wreg;
-#pragma unroll
-      for (int32_t j = 0; j < kVec; ++j) ws[(wn + j) * kLdW + wk] = e[j];
-    }
+    // Publish the weight in its natural [k][n] order: one 16-byte store, and
+    // `ldmatrix.trans` does the transpose the `.col` B operand needs.
+    if (threadIdx.x < kWVecs) *(int4 *)(&ws[wk * kLdW + wn]) = wreg;
     __syncthreads();
     if (k0 + kChunkK < kdim) stage(k0 + kChunkK);
 
@@ -172,7 +172,7 @@ __global__ __launch_bounds__(kThreads) void expert_qkv_kernel(
     for (int32_t kk = 0; kk < kChunkK; kk += 16) {
       uint32_t a[4], b[2];
       ldmatrix_a(a, xs + mt * 16 * kLdX, kLdX, kk, lane);
-      ldmatrix_b(b, ws, kLdW, nt * 8, kk, lane);
+      ldmatrix_b_trans(b, ws, kLdW, nt * 8, kk, lane);
       mma_m16n8k16(acc, a, b);
     }
     __syncthreads();
