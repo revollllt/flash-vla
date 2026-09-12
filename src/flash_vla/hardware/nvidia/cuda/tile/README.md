@@ -8,8 +8,13 @@ they do not spell PTX or CuTe atom names.
 
 Include root: `src/flash_vla/hardware/nvidia/cuda` (build wrappers pass it as
 `-I`). Namespace: `flash_vla::sm90`. Umbrella: `tile/sm90/sm90.cuh`; host
-tensor-map helpers: `tile/sm90/tma_host.cuh`. Requires CUTLASS/CuTe from
+tensor-map helpers: `tile/common/tma_host.cuh`. Requires CUTLASS/CuTe from
 `third_party/cutlass` and `-arch=sm_90a`.
+
+**The arch-neutral half now lives in [`tile/common/`](common/README.md)** --
+`common.cuh`, `barrier.cuh`, `copy_g2s.cuh`, `copy_s2g.cuh` and `tma_host.cuh`,
+none of which names a Hopper-only instruction. `tile/sm90/` keeps a shim at each
+old path, so nothing below changed for a kernel that includes it.
 
 ## Interface
 
