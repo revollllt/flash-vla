@@ -64,12 +64,13 @@ units:
   covers: Global atomic throughput against instruction, width, scope and address placement, and the arrive->observe
     latency of a gmem counter.
 - id: mma
-  status: unmeasured
-  probe: needs a new mma.sync-only probe; the skill's mma_rate is built on wgmma
-  reference: none yet
-  covers: 'Warp-level `mma.sync` issue rate, accumulator count to saturate, and the ldmatrix feed tax.
-    The sm90 unit''s wgmma half has no counterpart here and `mma.xover.n.wgmma` has no meaning: there
-    is no second instruction to cross over to.'
+  status: measured
+  probe: lab/sm120/mma_unit.cu
+  reference: unit-mma.md
+  covers: 'Warp-level `mma.sync` only -- the sm90 unit''s wgmma half has no counterpart here and `mma.xover.n.wgmma`
+    has no meaning, since there is no second instruction to cross over to. Issue interval against independent
+    accumulator sets, the device''s sustained bf16 and fp8 ceilings against spec.py''s derived peaks,
+    and the ldmatrix feed tax against reuse.'
 - id: coop
   status: unmeasured
   probe: skill probes/units/coop_launch -- no sm90-only construct, not yet run here
@@ -148,3 +149,50 @@ constants:
   rule: 'Size a cold-streaming grid at 2x the SM count, not 1x: 170 CTAs cost 1.55x what 340 do for identical
     bytes, 85 cost 2.00x and 42 cost 3.29x. A grid sized to an output tiling alone will usually land below
     the knee.'
+- tag: mma.issue.warp
+  unit: mma
+  value: 32.1
+  units: cycles per m16n8k16 bf16 per warp, register-resident operands, one warp alone on the device;
+    34.45 at one accumulator set falling only to 32.13 at sixteen. SASS verified as HMMA.16816.F32.BF16,
+    one per accumulator set per loop iteration
+  short: 32.1 cyc/mma/warp
+  rule: 'One warp issues an mma every ~32 cycles here against sm90''s 6.26, so a single-warp tile reaches
+    a fifth of what the same code reaches on H100. Fill the SM with warps rather than widening one warp''s
+    tile.'
+- tag: mma.stages.warp.knee
+  unit: mma
+  value: 1
+  units: independent accumulator sets needed; 1 set costs 34.45 cycles per mma and 16 sets 32.13, a spread
+    of 1.07x across the whole sweep
+  short: accumulators barely matter (1.07x)
+  rule: 'Do NOT carry sm90''s "hold at least 4 independent accumulator sets" across: there it bought 4x
+    because a single chain was latency-bound, here it buys 7%. The instruction is issue-limited rather
+    than latency-limited on this part, so spend the registers on something else.'
+- tag: mma.ceiling.dev.bf16
+  unit: mma
+  value: 253
+  units: TFLOP/s bf16 with fp32 accumulate, sustained, 8 accumulator sets, register-resident; 60% of the
+    419.4 TFLOP/s spec.py derives. Reached already at 4 warps per SM (248.8) and flat to 12 warps (253.2)
+    and to 2 CTAs per SM
+  short: 253 TFLOP/s, 60% of peak
+  rule: 'Never target a bf16 FLOP/s figure derived from 419.4 -- mma.sync reaches 60% of it and there is
+    no second instruction to reach higher with. On sm90 the same instruction reaches 63% and wgmma reaches
+    95%; here 60% is the whole ceiling. Four warps per SM already saturates it.'
+- tag: mma.ratio.dev.fp8
+  unit: mma
+  value: 1.97
+  units: sustained fp8 e4m3 throughput over bf16 at the same shape family; 497.8 TFLOP/s against 253,
+    which is 59% of the 838.8 spec.py derives for fp8 -- the same efficiency bf16 shows against its own
+    peak
+  short: fp8 is 1.97x bf16, same 59% efficiency
+  rule: 'Two things at once: spec.py''s derived peak ladder is correct, since halving the element width
+    measurably doubles throughput; and the 60% shortfall is a property of `mma.sync`, not an error in
+    the peak, since it is the same at both widths. An fp8 path is worth what the ladder says it is worth.'
+- tag: mma.feedtax.warp.ldmatrix
+  unit: mma
+  value: 1.27
+  units: worst cycles-per-mma multiplier over register-resident operands, at 8 mmas per ldmatrix pair;
+    1.15x at 16, 1.07x at 32, 1.03x at 64
+  short: 1.27x at 8 mmas/load, 1.03x at 64
+  rule: Amortise an ldmatrix pair over at least 32 mmas and the feed costs under 7%; at 8 it costs 27%.
+    The tax is comparable to sm90's 1.18x but bites at a lower reuse factor.

@@ -17,9 +17,9 @@ transfers to another architecture**, and nothing from the sm90 table transfers
 
 ## The state of this table
 
-The instruction set, the static limits and the **`launch` unit** are measured.
-`tma`, `mma`, `atomic` and `coop` are not, and `constants.py --validate` reports
-four GAPs — that is the accurate picture, not an oversight.
+The instruction set, the static limits and the **`launch` and `mma` units** are
+measured. `tma`, `atomic` and `coop` are not, and `constants.py --validate`
+reports three GAPs — that is the accurate picture, not an oversight.
 
 **The floor model now has a denominator**: `[ld.bw.dev.dram]` is
 `t_us = 3.93 + MB/1.539` here, against sm90's `1.85 + MB/2.77`. Both terms are
@@ -28,9 +28,16 @@ of this part's datasheet peak, so the memory system is efficient and the
 *overhead* is what moved. A launch costs 2.05 µs against sm90's 1.24 and, unlike
 sm90, does not rise with grid size: there is no ramp to amortise.
 
+**The tensor core has one path and it reaches 60% of peak.** `mma.sync` sustains
+253 TFLOP/s bf16 against the 419.4 `spec.py` derives, and fp8 measures 1.97x
+that at the same 59% efficiency — so the derived ladder holds and the shortfall
+belongs to the instruction. On sm90 a kernel needing more than `mma.sync`'s 63%
+could reach for `wgmma` and get 95%; here 60% is the whole ceiling. See
+[unit-mma.md](unit-mma.md).
+
 Still true, and still the thing to guard: nothing else transfers. Quoting an
-sm90 `tma`, `mma`, `atomic` or `coop` constant here produces a number with no
-evidence behind it.
+sm90 `tma`, `atomic` or `coop` constant here produces a number with no evidence
+behind it.
 
 ## Consulting
 
@@ -97,14 +104,12 @@ model profile still runs. See [ncu-metrics.md](ncu-metrics.md).
 | unit | blocked | next |
 |---|---|---|
 | `tma` | ring depth, box size, CTA count for any copy pipeline | skill's `tma_ring` uses only surviving instructions; needs `arch_flags=["-gencode","arch=compute_120a,code=sm_120a"]` and a run |
-| `mma` | every tensor-core tile decision | needs a **new** probe: the skill's `mma_rate` is built on `wgmma` |
 | `atomic` | reduction layout | skill's `gmem_atomic` has no sm90-only construct; run it |
 | `coop` | persistent-kernel budgets | skill's `coop_launch` likewise |
 
-Of these, `launch` and `mma` are the two that block real design work: the first
-because every fusion decision in this repository is denominated in launch cost,
-the second because there is no longer a choice of tensor-core instruction and
-the one that remains has never been characterised on this part.
+These three are wanted rather than blocking: the two that gated design work,
+`launch` and `mma`, are done. `tma` is the next most useful, because a copy
+pipeline cannot be sized without it.
 
 ## The biggest thing still untested here
 
