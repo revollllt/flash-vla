@@ -65,6 +65,13 @@ def _packed_gate_up(gate_w, up_w):
 # quantization but not the mainloop's own trade, where a big tile is more
 # efficient per SM and a small one puts more CTAs on the part. The sweep is
 # `lab/sm120/pi0_cutlass_sweep.py` and these are its picks.
+#
+# Picked again with COLD weights, which is how they deploy: the expert walks 18
+# layers ten times a forward, so 302 MB of gated-feed-forward weight passes
+# through a cache that cannot hold it and no read is warm. That re-pick moved
+# three of nine tiles and is worth -0.122 ms -- small, which is the useful part
+# of the answer: the L2-warm sweep was very nearly right, and the reruns say so
+# rather than being assumed. `lab/sm120/pi0_cold_sweep.py`.
 # --------------------------------------------------------------------------
 GEMM_CONFIG = {
     "vision_qkv": 5,
@@ -81,10 +88,10 @@ GEMM_CONFIG = {
     "backbone_gate": 5,
     "backbone_up": 5,
     "backbone_out_proj": 10,
-    "backbone_ffn_down": 5,
+    "backbone_ffn_down": 0,
     "backbone_projector": 0,
-    "expert_gate_up": 3,
-    "expert_ffn_down": 8,
+    "expert_gate_up": 11,
+    "expert_ffn_down": 9,
     "expert_out_proj": 9,
 }
 

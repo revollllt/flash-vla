@@ -1,7 +1,7 @@
 # Pi0 · RTX 5090 · run-01
 
 First optimization run of `rtx5090/pi0`, from the all-torch bring-up route to a
-hand-written CUDA route: **46.794 → 27.862 ms, 1.68×**.
+hand-written CUDA route: **46.794 → 27.556 ms, 1.70×**.
 
 ![Optimization progress](progress.svg)
 
@@ -46,6 +46,7 @@ different comparison context; this run starts its own curve.
 | 17 | every GEMM off cuBLAS onto CUTLASS stream-K | 27.980 | **−1.769** |
 | 18 | programmatic dependent launch across the chain | 27.964 | **−0.114** paired |
 | 19 | vision feed-forward GELU into the GEMM epilogue | 27.862 | **−0.102** |
+| 20 | tiles re-picked with cold weights | 27.556 | **−0.306** |
 
 Every delta in rows 1–4 is a **paired A/B in one job**: the retained route and
 the candidate measured back to back, same process family, same driver, with the
