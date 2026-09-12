@@ -199,59 +199,76 @@ uses proves nothing about it.**
 
 ## Where the time goes now
 
-Floor model after iteration 15 (`artifacts/profile/floor6.json`), ceiling built
+Floor model after iteration 16 (`artifacts/profile/floor7.json`), ceiling built
 from this machine's measured constants:
 
 | segment | measured | ceiling | % | launches |
 |---|---:|---:|---:|---:|
 | `llm_backbone` | 15.15 | 11.74 | 129% | 244 |
-| `action_expert` | 10.53 | 7.64 | 138% | 2293 |
-| `vision_encoder` | 4.75 | 2.73 | 174% | 303 |
-| **total** | **30.43** | **22.11** | **138%** | **2850** |
+| `action_expert` | 9.70 | 7.64 | 127% | 1933 |
+| `vision_encoder` | 4.74 | 2.73 | 174% | 303 |
+| **total** | **29.59** | **22.11** | **134%** | **2490** |
 
-The ten largest remaining gaps:
+The eight largest remaining gaps:
 
 | call site | gap | what is in the way |
 |---|---:|---|
-| `action_expert_attention` | 2.111 | 26 CTAs is all this shape offers; settled above |
-| `llm_backbone_norm_gated_ffn` | 1.794 | two GEMMs, cuBLAS at 85% of the tensor ceiling |
-| `vision_encoder_ffn_down_residual` | 0.651 | one GEMM; K=4304 does not tile at 32 |
-| `llm_backbone_ffn_down_residual` | 0.623 | one GEMM; cuBLAS splits K and wins by 1.37x |
-| `action_expert_norm_qkv_rope` | 0.585 | the fused kernel, 18% over its own ceiling |
-| `vision_encoder_norm_ffn_up` | 0.556 | one GEMM; N=4304 does not tile at 64 |
-| `llm_backbone_attention` | 0.357 | still torch |
-| `llm_backbone_norm_qkv_rope` | 0.336 | the hand-written GEMM plus two pointwise passes |
-| `vision_encoder_norm_qkv` | 0.329 | one GEMM; cuBLAS wins by 1.14x |
-| `llm_backbone_out_proj_residual` | 0.294 | the hand-written GEMM |
+| `llm_backbone_norm_gated_ffn` | 1.795 | two GEMMs, cuBLAS at 85% of the tensor ceiling |
+| `action_expert_attention` | 1.303 | 11.41 us against a 4.17 us ceiling that assumes no split |
+| `vision_encoder_ffn_down_residual` | 0.652 | one GEMM; K=4304 does not tile at 32 |
+| `llm_backbone_ffn_down_residual` | 0.618 | one GEMM; cuBLAS splits K and wins by 1.37x |
+| `action_expert_norm_qkv_rope` | 0.578 | the fused kernel, 18% over its own ceiling |
+| `vision_encoder_norm_ffn_up` | 0.553 | one GEMM; N=4304 does not tile at 64 |
+| `llm_backbone_attention` | 0.350 | still torch |
+| `llm_backbone_norm_qkv_rope` | 0.337 | the hand-written GEMM plus two pointwise passes |
 
-**Everything except the attention site and the fused QKV kernel is now a GEMM**,
-and the pointwise glue around them has been measured out:
-`lab/sm120/pi0_bandwidth_bench.py` puts every hand-written streaming kernel
-between 2700 and 6000 GB/s.
+Five of the eight are a GEMM. The hand-written GEMM in `kernels/tiled_gemm.cu`
+says where that line is: its mainloop reaches **92% of cuBLAS** at a large shape
+(191 against 208 TFLOP/s at 768 x 2048 x 16384), and it still only beats cuBLAS
+at two of nine shapes -- the two where a 64 x 64 tile converts a 96-CTA wave
+into a 384-CTA one. Everywhere else cuBLAS picks a better tile than any single
+fixed choice can.
 
-The hand-written GEMM in `kernels/tiled_gemm.cu` says where the remaining line
-is. Its mainloop reaches **92% of cuBLAS** at a large shape (191 against 208
-TFLOP/s at 768 x 2048 x 16384), so it is not a weak kernel -- and it still only
-beats cuBLAS at two of the nine shapes, the two where a 64 x 64 tile converts a
-96-CTA wave into a 384-CTA one. Everywhere else cuBLAS picks a better tile than
-any single fixed choice can. Beating it across the board needs per-shape tile
-selection at minimum, and for the shapes that are one wave short, stream-K:
-a decomposition that hands exactly 170 CTAs an even share of the MAC work and
-fixes up the tiles that straddle a boundary. Fixed tilings cannot reach it --
-768 x 2048 at 128 x 128 is 96 CTAs and at 64 x 128 is 192, and 192 CTAs on 170
-SMs is two waves for the same total work.
+**Stream-K was implemented and is not routed.** Pure stream-K -- exactly one
+slice of the iteration space per CTA -- splits every tile, and the fixup traffic
+costs more than the balance buys: 45.42 us against the data-parallel 43.23 at
+768 x 2048 x 2048, and far worse on the deep-K shapes. Two things were learned
+that any retry needs. The finisher must be the CTA owning a tile's FIRST
+iteration, for which that tile is its LAST work; giving the role to the owner of
+the last iteration makes every CTA block at its own first tile and serializes
+the grid, measured at **48x**. And the grid has to be sized by occupancy, not by
+SM count, or it throws away the latency hiding the data-parallel form got from
+having 2.26 CTAs per SM. The form worth trying next is the hybrid: the bulk of
+the tiles data-parallel, stream-K over the remainder only, so only the tail pays
+fixup.
 
 ## Next, in order of expected value
 
-1. **Stream-K in `tiled_gemm.cu`.** The fixed-tile version of this kernel is
-   done and takes the two shapes it can; the remaining GEMM gaps need a
-   decomposition that fills the part exactly rather than one that happens to.
-   Worth roughly 1.5 ms across the vision projections and the backbone's gated
-   feed-forward, and it is the only idea left that addresses them.
-2. **`llm_backbone_attention` and `vision_encoder_attention`**, the last two
-   sites on torch, 0.54 ms between them. Both have enough queries to fill the
-   machine, unlike the expert's attention -- but both also re-read a large
-   shared K/V per query tile, which is what the expert's kernel died on.
-3. **`action_expert_norm_qkv_rope`'s last 0.583 ms.** The fused kernel is at
-   1210 GB/s against the 1524 of [ld.bw.dev.dram]; every CTA reads all of x,
-   which is 8.3 MB of L2 traffic against 5.24 MB of weight.
+1. **Hybrid stream-K in `tiled_gemm.cu`**, per the note above: data-parallel
+   bulk, stream-K remainder. Predicted from wave utilization at the 64 x 64
+   tile: 1.33x on `llm_backbone_out_proj_residual`, 1.57x on
+   `vision_encoder_out_proj_residual` -- which would make that a new win -- and
+   1.06x on the backbone QKV. About 0.36 ms.
+2. **fp8.** Measured, not adopted: 2.34x on the backbone's gated feed-forward
+   (244.04 -> 104.88 us, 493 TFLOP/s against a 506 ceiling) and 2.15x on its
+   down projection. It costs a relative error of 3.7e-02 against an fp32
+   reference where bf16 is 1.7e-03, and row-wise scaling does not improve it --
+   on a random-weight fixture the error is e4m3's mantissa, not the
+   granularity. `eval/tolerances.py` knows only a bf16 policy and `parity.md`
+   is explicit that a kernel task does not invent one, so this is a decision
+   about the deployment's numerical contract rather than a patch.
+   `lab/sm120/pi0_fp8_probe.py`.
+3. **PDL.** Available on this part -- ptxas accepts `griddepcontrol` for
+   sm_120, sm_120f and sm_120a -- and worth 1.166x under graph replay on a
+   chain shaped like Pi0's (`lab/sm120/pdl_unit.cu`). It needs the producer to
+   trigger early AND the consumer to wait late, so both must be hand-written,
+   and cuBLAS currently sits between nearly every pair. It grows as more GEMMs
+   become hand-written.
+4. **`llm_backbone_attention`**, 0.350 ms and still torch. The expert's kernel
+   now exists and wins, but at BLOCK_M 16 each query tile re-reads all of K and
+   V: 384 tiles x 786 KB is 302 MB of L2 traffic at the backbone's shape, so it
+   needs a larger BLOCK_M first. BLOCK_M 32 was tried on the expert's shape and
+   lost -- 208 registers against 128, halving occupancy -- so this is a real
+   retune, not a constant change.
+5. **`action_expert_norm_qkv_rope`'s last 0.578 ms.** Every CTA reads all of x,
+   8.3 MB of L2 traffic against 5.24 MB of weight.

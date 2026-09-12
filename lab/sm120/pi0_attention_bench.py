@@ -115,7 +115,7 @@ def bench_mma() -> None:
         """Split-KV: 26 query tiles times S slices of the key axis."""
         print("  key splits -> wall time, against the split form's "
               f"{time_us(split):.2f} us")
-        for s in (1, 2, 3, 4, 6, 8, 12):
+        for s in (1, 2, 4, 6, 8, 12, 16):
             out_s = torch.empty_like(ref)
             fn = lambda: cu.expert_attention_mma(q, k, v, out_s, heads=HEADS,
                                                  prefix=PREFIX, splits=s)
