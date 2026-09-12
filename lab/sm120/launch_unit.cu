@@ -174,6 +174,56 @@ int main(int argc, char **argv) {
     CHECK(cudaEventDestroy(a)); CHECK(cudaEventDestroy(b));
   }
 
+  // ---- L1c: launch cost INSIDE a CUDA graph ------------------------------
+  // The deployed path in this repository captures its whole forward into a CUDA
+  // graph and replays it, so the cost that a fusion decision actually trades
+  // against is a graph node's, not a stream launch's. sm90's note says the ramp
+  // is "not removed by graph capture"; that is a claim about that machine and
+  // is measured here rather than assumed.
+  printf("\n## L1c launch inside a CUDA graph (us/launch), 64 nodes\n");
+  printf("%10s %12s %12s %8s\n", "CTAs", "in graph", "in stream", "graph/stream");
+  for (int grid : {1, 170, 340, 1024}) {
+    const int NODES = 64;
+    cudaStream_t stream;
+    CHECK(cudaStreamCreate(&stream));
+    cudaGraph_t graph;
+    cudaGraphExec_t exec;
+    CHECK(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
+    for (int i = 0; i < NODES; ++i) empty_kernel<<<grid, 256, 0, stream>>>();
+    CHECK(cudaStreamEndCapture(stream, &graph));
+    CHECK(cudaGraphInstantiate(&exec, graph, nullptr, nullptr, 0));
+    CHECK(cudaGraphLaunch(exec, stream));
+    CHECK(cudaStreamSynchronize(stream));
+
+    cudaEvent_t a, b;
+    CHECK(cudaEventCreate(&a)); CHECK(cudaEventCreate(&b));
+    std::vector<float> v;
+    for (int s = 0; s < sweeps; ++s) {
+      CHECK(cudaEventRecord(a, stream));
+      CHECK(cudaGraphLaunch(exec, stream));
+      CHECK(cudaEventRecord(b, stream));
+      CHECK(cudaEventSynchronize(b));
+      float ms = 0.f; CHECK(cudaEventElapsedTime(&ms, a, b));
+      v.push_back(ms * 1000.f / NODES);
+    }
+    std::sort(v.begin(), v.end());
+
+    const int BATCH = 200;
+    CHECK(cudaEventRecord(a));
+    for (int i = 0; i < BATCH; ++i) empty_kernel<<<grid, 256>>>();
+    CHECK(cudaEventRecord(b));
+    CHECK(cudaEventSynchronize(b));
+    float ms = 0.f; CHECK(cudaEventElapsedTime(&ms, a, b));
+    const float streamed = ms * 1000.f / BATCH;
+
+    printf("%10d %12.3f %12.3f %7.2fx\n", grid, v[v.size()/2], streamed,
+           v[v.size()/2] / streamed);
+    CHECK(cudaEventDestroy(a)); CHECK(cudaEventDestroy(b));
+    CHECK(cudaGraphExecDestroy(exec));
+    CHECK(cudaGraphDestroy(graph));
+    CHECK(cudaStreamDestroy(stream));
+  }
+
   // ---- L2a: cold read cost vs bytes -> fits t = a + MB/b ------------------
   printf("\n## L2a cold read, 4x SM CTAs x 256 threads\n");
   printf("%10s %10s", "MB", "us");
@@ -205,6 +255,54 @@ int main(int argc, char **argv) {
     CHECK(cudaFree(src));
   }
 
+  // ---- L2c: the same cold read, timed as a CUDA graph replay -------------
+  // L2a launches from a stream, so its fixed cost carries the stream-launch
+  // overhead L1c measures at ~2.05 us. The deployed path replays a captured
+  // graph, where a launch costs a quarter of that, so the floor model needs
+  // the in-graph fixed cost. The L2 flush stays OUTSIDE the timed region.
+  printf("\n## L2c cold read as a 1-node graph replay (the deployed shape)\n");
+  printf("%10s %12s %12s %8s\n", "MB", "in graph", "in stream", "delta us");
+  std::vector<std::pair<double, double>> gfit;
+  for (double mb : {0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0}) {
+    size_t bytes = size_t(mb * 1048576.0);
+    size_t n4 = bytes / sizeof(float4);
+    float4 *src = nullptr;
+    if (cudaMalloc(&src, bytes) != cudaSuccess) continue;
+    CHECK(cudaMemset(src, 1, bytes));
+
+    cudaStream_t stream;
+    CHECK(cudaStreamCreate(&stream));
+    cudaGraph_t graph; cudaGraphExec_t exec;
+    CHECK(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
+    stream_read<<<READ_GRID, 256, 0, stream>>>(src, n4, sink);
+    CHECK(cudaStreamEndCapture(stream, &graph));
+    CHECK(cudaGraphInstantiate(&exec, graph, nullptr, nullptr, 0));
+    CHECK(cudaGraphLaunch(exec, stream));
+    CHECK(cudaStreamSynchronize(stream));
+
+    cudaEvent_t a, b;
+    CHECK(cudaEventCreate(&a)); CHECK(cudaEventCreate(&b));
+    std::vector<float> v;
+    for (int i = 0; i < reps; ++i) {
+      flusher.flush();
+      CHECK(cudaStreamSynchronize(0));
+      CHECK(cudaEventRecord(a, stream));
+      CHECK(cudaGraphLaunch(exec, stream));
+      CHECK(cudaEventRecord(b, stream));
+      CHECK(cudaEventSynchronize(b));
+      float ms = 0.f; CHECK(cudaEventElapsedTime(&ms, a, b));
+      v.push_back(ms * 1000.f);
+    }
+    std::sort(v.begin(), v.end());
+    float g = v[v.size() / 2];
+    double st = 0; for (auto &q : fit) if (q.first == mb) st = q.second;
+    printf("%10.1f %12.3f %12.3f %8.3f\n", mb, g, st, st - g);
+    gfit.push_back({mb, g});
+    CHECK(cudaEventDestroy(a)); CHECK(cudaEventDestroy(b));
+    CHECK(cudaGraphExecDestroy(exec)); CHECK(cudaGraphDestroy(graph));
+    CHECK(cudaStreamDestroy(stream)); CHECK(cudaFree(src));
+  }
+
   // Least squares on t = a + MB/b, over the whole sweep.
   auto do_fit = [&](double min_mb, const char *label) {
     double sx = 0, sy = 0, sxx = 0, sxy = 0, n = 0;
@@ -224,8 +322,11 @@ int main(int argc, char **argv) {
   if (fit.size() >= 2) {
     printf("\n  Small sizes are fixed-cost dominated, so the whole-range fit\n"
            "  understates the marginal rate. Both are shown.\n");
-    do_fit(0.0, "all points:");
-    do_fit(16.0, ">= 16 MB (linear region):");
+    do_fit(0.0, "stream, all points:");
+    do_fit(16.0, "stream, >= 16 MB:");
+    fit.swap(gfit);
+    do_fit(16.0, "GRAPH, >= 16 MB:   <-- use");
+    fit.swap(gfit);
     printf("  %-28s t_us = 1.850 + MB/2.770   (2.905 TB/s marginal)\n",
            "sm90 [ld.bw.dev.dram]:");
     printf("  datasheet peak here is 1.792 TB/s (spec.py)\n");

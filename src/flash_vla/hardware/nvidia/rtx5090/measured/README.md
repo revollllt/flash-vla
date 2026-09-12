@@ -99,28 +99,48 @@ returning zero. Counter access is **denied on this host** (`ERR_NVGPUCTRPERM`),
 so NCU is unavailable — but the CUPTI timeline is not affected and the top-down
 model profile still runs. See [ncu-metrics.md](ncu-metrics.md).
 
-## What is NOT measured here, and what would measure it
+## What is measured, and how far
 
-| unit | blocked | next |
+All five performance units now have entries and `--validate` reports **no GAPs**.
+They are not all equally complete:
+
+| unit | probe | coverage |
 |---|---|---|
-| `tma` | ring depth, box size, CTA count for any copy pipeline | skill's `tma_ring` uses only surviving instructions; needs `arch_flags=["-gencode","arch=compute_120a,code=sm_120a"]` and a run |
-| `atomic` | reduction layout | skill's `gmem_atomic` has no sm90-only construct; run it |
-| `coop` | persistent-kernel budgets | skill's `coop_launch` likewise |
+| `launch` | `lab/sm120/launch_unit.cu` | full — launch cost in-graph and in-stream, cold-read cost model, CTA knee |
+| `mma` | `lab/sm120/mma_unit.cu` | issue interval, accumulator knee, device ceiling at bf16 and fp8, ldmatrix tax |
+| `coop` | skill's `coop_launch` via the runner | full |
+| `atomic` | skill's `gmem_atomic` via the runner | full |
+| `tma` | skill's `tma_ring` via the runner | **partial — sweep A only**; no CTA or warp scaling, no L2 regime, no geometry sweep |
 
-These three are wanted rather than blocking: the two that gated design work,
-`launch` and `mma`, are done. `tma` is the next most useful, because a copy
-pipeline cannot be sized without it.
+Three of the five reuse the skill's own probes unchanged, driven through
+`lab/sm120/run_skill_probe.py`, which overrides the compile target and the
+machine constants some probes bake in as module globals. The skill is not
+modified.
+
+Two units needed new probes. `launch` because sm90's six constants came from
+absorbed job logs rather than an in-repo probe, and `mma` because the skill's
+`mma_rate` is built on `wgmma`, which does not exist here.
 
 ## The biggest thing still untested here
 
-**What TMA `.multicast::cluster` costs here.** No longer a question of whether it
-works — NVIDIA's Target ISA Notes say it assembles on any `sm_90`-or-higher
-target but is optimized only for `sm_90a`/`sm_10xa`/`sm_11xa` and their families,
-and "may have substantially reduced performance on other targets". `sm_120a` is
-not on that list. So the open question is the size of the penalty, and no probe
-here issues a multicast TMA or counts its delivered bytes. An sm_90a design that
-treats multicast as a free fan-out does not port on that assumption.
+**The `tma` unit, beyond sweep A.** Four of the five units are as complete as
+sm90's; this one covers ring depth against box size at a single CTA and warp
+count and nothing else. Missing: whether delivered bandwidth follows the same
+`CTAs x warps x bytes-per-box` product law sm90 found, where the saturation
+frontier sits, whether there is an anti-scaling dip, what an L2-resident re-read
+costs, and whether TMA-load warmth survives intervening traffic. A copy pipeline
+can be sized from `[tma.issue.warp]` and `[tma.stages.warp.knee]`, but its grid
+cannot.
 
-Second: **the noise floor.** sm90's table carries ~6% and an explicit "clocks not
-pinnable"; this machine's variability has not been characterised at all, so no
-comparison here has an error bar yet.
+**What TMA `.multicast::cluster` costs.** No longer a question of whether it
+works -- NVIDIA's Target ISA Notes say it assembles on any `sm_90`-or-higher
+target but is optimized only for `sm_90a`/`sm_10xa`/`sm_11xa` and their
+families, and "may have substantially reduced performance on other targets".
+`sm_120a` is not on that list. So the open question is the size of the penalty,
+and no probe here issues a multicast TMA or counts its delivered bytes. An
+sm_90a design that treats multicast as a free fan-out does not port on that
+assumption.
+
+**The clock.** Clocks are not pinned and no number here was taken under a
+controlled clock, so the 6% in the machine block is an observed spread rather
+than a bound.

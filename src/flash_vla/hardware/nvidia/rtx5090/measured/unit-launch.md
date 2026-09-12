@@ -2,7 +2,8 @@
 
 The unit this repository is denominated in. Every fusion decision on `main`
 prices a removed launch against sm90's `[ld.bw.dev.dram]`, `t_us = 1.85 + MB/2.77`.
-This is the sm_120 replacement, and it is worse on both terms.
+This is the sm_120 replacement, and the answer splits: streaming bytes costs
+about 1.8x more here, while a launch inside a CUDA graph costs 2.8x *less*.
 
 Probe: `lab/sm120/launch_unit.cu`. Build and run:
 
@@ -13,29 +14,38 @@ nvcc -O3 -std=c++17 -gencode arch=compute_120f,code=sm_120f -o /tmp/launch_unit 
 
 ## Claims, and what would have refuted them
 
-**`[launch.lat.dev.ramp]` — a launch costs 2.05 µs and grid size does not
-change that.**
+**`[launch.lat.dev.ramp]` — a launch costs 0.45 µs in a graph and 2.05 µs in a
+stream, and only the first of those is the deployed number.**
 
-| CTAs | batched (µs/launch) | single launch + 2 events | delta |
+| CTAs | in a 64-node graph | back-to-back in a stream | graph/stream |
 |---:|---:|---:|---:|
-| 1 | 1.962 | 2.336 | 1.19× |
-| 170 | 2.050 | 2.336 | 1.14× |
-| 340 | 2.050 | 2.336 | 1.14× |
-| 1024 | 2.049 | 2.336 | 1.14× |
+| 1 | 0.419 | 1.904 | 0.22× |
+| 170 | 0.449 | 2.044 | 0.22× |
+| 340 | 0.515 | 2.044 | 0.25× |
+| 1024 | 0.802 | 2.050 | 0.39× |
 
-*Isolation*: an empty kernel, so nothing but the launch is in the number.
-*Falsifier*: the batched and single-launch columns disagreeing by more than the
-event cost, or the batched column rising with grid size. Neither happened — and
-the second is the interesting negative. sm90's `[launch.lat.dev.ramp]` **rises**
-with grid (0.95 µs at 32 CTAs, 1.24 at 256): that is the grid ramp. Here the
-cost is flat from one CTA to a thousand, so there is no ramp to amortise and a
-small launch is pure overhead.
+*Isolation*: an empty kernel, so nothing but the launch is in the number. The
+stream column brackets a 200-launch batch with one event pair, so per-launch
+event cost is excluded; bracketing a single launch instead reads 2.34, and that
+0.29 µs difference is the event cost, not the launch cost.
 
-The single-launch column exists to catch the methodological error, not to be
-quoted: bracketing one launch with two events measures launch *plus* events.
-The 0.29 µs difference is the event cost.
+**This correction matters more than the number.** An earlier version of this
+file quoted the 2.05 µs stream figure against sm90's `[launch.lat.dev.ramp]` of
+1.24 µs and concluded launches here are 1.65× dearer. That comparison is
+invalid: sm90's constant is explicitly the in-graph figure — its note says the
+ramp is "not removed by graph capture" — and this repository captures its whole
+forward into one graph and replays it, so a graph node is what a fusion decision
+actually removes. On matched terms this part launches **cheaper**: 0.45 µs
+against 1.24.
 
-**`[ld.bw.dev.dram]` — a cold read costs `3.93 + MB/1.539` µs.**
+The second difference is qualitative. In a stream the cost is flat from one CTA
+to a thousand, the fixed submission cost hiding everything. In a graph it
+**rises with grid size**, 0.42 → 0.80 µs, which is the grid ramp becoming
+visible once the submission cost is gone. And graph capture is worth 4.5× here,
+where sm90's note says it removed nothing — that is a fact about that machine,
+not a law.
+
+**`[ld.bw.dev.dram]` — a cold read costs `3.35 + MB/1.524` µs.**
 
 | MB | µs | GB/s | spread |
 |---:|---:|---:|---:|
@@ -56,13 +66,21 @@ here is 96 MB, so the flush writes 192 MB before every launch — a smaller
 buffer would have left the set resident and measured a warm read.
 
 *Falsifier*: the small sizes fitting the same line as the large ones. They do
-not, and that is why two fits are reported. Over all points the fit is
-`3.45 + MB/1.532`; over the linear region (≥16 MB) it is `3.93 + MB/1.539`. The
-second is the one to quote, because below ~8 MB the cost is fixed-cost dominated
-and drags the intercept down while barely moving the slope.
+not, and that is why the fit is taken over the linear region only. Over all
+points it reads `3.50 + MB/1.533`; over ≥16 MB, `3.93 + MB/1.539`. Below ~8 MB
+the cost is fixed-cost dominated and drags the intercept down.
 
-The marginal rate, 1.613 TB/s, is **90% of the 1.792 TB/s datasheet peak** —
-this memory system is efficient. The problem is the 3.93 µs in front of it.
+*Second falsifier, and the one that changed the answer*: whether that 3.9 µs is
+launch overhead. Re-timed as a **1-node CUDA graph replay**, with the L2 flush
+outside the timed region, the same sweep fits `3.35 + MB/1.524` — agreeing with
+the stream fit inside the 6% noise floor, at every size. So the fixed cost is
+the memory system's own spin-up and not submission overhead, which is what an
+event pair around a launch should measure in the first place: GPU-side kernel
+duration. The graph figure is the one recorded, because it is the deployed
+shape.
+
+The marginal rate, 1.598 TB/s, is **89% of the 1.792 TB/s datasheet peak** —
+this memory system is efficient. The problem is the 3.35 µs in front of it.
 
 **`[ld.ctas.dev.knee]` — a cold read wants 2× the SM count.**
 
@@ -81,18 +99,28 @@ choice. It is not: one CTA per SM costs 1.55× what two do for identical bytes.
 
 | | sm90 (H100) | sm_120 (RTX 5090) | ratio |
 |---|---:|---:|---:|
-| per-launch cost | 1.24 µs, rises with grid | **2.05 µs, flat** | 1.65× worse |
-| cold-read fixed cost | 1.85 µs | **3.93 µs** | 2.12× worse |
-| cold-read marginal | 2.77 MB/µs (2.905 TB/s) | **1.539 MB/µs (1.613 TB/s)** | 1.80× worse |
-| fraction of datasheet peak | 87% | 90% | — |
+| per-launch cost, in a graph | 1.24 µs, rises with grid | **0.45 µs, rises with grid** | **2.8× better** |
+| per-launch cost, in a stream | not recorded | 2.05 µs, flat | — |
+| cold-read fixed cost | 1.85 µs | **3.35 µs** | 1.81× worse |
+| cold-read marginal | 2.77 MB/µs (2.905 TB/s) | **1.524 MB/µs (1.598 TB/s)** | 1.82× worse |
+| fraction of datasheet peak | 87% | 89% | — |
 | cold-read CTA knee | 128 CTAs (0.97×SM) | 340 CTAs (2×SM) | — |
 
-The consequence for this project is specific. run-02 concluded that LingBot's
-expert is launch-bound because it is deep and narrow: the same bytes moved by
-twice as many launches, each charged 1.85 µs before a byte moves. **On this
-machine that charge is 3.93 µs.** A workload that was launch-bound on H100 is
-more launch-bound here, not less — and the extra SMs (170 against 132) do not
-help, because the cost does not scale with grid.
+The consequence for this project is more mixed than it first looked, and worth
+stating carefully because the two rows point opposite ways.
+
+run-02 concluded that LingBot's expert is launch-bound because it is deep and
+narrow: the same bytes moved by twice as many launches, each charged a fixed cost
+before a byte moves. Two things happen to that here. The **per-launch** term gets
+*cheaper* — 0.45 µs against 1.24, so the penalty for having many launches is 2.8×
+smaller. The **per-phase** term gets dearer: every cold read pays 3.35 µs of
+spin-up instead of 1.85, and streams its bytes at 1.82× the cost.
+
+So a forward that is launch-count-bound should suffer less here than the H100
+numbers suggest, and one that is bytes-bound should suffer about 1.8× uniformly.
+Which of those LingBot's expert actually is at this shape is not settled by this
+unit, and the arithmetic should be done with both terms rather than by
+extrapolating either one.
 
 ## Noise floor
 

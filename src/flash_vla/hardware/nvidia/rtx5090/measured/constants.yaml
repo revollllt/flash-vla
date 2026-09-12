@@ -44,11 +44,12 @@ units:
     thread-block cluster that launches and exchanges distributed shared memory, and the largest dynamic
     shared-memory opt-in a block is granted.
 - id: tma
-  status: unmeasured
-  probe: skill probes/units/tma_ring -- builds for sm_120a, not yet run here
-  reference: none yet
-  covers: 'Copy-engine delivery rate. Instructions all present; every sm90 number is void: GDDR7 at 1.792
-    TB/s against HBM3 at 3.35, 96 MB of L2 against 50, 170 SMs against 132.'
+  status: measured
+  probe: lab/sm120/run_skill_probe.py tma_ring -- --sweeps A --regime dram
+  reference: unit-tma.md
+  covers: 'Copy-engine issue interval and delivery against ring depth and box size, plus descriptor legality
+    and the box-size cap. PARTIAL: only sweep A (stages x box at 32 CTAs x 1 warp, stride8k geometry)
+    has been run, so nothing here covers CTA scaling, warp scaling, the L2 regime or box geometry.'
 - id: launch
   status: measured
   probe: lab/sm120/launch_unit.cu
@@ -58,9 +59,9 @@ units:
     model t = a + MB/b with L2 evicted before every launch, and the CTA count at which a cold read stops
     improving.'
 - id: atomic
-  status: unmeasured
-  probe: skill probes/units/gmem_atomic -- no sm90-only construct, not yet run here
-  reference: none yet
+  status: measured
+  probe: lab/sm120/run_skill_probe.py gmem_atomic (the skill's probe, arch overridden to sm_120f)
+  reference: unit-atomic.md
   covers: Global atomic throughput against instruction, width, scope and address placement, and the arrive->observe
     latency of a gmem counter.
 - id: mma
@@ -72,9 +73,9 @@ units:
     accumulator sets, the device''s sustained bf16 and fp8 ceilings against spec.py''s derived peaks,
     and the ldmatrix feed tax against reuse.'
 - id: coop
-  status: unmeasured
-  probe: skill probes/units/coop_launch -- no sm90-only construct, not yet run here
-  reference: none yet
+  status: measured
+  probe: lab/sm120/run_skill_probe.py coop_launch (the skill's probe, arch overridden to sm_120f)
+  reference: unit-coop.md
   covers: Cooperative launch grid_sync cost, placeable block count, and whether a grid barrier beats the
     relaunch it replaces.
 constants:
@@ -118,27 +119,32 @@ constants:
     architecture-conditional target buys nothing here.'
 - tag: launch.lat.dev.ramp
   unit: launch
-  value: 2.05
-  units: us per back-to-back launch of an empty kernel, 256 threads, measured as a 200-launch batch so
-    per-launch event overhead is excluded; 1.96 at 1 CTA and 2.05 from 170 to 1024, i.e. FLAT in grid
-    size. Bracketing a single launch with two events instead reads 2.34 (1.14x), which is the event cost,
-    not the launch cost
-  short: 2.05 us/launch, flat in grid
-  rule: 'Launch COUNT is a first-class term in every fusion decision here, and a heavier one than on sm90:
-    2.05 us against that machine''s 1.24, a 1.65x penalty per launch. Unlike sm90 there is no grid ramp
-    to amortise -- one CTA costs the same as a thousand -- so a small launch is pure overhead.'
+  value: 0.45
+  units: us per launch INSIDE a CUDA graph, 256 threads, from a 64-node graph replayed under one event
+    pair; 0.419 at 1 CTA, 0.449 at 170, 0.515 at 340, 0.802 at 1024 -- so unlike a stream launch it does
+    rise with grid size. The same empty kernel launched back-to-back from a STREAM costs 2.05 us and is
+    flat in grid size, the fixed submission cost hiding the ramp
+  short: 0.45 us/launch in-graph (2.05 in-stream)
+  in_stream_us: 2.05
+  rule: 'Quote the in-graph number: this repository captures its whole forward into one graph and replays
+    it, so a graph node is what a fusion decision removes. Graph capture is worth 4.5x here -- 0.45 against
+    2.05 us -- and sm90''s note that the ramp is "not removed by graph capture" is a fact about that machine,
+    not this one. Do NOT compare an in-stream launch here against sm90''s in-graph 1.24 us; on matched
+    terms this part launches CHEAPER, not dearer.'
 - tag: ld.bw.dev.dram
   unit: launch
-  value: 1.539
-  units: MB per us marginal (1.613 TB/s, 90% of the 1.792 TB/s datasheet peak) behind 3.93 us of fixed
-    cost, fitted over 16-256 MB where the curve is linear, L2 flushed with twice its 96 MB before every
-    launch, 680 CTAs x 256 threads. Fitting all 0.5-256 MB instead gives 3.45 + MB/1.532, understating
-    the marginal rate because the small sizes are fixed-cost dominated
-  short: 3.93us + MB/1.539
-  fixed_us: 3.93
-  rule: 'Replace bytes / 1.792 TB/s with 3.93 + MB/1.539 in every floor on this machine, per launch. Against
-    sm90''s 1.85 + MB/2.77 the fixed cost is 2.1x worse and the marginal rate 1.80x worse, so a phase
-    that was launch-bound on H100 is more launch-bound here, not less.'
+  value: 1.524
+  units: MB per us marginal (1.598 TB/s, 89% of the 1.792 TB/s datasheet peak) behind 3.35 us of fixed
+    cost, fitted over 16-128 MB as a 1-node CUDA graph replay with L2 flushed outside the timed region.
+    Launching the same kernel from a stream instead fits 3.93 + MB/1.539, agreeing within the 6% noise
+    floor -- this fixed cost is the memory system's own spin-up, NOT launch overhead, because an event
+    pair around a launch measures GPU-side kernel duration
+  short: 3.35us + MB/1.524
+  fixed_us: 3.35
+  rule: 'Replace bytes / 1.792 TB/s with 3.35 + MB/1.524 in every floor on this machine, per launch. Against
+    sm90''s 1.85 + MB/2.77 the fixed cost is 1.81x worse and the marginal rate 1.82x worse, so a phase
+    that was DRAM-bound on H100 is uniformly about 1.8x slower here. This is the floor model''s denominator;
+    launch.lat.dev.ramp is a separate term and is added per launch on top.'
 - tag: ld.ctas.dev.knee
   unit: launch
   value: 340
@@ -196,3 +202,130 @@ constants:
   short: 1.27x at 8 mmas/load, 1.03x at 64
   rule: Amortise an ldmatrix pair over at least 32 mmas and the feed costs under 7%; at 8 it costs 27%.
     The tax is comparable to sm90's 1.18x but bites at a lower reuse factor.
+- tag: coop.lat.dev.sync
+  unit: coop
+  value: 599
+  units: ns per cooperative_groups grid_sync at 132 blocks x 256 threads (1753 cycles); 583 at 32 and
+    at 66 blocks, so it barely moves with grid size. Spread 8-10% across modes, above this machine's 6%
+    noise floor
+  short: 0.60 us per grid_sync
+  rule: 'Count grid barriers the way you count launches: one costs ~0.60 us here against sm90''s 1.09,
+    so a persistent kernel''s N-barrier term is roughly half what the H100 numbers imply.'
+- tag: coop.ctas.dev.max
+  unit: coop
+  value: 1020
+  units: blocks at 256 threads accepted by cudaLaunchCooperativeKernel = max_active_blocks_per_sm x SMs
+    exactly (6 x 170); 1021 is refused with cudaErrorCooperativeLaunchTooLarge
+  short: 1020 blocks, = the occupancy query
+  rule: Size a cooperative grid from cudaOccupancyMaxActiveBlocksPerMultiprocessor x SM count and trust
+    it exactly -- the launch refuses one block past it rather than deadlocking, so the bound can be queried
+    instead of discovered. Note it is 6 blocks per SM here against sm90's 8, because this part holds 48
+    warps per SM rather than 64.
+- tag: coop.ratio.dev.relaunch
+  unit: coop
+  value: 1.40
+  units: device-side relaunch (837 ns, 64 launches inside a CUDA graph) over one grid_sync (599 ns), same
+    grid and body
+  short: a relaunch is 1.40x a grid_sync
+  rule: 'A grid barrier buys ~29% over the relaunch it replaces, against sm90''s 22% -- still not an order
+    of magnitude. Persistent kernels have to earn their keep on state kept in registers and shared memory
+    across phases, which this constant says nothing about. Note the 837 ns in-graph relaunch here is independent
+    corroboration of launch.lat.dev.ramp''s in-graph figure and not of its in-stream one.'
+- tag: atom.ratio.ret
+  unit: atomic
+  value: 1.01
+  units: speedup of red over atom, uncontended, 65536 addresses at 128 B spacing; 92.04 against 90.78
+    Gop/s, inside the 3-6% run noise
+  short: red and atom are the same
+  rule: 'The return value is FREE on this part. Do not carry sm90''s "any accumulate that does not need
+    the old value should be red, worth 30%" across -- it buys nothing here, and `atom` is the clearer
+    spelling when the old value is wanted.'
+- tag: atom.ratio.place
+  unit: atomic
+  value: 5.5
+  units: speedup of 4 B spacing over 128 B spacing at 65536 addresses and equal sharing; 503.1 against
+    92.0 Gop/s
+  short: 5.5x from packing
+  rule: Lay a reduction out so a warp's lanes hit one 128 B line. This is the largest lever in the unit,
+    as it is on sm90, and the multiple is close to that machine's 5.4-6.3x.
+- tag: atom.rate.addr
+  unit: atomic
+  value: 2.42
+  units: Gop/s to one address with 33792 threads contending; identical for red and atom, and identical
+    at 4 B and 128 B spacing since there is only one address
+  short: 2.42 Gop/s, 1 address
+  rule: One global accumulator is worth 2.42 Gop/s and nothing will fix it but more accumulators. That
+    is 1.8x sm90's 1.36, so a contended counter hurts less here -- but 208x below the uncontended rate,
+    so the shape of the advice is unchanged.
+- tag: atom.ratio.width
+  unit: atomic
+  value: 4.25
+  units: reduction bandwidth of red.v4f32 over red.u32 at equal op rate; 1511.4 against 356.0 GB/s, with
+    the op rate within 1% across u32, f32, f16x2, bf16x2, v2f32 and v4f32
+  short: v4.f32 free, 4.25x bytes
+  rule: Reduce in the widest atomic the data allows -- every width runs at the same operation rate, so
+    the widest one moves four times the bytes for nothing.
+- tag: atom.ratio.scope
+  unit: atomic
+  value: 1.006
+  units: worst spread across cta / gpu / sys scopes, uncontended and contended, for both red and atom
+  short: scope is free
+  rule: Choose scope for CORRECTNESS, never for speed. There is no performance argument for narrowing
+    it, and a too-narrow scope fails silently and data-dependently.
+- tag: atom.lat.dev.hop
+  unit: atomic
+  value: 400
+  units: ns per arrive->observe hop with red.release.add (393 ns for a plain release store); 400.4 at
+    2 CTAs rising only to 413.1 at 132, so observers are close to free
+  short: 400 ns/hop, observers free
+  rule: 'A task-graph counter hop costs ~400 ns here against sm90''s 651, so ordering a task separately
+    is cheaper than the H100 numbers imply. At ld.bw.dev.dram that is about 0.6 MB of traffic a task must
+    exceed to be worth ordering.'
+- tag: tma.issue.warp
+  unit: tma
+  value: 210
+  units: ns per TMA per producer warp, the floor of the ns/txn column at ring depth 4 or more and boxes
+    of 2-4 KB; 209.6-211.8 across depths 4, 8 and 16. At depth 2 the same boxes read 248-262 ns, so the
+    ring is not covering latency there. DRAM regime, L2 flushed, 32 CTAs x 1 warp, stride8k geometry
+  short: 210 ns/txn/warp
+  rule: 'Bytes per TMA is a first-class design term: at a fixed issue interval, doubling the box nearly
+    doubles the copy column for free. Slightly cheaper than sm90''s 248 ns.'
+- tag: tma.stages.warp.knee
+  unit: tma
+  value: 4
+  units: ring stages needed to reach the issue floor from DRAM; depth 2 costs 1.18-1.25x the issue interval
+    at 2-4 KB boxes and far more at larger ones (698 ns at 32 KB), while depths 4, 8 and 16 agree to 1%
+  short: stages 4 (DRAM)
+  rule: Four stages for cold weights, as on sm90 -- but see smem.bytes.cta.max, because four stages at
+    sm90's recommended 32 KB box does NOT fit in this machine's shared memory.
+- tag: tma.bytes.txn.max
+  unit: tma
+  value: 32768
+  units: 'bytes -- the largest single TMA accepted by cuTensorMapEncodeTiled under SW128, from a 128 B
+    row cap and a 256 row cap; box_dim[1]=256 is accepted and 257 is rejected. Swizzle legality is identical
+    to sm90: SW32 caps the row at 32 B, SW64 at 64 B, SW128 at 128 B, unswizzled unbounded'
+  short: 32 KB max box, same as sm90
+  rule: The descriptor limits are unchanged from Hopper, so a tensor-map layout ported from sm90 stays
+    legal. What changed is whether the resulting ring FITS -- that is smem.bytes.cta.max's problem.
+- tag: tma.ring.smem.forbidden
+  unit: tma
+  value: 131104
+  units: bytes of shared memory that sm90's recommended ring (4 stages x 32 KB boxes, one producer) needs,
+    against this machine's 101376 B ceiling. 4 x 16 KB (65600 B) and 8 x 8 KB (65600 B) fit; 8 x 16 KB,
+    16 x 8 KB and anything x 32 KB above 2 stages do not
+  short: sm90's 4 x 32KB ring does NOT fit
+  rule: 'This is where smem.bytes.cta.max stops being a number and becomes a design constraint. A ring
+    ported from an sm90 kernel at 4 stages x 32 KB fails to launch here rather than running slower. The
+    reachable rings at depth 4 top out at 16 KB boxes, which by tma.issue.warp halves that stage''s copy
+    column against what the same depth buys on H100.'
+- tag: tma.bw.dev.dram
+  unit: tma
+  value: 1503
+  units: GB/s aggregate delivered at 32 CTAs x 1 warp x 32 KB boxes, ring depth 2, DRAM-sourced with L2
+    flushed; 94% of ld.bw.dev.dram's 1598 GB/s plain-load ceiling and 84% of the 1.792 TB/s datasheet
+    peak. 16 KB boxes at depth 4 reach the same 1499. UPPER BOUND for this geometry only -- CTA and warp
+    scaling were not swept
+  short: <=1.50 TB/s at 32 CTAs x 1 warp
+  rule: 'TMA reaches essentially the same ceiling as a plain load here, so the copy engine is not the
+    constraint that the box size is. Divide bytes by 1.50 TB/s for an optimistic TMA floor and say that
+    only sweep A was run.'
