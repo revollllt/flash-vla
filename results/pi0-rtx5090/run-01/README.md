@@ -12,7 +12,7 @@ hand-written CUDA route: **46.794 → 29.749 ms, 1.57×**.
 | Target | `hardware/nvidia/rtx5090/pi0`, bf16, 18 layers, 10 denoise steps |
 | Checkpoint | seeded synthetic weights, `seed=0` — Pi0 needs no asset |
 | Fixture | `flash-vla/pi0-inputs-v1/seed-0` |
-| Shape | 3 views × 224², 768 visual + 200 prompt tokens, chunk 50 |
+| Shape | 3 views × 224², 768 visual tokens, no text prompt, chunk 50 |
 | Environment | RTX 5090, driver 580.142, torch 2.13.0+cu130, CUDA 13.1, `sm_120f` |
 | Protocol | `latency-v2`: fresh process, first capture per leg, warmup 5, 100 reps, median |
 
