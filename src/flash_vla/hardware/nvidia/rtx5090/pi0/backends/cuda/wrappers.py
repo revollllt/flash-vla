@@ -27,6 +27,29 @@ from flash_vla.hardware.nvidia.h100.pi0.backends.tilelang.wrappers import (
 
 from . import pointwise as cu
 
+#: Gate and up projections concatenated into one (dim, 2*ffn) weight, keyed by
+#: the pair of source tensors. A skinny GEMM on this part costs about 8 us
+#: before it reads a byte, and the expert's 51 x 1024 x 8192 packed form
+#: measured 10.31 us against 10.34 for the 4096-wide half -- so the second half
+#: of the weights rides along and the fixed cost is paid once.
+#:
+#: Built on first call, which the runner makes during warmup, before capture.
+#: `torch.cat` allocates, so a cache miss inside a capture would be illegal;
+#: the wrapper falls back to two GEMMs there rather than risking it.
+_PACKED_GATE_UP: dict[tuple[int, int], torch.Tensor] = {}
+
+
+def _packed_gate_up(gate_w, up_w):
+    """The two weights as one contiguous (dim, 2*ffn), or None inside a capture."""
+    key = (gate_w.data_ptr(), up_w.data_ptr())
+    packed = _PACKED_GATE_UP.get(key)
+    if packed is None:
+        if torch.cuda.is_current_stream_capturing():
+            return None
+        packed = torch.cat((gate_w, up_w), dim=1).contiguous()
+        _PACKED_GATE_UP[key] = packed
+    return packed
+
 #: Only the call sites this backend implements. A plan naming any other site
 #: for this backend is a routing error and `make_wrappers` says so.
 NAMES = frozenset({
@@ -83,11 +106,17 @@ def action_expert_norm_gated_ffn(x, scale, gate_w, up_w, gate_b, up_b, out,
     m, kdim = x.shape
     ffn = gate_w.shape[1]
     normed = scratch("expert_norm", (m, kdim), x.dtype, x.device)
-    gate = scratch("expert_gate", (m, ffn), x.dtype, x.device)
     cu.rms_norm(x, normed)
-    torch.mm(normed, gate_w, out=gate)
-    torch.mm(normed, up_w, out=out)
-    cu.gelu_mul(gate, out, out)
+    packed_w = _packed_gate_up(gate_w, up_w)
+    if packed_w is None:
+        gate = scratch("expert_gate", (m, ffn), x.dtype, x.device)
+        torch.mm(normed, gate_w, out=gate)
+        torch.mm(normed, up_w, out=out)
+        cu.gelu_mul(gate, out, out)
+        return out
+    both = scratch("expert_gate_up", (m, 2 * ffn), x.dtype, x.device)
+    torch.mm(normed, packed_w, out=both)
+    cu.gelu_mul_packed(both, out)
     return out
 
 
@@ -153,6 +182,11 @@ def llm_backbone_norm_gated_ffn(x, gate_w, up_w, out, x_norm, *, scratch):
     (tokens, ffn) and `x_norm` at least (tokens, dim). Written in place; safe
     during CUDA-graph capture.
     """
+    # NOT packed, unlike the expert's form. Packing pays where a skinny GEMM's
+    # fixed cost dominates; the backbone's 768 x 2048 x 16384 is compute-bound
+    # at 82-85% of this machine's measured tensor ceiling, and packing measured
+    # 1.01x there against 2.45x on the expert. It would also cost 2.4 GB of
+    # duplicated weights for nothing.
     m, kdim = x.shape
     ffn = gate_w.shape[1]
     normed = x_norm[:m]

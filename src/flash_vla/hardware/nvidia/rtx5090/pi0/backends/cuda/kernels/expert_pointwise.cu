@@ -323,3 +323,38 @@ extern "C" int gelu_launch(void *x, long long elements, void *stream) {
                                                         elements);
   return (int)cudaGetLastError();
 }
+
+// Gated activation over a PACKED projection: the gate and the up halves are
+// the two halves of one row rather than two tensors.
+//
+// Packing them lets the feed-forward run one GEMM instead of two, which at the
+// expert's shape is nearly free: 51 x 1024 x 8192 measured 10.31 us against
+// 10.34 for 51 x 1024 x 4096, so the second half of the weights rides along.
+// A skinny GEMM there costs about 8 us before it reads anything, and that fixed
+// cost is what packing pays once instead of twice.
+namespace {
+__global__ void gelu_mul_packed_kernel(const __nv_bfloat16 *__restrict__ packed,
+                                       __nv_bfloat16 *__restrict__ out,
+                                       int32_t rows, int32_t half) {
+  const int64_t total = int64_t(rows) * half;
+  for (int64_t i = int64_t(blockIdx.x) * blockDim.x + threadIdx.x; i < total;
+       i += int64_t(gridDim.x) * blockDim.x) {
+    const int32_t r = int32_t(i / half), c = int32_t(i - int64_t(r) * half);
+    const int64_t base = int64_t(r) * (int64_t(half) << 1) + c;
+    out[i] = __float2bfloat16(gelu_tanh(__bfloat162float(packed[base]))
+                              * __bfloat162float(packed[base + half]));
+  }
+}
+}  // namespace
+
+extern "C" int gelu_mul_packed_launch(const void *packed, void *out, int rows,
+                                      int half, void *stream) {
+  const int32_t threads = 256;
+  const int64_t total = int64_t(rows) * half;
+  int32_t blocks = (int32_t)((total + threads - 1) / threads);
+  if (blocks > 340) blocks = 340;   // 2x SM count [ld.ctas.dev.knee]
+  if (blocks < 1) blocks = 1;
+  gelu_mul_packed_kernel<<<blocks, threads, 0, (cudaStream_t)stream>>>(
+      (const __nv_bfloat16 *)packed, (__nv_bfloat16 *)out, rows, half);
+  return (int)cudaGetLastError();
+}

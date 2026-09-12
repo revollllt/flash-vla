@@ -5,4 +5,5 @@ iteration,change,latency_ms,decision,report,revision
 3,The same norm kernels on the backbone's two norm-fed call sites,34.423,keep,measurements/003-backbone-norm.json,8e42d41
 4,"Vision LayerNorm kernel, plain GELU, residual adds folded into the GEMM beta",32.753,keep,measurements/004-full-cuda.json,HEAD
 5,"Single-pass masked softmax: latency-neutral, cos 0.999992 -> 0.999999",32.886,uncertain,measurements/005-shipped-final.json,HEAD
-6,Fully fused CUDA-core attention kernel: 201 us against the split form's 25,,revert,,HEAD
+6,"Expert gate and up packed into one GEMM: 2.45x locally, backbone left alone at 1.01x",31.396,keep,measurements/006-packed-gate.json,HEAD
+7,Fully fused CUDA-core attention kernel: 201 us against the split form's 25,,revert,,HEAD

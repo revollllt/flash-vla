@@ -59,6 +59,7 @@ class Pi0RTX5090(Pi0):
     #:   the attention glue       40.177 -> 37.040      -3.137
     #:   the backbone's two norms  37.030 -> 34.423      -2.607
     #:   vision LayerNorm + addmm  34.324 -> 32.753      -1.571
+    #:   packed expert gate+up     32.886 -> 31.396      -1.490
     plan: Mapping[str, str] = {
         "action_expert_norm_qkv_rope": "cuda",
         "action_expert_norm_gated_ffn": "cuda",

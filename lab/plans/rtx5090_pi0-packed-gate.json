@@ -1,0 +1,16 @@
+{
+  "action_expert_norm_qkv_rope": "cuda",
+  "action_expert_norm_gated_ffn": "cuda",
+  "action_expert_attention": "cuda",
+  "action_expert_out_proj_residual": "cuda",
+  "action_expert_ffn_down_residual": "cuda",
+  "llm_backbone_norm_qkv_rope": "cuda",
+  "llm_backbone_norm_gated_ffn": "cuda",
+  "llm_backbone_out_proj_residual": "cuda",
+  "llm_backbone_ffn_down_residual": "cuda",
+  "llm_backbone_projector": "cuda",
+  "vision_encoder_norm_qkv": "cuda",
+  "vision_encoder_norm_ffn_up": "cuda",
+  "vision_encoder_out_proj_residual": "cuda",
+  "vision_encoder_ffn_down_residual": "cuda"
+}

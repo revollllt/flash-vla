@@ -94,6 +94,9 @@ def library(verbose: bool = False):
         lib.gelu_launch.argtypes = [ctypes.c_void_p, ctypes.c_longlong,
                                     ctypes.c_void_p]
         lib.gelu_launch.restype = ctypes.c_int
+        lib.gelu_mul_packed_launch.argtypes = [ctypes.c_void_p] * 2 + [
+            ctypes.c_int] * 2 + [ctypes.c_void_p]
+        lib.gelu_mul_packed_launch.restype = ctypes.c_int
         _LIB = lib
     return _LIB
 
@@ -146,6 +149,20 @@ def gelu_mul(gate: torch.Tensor, up: torch.Tensor, out: torch.Tensor) -> torch.T
     _check(library().gelu_mul_launch(gate.data_ptr(), up.data_ptr(),
                                      out.data_ptr(), gate.numel(), _stream()),
            "gelu_mul")
+    return out
+
+
+def gelu_mul_packed(packed: torch.Tensor, out: torch.Tensor) -> torch.Tensor:
+    """out[r, c] = gelu_tanh(packed[r, c]) * packed[r, half + c].
+
+    `packed` is (rows, 2 * half) contiguous bf16 on CUDA -- the gate and up
+    projections as the two halves of one row -- and `out` is (rows, half).
+    Written in place; safe during CUDA-graph capture.
+    """
+    rows, width = packed.shape
+    _check(library().gelu_mul_packed_launch(packed.data_ptr(), out.data_ptr(),
+                                            rows, width // 2, _stream()),
+           "gelu_mul_packed")
     return out
 
 
@@ -213,5 +230,6 @@ def expert_masked_softmax(scores: torch.Tensor, probs: torch.Tensor, *,
 
 
 __all__ = ["ATTENTION_BLOCK_M", "build", "expert_attention",
-           "expert_masked_softmax", "gelu_", "gelu_mul", "layer_norm",
+           "expert_masked_softmax", "gelu_", "gelu_mul", "gelu_mul_packed",
+           "layer_norm",
            "library", "rms_norm", "rope_scatter"]
