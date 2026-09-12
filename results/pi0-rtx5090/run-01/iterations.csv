@@ -11,3 +11,4 @@ iteration,change,latency_ms,decision,report,revision
 9,"Expert norm+QKV+RoPE fused into one kernel: the RMS gain-free scalar commutes with the GEMM",31.220,keep,measurements/009-fused-qkv.json,HEAD
 10,"Weight tile staged in natural [k][n] order and transposed by ldmatrix.trans: removes an 8-way shared bank conflict",31.078,keep,measurements/010-qkv-ldmatrix-trans.json,HEAD
 11,"Action-token output projection off torch: 11 launches to 3. Its three siblings measured neutral or worse and were left alone",30.999,keep,measurements/011-action-out-proj.json,HEAD
+12,"Packed gated activation vectorized to 128-bit: it was moving one bf16 per access, a quarter of gelu_mul's rate",30.867,keep,measurements/012-packed-gelu-vector.json,HEAD

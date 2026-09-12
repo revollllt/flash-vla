@@ -336,21 +336,35 @@ namespace {
 __global__ void gelu_mul_packed_kernel(const __nv_bfloat16 *__restrict__ packed,
                                        __nv_bfloat16 *__restrict__ out,
                                        int32_t rows, int32_t half) {
-  const int64_t total = int64_t(rows) * half;
+  // Eight columns per thread, so every access is 128-bit. The scalar form this
+  // replaced moved the same bytes at a quarter of the rate -- 61.72 us against
+  // `gelu_mul`'s 14.52 for the same 75.5 MB -- purely because it issued one
+  // 2-byte access per element. The gate and up halves are `half` apart within
+  // a row, and `half` is a multiple of 8, so both loads stay 16-byte aligned.
+  const int32_t vhalf = half >> 3;
+  const int64_t total = int64_t(rows) * vhalf;
   for (int64_t i = int64_t(blockIdx.x) * blockDim.x + threadIdx.x; i < total;
        i += int64_t(gridDim.x) * blockDim.x) {
-    const int32_t r = int32_t(i / half), c = int32_t(i - int64_t(r) * half);
+    const int32_t r = int32_t(i / vhalf), c = int32_t(i - int64_t(r) * vhalf) * 8;
     const int64_t base = int64_t(r) * (int64_t(half) << 1) + c;
-    out[i] = __float2bfloat16(gelu_tanh(__bfloat162float(packed[base]))
-                              * __bfloat162float(packed[base + half]));
+    int4 g = *(const int4 *)(packed + base);
+    const int4 u = *(const int4 *)(packed + base + half);
+    __nv_bfloat16 *gv = reinterpret_cast<__nv_bfloat16 *>(&g);
+    const __nv_bfloat16 *uv = reinterpret_cast<const __nv_bfloat16 *>(&u);
+#pragma unroll
+    for (int32_t j = 0; j < 8; ++j)
+      gv[j] = __float2bfloat16(gelu_tanh(__bfloat162float(gv[j]))
+                               * __bfloat162float(uv[j]));
+    *(int4 *)(out + int64_t(r) * half + c) = g;
   }
 }
 }  // namespace
 
 extern "C" int gelu_mul_packed_launch(const void *packed, void *out, int rows,
                                       int half, void *stream) {
+  if ((half & 7) != 0) return cudaErrorInvalidValue;  // needs 128-bit chunks
   const int32_t threads = 256;
-  const int64_t total = int64_t(rows) * half;
+  const int64_t total = int64_t(rows) * (half >> 3);
   int32_t blocks = (int32_t)((total + threads - 1) / threads);
   if (blocks > 340) blocks = 340;   // 2x SM count [ld.ctas.dev.knee]
   if (blocks < 1) blocks = 1;
