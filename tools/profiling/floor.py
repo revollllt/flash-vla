@@ -60,39 +60,70 @@ from flash_vla.inference import PLAN_NAMES, build, resolve
 #: The model form; bump when a column or a term changes.
 FORM_VERSION = "3"
 REPO = Path(__file__).resolve().parents[2]
-#: hardware axis of the identity -> the package holding `spec.py` and `measured/`.
-HARDWARE = {"h100-sxm5-80gb": "flash_vla.hardware.nvidia.h100"}
-#: The tagged rows the ceiling column consumes.
-TAGS = {
-    "stream": "ld.bw.dev.dram",      # TB/s marginal cold streaming rate behind `fixed_us`
-    "burst": "tma.bw.dev.burst",     # GB/s delivered end-to-end vs burst size, `curve_mb_gbs`
-    "tensor": "wgmma.clock.sm",      # TFLOP/s bf16 observed at real clocks
-    "launch": "launch.lat.dev.ramp",  # us of grid ramp per launch (information)
-    "knee": "ld.ctas.dev.knee",      # CTAs below which a cold read is derated (information)
+#: What differs between hardware axes. The roles are the model's; which constant
+#: fills each role, and which `spec.py` field carries each datasheet peak, are
+#: the machine's. sm90 names its tensor rate after `wgmma`, an instruction that
+#: does not exist on sm_120, so the mapping cannot be one table.
+class Axis:
+    __slots__ = ("package", "tags", "dram_attr", "tensor_key")
+
+    def __init__(self, package, tags, dram_attr, tensor_key):
+        self.package, self.tags = package, tags
+        self.dram_attr, self.tensor_key = dram_attr, tensor_key
+
+
+#: Roles the ceiling column consumes. `burst` is OPTIONAL: without a measured
+#: burst curve the ceiling falls back to the stream model at every size, which
+#: is the conservative reading and is reported as such.
+SM90_TAGS = {
+    "stream": "ld.bw.dev.dram",       # TB/s marginal cold rate behind `fixed_us`
+    "burst": "tma.bw.dev.burst",      # GB/s end-to-end vs burst size, `curve_mb_gbs`
+    "tensor": "wgmma.clock.sm",       # TFLOP/s bf16 observed at real clocks
+    "launch": "launch.lat.dev.ramp",  # us per launch (information)
+    "knee": "ld.ctas.dev.knee",       # CTAs below which a cold read is derated
+}
+#: sm_120 has no `wgmma` and no measured burst curve -- only sweep A of the tma
+#: unit has been run. The tensor role needs a RATE, so it points at the observed
+#: TFLOP/s row rather than at `mma.rate.sm.bf16`, which is per-cycle, or at
+#: `mma.clock.sm`, which is a clock and produced an 87x ceiling error when this
+#: mapping was first written.
+SM120_TAGS = {
+    "stream": "ld.bw.dev.dram",
+    "tensor": "mma.tflops.dev.bf16",
+    "launch": "launch.lat.dev.ramp",
+    "knee": "ld.ctas.dev.knee",
+}
+
+#: hardware axis of the identity -> where its spec and measured table live.
+HARDWARE = {
+    "h100-sxm5-80gb": Axis("flash_vla.hardware.nvidia.h100", SM90_TAGS,
+                           "HBM_BANDWIDTH_BYTES_PER_SECOND", "bf16"),
+    "rtx5090-32gb": Axis("flash_vla.hardware.nvidia.rtx5090", SM120_TAGS,
+                         "DRAM_BANDWIDTH_BYTES_PER_SECOND", "bf16_acc_fp32"),
 }
 #: Machine-readable fields a row may carry beside value/units/short/rule.
 ROW_FIELDS = ("fixed_us", "curve_mb_gbs", "derate_at_32")
 
 
-def hardware_axis(hardware: str) -> tuple[type, Path]:
-    """The datasheet spec class and the measured table of one hardware axis."""
-    package = HARDWARE.get(hardware)
-    if package is None:
+def hardware_axis(hardware: str) -> tuple[type, Path, Axis]:
+    """The datasheet spec class, the measured table, and the axis descriptor."""
+    axis = HARDWARE.get(hardware)
+    if axis is None:
         raise KeyError(f"no hardware axis known for {hardware!r}; known: {sorted(HARDWARE)}")
-    module = importlib.import_module(package)
-    spec = importlib.import_module(package + ".spec")
+    module = importlib.import_module(axis.package)
+    spec = importlib.import_module(axis.package + ".spec")
     spec_cls = next(getattr(spec, name) for name in spec.__all__ if name.endswith("Spec"))
-    return spec_cls, Path(module.__file__).parent / "measured" / "constants.yaml"
+    return spec_cls, Path(module.__file__).parent / "measured" / "constants.yaml", axis
 
 
-def load_constants(path: Path) -> tuple[dict[str, Any], str]:
+def load_constants(path: Path, tags: dict[str, str]) -> tuple[dict[str, Any], str]:
     """The tagged rows the ceiling uses (plus the machine's noise floor), and the table's version."""
     import yaml
     raw = path.read_bytes()
     doc = yaml.safe_load(raw)
     rows = {row["tag"]: row for row in doc.get("constants", [])}
     picked: dict[str, Any] = {"noise_floor_pct": float(doc["machine"]["noise_floor_pct"])}
-    for role, tag in TAGS.items():
+    for role, tag in tags.items():
         if tag not in rows:
             raise KeyError(f"constant {tag!r} ({role}) not in {path}")
         row = rows[tag]
@@ -100,23 +131,34 @@ def load_constants(path: Path) -> tuple[dict[str, Any], str]:
                         "short": row.get("short"),
                         **{f: row[f] for f in ROW_FIELDS if f in row}}
     for role, field in (("stream", "fixed_us"), ("burst", "curve_mb_gbs")):
-        if field not in picked[role]:
-            raise KeyError(f"row {TAGS[role]!r} in {path} lacks the machine-readable {field!r}")
+        if role in picked and field not in picked[role]:
+            raise KeyError(f"row {tags[role]!r} in {path} lacks the machine-readable {field!r}")
     return picked, hashlib.sha1(raw).hexdigest()[:12]
 
 
-def datasheet(spec_cls: type) -> dict[str, Any]:
-    """The two datasheet peaks the roofline divides by, with their source named."""
-    return {"hbm_bps": float(spec_cls.HBM_BANDWIDTH_BYTES_PER_SECOND),
-            "bf16_fps": float(spec_cls.TENSOR_CORE_DENSE_PEAK_FLOPS["bf16"]),
+def datasheet(spec_cls: type, axis: Axis) -> dict[str, Any]:
+    """The two datasheet peaks the roofline divides by, with their source named.
+
+    Which field carries each peak is the axis's, not the model's: consumer
+    Blackwell has no HBM, and its bf16 peak is qualified by accumulator width
+    because fp32 accumulate runs at half the fp16-accumulate rate there.
+    """
+    return {"hbm_bps": float(getattr(spec_cls, axis.dram_attr)),
+            "bf16_fps": float(spec_cls.TENSOR_CORE_DENSE_PEAK_FLOPS[axis.tensor_key]),
             "source": f"{spec_cls.__module__}.{spec_cls.__name__}"}
 
 
 def delivered_us(nbytes: int, constants: dict[str, Any]) -> tuple[float, str]:
     """Cold delivery time for `nbytes` from the measured rows, and the rule applied."""
     mb = nbytes / 1e6
-    curve = constants["burst"]["curve_mb_gbs"]
     stream = constants["stream"]
+    if "burst" not in constants:
+        # No measured burst curve on this axis; the stream model is the
+        # conservative reading at every size and the report says so.
+        return stream["fixed_us"] + mb / float(stream["value"]), (
+            f"{stream['fixed_us']} us + MB / {stream['value']} TB/s [{stream['tag']}]"
+            " (no burst curve measured on this axis)")
+    curve = constants["burst"]["curve_mb_gbs"]
     if mb < curve[0][0]:
         return stream["fixed_us"] + mb / float(stream["value"]), (
             f"{stream['fixed_us']} us + MB / {stream['value']} TB/s [{stream['tag']}]")
@@ -159,9 +201,9 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
     target = resolve(target)
     engine = build(target, plan or "shipped", seed=seed, **overrides)
     identity = engine.identity
-    spec_cls, constants_path = hardware_axis(identity.hardware)
-    constants, constants_version = load_constants(constants_path)
-    peaks = datasheet(spec_cls)
+    spec_cls, constants_path, axis = hardware_axis(identity.hardware)
+    constants, constants_version = load_constants(constants_path, axis.tags)
+    peaks = datasheet(spec_cls, axis)
     limit = 1.0 + headroom_pct / 100.0
 
     inputs = engine.sample_inputs(seed)

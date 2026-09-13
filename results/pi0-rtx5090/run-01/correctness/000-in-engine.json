@@ -1,0 +1,28 @@
+exit=0
+    }
+  },
+  "output": {
+    "metrics": {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    }
+  },
+  "replay_identical": true,
+  "finite": true,
+  "min_cosine": 1.0,
+  "max_rel_rms": 0.0,
+  "tolerance": {
+    "rel_rms_max": 0.066,
+    "cosine_min": 0.99978
+  },
+  "threshold_key": "shallow",
+  "within_tolerance": true,
+  "mode": "gate",
+  "passed": true
+}
+
+[exited with code 0]

@@ -80,22 +80,29 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
 
 def _pi0(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_size: int = 50,
          steps: int = 10, layers: int = 18, prompt_len: int = 0, device: str = "cuda",
-         declare: bool = False):
-    from flash_vla.hardware.nvidia.h100.pi0 import TARGET
+         declare: bool = False, target=None):
+    """Build a Pi0 runner on seeded synthetic weights.
+
+    `target` selects the hardware Target; it defaults to H100. Pi0's checkpoint
+    and fixture are generated from `seed` and carry no hardware, so the two
+    Targets share this factory rather than duplicating it.
+    """
+    if target is None:
+        from flash_vla.hardware.nvidia.h100.pi0 import TARGET as target
     from flash_vla.models.pi0 import random_checkpoint
     from flash_vla.models.pi0.spec import random_checkpoint_revision
 
     config = dict(num_views=num_views, chunk_size=chunk_size, steps=steps, layers=layers)
     checkpoint_id = random_checkpoint_revision(seed)
     if declare:
-        runner = ModelRunner(TARGET, None, checkpoint_id=checkpoint_id,
+        runner = ModelRunner(target, None, checkpoint_id=checkpoint_id,
                              checkpoint_digest=checkpoint_id, plan=plan,
                            device=device, capture=False,
                            prompt_len=prompt_len, **config)
     else:
         checkpoint = random_checkpoint(num_views=num_views, chunk_size=chunk_size,
                                        prompt_len=prompt_len, seed=seed, device=device)
-        runner = ModelRunner(TARGET, checkpoint, checkpoint_id=checkpoint_id,
+        runner = ModelRunner(target, checkpoint, checkpoint_id=checkpoint_id,
                              checkpoint_digest=checkpoint_id, plan=plan,
                            device=device, **config)
     fixture = {"producer": "flash-vla/pi0-inputs-v1", "seed": seed}
@@ -153,16 +160,28 @@ def _lingbot(plan: Any = "shipped", *, seed: int = 42, steps: int = 10, layers: 
     return runner
 
 
+def _pi0_rtx5090(plan: Any = "shipped", **overrides):
+    """Pi0 on the RTX 5090. Same model, same synthetic weights, sm_120."""
+    from flash_vla.hardware.nvidia.rtx5090.pi0 import TARGET
+    return _pi0(plan, target=TARGET, **overrides)
+
+
 #: Target name -> factory. Short aliases resolve through `resolve`.
 TARGETS: dict[str, Callable[..., Any]] = {
     "hardware/nvidia/h100/lingbot_vla": _lingbot,
     "hardware/nvidia/h100/pi05": _pi05,
     "hardware/nvidia/h100/pi0": _pi0,
+    "hardware/nvidia/rtx5090/pi0": _pi0_rtx5090,
 }
 _ALIASES = {"h100/pi05": "hardware/nvidia/h100/pi05", "pi05": "hardware/nvidia/h100/pi05",
             "h100/pi0": "hardware/nvidia/h100/pi0", "pi0": "hardware/nvidia/h100/pi0",
             "h100/lingbot_vla": "hardware/nvidia/h100/lingbot_vla",
-            "lingbot_vla": "hardware/nvidia/h100/lingbot_vla"}
+            "lingbot_vla": "hardware/nvidia/h100/lingbot_vla",
+            "rtx5090/pi0": "hardware/nvidia/rtx5090/pi0",
+            "5090/pi0": "hardware/nvidia/rtx5090/pi0",
+            # The `lab/plans/<target>-<name>.json` prefix form, which cannot
+            # carry a slash.
+            "rtx5090_pi0": "hardware/nvidia/rtx5090/pi0"}
 
 #: The two plan names every Target understands.
 PLAN_NAMES = ("shipped", "reference")

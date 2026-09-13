@@ -1,0 +1,11 @@
+[15:41:25] : Warning: [ThreadSync] Hoisting sync from inside if to before if. Condition is not safe for in-if sync: tx // 16 == 8
+  action_expert_norm_qkv_rope        PASS         cos 0.999993  rel_rms 3.707e-03
+  action_expert_action_out_proj      PASS         cos 0.999990  rel_rms 4.454e-03
+  action_expert_action_in_proj       PASS         cos 0.999995  rel_rms 3.060e-03
+  vision_encoder_norm_qkv            PASS         cos 0.999996  rel_rms 2.822e-03
+  vision_encoder_patch_embed         PASS         cos 0.999995  rel_rms 3.214e-03
+  gelu form vs tanh approximation    PASS         cos 1.000000000  rel_rms 2.260e-08
+
+6/6 checked, 0 unchecked (TileLang will not run here)
+
+[exited with code 0]

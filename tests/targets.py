@@ -77,12 +77,20 @@ def check_lab_plans() -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for path in sorted((REPO / "lab" / "plans").glob("*.json")):
         prefix = path.stem.split("-")[0]
+        # The prefix names a Target alias. It used to be resolved only as
+        # `h100/<prefix>`, which no longer covers the repository: a second
+        # hardware axis needs the alias to carry its own hardware. Try the
+        # prefix as written first, then the historical h100-relative form so
+        # every existing plan keeps binding.
         try:
-            target = resolve("h100/" + prefix)
+            target = resolve(prefix)
         except KeyError:
-            _check(results, f"lab plan {path.name}", False,
-                   f"prefix {prefix!r} names no Target (lab/plans/README.md)")
-            continue
+            try:
+                target = resolve("h100/" + prefix)
+            except KeyError:
+                _check(results, f"lab plan {path.name}", False,
+                       f"prefix {prefix!r} names no Target (lab/plans/README.md)")
+                continue
         try:
             runner = declare(target, str(path))
             ok = set(runner.identity.plan) == set(runner.graph.call_sites)
