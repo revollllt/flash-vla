@@ -152,7 +152,7 @@ sources: [...]
 ## Confidence Levels
 
 - **`verified`**: Requires ≥1 `official-doc` + ≥1 `upstream-code` in sources. Enforced by validator.
-- **`measured`** (*added here*): established on this repository's H100. Requires an `evidence_basis` entry of type `benchmark` or `reproduction` whose `source_id` is in the page's `sources`: a `hardware-unit-test` document, a reference-grade template's `STATUS` block (`doc-kernel-design-templates`), or an Agent Note (`note-<stem>`). Enforced by validator.
+- **`measured`** (*added here*): established on one of this repository's measured hardware axes — the page's `architectures` says which machine, since the tag namespace is shared across axes and the numbers are not. Requires an `evidence_basis` entry of type `benchmark` or `reproduction` whose `source_id` is in the page's `sources`: a `hardware-unit-test` document, a reference-grade template's `STATUS` block (`doc-kernel-design-templates`), or an Agent Note (`note-<stem>`). Enforced by validator.
 - **`source-reported`**: Cited by ≥1 authoritative source (paper, major blog, major repo).
 - **`inferred`**: Synthesized from multiple sources, no single authoritative one.
 - **`experimental`**: Undocumented, PTX tricks, version-sensitive. Include CUDA version.

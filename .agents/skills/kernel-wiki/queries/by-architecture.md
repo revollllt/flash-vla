@@ -190,6 +190,7 @@ Source-PR pages whose validated evidence review found no family-level or exact a
 |------|------|
 | [CUDA Programming Guide: Programmatic Dependent Launch](../sources/docs/cuda-programming-guide-pdl.md) | `sources/docs/cuda-programming-guide-pdl.md` |
 | [CUTLASS CuTe DSL Documentation](../sources/docs/cutlass-cute-dsl.md) | `sources/docs/cutlass-cute-dsl.md` |
+| [hardware-unit-test: the measured machine constants of this repository's machines](../sources/docs/hardware-unit-test.md) | `sources/docs/hardware-unit-test.md` |
 | [NVIDIA Blackwell Tuning Guide](../sources/docs/nvidia-blackwell-tuning-guide.md) | `sources/docs/nvidia-blackwell-tuning-guide.md` |
 | [PTX ISA Fifth-Generation Tensor Core and CLC Reference](../sources/docs/nvidia-ptx-isa-sm100.md) | `sources/docs/nvidia-ptx-isa-sm100.md` |
 | [[Kernel] Add FP8 KV cache support to Triton MLA decode attention](../sources/prs/vllm/PR-34597.md) | `sources/prs/vllm/PR-34597.md` |
@@ -236,7 +237,7 @@ Source-PR pages whose validated evidence review found no family-level or exact a
 | [CUTLASS CuTe DSL Documentation](../sources/docs/cutlass-cute-dsl.md) | `sources/docs/cutlass-cute-dsl.md` |
 | [CUTLASS 4.7.1 Hopper headers, as pinned in third_party/cutlass](../sources/docs/cutlass-hopper.md) | `sources/docs/cutlass-hopper.md` |
 | [FlashAttention-3: Fast and Accurate Attention with Asynchrony and Low-precision](../sources/docs/flash-attention-3.md) | `sources/docs/flash-attention-3.md` |
-| [hardware-unit-test: the measured machine constants of this repository's H100](../sources/docs/hardware-unit-test.md) | `sources/docs/hardware-unit-test.md` |
+| [hardware-unit-test: the measured machine constants of this repository's machines](../sources/docs/hardware-unit-test.md) | `sources/docs/hardware-unit-test.md` |
 | [sm90 templates: compilable, graded skeletons and reference machines (artifacts/kernels/sm90-templates)](../sources/docs/kernel-design-templates.md) | `sources/docs/kernel-design-templates.md` |
 | [Mirage Persistent Kernel: compiling LLM inference into a task-graph megakernel](../sources/docs/mirage-persistent-kernel.md) | `sources/docs/mirage-persistent-kernel.md` |
 | [ncu-report: Nsight Compute on sm90, the metric vocabulary and the diagnosis playbook](../sources/docs/ncu-report.md) | `sources/docs/ncu-report.md` |
@@ -293,7 +294,7 @@ Source-PR pages whose validated evidence review found no family-level or exact a
 | [sm90 has no sub-8-bit tensor core: unpack INT4 and FP4 weights in registers](../wiki/techniques/register-unpack-sub-byte.md) | `wiki/techniques/register-unpack-sub-byte.md` |
 | [Release ring frames on wgmma retirement, before the epilogue](../wiki/techniques/release-on-retirement.md) | `wiki/techniques/release-on-retirement.md` |
 | [Glue ops are bound by row traversals and launches: fuse to remove a traversal, bracket with PDL](../wiki/techniques/row-traversal-fusion.md) | `wiki/techniques/row-traversal-fusion.md` |
-| [Same-process A/B/A, min under unpinned clocks, and the in-graph regime](../wiki/techniques/same-process-aba.md) | `wiki/techniques/same-process-aba.md` |
+| [Historical A/B/A measurement notes](../wiki/techniques/same-process-aba.md) | `wiki/techniques/same-process-aba.md` |
 | [Apply per-K factors to the register fragment, not in shared memory](../wiki/techniques/scale-on-register-fragment.md) | `wiki/techniques/scale-on-register-fragment.md` |
 | [Shared Memory Swizzling](../wiki/techniques/swizzling.md) | `wiki/techniques/swizzling.md` |
 | [Tile Scheduling Strategies](../wiki/techniques/tile-scheduling.md) | `wiki/techniques/tile-scheduling.md` |
