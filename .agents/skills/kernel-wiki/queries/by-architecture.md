@@ -188,6 +188,7 @@ Source-PR pages whose validated evidence review found no family-level or exact a
 
 | Page | Path |
 |------|------|
+| [humming: sub-byte weight quantization, and a persistent stream-K scheduler carried across architectures](../sources/blogs/humming.md) | `sources/blogs/humming.md` |
 | [CUDA Programming Guide: Programmatic Dependent Launch](../sources/docs/cuda-programming-guide-pdl.md) | `sources/docs/cuda-programming-guide-pdl.md` |
 | [CUTLASS CuTe DSL Documentation](../sources/docs/cutlass-cute-dsl.md) | `sources/docs/cutlass-cute-dsl.md` |
 | [hardware-unit-test: the measured machine constants of this repository's machines](../sources/docs/hardware-unit-test.md) | `sources/docs/hardware-unit-test.md` |
@@ -196,6 +197,7 @@ Source-PR pages whose validated evidence review found no family-level or exact a
 | [[Kernel] Add FP8 KV cache support to Triton MLA decode attention](../sources/prs/vllm/PR-34597.md) | `sources/prs/vllm/PR-34597.md` |
 | [Cluster Launch Control (CLC)](../wiki/hardware/clc.md) | `wiki/hardware/clc.md` |
 | [Programmatic Dependent Launch / Grid Dependency Control](../wiki/hardware/pdl-gdc.md) | `wiki/hardware/pdl-gdc.md` |
+| [Stream-K: split only the partial wave, and give each fixup role to the CTA that arrives at the right time](../wiki/techniques/stream-k.md) | `wiki/techniques/stream-k.md` |
 
 ### `sm121`
 
@@ -225,7 +227,7 @@ Source-PR pages whose validated evidence review found no family-level or exact a
 | [FlashInfer norm, activation and positional-encoding kernels](../sources/blogs/flashinfer-glue-kernels.md) | `sources/blogs/flashinfer-glue-kernels.md` |
 | [FlashMLA upstream README](../sources/blogs/flashmla.md) | `sources/blogs/flashmla.md` |
 | [HazyResearch Megakernels: no bubbles, a low-latency Llama decode step as one kernel](../sources/blogs/hazyresearch-megakernels.md) | `sources/blogs/hazyresearch-megakernels.md` |
-| [humming: sub-byte weight quantization kernels with a fused prmt lookup](../sources/blogs/humming.md) | `sources/blogs/humming.md` |
+| [humming: sub-byte weight quantization, and a persistent stream-K scheduler carried across architectures](../sources/blogs/humming.md) | `sources/blogs/humming.md` |
 | [learn-cuda 12_megakernel: a flag-barrier megakernel](../sources/blogs/learn-cuda-megakernel.md) | `sources/blogs/learn-cuda-megakernel.md` |
 | [Marlin: mixed-precision INT4xFP16 GEMM kernels for LLM inference](../sources/blogs/marlin.md) | `sources/blogs/marlin.md` |
 | [NVIDIA Developer Code Samples](../sources/blogs/nvidia-code-samples.md) | `sources/blogs/nvidia-code-samples.md` |
@@ -296,6 +298,7 @@ Source-PR pages whose validated evidence review found no family-level or exact a
 | [Glue ops are bound by row traversals and launches: fuse to remove a traversal, bracket with PDL](../wiki/techniques/row-traversal-fusion.md) | `wiki/techniques/row-traversal-fusion.md` |
 | [Historical A/B/A measurement notes](../wiki/techniques/same-process-aba.md) | `wiki/techniques/same-process-aba.md` |
 | [Apply per-K factors to the register fragment, not in shared memory](../wiki/techniques/scale-on-register-fragment.md) | `wiki/techniques/scale-on-register-fragment.md` |
+| [Stream-K: split only the partial wave, and give each fixup role to the CTA that arrives at the right time](../wiki/techniques/stream-k.md) | `wiki/techniques/stream-k.md` |
 | [Shared Memory Swizzling](../wiki/techniques/swizzling.md) | `wiki/techniques/swizzling.md` |
 | [Tile Scheduling Strategies](../wiki/techniques/tile-scheduling.md) | `wiki/techniques/tile-scheduling.md` |
 | [One 3-D TMA box loads a row-major deep-K tile](../wiki/techniques/tma-3d-box-row-major.md) | `wiki/techniques/tma-3d-box-row-major.md` |

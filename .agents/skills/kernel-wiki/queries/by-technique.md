@@ -28,6 +28,7 @@
 | [Shared Memory Swizzling](../wiki/techniques/swizzling.md) | swizzling, shared-memory-optimization, tma | sm100, sm90 | source-reported | snippet | 3 |
 | [Software Pipelining and Multi-Stage Buffering](../wiki/techniques/pipeline-stages.md) | pipeline-stages, double-buffering, tma, mbarrier | sm100, sm90 | source-reported | snippet | 4 |
 | [Software-Emulated Exponential](../wiki/techniques/software-exp.md) | software-exp, attention | sm100 | source-reported | snippet | 2 |
+| [Stream-K: split only the partial wave, and give each fixup role to the CTA that arrives at the right time](../wiki/techniques/stream-k.md) | stream-k, split-k, tile-scheduling, persistent-kernel | sm90, sm120 | source-reported | snippet | 3 |
 | [The PDL wait is derived; the trigger has to be swept](../wiki/techniques/pdl-placement.md) | pdl, griddepcontrol, pdl-placement, ablation | sm90 | source-reported | snippet | 4 |
 | [Tile Scheduling Strategies](../wiki/techniques/tile-scheduling.md) | tile-scheduling, clc, persistent-kernel | sm100, sm90 | source-reported | snippet | 3 |
 | [Two A fragments by stage parity, fully unrolled: the fix for ptxas C7518](../wiki/techniques/wgmma-rs-fragment-parity.md) | wgmma, register-fragments, loop-unrolling, ldmatrix | sm90 | measured | snippet | 4 |

@@ -7,7 +7,7 @@ tags: [tile-scheduling, clc, persistent-kernel]
 confidence: source-reported
 reproducibility: snippet
 prerequisites: [hw-clc]
-related: [hw-clc, technique-persistent-kernels, pattern-low-sm-utilization]
+related: [hw-clc, technique-persistent-kernels, technique-stream-k, pattern-low-sm-utilization]
 sources: [doc-ptx-isa-sm100, doc-cutlass-blackwell, doc-cutlass-cute-dsl]
 blackwell_relevance: "SM100 CLC permits a running cluster to acquire an ID from a not-yet-launched cluster; raster order and locality remain software scheduling choices."
 ---
@@ -40,3 +40,6 @@ A software persistent scheduler repeatedly maps acquired IDs to work. On SM100, 
 - Report the exact GPU, SM count, grid size, raster, cluster shape, and matrix dimensions.
 - Separate locality effects from tail effects and load imbalance.
 - Do not claim that CLC removes the final shortage of parallel work; when fewer independent tiles remain than SMs, some SMs must be idle.
+- Every schedule on this page maps whole tiles. When the tile count itself has
+  no value near the SM count, the remaining lever is to stop mapping tiles:
+  see [stream-K](stream-k.md).

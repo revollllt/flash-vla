@@ -4,7 +4,7 @@ title: "Tail Effect — Last Wave Underutilization"
 type: pattern
 tags: [persistent-kernel, clc, tile-scheduling]
 symptoms: [tail-effect, low-sm-utilization, wave-quantization]
-candidate_techniques: [technique-persistent-kernels, hw-clc, technique-tile-scheduling]
+candidate_techniques: [technique-persistent-kernels, hw-clc, technique-tile-scheduling, technique-stream-k]
 related: [pattern-low-sm-utilization]
 sources: [doc-blackwell-microbenchmarking, doc-ptx-isa-sm100]
 ---
