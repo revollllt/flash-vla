@@ -65,8 +65,29 @@ shallow metrics before A/B/B/A graphs of 15 raw samples per leg. Numerical
 failure raises before that candidate is timed. Both timed paths exclude
 prepare; end-to-end validation remains a later step if a candidate wins.
 
-CPU source preparation only: AST check passed without importing Torch or
-Triton. No JIT, compilation or GPU execution has been run. The script depends
+The run used deployment revision `7b2d9d0` and all 18 real weight pairs.
+All three tiles produced outputs exactly equal to the captured packed path.
+
+| Tile | A1 / A2 us | B1 / B2 us | Registers / shared bytes |
+|---|---:|---:|---:|
+| 32x32x32 | 16.0853 / 16.1476 | 18.1902 / 18.1920 | 64 / 12,288 |
+| 16x64x32 | 16.0462 / 16.1280 | 14.3022 / 14.3253 | 64 / 18,432 |
+| 16x32x32 | 16.0871 / 16.0960 | 15.9964 / 16.0000 | 40 / 10,240 |
+
+All compiled without spills. The 16x64x32 winner saves approximately
+1.72-1.83 us/call against its bracketing controls, implying 0.31-0.33 ms over
+180 calls before full-model validation. Its control drift was 0.0818 us;
+first samples were typically 1-1.5 us high and remain in the raw results.
+
+The winner's PTX uses `mma.sync.aligned.m16n8k16` with BF16 inputs and FP32
+accumulation. Both accumulator sets explicitly pass through `cvt.rn.bf16.f32`
+and `cvt.f32.bf16` before bias additions. Surrounding FP32 arithmetic retains
+separate `add.rn` and `mul.rn` operations. FMA instructions occur inside the
+inlined libdevice `__nv_tanhf` implementation, not through expression fusion.
+Raw JSON, log and all three PTX files are in the deployment checkout under
+`artifacts/rtx5090-pi05/gpt6-expert-dual-dot-screen*`.
+
+AST source checks and the bounded GPU screen passed. The script depends
 on `lab/pi05/cutlass_gemm_screen.py` from `9b6449e` for the existing graph timer.
 Use `--source-checkout` to select the deployed model/cache and the same
 checkpoint options and seed used by the other Pi0.5 probes.
