@@ -12,6 +12,7 @@ from . import fused_attention as _fused_attention
 from . import fused_residual as _fused_residual
 from . import cutlass_backbone as _cutlass_backbone
 from . import fused_vision as _fused_vision
+from . import fused_prefix_qkv as _fused_prefix_qkv
 
 BACKENDS = {
     "torch": _torch,
@@ -23,6 +24,7 @@ BACKENDS = {
     "fused-residual": _fused_residual,
     "cutlass-backbone": _cutlass_backbone,
     "fused-vision": _fused_vision,
+    "fused-prefix-qkv": _fused_prefix_qkv,
 }
 
 REGISTRY = Registry(BACKENDS, default="torch")
