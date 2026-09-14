@@ -17,25 +17,48 @@ iteration,change,latency_ms,decision,report,revision
 3,Failed numerical check,,failed,,commit-d
 ```
 
-Three optional columns drive the figure and nothing else. `label` is the short
-name under panel B's axis, `group` colours a series — the segment a change
-touched reads well — and `callout` annotates that point in panel A; leave it
-blank on the rows that do not need one.
+## The progress figure
+
+One renderer serves every run, on any hardware and model. It needs nothing but
+the table; everything else has a default or a fallback, so a new run gets a
+figure on its first trial and improves it later.
 
 ```bash
-python -m lab.results curve results/<target>/<run>/iterations.csv \
-  --out results/<target>/<run>/progress.svg \
-  --title "Pi0 on RTX 5090: 46.794 -> 27.556 ms" --subtitle "..."
+python -m lab.results curve results/<target>/<run>          # writes progress.svg beside the table
+python -m lab.results rebuild                               # refreshes every run's figure and the index
 ```
 
-`--roofline-ms` adds panel C, the share of the floor each milestone reached;
-`--reachable-ms` draws the reference line for a ceiling re-derived at the share
-the stack actually delivers. Both come from the floor model, so state which
-report they came from in `--note` rather than leaving the denominator implicit.
+Three optional CSV columns: `label` is the short name under panel B's axis and
+falls back to the `change` text trimmed at a word boundary, `group` colours a
+series — the segment a change touched reads well — and `callout` annotates that
+point in panel A; leave it blank on the rows that do not need one.
+
+Settings that are not per-row live in `figure.json` beside the table, so
+regenerating needs no remembered flags and the figure's parameters are reviewed
+like any other file:
+
+```json
+{
+  "title": "Pi0 on RTX 5090: 46.794 -> 27.556 ms",
+  "subtitle": "Deployed end-to-end latency - bf16, 18 layers, 10 denoise steps",
+  "metric_label": "deployed end-to-end median (ms)",
+  "roofline_ms": 22.106,
+  "reachable_ms": 23.76,
+  "note": "where those two numbers came from"
+}
+```
+
+Every key is optional; `title` falls back to `first -> last`, and a command-line
+flag of the same name wins over the file. `roofline_ms` adds panel C, the share
+of the floor each milestone reached, and `reachable_ms` draws the reference line
+for that ceiling re-derived at the share the stack actually delivers — both come
+from the floor model, so name the report they came from in `note` rather than
+leaving a ratio unattributed.
 
 Panel A needs each row's `report` to resolve, since the time comes from the
 benchmark JSON's `measurement_context.timestamp`; with none resolvable the
-figure falls back to panel B alone.
+figure falls back to panel B alone. Output is byte-stable, so regenerating a
+figure that has not changed leaves the tree clean.
 
 Use `start` for the measured starting version, `keep` for an accepted model,
 `revert` for a rejected trial, `uncertain` when the evidence is inconclusive,

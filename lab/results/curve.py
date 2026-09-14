@@ -12,14 +12,33 @@ Columns beyond the table's required ones, all optional:
     group    colour series, e.g. the segment a change touched
     callout  annotate this point in panel A; leave blank for the rest
 
-Times come from each row's benchmark JSON (`measurement_context.timestamp`).
-When none resolve, panel A is dropped rather than faked.
+A run directory may also carry `figure.json` beside its table, so regenerating
+the figure needs no remembered command-line flags:
+
+    {"title": ..., "subtitle": ..., "note": ...,
+     "metric_label": "deployed end-to-end median (ms)",
+     "roofline_ms": 22.106, "reachable_ms": 23.76}
+
+Every key is optional and an explicit argument wins over the file. Point
+`render` at the run directory and it finds the table, the settings and where to
+write. Times come from each row's benchmark JSON
+(`measurement_context.timestamp`); when none resolve, panel A is dropped rather
+than faked.
 """
 import csv
 import json
 from datetime import datetime
 from pathlib import Path
-from textwrap import fill
+from textwrap import fill, shorten
+
+#: Conventional names inside a run directory, so a caller can pass the
+#: directory and nothing else.
+TABLE_NAME, SETTINGS_NAME, FIGURE_NAME = "iterations.csv", "figure.json", "progress.svg"
+
+#: Settings `figure.json` may carry. Anything else in the file is ignored, so a
+#: run can keep its own notes there without breaking the renderer.
+SETTINGS = ("title", "subtitle", "note", "metric_label", "roofline_ms",
+            "reachable_ms")
 
 #: Retained models. Only these advance the line; the rest are trials.
 RETAINED = {"start", "keep"}
@@ -60,7 +79,9 @@ def _milestones(rows, root):
             continue
         group = (row.get("group") or "").strip() or "run"
         groups.setdefault(group, PALETTE[len(groups) % len(PALETTE)])
-        label = (row.get("label") or "").strip() or row["change"][:34].rstrip(" ,.")
+        # Trim at a word boundary: a mid-word cut reads as a typo on an axis.
+        label = ((row.get("label") or "").strip()
+                 or shorten(row["change"], width=38, placeholder="…"))
         out.append({
             "iteration": int(row["iteration"]),
             "ms": float(row["latency_ms"]),
@@ -169,15 +190,38 @@ def _order_axis(ax, points, order):
                        rotation=32, ha="right", fontsize=8.5, color=MUTED)
 
 
-def render(table, output, *, title=None, subtitle=None, note=None,
-           roofline_ms=None, reachable_ms=None):
+def resolve(source, output=None):
+    """(table, output, settings) for a run directory or a table path."""
+    source = Path(source)
+    directory = source if source.is_dir() else source.parent
+    table = source / TABLE_NAME if source.is_dir() else source
+    settings_path = directory / SETTINGS_NAME
+    settings = {}
+    if settings_path.is_file():
+        stored = json.loads(settings_path.read_text())
+        settings = {key: stored[key] for key in SETTINGS if key in stored}
+    return table, Path(output) if output else directory / FIGURE_NAME, settings
+
+
+def render(source, output=None, *, title=None, subtitle=None, note=None,
+           metric_label=None, roofline_ms=None, reachable_ms=None):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.dates import DateFormatter
     from matplotlib.lines import Line2D
 
-    table, output = Path(table), Path(output)
+    table, output, settings = resolve(source, output)
+    given = dict(title=title, subtitle=subtitle, note=note,
+                 metric_label=metric_label, roofline_ms=roofline_ms,
+                 reachable_ms=reachable_ms)
+    # An explicit argument wins; the file supplies the rest.
+    for key, value in given.items():
+        if value is None and key in settings:
+            given[key] = settings[key]
+    title, subtitle, note = given["title"], given["subtitle"], given["note"]
+    roofline_ms, reachable_ms = given["roofline_ms"], given["reachable_ms"]
+    metric = given["metric_label"] or "deployed end-to-end median (ms)"
     rows = _rows(table)
     points, groups = _milestones(rows, table.parent)
     trials = _trials(rows, table.parent, groups)
@@ -229,8 +273,7 @@ def render(table, output, *, title=None, subtitle=None, note=None,
                            edgecolor=trial["colour"], linewidth=1.2, zorder=2)
         ax.set_title("A   Measurement time", loc="left", fontsize=11.5,
                      weight="bold", color=INK, pad=10)
-        ax.set_ylabel("deployed end-to-end median (ms)", fontsize=9.5,
-                      color=MUTED)
+        ax.set_ylabel(metric, fontsize=9.5, color=MUTED)
         ax.xaxis.set_major_formatter(DateFormatter("%b %d\n%H:%M"))
         ax.margins(x=0.10, y=0.34)
         ax.autoscale_view()
@@ -261,7 +304,7 @@ def render(table, output, *, title=None, subtitle=None, note=None,
         _order_axis(ax, points, order)
     ax.set_title("B   Milestone order", loc="left", fontsize=11.5,
                  weight="bold", color=INK, pad=10)
-    ax.set_ylabel("deployed end-to-end median (ms)", fontsize=9.5, color=MUTED)
+    ax.set_ylabel(metric, fontsize=9.5, color=MUTED)
     ax.margins(x=0.04, y=0.20)
     order_ax = ax
 
@@ -306,7 +349,11 @@ def render(table, output, *, title=None, subtitle=None, note=None,
              fontsize=8.5, color=MUTED, linespacing=1.6)
 
     output.parent.mkdir(parents=True, exist_ok=True)
+    # Byte-stable output: the hash salt fixes the generated element ids and
+    # dropping the creation date removes the only remaining difference between
+    # two renders, so regenerating a figure does not dirty the tree.
     with matplotlib.rc_context({"svg.hashsalt": "flash-vla"}):
-        fig.savefig(output, format=output.suffix.lstrip(".") or "svg")
+        fig.savefig(output, format=output.suffix.lstrip(".") or "svg",
+                    metadata={"Date": None} if output.suffix == ".svg" else None)
     plt.close(fig)
     return output

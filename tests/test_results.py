@@ -74,3 +74,34 @@ def test_index_keeps_hand_written_notes_and_names_the_legacy_table(tmp_path):
     (tmp_path / "README.md").write_text(text + "\nA hand-written caveat.\n")
     index.rebuild(tmp_path)
     assert "A hand-written caveat." in (tmp_path / "README.md").read_text()
+
+
+def test_curve_reads_a_run_directory_and_renders_the_same_bytes_twice(tmp_path):
+    """One renderer for every run: the table is enough, figure.json tunes it."""
+    from lab.results import curve
+
+    run = tmp_path / "rig" / "run-01"
+    run.mkdir(parents=True)
+    (run / "iterations.csv").write_text(
+        "iteration,change,latency_ms,decision,report,revision\n"
+        "0,A very long change description that must be trimmed somewhere,10.0,start,,a\n"
+        "1,Second,9.0,keep,,b\n"
+        "3,Third after a rejected trial,8.0,keep,,c\n")
+
+    first = curve.render(run)
+    assert first == run / "progress.svg"
+    before = first.read_bytes()
+    assert curve.render(run).read_bytes() == before, "output must be byte-stable"
+
+    # A label is trimmed at a word boundary rather than mid-word.
+    _, _, settings = curve.resolve(run)
+    assert settings == {}
+    rows = curve._rows(run / "iterations.csv")
+    points, _ = curve._milestones(rows, run)
+    assert points[0]["label"].endswith("…") and " " in points[0]["label"]
+    assert not points[0]["label"].rstrip("…").endswith(" ")
+
+    (run / "figure.json").write_text('{"title": "T", "roofline_ms": 4.0, "ignored": 1}')
+    _, _, settings = curve.resolve(run)
+    assert settings == {"title": "T", "roofline_ms": 4.0}
+    assert curve.render(run).exists()

@@ -1,0 +1,8 @@
+{
+  "title": "Pi0 on RTX 5090: 46.794 → 27.556 ms",
+  "subtitle": "Deployed end-to-end latency · bf16, 18 layers, 10 denoise steps · latency-v2 protocol",
+  "metric_label": "deployed end-to-end median (ms)",
+  "roofline_ms": 22.106,
+  "reachable_ms": 23.76,
+  "note": "Panel C divides by the floor model's measured ceiling (artifacts/profile/floor7.json). The reachable line re-derives that ceiling at the 90% of tensor peak this stack delivers, not the 100% the model assumes."
+}

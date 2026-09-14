@@ -15,9 +15,11 @@ def main(argv=None):
     plotting = commands.add_parser("plot", help="plot one saved trace")
     plotting.add_argument("trace", type=Path)
     plotting.add_argument("--out", type=Path, required=True)
-    curve = commands.add_parser("curve", help="plot a new run's iteration CSV")
-    curve.add_argument("table", type=Path)
-    curve.add_argument("--out", type=Path, required=True)
+    curve = commands.add_parser("curve", help="plot a run directory or its CSV")
+    curve.add_argument("source", type=Path,
+                       help="run directory, or the iterations.csv inside one")
+    curve.add_argument("--out", type=Path,
+                       help="default: progress.svg beside the table")
     curve.add_argument("--title")
     curve.add_argument("--subtitle")
     curve.add_argument("--note", help="one extra line under the figure")
@@ -30,10 +32,11 @@ def main(argv=None):
         result = rebuild(args.root)
     elif args.command == "curve":
         from .curve import render
-        render(args.table, args.out, title=args.title, subtitle=args.subtitle,
-               note=args.note, roofline_ms=args.roofline_ms,
-               reachable_ms=args.reachable_ms)
-        result = {"plot": str(args.out)}
+        written = render(args.source, args.out, title=args.title,
+                         subtitle=args.subtitle, note=args.note,
+                         roofline_ms=args.roofline_ms,
+                         reachable_ms=args.reachable_ms)
+        result = {"plot": str(written)}
     else:
         metadata, points = plot.from_trace(read_json(args.trace))
         plot.render_optimization_progress(metadata=metadata, points=points, output_svg=args.out)
