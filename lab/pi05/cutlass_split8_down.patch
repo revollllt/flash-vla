@@ -1,0 +1,34 @@
+diff --git a/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/cutlass_backbone.cu b/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/cutlass_backbone.cu
+index 52b3445..8a9450b 100644
+--- a/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/cutlass_backbone.cu
++++ b/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/cutlass_backbone.cu
+@@ -256,3 +256,29 @@ extern "C" int32_t vision_bias_gemm_run(void* handle, void* stream) {
+ extern "C" void vision_bias_gemm_destroy(void* handle) {
+   delete static_cast<VisionBiasGemm*>(handle);
+ }
++
++// Fixed lab-only scheduling test. The existing DownGemm kernel, tile,
++// epilogue and old control are unchanged; only its plan's split factor is 8.
++extern "C" int64_t expert_split8_down_workspace() {
++  auto args = down_arguments(4096, nullptr, nullptr, nullptr, nullptr);
++  args.batch_count = 8;
++  return static_cast<int64_t>(DownGemm::get_workspace_size(args));
++}
++
++extern "C" int32_t expert_split8_down_plan(
++    const void* a, const void* b, const void* gate, void* output,
++    void* workspace, void* stream, void** handle) {
++  auto args = down_arguments(4096, a, b, gate, output);
++  args.batch_count = 8;
++  cutlass::Status status = DownGemm::can_implement(args);
++  if (status != cutlass::Status::kSuccess)
++    return kCutlassError + static_cast<int32_t>(status);
++  auto* plan = new DownGemm;
++  status = plan->initialize(args, workspace, static_cast<cudaStream_t>(stream));
++  if (status != cutlass::Status::kSuccess) {
++    delete plan;
++    return kCutlassError + static_cast<int32_t>(status);
++  }
++  *handle = plan;
++  return 0;
++}
