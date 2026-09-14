@@ -272,3 +272,15 @@ Reuse of the existing cfg0 GEMM for prefix QKV M968/K2048/N2560 leaves native RM
 Changing warp N from 32 to 16 while keeping the original epilogue count8 is rejected by a CUTLASS static layout constraint. A separately declared, minimal joint candidate uses warp32x16 plus count4, preserving CTA32x64x32, eight stages and the rounded residual operator. It compiles at 72 registers versus original120, no spills, with unchanged workspace 2,622,080 bytes. The first residual-only constant coverage case then raises CUDA illegal memory access. The process exited before actual model inputs or timing, so this is an implementation failure with no performance conclusion; the faulting path was not localized.
 
 The native experiment and local binary were removed, while the fixed patch, CPU derivation, resource excerpt and failure JSON remain in lab/pi05/cutlass_warpn16_down.md and results/rtx5090-pi05/gpt6-expert-down-warpn-screen. No production route changed; accepted deployment remains 021.
+
+## Rejected dual FFN eight-warp launch
+
+The sole change from four to eight warps retains the current 16x64x32 tile, three stages, 256 CTAs, packed weights and both BF16 accumulator roundtrips. Compiled registers fall from 64 to 40 with no spills and shared memory stays 18,432 bytes. The MMA warp layout changes from 1x4 to 1x8; per-thread serial tanhf bodies halve. All 18 actual layers match the captured deployed outputs bitwise for both routes.
+
+One fixed local ABBA gives A14.231111/B14.400000/B14.403555/A14.208001 us/call. The candidate is slower by 0.182222 us, beyond A/B drift 0.023110/0.003555 us. This rejects the fixed launch setting without identifying a hardware cause or running deployment timing. All 60 samples, resource/rounding excerpts and the probe remain in lab/pi05/dual_ffn_warps.md and measurements/dual-ffn-w8-rejected.json. Production keeps four warps.
+
+## Rejected expert down explicit split factor 8
+
+A plan-argument-only experiment retains the exact existing cfg9 kernel and rounded gated epilogue. The default heuristic uses 160 compute blocks and 128 separate reduction blocks (grid 298); explicit split8 uses 256 compute blocks, cooperative ordered reduction and a padded grid of 340. Both actual launches have 64 threads, 120 registers and 49,152 shared bytes. Workspace grows from 2,622,080 to 4,195,328 bytes. More parallel blocks were a hypothesis, not a predicted gain.
+
+All three full-row constant cases are exact, 180 actual calls pass shallow tolerance (worst candidate rel_rms 0.0000802042443), and three candidate rounding decompositions are exact. Reset-inclusive ABBA gives A10.570667/B15.137422/B15.132978/A10.580089 us/call, a 4.559823 us candidate slowdown versus A/B drift 0.009422/0.004444 us. The fixed scheduling candidate stops with no additional split factor, E2E or production change. Raw numerical/timing/resource evidence and the exact two-entry-point patch remain in lab/pi05/cutlass_split8_down.md and results/rtx5090-pi05/gpt6-expert-down-split8.
