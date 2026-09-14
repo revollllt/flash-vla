@@ -10,11 +10,20 @@ primitives (`src/flash_vla/hardware/nvidia/cuda/tile/`) include CuTe from
 this checkout; set the variable to point at another tree. FlashMLA and
 DeepGEMM are read-only reference sources and are not on any include path.
 
+agent-gpu-skills is neither: it is an agent skill bundle, surfaced through four
+relative symlinks in `.agents/skills/` (`cuda-skill`, `cutlass-skill`,
+`tilelang-skill`, `triton-skill`) so both skill entries expose them without a
+second copy of their text. Three of the four index upstream source trees that
+its own `.gitignore` excludes, so after `submodule update` run its
+`update-repos.sh`, which makes sparse shallow checkouts; point `CUTLASS_REPO` at
+this directory's `cutlass` to avoid fetching a third copy.
+
 | component | upstream | pinned revision | upstream submodules | license |
 | --- | --- | --- | --- | --- |
 | CUTLASS | https://github.com/NVIDIA/cutlass | `v4.7.1` (latest stable release at pin time) | none required for the header-only CuTe build | `cutlass/LICENSE.txt` |
 | FlashMLA | https://github.com/deepseek-ai/FlashMLA | `15f13e5030374295491c5ce31b02d7e63a7772c6` | CUTLASS `147f5673d0c1c3dcf66f78d677fd647e4a020219` | `flashmla/LICENSE` |
 | DeepGEMM | https://github.com/deepseek-ai/DeepGEMM | `559d79fb6994a58b8a15b4b93bf13ccc16edf247` | CUTLASS `f3fde58372d33e9a5650ba7b80fc48b3b49d40c8`, fmt `553ec11ec06fbe0beebfbb45f9dc3c9eabd83d28` | `deepgemm/LICENSE` |
+| agent-gpu-skills | https://github.com/slowlyC/agent-gpu-skills | `ae02d076fd424f3c134a5738a0e5cc5f28e747c3` | none; its own `third_party/` is gitignored and rebuilt by `update-repos.sh` | `agent-gpu-skills/LICENSE` (MIT) |
 
 ## Reuse map for the SM90 CuTe kernels
 
