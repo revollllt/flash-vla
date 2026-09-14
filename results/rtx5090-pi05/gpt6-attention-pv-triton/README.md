@@ -2,7 +2,8 @@
 
 The 16x32x64 candidate is faster at the isolated PV boundary and passes the
 existing numerical limits on nine actual step/layer pairs. It is ready for
-complete-attention testing; production source and routing remain unchanged.
+complete-attention testing. A subsequent optional backend is prepared below;
+this worker has not changed the deployed routing.
 
 ## Hypothesis and controlled tile choices
 
@@ -116,3 +117,19 @@ The actual nine-pair snapshot is
 local.json and representative.json retain raw timing samples and all numerical
 metrics. dispatch.json retains the one-launch/PTX evidence. Large raw traces,
 PTX and tensor snapshots remain at their recorded paths, outside the commit.
+
+## Optional backend for model-loop validation
+
+The follow-up source is
+src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/triton_attention.py.
+It specializes the measured PV to its sole 16x32x64 tile. The existing
+fused_attention.py remains the control. The new wrapper reuses that Target's
+lazy native softmax library and the same per-runner logits/probability scratch
+roles, preserving FP32 QK output, runtime masking, BF16 probability materialization,
+and out aliasing Q. It adds no scratch, packing or input copies.
+
+This follow-up was prepared under a CPU-only window. AST and a declaration
+check with CUDA_VISIBLE_DEVICES empty and CUDA_HOME unset pass. The final
+specialized production function has not yet been JIT-compiled or measured;
+complete-attention correctness and deployed E2E remain for the model loop.
+Registry and plan selection are owned by that serial integration step.
