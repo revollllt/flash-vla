@@ -134,6 +134,25 @@ DownGemm::Arguments down_arguments(const void* a, const void* b, const void* gat
   args.ldr = 0;  // One gate vector broadcast over every output row.
   return args;
 }
+// Config 10 serves both vision FFN projections. Bias is converted to FP32
+// and added before the one BF16 store; GELU/residual remain separate stages.
+using VisionBiasGemm = cutlass::gemm::device::GemmUniversal<
+    Element, RowMajor, Element, RowMajor, Element, RowMajor, float,
+    cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<64, 128, 32>,
+    cutlass::gemm::GemmShape<32, 64, 32>,
+    cutlass::gemm::GemmShape<16, 8, 16>, Epilogue,
+    cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, 5, 8, 8>;
+
+VisionBiasGemm::Arguments vision_bias_arguments(
+    int32_t m, int32_t k, int32_t n, const void* a, const void* b,
+    const void* bias, void* output) {
+  return VisionBiasGemm::Arguments(
+      cutlass::gemm::GemmUniversalMode::kGemm, {m, n, k}, 1,
+      {1.f, 1.f}, a, b, bias, output,
+      int64_t(m) * k, int64_t(k) * n, 0, int64_t(m) * n,
+      int64_t(k), int64_t(n), 0, int64_t(n));
+}
 }  // namespace
 
 extern "C" int64_t backbone_gemm_workspace(int32_t m, int32_t k, int32_t n) {
@@ -202,4 +221,38 @@ extern "C" int32_t expert_down_run(void* handle, void* stream) {
 
 extern "C" void expert_down_destroy(void* handle) {
   delete static_cast<DownGemm*>(handle);
+}
+
+extern "C" int64_t vision_bias_gemm_workspace(int32_t m, int32_t k, int32_t n) {
+  return static_cast<int64_t>(VisionBiasGemm::get_workspace_size(
+      vision_bias_arguments(m, k, n, nullptr, nullptr, nullptr, nullptr)));
+}
+
+extern "C" int32_t vision_bias_gemm_plan(
+    int32_t m, int32_t k, int32_t n, const void* a, const void* b,
+    const void* bias, void* output, void* workspace, void* stream, void** handle) {
+  const auto args = vision_bias_arguments(m, k, n, a, b, bias, output);
+  cutlass::Status status = VisionBiasGemm::can_implement(args);
+  if (status != cutlass::Status::kSuccess)
+    return kCutlassError + static_cast<int32_t>(status);
+  auto* plan = new VisionBiasGemm;
+  status = plan->initialize(args, workspace, static_cast<cudaStream_t>(stream));
+  if (status != cutlass::Status::kSuccess) {
+    delete plan;
+    return kCutlassError + static_cast<int32_t>(status);
+  }
+  *handle = plan;
+  return 0;
+}
+
+extern "C" int32_t vision_bias_gemm_run(void* handle, void* stream) {
+  const cutlass::Status status =
+      static_cast<VisionBiasGemm*>(handle)->run(static_cast<cudaStream_t>(stream));
+  if (status != cutlass::Status::kSuccess)
+    return kCutlassError + static_cast<int32_t>(status);
+  return static_cast<int32_t>(cudaGetLastError());
+}
+
+extern "C" void vision_bias_gemm_destroy(void* handle) {
+  delete static_cast<VisionBiasGemm*>(handle);
 }
