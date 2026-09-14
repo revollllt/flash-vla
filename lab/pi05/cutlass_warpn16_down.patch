@@ -1,0 +1,152 @@
+diff --git a/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/cutlass_backbone.cu b/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/cutlass_backbone.cu
+index 52b3445..b5835c0 100644
+--- a/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/cutlass_backbone.cu
++++ b/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/cutlass_backbone.cu
+@@ -134,6 +134,105 @@ DownGemm::Arguments down_arguments(int32_t k, const void* a, const void* b, cons
+   args.ldr = 0;  // One gate vector broadcast over every output row.
+   return args;
+ }
++class WarpN16RoundedGatedResidual {
++ public:
++  using ElementOutput = Element;
++  using ElementAccumulator = float;
++  using ElementCompute = float;
++  using ElementT = Element;
++  using ElementVector = Element;
++  static constexpr int kCount = 4;
++  static constexpr bool kIsHeavy = false;
++  static constexpr bool kIsSingleSource = true;
++  static constexpr bool kStoreZ = true;
++  static constexpr bool kStoreT = false;
++  using FragmentOutput = cutlass::Array<Element, kCount>;
++  using FragmentAccumulator = cutlass::Array<float, kCount>;
++  using FragmentCompute = cutlass::Array<float, kCount>;
++  struct Params {};
++
++  CUTLASS_HOST_DEVICE explicit WarpN16RoundedGatedResidual(Params const&) {}
++  CUTLASS_HOST_DEVICE bool is_source_needed() const { return true; }
++  CUTLASS_HOST_DEVICE void set_k_partition(int, int) {}
++
++  CUTLASS_DEVICE void operator()(
++      FragmentOutput& result, FragmentOutput&, FragmentAccumulator const& accum,
++      FragmentOutput const& residual, FragmentCompute const& gate) const {
++    cutlass::NumericArrayConverter<Element, float, kCount> round_bf16;
++    cutlass::NumericArrayConverter<float, Element, kCount> to_float;
++    const FragmentCompute projected = to_float(round_bf16(accum));
++    const FragmentCompute source = to_float(residual);
++    FragmentCompute updated;
++    CUTLASS_PRAGMA_UNROLL
++    for (int i = 0; i < kCount; ++i)
++      updated[i] = __fadd_rn(__fmul_rn(projected[i], gate[i]), source[i]);
++    result = round_bf16(updated);
++  }
++
++  // Required by the broadcast concept; the selected route always reads C.
++  CUTLASS_DEVICE void operator()(
++      FragmentOutput& result, FragmentOutput&, FragmentAccumulator const& accum,
++      FragmentCompute const& gate) const {
++    cutlass::NumericArrayConverter<Element, float, kCount> round_bf16;
++    cutlass::NumericArrayConverter<float, Element, kCount> to_float;
++    const FragmentCompute projected = to_float(round_bf16(accum));
++    FragmentCompute updated;
++    CUTLASS_PRAGMA_UNROLL
++    for (int i = 0; i < kCount; ++i) updated[i] = __fmul_rn(projected[i], gate[i]);
++    result = round_bf16(updated);
++  }
++};
++
++// Fixed lab candidate: warp N=16 requires a four-element output vector.
++// CTA shape, stages and scalar rounding stay fixed; control keeps DownGemm.
++using WarpN16DownDefaults = cutlass::gemm::device::GemmUniversalStreamkWithBroadcast<
++    Element, RowMajor, Element, RowMajor, Element, RowMajor, float,
++    cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
++    cutlass::gemm::GemmShape<32, 64, 32>,
++    cutlass::gemm::GemmShape<32, 16, 32>,
++    cutlass::gemm::GemmShape<16, 8, 16>, WarpN16RoundedGatedResidual,
++    cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, 8, 8, 8>;
++
++using WarpN16DownEpilogueBase = WarpN16DownDefaults::GemmKernel::Epilogue;
++
++// The candidate still has four accumulator fragments. Retain the same
++// Target-local destination advance as DownEpilogue; do not change the vendor.
++class WarpN16DownEpilogue : public WarpN16DownEpilogueBase {
++ public:
++  using WarpN16DownEpilogueBase::WarpN16DownEpilogueBase;
++
++  CUTLASS_DEVICE void reduce(
++      int peer_begin, int peer_end, int fragment, void* workspace,
++      OutputOp const& op, ElementVector const* gate,
++      OutputTileIterator destination, OutputTileIterator source,
++      TensorTileIterator tensor, cutlass::MatrixCoord const& problem,
++      cutlass::MatrixCoord const& offset) {
++    destination += fragment;
++    WarpN16DownEpilogueBase::reduce(peer_begin, peer_end, fragment, workspace, op,
++                               gate, destination, source, tensor, problem, offset);
++  }
++};
++
++using WarpN16DownGemm = cutlass::gemm::device::GemmUniversalBase<
++    cutlass::gemm::kernel::GemmStreamkWithFusedEpilogue<
++        WarpN16DownDefaults::GemmKernel::Mma, WarpN16DownEpilogue,
++        cutlass::gemm::threadblock::ThreadblockSwizzleStreamK>>;
++
++WarpN16DownGemm::Arguments warpn16_down_arguments(
++    const void* a, const void* b, const void* gate, void* output) {
++  WarpN16DownGemm::Arguments args;
++  args.problem_size = {50, 1024, 4096};
++  args.ptr_A = a;
++  args.ptr_B = b;
++  args.ptr_C = output;
++  args.ptr_D = output;
++  args.ptr_Vector = const_cast<void*>(gate);
++  args.lda = 4096;
++  args.ldb = args.ldc = args.ldd = 1024;
++  args.ldr = 0;
++  return args;
++}
++
+ // Config 10 serves both vision FFN projections. Bias is converted to FP32
+ // and added before the one BF16 store; GELU/residual remain separate stages.
+ using VisionBiasGemm = cutlass::gemm::device::GemmUniversal<
+@@ -223,6 +322,41 @@ extern "C" void expert_down_destroy(void* handle) {
+   delete static_cast<DownGemm*>(handle);
+ }
+ 
++// Lab-only ABI for the sole M50 K4096 N1024 candidate; no production route.
++extern "C" int64_t expert_warpn16_down_workspace() {
++  return static_cast<int64_t>(WarpN16DownGemm::get_workspace_size(
++      warpn16_down_arguments(nullptr, nullptr, nullptr, nullptr)));
++}
++
++extern "C" int32_t expert_warpn16_down_plan(
++    const void* a, const void* b, const void* gate, void* output,
++    void* workspace, void* stream, void** handle) {
++  const auto args = warpn16_down_arguments(a, b, gate, output);
++  cutlass::Status status = WarpN16DownGemm::can_implement(args);
++  if (status != cutlass::Status::kSuccess)
++    return kCutlassError + static_cast<int32_t>(status);
++  auto* plan = new WarpN16DownGemm;
++  status = plan->initialize(args, workspace, static_cast<cudaStream_t>(stream));
++  if (status != cutlass::Status::kSuccess) {
++    delete plan;
++    return kCutlassError + static_cast<int32_t>(status);
++  }
++  *handle = plan;
++  return 0;
++}
++
++extern "C" int32_t expert_warpn16_down_run(void* handle, void* stream) {
++  const cutlass::Status status =
++      static_cast<WarpN16DownGemm*>(handle)->run(static_cast<cudaStream_t>(stream));
++  if (status != cutlass::Status::kSuccess)
++    return kCutlassError + static_cast<int32_t>(status);
++  return static_cast<int32_t>(cudaGetLastError());
++}
++
++extern "C" void expert_warpn16_down_destroy(void* handle) {
++  delete static_cast<WarpN16DownGemm*>(handle);
++}
++
+ extern "C" int64_t vision_bias_gemm_workspace(int32_t m, int32_t k, int32_t n) {
+   return static_cast<int64_t>(VisionBiasGemm::get_workspace_size(
+       vision_bias_arguments(m, k, n, nullptr, nullptr, nullptr, nullptr)));
