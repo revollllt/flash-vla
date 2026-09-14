@@ -1,4 +1,4 @@
-"""Actual-call FFN down parity and reset-inclusive ABBA timing for the epilogue."""
+"""Actual-call expert residual parity and reset-inclusive ABBA timing."""
 from __future__ import annotations
 
 import argparse
@@ -16,11 +16,11 @@ from flash_vla.inference import build, parse_options, resolve
 from flash_vla.runtime.runner import Scratch
 
 
-def _record(engine):
+def _record(engine, site):
     calls = []
 
     def instrument(name, fn):
-        if name != cutlass_expert_residual.NAMES[0]:
+        if name != site:
             return fn
 
         def wrapped(x, weight, gate, out):
@@ -82,14 +82,16 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--reps", type=int, default=30)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--site", choices=cutlass_expert_residual.NAMES,
+                        default=cutlass_expert_residual.NAMES[0])
     args = parser.parse_args()
     engine = build(resolve("rtx5090/pi05"), "shipped", seed=args.seed,
                    **parse_options(args.option))
     engine.forward(**engine.sample_inputs(args.seed))
-    calls = _record(engine)
-    reference = engine.ops.action_expert_ffn_down_residual
+    calls = _record(engine, args.site)
+    reference = getattr(engine.ops, args.site)
     scratch = Scratch(torch.device("cuda"))
-    candidate = cutlass_expert_residual.make_wrappers(scratch)[cutlass_expert_residual.NAMES[0]]
+    candidate = cutlass_expert_residual.make_wrappers(scratch, [args.site])[args.site]
     correctness, decomposition = _check(calls, reference, candidate)
     scratch.freeze()
     timings = []
@@ -99,7 +101,8 @@ def main() -> None:
                                  n_inner=len(calls), reps=args.reps)
         timings.append({"route": route, "median_ms": statistics.median(samples),
                         "samples_ms": samples})
-    report = {"seed": args.seed, "shape": [50, 4096, 1024], "dtype": "bf16",
+    report = {"seed": args.seed, "site": args.site,
+              "shape": [*calls[0][0].shape, 1024], "dtype": "bf16",
               "calls": len(calls), "correctness": correctness, "decomposition": decomposition,
               "timings": timings, "timer": "reset-inclusive CUDA graph, ABBA",
               "cache": "180 recorded calls, 18 distinct layer weights",
