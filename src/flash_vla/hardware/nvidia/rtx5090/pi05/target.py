@@ -31,6 +31,7 @@ class Pi05RTX5090(Pi05):
     plan: Mapping[str, str] = {
         "action_expert_norm_gated_ffn": "fused-ffn",
         "action_expert_norm_qkv_rope": "fused-qkv",
+        "llm_backbone_norm_gated_ffn": "fused-backbone",
     }
     reference_plan: Mapping[str, str] = {}
 
