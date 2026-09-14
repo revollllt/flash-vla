@@ -1,0 +1,781 @@
+{
+  "deployment_revision_before_import": "7b2d9d0fdb50e350933da9dbeb7b3e720b73c2de",
+  "deployment_plan": {
+    "vision_encoder_patch_embed": "torch",
+    "vision_encoder_norm_qkv": "cutlass-vision",
+    "vision_encoder_attention": "torch",
+    "vision_encoder_out_proj_residual": "torch",
+    "vision_encoder_norm_ffn_up": "cutlass-vision",
+    "vision_encoder_ffn_down_residual": "cutlass-vision",
+    "llm_backbone_projector": "torch",
+    "llm_backbone_embed_prompt": "torch",
+    "llm_backbone_norm_qkv_rope": "fused-prefix-qkv",
+    "llm_backbone_attention": "torch",
+    "llm_backbone_out_proj_residual": "torch",
+    "llm_backbone_norm_gated_ffn": "cutlass-backbone",
+    "llm_backbone_ffn_down_residual": "cutlass-backbone",
+    "action_expert_action_in_proj": "torch",
+    "action_expert_norm_qkv_rope": "fused-qkv",
+    "action_expert_attention": "fused-attention",
+    "action_expert_out_proj_residual": "cutlass-expert-residual",
+    "action_expert_norm_gated_ffn": "packed-ffn",
+    "action_expert_ffn_down_residual": "cutlass-expert-residual",
+    "action_expert_action_out_proj": "fused-qkv"
+  },
+  "seed": 42,
+  "options": [
+    "converted_checkpoint=/home/ubuntu/models/pi05_belt_cup_pytorch",
+    "checkpoint_id=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+    "checkpoint_digest=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha"
+  ],
+  "calls_per_graph": 18,
+  "weight_rotation_bytes": 301989888,
+  "input_source": "first actual prepared BF16 activation for each distinct packed weight",
+  "scope": "packed GEMM plus gated activation; prepare excluded from both paths",
+  "shape_mkn": [
+    50,
+    1024,
+    8192
+  ],
+  "dtype": "torch.bfloat16",
+  "bias_dtype": "torch.bfloat16",
+  "triton_version": "3.7.1",
+  "enable_fp_fusion": false,
+  "enable_reflect_ftz": false,
+  "num_warps": 4,
+  "num_stages": 3,
+  "results": [
+    {
+      "tile": [
+        32,
+        32,
+        32
+      ],
+      "correct": true,
+      "per_layer_metrics": [
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000004
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        }
+      ],
+      "registers": 64,
+      "spills": 0,
+      "shared_bytes": 12288,
+      "ptx": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-expert-dual-dot-screen-32x32x32.ptx",
+      "legs": [
+        {
+          "route": "A",
+          "samples_ms_per_call": [
+            0.017468444175190397,
+            0.01608533329433865,
+            0.016156444946924847,
+            0.016200888488027785,
+            0.016026667422718473,
+            0.016188444362746343,
+            0.016051555673281353,
+            0.01610488858487871,
+            0.016152888536453247,
+            0.016033778587977093,
+            0.01604622271325853,
+            0.016044444508022733,
+            0.016040888097551134,
+            0.016023111012246873,
+            0.016149333781666227
+          ],
+          "median_us_per_call": 16.08533329433865
+        },
+        {
+          "route": "B",
+          "samples_ms_per_call": [
+            0.019296000401178997,
+            0.01812088820669386,
+            0.01807466646035512,
+            0.018211555149820115,
+            0.018191999859280057,
+            0.018533334136009216,
+            0.018204443984561496,
+            0.018083555830849543,
+            0.018156444032986958,
+            0.01807466646035512,
+            0.018538667096032038,
+            0.018094221750895183,
+            0.018190221654044256,
+            0.018035555879275005,
+            0.018209778600268893
+          ],
+          "median_us_per_call": 18.190221654044255
+        },
+        {
+          "route": "B",
+          "samples_ms_per_call": [
+            0.01905066602759891,
+            0.01831644442346361,
+            0.018191999859280057,
+            0.01826844447188907,
+            0.018216888109842937,
+            0.018195556269751653,
+            0.018156444032986958,
+            0.01815111107296414,
+            0.018156444032986958,
+            0.018145778112941317,
+            0.01815822223822276,
+            0.01827911039193471,
+            0.018152889278199937,
+            0.01809244520134396,
+            0.01826844447188907
+          ],
+          "median_us_per_call": 18.191999859280056
+        },
+        {
+          "route": "A",
+          "samples_ms_per_call": [
+            0.016910221841600206,
+            0.016528000434239704,
+            0.016199111938476562,
+            0.01610133383009169,
+            0.016037333342764113,
+            0.01611733271016015,
+            0.016055110428068373,
+            0.01604266630278693,
+            0.016156444946924847,
+            0.016154666741689045,
+            0.016154666741689045,
+            0.016384000579516094,
+            0.016144000821643405,
+            0.016147555576430425,
+            0.016040888097551134
+          ],
+          "median_us_per_call": 16.147555576430424
+        }
+      ]
+    },
+    {
+      "tile": [
+        16,
+        64,
+        32
+      ],
+      "correct": true,
+      "per_layer_metrics": [
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000004
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        }
+      ],
+      "registers": 64,
+      "spills": 0,
+      "shared_bytes": 18432,
+      "ptx": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-expert-dual-dot-screen-16x64x32.ptx",
+      "legs": [
+        {
+          "route": "A",
+          "samples_ms_per_call": [
+            0.017603556315104168,
+            0.01607822212908003,
+            0.016202666693263583,
+            0.016040888097551134,
+            0.015992888145976596,
+            0.01604266630278693,
+            0.016037333342764113,
+            0.016216889023780823,
+            0.01610844499535031,
+            0.016023111012246873,
+            0.01604622271325853,
+            0.01603911154799991,
+            0.016014221641752455,
+            0.01615111033121745,
+            0.016159999701711867
+          ],
+          "median_us_per_call": 16.04622271325853
+        },
+        {
+          "route": "B",
+          "samples_ms_per_call": [
+            0.015432889262835184,
+            0.014451555079884,
+            0.014321777555677626,
+            0.014318222800890604,
+            0.01421866648726993,
+            0.014302222265137566,
+            0.014211555322011312,
+            0.014277334014574686,
+            0.014286221729384528,
+            0.014337778091430664,
+            0.014332445131407844,
+            0.014161777165200975,
+            0.014275555809338888,
+            0.014318222800890604,
+            0.01422755585776435
+          ],
+          "median_us_per_call": 14.302222265137566
+        },
+        {
+          "route": "B",
+          "samples_ms_per_call": [
+            0.015071999695565965,
+            0.014663111832406785,
+            0.014254222313563028,
+            0.014387556248241,
+            0.01422044469250573,
+            0.014327110515700446,
+            0.01421511173248291,
+            0.014378666877746582,
+            0.014339556296666464,
+            0.014474666780895658,
+            0.014259555273585849,
+            0.014279110564125909,
+            0.014273777604103088,
+            0.014325333966149224,
+            0.01422933406300015
+          ],
+          "median_us_per_call": 14.325333966149223
+        },
+        {
+          "route": "A",
+          "samples_ms_per_call": [
+            0.016945777667893305,
+            0.016234666109085083,
+            0.016302223006884258,
+            0.016165332661734685,
+            0.01608711149957445,
+            0.01604622271325853,
+            0.016128000285890367,
+            0.01611911091539595,
+            0.016120889120631747,
+            0.01608711149957445,
+            0.01607288916905721,
+            0.016197333733240765,
+            0.016138666205936007,
+            0.016131555040677387,
+            0.01604977746804555
+          ],
+          "median_us_per_call": 16.128000285890366
+        }
+      ]
+    },
+    {
+      "tile": [
+        16,
+        32,
+        32
+      ],
+      "correct": true,
+      "per_layer_metrics": [
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000004
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        }
+      ],
+      "registers": 40,
+      "spills": 0,
+      "shared_bytes": 10240,
+      "ptx": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-expert-dual-dot-screen-16x32x32.ptx",
+      "legs": [
+        {
+          "route": "A",
+          "samples_ms_per_call": [
+            0.017479111750920612,
+            0.01614044441117181,
+            0.01615111033121745,
+            0.01608711149957445,
+            0.015996444556448195,
+            0.016149333781666227,
+            0.01608711149957445,
+            0.016033778587977093,
+            0.016058666838539973,
+            0.015994666351212397,
+            0.01604977746804555,
+            0.016165332661734685,
+            0.01604622271325853,
+            0.01609777741962009,
+            0.016106666790114507
+          ],
+          "median_us_per_call": 16.087111499574448
+        },
+        {
+          "route": "B",
+          "samples_ms_per_call": [
+            0.01699555582470364,
+            0.016003555721706815,
+            0.01603911154799991,
+            0.015996444556448195,
+            0.016047999262809753,
+            0.016047999262809753,
+            0.01593600047959222,
+            0.015944888194402058,
+            0.015925332903862,
+            0.015992888145976596,
+            0.015927111109097798,
+            0.015998222761683993,
+            0.015955555770132277,
+            0.01609066625436147,
+            0.01590044465329912
+          ],
+          "median_us_per_call": 15.996444556448195
+        },
+        {
+          "route": "B",
+          "samples_ms_per_call": [
+            0.01685688893000285,
+            0.01609244445959727,
+            0.015994666351212397,
+            0.0159288893143336,
+            0.015919999943839178,
+            0.01609599921438429,
+            0.01605688863330417,
+            0.01604977746804555,
+            0.015941333439615037,
+            0.015999999311235216,
+            0.01611199975013733,
+            0.0158933334880405,
+            0.016003555721706815,
+            0.01588444411754608,
+            0.015998222761683993
+          ],
+          "median_us_per_call": 15.999999311235216
+        },
+        {
+          "route": "A",
+          "samples_ms_per_call": [
+            0.01687466601530711,
+            0.016055110428068373,
+            0.01615111033121745,
+            0.01605688863330417,
+            0.016051555673281353,
+            0.015882665912310284,
+            0.016163556112183466,
+            0.01609599921438429,
+            0.016023111012246873,
+            0.016170667277442083,
+            0.016003555721706815,
+            0.016051555673281353,
+            0.016163556112183466,
+            0.01610488858487871,
+            0.01610133383009169
+          ],
+          "median_us_per_call": 16.095999214384292
+        }
+      ]
+    }
+  ]
+}
