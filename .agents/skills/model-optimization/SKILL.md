@@ -8,10 +8,14 @@ description: Cut an existing Target's deployed end-to-end latency on its GPU. Ow
 Approach the hardware's SOL at the model's real shapes with hand-written
 kernels, and cut deployed end-to-end latency.
 
-```
-1 prepare -> 2 measure -> 3 read -> 4 profile -> 5 design -> 6 validate -> 7 deploy
-                                       ^                                      |
-                                       +---- no end-to-end gain: 4 5 6 7 -----+
+```mermaid
+flowchart LR
+  s1["1 prepare"] --> s2["2 measure"] --> s3["3 read"] --> s4["4 profile"]
+  s4 --> s5["5 design"] --> s6["6 validate"] --> s7["7 deploy"]
+  s6 -->|"fails, or the gain is unclear"| s5
+  s7 -->|"no end-to-end gain: back with the analysis"| s4
+  s7 -->|"gain: next hotspot on the deployed version"| s4
+  s7 -->|"no candidate left"| s8(["report"])
 ```
 
 5 and 6 are the kernel loop, one agent per kernel, in parallel; 2, 4 and 7 are
@@ -24,9 +28,8 @@ the alternative; an ambiguous result revises it rather than adding a candidate.
 1. **Prepare.** Project root, target GPU, the model's own Python environment,
    real checkpoint, fixed inputs and run parameters. Use an existing Target;
    onboard a new one with [target-onboarding](../target-onboarding/SKILL.md).
-   LingBot resolves its checkpoint and fixture through `FLASH_VLA_ASSETS`, a
-   JSON file mapping asset ids to local paths; synthetic-weight Targets such as
-   `rtx5090/pi0` need none.
+   LingBot resolves checkpoint and fixture through `FLASH_VLA_ASSETS`, a JSON
+   map of asset ids to local paths; synthetic-weight Targets need none.
 
 2. **Measure the current model and check its output.** `shipped` is the
    comparison point.
@@ -36,8 +39,7 @@ the alternative; an ambiguous result revises it rather than adding a candidate.
    ```
 
    Two versions are comparable only under the conditions in
-   [measurement](references/measurement.md). Read them before the first timing
-   of a round, and again if anything about the machine changes.
+   [measurement](references/measurement.md), read before a round's first timing.
 
 3. **Read the model.** `vision_encoder -> llm_backbone -> action_expert` against
    [ARCHITECTURE.md](../../../ARCHITECTURE.md): shapes, call counts, existing
@@ -83,18 +85,17 @@ the alternative; an ambiguous result revises it rather than adding a candidate.
    the deployed version. Re-validate only what the change touches, and reuse a
    profile whose bottleneck has not moved.
 
-   **To end**, answer the six [conclusions](references/conclusions.md) checks,
-   then give each leading hotspot its share of reachable capability and the
-   reason no candidate remains; without both it is not finished. Replacing a
-   deployed implementation needs no approval. Three things do: the numerical
-   contract, changed measurement conditions, an exhausted budget.
+   **To end**, answer the six [conclusions](references/conclusions.md) checks and
+   give each leading hotspot its share of reachable capability and the reason no
+   candidate remains; without both it is not finished. Replacing a deployed
+   implementation needs no approval; the numerical contract, a change of
+   measurement conditions and an exhausted budget do.
 
-Save each round's change, revision, command, environment, correctness result
-and raw benchmark JSON under `results/<target>/<run>/`, updating
-`iterations.csv` and `progress.svg` ([results
-tools](../../../lab/results/README.md)). Keep the candidates that did not gain,
-but let only retained versions advance the curve -- a kernel's local gain never
-stands in for model latency on it. Report the deployed version and its
-comparable end-to-end change, correctness evidence, failed and uncertain
-conclusions, remaining bottlenecks and the next hypothesis. An unmeasured gain
-is not reported; no round adds a hash, a frozen contract or a gate.
+Save each round's change, revision, command, environment, correctness result and
+raw benchmark JSON under `results/<target>/<run>/`, updating `iterations.csv`
+and `progress.svg` ([results tools](../../../lab/results/README.md)). Keep the
+candidates that did not gain, but let only retained versions advance the curve
+-- a kernel's local gain never stands in for model latency on it. Report the
+deployed version and its comparable end-to-end change, correctness evidence,
+failed and uncertain conclusions, remaining bottlenecks and the next hypothesis;
+an unmeasured gain is not reported, and no round adds a hash, contract or gate.
