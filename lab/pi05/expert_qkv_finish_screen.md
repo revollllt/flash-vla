@@ -1,7 +1,7 @@
 # Expert QKV finish fusion: one-tile probe
 
-CPU preparation only; no GPU/JIT has run for this candidate. No production
-backend or route changes are included.
+The fixed GPU probe is complete. No production backend or route changes
+are included in this experiment.
 
 ## Fixed implementation
 
@@ -84,3 +84,48 @@ set -o pipefail
   --output /home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-expert-qkv-finish-screen.json \
   2>&1 | tee /home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-expert-qkv-finish-screen.log
 ```
+
+## Measured result
+
+The fixed probe completed with imported deployment
+`bf2a9ba86d5e25d444583b234fe3dd3c346ed998`, QKV route `triton-qkv`,
+and Triton 3.7.1. Both control and candidate were elementwise identical to
+the captured Q/K/V/factor on the first call of all 18 layers: max absolute
+and relative RMS errors were zero. All K/V prefix checks passed. The actual
+prefix is 968 rows, and both suffix offsets are 247,808 BF16 elements;
+the candidate used the already-offset pointer without applying the offset again.
+
+One complete-chain ABBA, with 15 raw samples per leg:
+
+| A1 (us/call) | B1 | B2 | A2 |
+|---:|---:|---:|---:|
+| 10.807111 | 9.637333 | 9.630222 | 10.775111 |
+
+Mean A-B is 1.157333 us/call; conservative min(A)-max(B) is 1.137777 us.
+A leg drift is 0.032000 us and B drift is 0.007111 us. All raw samples, including
+each leg's first sample, are retained. The 180-call multiplication is about
+0.208 ms locally; this is not measured deployment E2E savings. No extra timing
+or configuration was run. The GPU/JIT slot was released after successful exit.
+
+The fused candidate remains at 320 CTAs, 40 registers/thread, zero spills,
+and 6,144 B shared memory, matching the separate GEMM's reported footprint.
+Its PTX confirms the required ordering:
+
+- Lines 178/181: BF16-input FP32-accumulator mma.sync.m16n8k16.
+- Lines 228-231: explicit FP32-to-BF16 RN conversion.
+- Lines 256-260: BF16 back to FP32, followed by factor multiplication
+  (274-275) then bias addition (282-283), as separate RN f32x2 operations.
+- Lines 378-394: separate RN products and subtract/add for adjacent RoPE pairs.
+- Lines 419-420 and 477-479: final BF16 RN conversions before Q/K/V stores.
+- No fma instruction appears in the emitted PTX.
+
+The newer validated 019 expert profile independently attributes 223.818 us to
+prepare, 1476.047 us to GEMM, and 217.604 us to finish across 180 calls.
+The finish time is almost identical to 010; neither profile alone proves the
+fused candidate's E2E gain.
+
+Raw artifacts in the main checkout:
+
+- `artifacts/rtx5090-pi05/gpt6-expert-qkv-finish-screen.json`
+- `artifacts/rtx5090-pi05/gpt6-expert-qkv-finish-screen.log`
+- `artifacts/rtx5090-pi05/gpt6-expert-qkv-finish-screen.ptx`
