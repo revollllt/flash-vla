@@ -1,11 +1,17 @@
 # Expert FFN down: warp N=16 CPU screen
 
-Decision: reject the strict warp-N-only edit because the existing vendor output
+CPU-stage decision: reject the strict warp-N-only edit because the existing vendor output
 thread map produces a zero row-iteration count with epilogue kCount=8.
 The conditional warpN=16 plus a candidate-specific kCount=4 passes the inspected
 source-level shape/mapping constraints. It is a plausible single bounded local
 screen, not a measured speedup or a compile-validated kernel. No kernel was
-implemented, compiled, or launched; no Torch/model import was performed.
+implemented, compiled, or launched during this CPU stage; no Torch/model import was performed.
+
+The subsequent authorized fixed experiment compiled but failed its first constant
+coverage launch with an illegal memory access. It stopped before actual inputs
+or timing. See lab/pi05/cutlass_warpn16_down.md and coverage.json/resources.txt
+in this directory. The source-level conditions below are necessary, not sufficient;
+they do not establish that the full vendor path executes correctly.
 
 Inspected main source revision: 86f58f3. Site:
 action_expert_ffn_down_residual, M=50, N=1024, K=4096, contiguous BF16 A/B/C/D,
