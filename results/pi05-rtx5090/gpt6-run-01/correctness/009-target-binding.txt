@@ -1,0 +1,3 @@
+hardware/nvidia/rtx5090/pi05: 8/8 passed
+hardware/nvidia/rtx5090/pi05 routes: 1/1 passed
+PASS

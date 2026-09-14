@@ -8,3 +8,5 @@ iteration,change,latency_ms,decision,report,revision,label,group
 6,Fuse gated residual updates after expert projections,37.980626337230206,keep,measurements/006.json,e98b74c,expert gated residuals,action expert
 7,CUTLASS Stream-K backbone gate and up GEMMs,37.033166037872434,keep,measurements/007.json,594e697,backbone gate/up GEMMs,llm backbone
 8,CUTLASS Stream-K backbone down projection,36.2217384390533,keep,measurements/008.json,54b5946,backbone down GEMM,llm backbone
+9,Fuse vision LayerNorm and GELU around unchanged GEMMs,35.32363963313401,keep,measurements/009.json,cc5f0a8,vision norm and activation,vision encoder
+10,Fuse backbone RMSNorm and RoPE scatter around QKV GEMM,33.996566431596875,keep,measurements/010.json,7085a4b,prefix QKV pointwise,llm backbone

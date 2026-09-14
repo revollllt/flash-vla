@@ -84,3 +84,15 @@ Local FFN total11.591/11.862 ->10.866/10.883ms; full-depth official comparison p
 The same cfg0 Stream-K tile now runs the down projection with C=D and alpha=beta=1, preserving the existing residual expression. All17 actual calls passed existing tolerance; local total5.827/5.869 ->5.038/5.039ms. Full-depth official comparison passed.
 
 Deployed median37.0332 ->36.2217ms, source54b5946. This is the incremental gain after007. Native workspace and pointer-bound plans are owned per runner and initialized during warmup.
+
+## 009 — Vision normalization and activation, retained
+
+FP32 centered-variance LayerNorm now uses a single CUDA pass, retaining BF16 normalized inputs to unchanged bias-fused GEMMs. FFN GELU runs in place after the projection rounds to BF16. Selected real layers passed local tolerance; 27-layer ABBA estimates about 1.07 ms of headroom. Full-depth official comparison passed (action cosine 0.9999852922, rel_rms 0.00542377). CPU Target binding also passes without a CUDA compiler environment.
+
+Deployed median 36.2217 -> 35.3236 ms, source cc5f0a8. Both measurements ended at 2865 MHz SM, 13801 MHz memory and 57 C with the same power clock reason; observed within-run variation is much smaller than the 0.8981 ms gain.
+
+## 010 — Prefix QKV pointwise fusion, retained
+
+Reuse the Target-local RMSNorm kernel, retain the BF16 QKV GEMM, and replace the cast/rotation/scatter chain with one native pass. Selected actual layers 0/9/17 matched bitwise locally; 18-call graph median decreased from 137.960 to 58.0524 us per call (1.4383 ms sum-equivalent estimate). Full-depth official comparison passed (action cosine 0.9999866853, rel_rms 0.00516067). CPU declarations pass without a compiler environment.
+
+Deployed median 35.3236 -> 33.9966 ms, source 7085a4b. Ending SM/memory clocks match 009; temperatures were 57/55 C. The 1.3271 ms gain exceeds within-run spread. Total reduction from the initial 59.5779 ms deployment is 42.94%; BF16 precision, full 18 layers and 10 denoise steps remain the measured workload. The model has remaining GEMM headroom; the initial floor is guidance only.
