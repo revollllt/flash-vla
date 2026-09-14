@@ -1,0 +1,337 @@
+{
+  "source_revision": "6f8aec5125349b7e820d857d3a25c188de70af18",
+  "snapshot_metadata": {
+    "checkpoint": "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+    "seed": "42",
+    "identity": "{\"schema_version\": 3, \"target\": \"hardware/nvidia/rtx5090/pi05\", \"hardware\": \"rtx5090-32gb\", \"model\": \"pi05\", \"shape_profile\": \"action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens50-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers18-num_views3-prefix_len968-prompt_len200-qkv_width2560-query_heads8-state_dim32-steps10-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256\", \"shape\": {\"batch\": 1, \"num_views\": 3, \"image_height\": 224, \"image_width\": 224, \"image_channels\": 3, \"visual_tokens_per_view\": 256, \"visual_tokens\": 768, \"vision_dim\": 1152, \"vision_ffn_dim\": 4304, \"vision_heads\": 16, \"vision_head_dim\": 72, \"vision_layers\": 27, \"prompt_len\": 200, \"prefix_len\": 968, \"chunk\": 50, \"expert_tokens\": 50, \"state_dim\": 32, \"action_dim\": 32, \"steps\": 10, \"layers\": 18, \"encoder_dim\": 2048, \"encoder_ffn_dim\": 16384, \"query_heads\": 8, \"kv_heads\": 1, \"head_dim\": 256, \"qkv_width\": 2560, \"expert_dim\": 1024, \"expert_ffn_dim\": 4096}, \"plan\": {\"vision_encoder_patch_embed\": \"torch\", \"vision_encoder_norm_qkv\": \"cutlass-vision\", \"vision_encoder_attention\": \"torch\", \"vision_encoder_out_proj_residual\": \"cutlass-vision\", \"vision_encoder_norm_ffn_up\": \"cutlass-vision\", \"vision_encoder_ffn_down_residual\": \"cutlass-vision\", \"llm_backbone_projector\": \"torch\", \"llm_backbone_embed_prompt\": \"torch\", \"llm_backbone_norm_qkv_rope\": \"fused-prefix-qkv\", \"llm_backbone_attention\": \"torch\", \"llm_backbone_out_proj_residual\": \"torch\", \"llm_backbone_norm_gated_ffn\": \"cutlass-backbone\", \"llm_backbone_ffn_down_residual\": \"cutlass-backbone\", \"action_expert_action_in_proj\": \"torch\", \"action_expert_norm_qkv_rope\": \"triton-qkv-finish\", \"action_expert_attention\": \"triton-qk-attention\", \"action_expert_out_proj_residual\": \"cutlass-expert-residual\", \"action_expert_norm_gated_ffn\": \"dual-ffn\", \"action_expert_ffn_down_residual\": \"cutlass-expert-residual\", \"action_expert_action_out_proj\": \"fused-qkv\"}, \"model_revision\": \"pi05-r1\", \"engine_revision\": \"6f8aec5125349b7e820d857d3a25c188de70af18\", \"inference_signature\": \"sha256:a79c1f62c3f14674ad87e88a89bb5f66ac650e1c497ccf5076e64017b55d9f6f\", \"execution_variant\": {\"quantization\": {\"mode\": \"bf16\"}, \"cache\": {\"mode\": \"none\"}}}",
+    "capture_boundary": "before actual attention; Q has not been overwritten"
+  },
+  "threads": {
+    "control": 256,
+    "candidate": 128
+  },
+  "numerical_note": "FP32 sum association changes; exact P is checked, not assumed",
+  "correctness": [
+    {
+      "pair": "step0_layer0",
+      "probabilities": {
+        "max_abs": 3.814697265625e-06,
+        "mean_abs": 1.1710155255427447e-11,
+        "rms_error": 6.161985368301169e-09,
+        "rel_rms": 2.9642270338733675e-07,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.999999999999956,
+        "bitwise_equal": false,
+        "changed_elements": 3,
+        "passed": true
+      },
+      "output": {
+        "max_abs": 0.000244140625,
+        "mean_abs": 3.799796104431152e-09,
+        "rms_error": 8.546566166369877e-07,
+        "rel_rms": 9.433115775869316e-07,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999995551,
+        "bitwise_equal": false,
+        "changed_elements": 4,
+        "passed": true
+      }
+    },
+    {
+      "pair": "step0_layer17",
+      "probabilities": {
+        "max_abs": 2.384185791015625e-07,
+        "mean_abs": 6.586957305728335e-13,
+        "rms_error": 3.7653287648482893e-10,
+        "rel_rms": 3.8559671571210525e-08,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999992,
+        "bitwise_equal": false,
+        "changed_elements": 2,
+        "passed": true
+      },
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002,
+        "bitwise_equal": true,
+        "changed_elements": 0,
+        "passed": true
+      }
+    },
+    {
+      "pair": "step0_layer8",
+      "probabilities": {
+        "max_abs": 2.384185791015625e-07,
+        "mean_abs": 5.855073160647409e-13,
+        "rms_error": 3.736252431912557e-10,
+        "rel_rms": 2.2576698381075852e-08,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998,
+        "bitwise_equal": false,
+        "changed_elements": 1,
+        "passed": true
+      },
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002,
+        "bitwise_equal": true,
+        "changed_elements": 0,
+        "passed": true
+      }
+    },
+    {
+      "pair": "step4_layer0",
+      "probabilities": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002,
+        "bitwise_equal": true,
+        "changed_elements": 0,
+        "passed": true
+      },
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002,
+        "bitwise_equal": true,
+        "changed_elements": 0,
+        "passed": true
+      }
+    },
+    {
+      "pair": "step4_layer17",
+      "probabilities": {
+        "max_abs": 2.9802322387695312e-08,
+        "mean_abs": 7.376019899643708e-14,
+        "rms_error": 4.6704580644353346e-11,
+        "rel_rms": 4.259170998762241e-09,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999,
+        "bitwise_equal": false,
+        "changed_elements": 2,
+        "passed": true
+      },
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0,
+        "bitwise_equal": true,
+        "changed_elements": 0,
+        "passed": true
+      }
+    },
+    {
+      "pair": "step4_layer8",
+      "probabilities": {
+        "max_abs": 2.384185791015625e-07,
+        "mean_abs": 5.855073160647409e-13,
+        "rms_error": 3.736252431912557e-10,
+        "rel_rms": 2.6842582902330967e-08,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999,
+        "bitwise_equal": false,
+        "changed_elements": 1,
+        "passed": true
+      },
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0,
+        "bitwise_equal": true,
+        "changed_elements": 0,
+        "passed": true
+      }
+    },
+    {
+      "pair": "step9_layer0",
+      "probabilities": {
+        "max_abs": 9.5367431640625e-07,
+        "mean_abs": 2.9335403174513212e-12,
+        "rms_error": 1.5404992911378419e-09,
+        "rel_rms": 8.155850315959455e-08,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999966,
+        "bitwise_equal": false,
+        "changed_elements": 5,
+        "passed": true
+      },
+      "output": {
+        "max_abs": 0.0078125,
+        "mean_abs": 8.109956979751587e-08,
+        "rms_error": 2.4461702645134742e-05,
+        "rel_rms": 2.7800134738669127e-05,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999996135823,
+        "bitwise_equal": false,
+        "changed_elements": 3,
+        "passed": true
+      }
+    },
+    {
+      "pair": "step9_layer17",
+      "probabilities": {
+        "max_abs": 2.3283064365386963e-10,
+        "mean_abs": 8.576767325167102e-16,
+        "rms_error": 4.07935274358173e-13,
+        "rel_rms": 3.382822266131901e-11,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0,
+        "bitwise_equal": false,
+        "changed_elements": 2,
+        "passed": true
+      },
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0,
+        "bitwise_equal": true,
+        "changed_elements": 0,
+        "passed": true
+      }
+    },
+    {
+      "pair": "step9_layer8",
+      "probabilities": {
+        "max_abs": 1.1920928955078125e-07,
+        "mean_abs": 5.855073160647409e-13,
+        "rms_error": 2.6419294308300984e-10,
+        "rel_rms": 2.1974215761748625e-08,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998,
+        "bitwise_equal": false,
+        "changed_elements": 2,
+        "passed": true
+      },
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999,
+        "bitwise_equal": true,
+        "changed_elements": 0,
+        "passed": true
+      }
+    }
+  ],
+  "timings": [
+    {
+      "leg": "A1",
+      "median_ms_per_9_calls": 0.10993999987840652,
+      "samples_ms_per_9_calls": [
+        0.11003000289201736,
+        0.10999000072479248,
+        0.10997000336647034,
+        0.10993999987840652,
+        0.10994400084018707,
+        0.10993599891662598,
+        0.10992000252008438,
+        0.10988400131464005,
+        0.10987400263547897,
+        0.10995200276374817,
+        0.10987400263547897,
+        0.10987800359725952,
+        0.10984800010919571,
+        0.10999800264835358,
+        0.11007799953222275
+      ]
+    },
+    {
+      "leg": "B1",
+      "median_ms_per_9_calls": 0.10987800359725952,
+      "samples_ms_per_9_calls": [
+        0.10997600108385086,
+        0.10987800359725952,
+        0.10993599891662598,
+        0.10988599807024002,
+        0.10987599939107895,
+        0.10987000167369843,
+        0.10987800359725952,
+        0.10988199710845947,
+        0.10987400263547897,
+        0.10988199710845947,
+        0.10993999987840652,
+        0.10985799878835678,
+        0.10985399782657623,
+        0.10987800359725952,
+        0.10991600155830383
+      ]
+    },
+    {
+      "leg": "B2",
+      "median_ms_per_9_calls": 0.10991799831390381,
+      "samples_ms_per_9_calls": [
+        0.10997000336647034,
+        0.10991799831390381,
+        0.10994599759578705,
+        0.10986600071191788,
+        0.10988199710845947,
+        0.10991200059652328,
+        0.10999199748039246,
+        0.10987800359725952,
+        0.11000599712133408,
+        0.1098800003528595,
+        0.10993800312280655,
+        0.10986799746751785,
+        0.10992799699306488,
+        0.10987000167369843,
+        0.1099260002374649
+      ]
+    },
+    {
+      "leg": "A2",
+      "median_ms_per_9_calls": 0.11004000157117844,
+      "samples_ms_per_9_calls": [
+        0.11006399989128113,
+        0.11001800000667572,
+        0.11004400253295898,
+        0.10999000072479248,
+        0.11004000157117844,
+        0.11005599796772003,
+        0.11008799821138382,
+        0.109995998442173,
+        0.11004000157117844,
+        0.11007600277662277,
+        0.11003000289201736,
+        0.10999000072479248,
+        0.11002600193023682,
+        0.11002399772405624,
+        0.11006200313568115
+      ]
+    }
+  ],
+  "cache_policy": "nine actual pairs reused, warm working set, no L2 flush",
+  "timing_boundary": "same-address Q reset + current Triton QK + native softmax + torch PV",
+  "timer": "one ABBA; 16 nine-call sequences per graph; 5 warm and 15 measured replays",
+  "status": "complete",
+  "summary": {
+    "mean_gain_ms_per_9_calls": 9.199976921081543e-05,
+    "conservative_gap_ms_per_9_calls": 2.2001564502716064e-05,
+    "control_drift_ms_per_9_calls": 0.00010000169277191162,
+    "candidate_drift_ms_per_9_calls": 3.999471664428711e-05
+  }
+}

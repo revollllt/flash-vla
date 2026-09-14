@@ -1,0 +1,11 @@
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function '_Z22pi05_attention_softmaxILi128EEvPKfPK13__nv_bfloat16PS2_if' for 'sm_120a'
+ptxas info    : Function properties for _Z22pi05_attention_softmaxILi128EEvPKfPK13__nv_bfloat16PS2_if
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 39 registers, used 1 barriers, 32 bytes smem
+ptxas info    : Compile time = 9.037 ms
+ptxas info    : Compiling entry function '_Z22pi05_attention_softmaxILi256EEvPKfPK13__nv_bfloat16PS2_if' for 'sm_120a'
+ptxas info    : Function properties for _Z22pi05_attention_softmaxILi256EEvPKfPK13__nv_bfloat16PS2_if
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 1 barriers, 64 bytes smem
+ptxas info    : Compile time = 8.538 ms
