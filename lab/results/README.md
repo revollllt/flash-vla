@@ -17,6 +17,21 @@ iteration,change,latency_ms,decision,report,revision
 3,Failed numerical check,,failed,,commit-d
 ```
 
+Three optional columns drive the figure and nothing else. `label` is the short
+name under panel B's axis, `group` colours a series — the segment a change
+touched reads well — and `callout` annotates that point in panel A; leave it
+blank on the rows that do not need one.
+
+```bash
+python -m lab.results curve results/<target>/<run>/iterations.csv \
+  --out results/<target>/<run>/progress.svg \
+  --title "Pi0 on RTX 5090: 46.794 -> 27.556 ms" --subtitle "..."
+```
+
+Panel A needs each row's `report` to resolve, since the time comes from the
+benchmark JSON's `measurement_context.timestamp`; with none resolvable the
+figure falls back to panel B alone.
+
 Use `start` for the measured starting version, `keep` for an accepted model,
 `revert` for a rejected trial, `uncertain` when the evidence is inconclusive,
 and `failed` for an invalid or numerically incorrect trial. Missing valid latency

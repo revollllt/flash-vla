@@ -1,23 +1,23 @@
-iteration,change,latency_ms,decision,report,revision
-0,Every call site in torch: the bring-up route,46.794,start,measurements/000.json,14bacc0
-1,"Expert RMSNorm, RoPE scatter and gated activation as hand-written CUDA",40.240,keep,measurements/001-expert-pointwise.json,ddd8c7c
-2,Expert attention: cuBLAS GEMMs with a hand-written masked softmax between,37.040,keep,measurements/002-expert-attention.json,8e42d41
-3,The same norm kernels on the backbone's two norm-fed call sites,34.423,keep,measurements/003-backbone-norm.json,8e42d41
-4,"Vision LayerNorm kernel, plain GELU, residual adds folded into the GEMM beta",32.753,keep,measurements/004-full-cuda.json,HEAD
-5,"Single-pass masked softmax: latency-neutral, cos 0.999992 -> 0.999999",32.886,uncertain,measurements/005-shipped-final.json,HEAD
-6,"Expert gate and up packed into one GEMM: 2.45x locally, backbone left alone at 1.01x",31.396,keep,measurements/006-packed-gate.json,HEAD
-7,Fully fused CUDA-core attention kernel: 201 us against the split form's 25,,revert,,HEAD
-8,"Tensor-core fused attention: 79.5 us against the split form's 25.3, six times the work for 1.05x the time",,revert,,576d396
-9,"Expert norm+QKV+RoPE fused into one kernel: the RMS gain-free scalar commutes with the GEMM",31.220,keep,measurements/009-fused-qkv.json,HEAD
-10,"Weight tile staged in natural [k][n] order and transposed by ldmatrix.trans: removes an 8-way shared bank conflict",31.078,keep,measurements/010-qkv-ldmatrix-trans.json,HEAD
-11,"Action-token output projection off torch: 11 launches to 3. Its three siblings measured neutral or worse and were left alone",30.999,keep,measurements/011-action-out-proj.json,HEAD
-12,"Packed gated activation vectorized to 128-bit: it was moving one bf16 per access, a quarter of gelu_mul's rate",30.867,keep,measurements/012-packed-gelu-vector.json,HEAD
-13,"Streaming pointwise grid cap 340 -> 680 CTAs: min -0.10 and p99 -0.15 ms, median inside noise",30.854,keep,measurements/013-pointwise-grid.json,HEAD
-14,"K-contiguous vision weight: 1.21x from bf16 split-K accumulation, failed the correctness gate",,revert,measurements/014-rejected-vision-ffn-down-tn.json,a20ffae
-15,"Hand-written 64x64 GEMM on the two backbone shapes cuBLAS cannot fill the part with",30.596,keep,measurements/015-tiled-gemm.json,HEAD
-16,"Tensor-core attention rebuilt with ldmatrix + 8 warps + natural layouts (2.46x), then split 8 ways across the key axis",29.749,keep,measurements/016-fused-attention.json,HEAD
-17,"Every GEMM off cuBLAS onto CUTLASS stream-K, tile picked per shape",27.980,keep,measurements/017-cutlass-streamk.json,HEAD
-18,"Programmatic dependent launch across the whole chain, trigger swept to `last`; projector off cuBLAS too",27.964,keep,measurements/018-pdl.json,HEAD
-19,"Vision feed-forward GELU folded into the GEMM epilogue; the same fusion for the backbone gated FFN measured neutral",27.862,keep,measurements/019-gelu-epilogue.json,HEAD
-20,"Tiles re-picked with cold weights, which is how the expert deploys: three of nine moved",27.556,keep,measurements/020-cold-tile-repick.json,HEAD
-21,"Kernel-structure round: QKV tile space opened and swept cold, attention in-kernel fixup, layernorm mainloop fusion -- all three negative, none routed",,revert,measurements/021-qkv-tile-space.json,HEAD
+iteration,change,latency_ms,decision,report,revision,label,group,callout
+0,Every call site in torch: the bring-up route,46.794,start,measurements/000.json,14bacc0,torch bring-up route,whole route,initial all-torch route
+1,"Expert RMSNorm, RoPE scatter and gated activation as hand-written CUDA",40.240,keep,measurements/001-expert-pointwise.json,ddd8c7c,expert norm / RoPE / gated FFN,action expert,first hand-written kernels
+2,Expert attention: cuBLAS GEMMs with a hand-written masked softmax between,37.040,keep,measurements/002-expert-attention.json,8e42d41,"expert attention, split form",action expert,
+3,The same norm kernels on the backbone's two norm-fed call sites,34.423,keep,measurements/003-backbone-norm.json,8e42d41,backbone norm kernels,llm backbone,
+4,"Vision LayerNorm kernel, plain GELU, residual adds folded into the GEMM beta",32.753,keep,measurements/004-full-cuda.json,HEAD,vision LayerNorm + GELU,vision encoder,
+5,"Single-pass masked softmax: latency-neutral, cos 0.999992 -> 0.999999",32.886,uncertain,measurements/005-shipped-final.json,HEAD,single-pass masked softmax,action expert,
+6,"Expert gate and up packed into one GEMM: 2.45x locally, backbone left alone at 1.01x",31.396,keep,measurements/006-packed-gate.json,HEAD,expert gate/up packed,action expert,gate and up packed into one GEMM
+7,Fully fused CUDA-core attention kernel: 201 us against the split form's 25,,revert,,HEAD,CUDA-core fused attention,action expert,
+8,"Tensor-core fused attention: 79.5 us against the split form's 25.3, six times the work for 1.05x the time",,revert,,576d396,tensor-core fused attention,action expert,
+9,Expert norm+QKV+RoPE fused into one kernel: the RMS gain-free scalar commutes with the GEMM,31.220,keep,measurements/009-fused-qkv.json,HEAD,expert QKV fused to one kernel,action expert,
+10,Weight tile staged in natural [k][n] order and transposed by ldmatrix.trans: removes an 8-way shared bank conflict,31.078,keep,measurements/010-qkv-ldmatrix-trans.json,HEAD,ldmatrix.trans weight tile,action expert,
+11,Action-token output projection off torch: 11 launches to 3. Its three siblings measured neutral or worse and were left alone,30.999,keep,measurements/011-action-out-proj.json,HEAD,action out-proj off torch,action expert,
+12,"Packed gated activation vectorized to 128-bit: it was moving one bf16 per access, a quarter of gelu_mul's rate",30.867,keep,measurements/012-packed-gelu-vector.json,HEAD,packed activation vectorized,action expert,
+13,"Streaming pointwise grid cap 340 -> 680 CTAs: min -0.10 and p99 -0.15 ms, median inside noise",30.854,keep,measurements/013-pointwise-grid.json,HEAD,pointwise grid cap 680,whole route,
+14,"K-contiguous vision weight: 1.21x from bf16 split-K accumulation, failed the correctness gate",,revert,measurements/014-rejected-vision-ffn-down-tn.json,a20ffae,K-contiguous vision weight,vision encoder,
+15,Hand-written 64x64 GEMM on the two backbone shapes cuBLAS cannot fill the part with,30.596,keep,measurements/015-tiled-gemm.json,HEAD,hand-written 64x64 GEMM,llm backbone,
+16,"Tensor-core attention rebuilt with ldmatrix + 8 warps + natural layouts (2.46x), then split 8 ways across the key axis",29.749,keep,measurements/016-fused-attention.json,HEAD,attention rebuilt + split-KV,action expert,attention fusion re-opened after review
+17,"Every GEMM off cuBLAS onto CUTLASS stream-K, tile picked per shape",27.980,keep,measurements/017-cutlass-streamk.json,HEAD,CUTLASS stream-K everywhere,whole route,every GEMM off cuBLAS
+18,"Programmatic dependent launch across the whole chain, trigger swept to `last`; projector off cuBLAS too",27.964,keep,measurements/018-pdl.json,HEAD,PDL across the chain,whole route,
+19,Vision feed-forward GELU folded into the GEMM epilogue; the same fusion for the backbone gated FFN measured neutral,27.862,keep,measurements/019-gelu-epilogue.json,HEAD,vision GELU in GEMM epilogue,vision encoder,
+20,"Tiles re-picked with cold weights, which is how the expert deploys: three of nine moved",27.556,keep,measurements/020-cold-tile-repick.json,HEAD,tiles re-picked cold,whole route,tiles re-picked with cold weights
+21,"Kernel-structure round: QKV tile space opened and swept cold, attention in-kernel fixup, layernorm mainloop fusion -- all three negative, none routed",,revert,measurements/021-qkv-tile-space.json,HEAD,kernel-structure round,action expert,

@@ -19,12 +19,15 @@ def main(argv=None):
     curve.add_argument("table", type=Path)
     curve.add_argument("--out", type=Path, required=True)
     curve.add_argument("--title")
+    curve.add_argument("--subtitle")
+    curve.add_argument("--note", help="one extra line under the figure")
     args = parser.parse_args(argv)
     if args.command == "rebuild":
         result = rebuild(args.root)
     elif args.command == "curve":
         from .curve import render
-        render(args.table, args.out, title=args.title)
+        render(args.table, args.out, title=args.title,
+               subtitle=args.subtitle, note=args.note)
         result = {"plot": str(args.out)}
     else:
         metadata, points = plot.from_trace(read_json(args.trace))
