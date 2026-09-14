@@ -1,0 +1,47 @@
+{
+  "qk_bf16_roundtrip": {
+    "last_qk_mma_line": 684,
+    "qk_loop_backedge_line": 690,
+    "round_to_bf16_lines": [
+      700,
+      827
+    ],
+    "widen_to_fp32_lines": [
+      829,
+      956
+    ],
+    "scale_first_line": 975,
+    "separate_fp32_mask_add_first_line": 1141,
+    "example": "%r6103 -> cvt.rn.bf16.f32 %rs5 -> cvt.f32.bf16 %r474 -> mul.rn.f32 %r602"
+  },
+  "normalized_probability_bf16": {
+    "fp32_division_lines": [
+      2061,
+      2188
+    ],
+    "round_to_bf16x2_lines": [
+      2190,
+      2253
+    ],
+    "shared_store_first_line": 2269,
+    "pv_bf16_ldmatrix_first_line": 6926,
+    "pv_bf16_mma_first_line": 6946,
+    "example": "div.full.f32 %r1526 -> cvt.rn.bf16x2.f32 %r402 -> st.shared.v4.b32 -> BF16 gather/ldmatrix -> mma.sync.f32.bf16.bf16.f32"
+  },
+  "spills_field": {
+    "reported_value": 26,
+    "local_bytes_per_thread": 104,
+    "definition": "installed Triton driver.c reads CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES then divides by 4",
+    "source_lines": [
+      189,
+      190
+    ],
+    "limitation": "local-memory footprint, not number of spill load/store instructions or latency"
+  },
+  "static_ptx": {
+    "lines": 7352,
+    "shfl_sync_idx_count": 4096,
+    "limitation": "PTXAS-input instruction count; not executed SASS count"
+  },
+  "decision": "resource screen completed; no actual-input correctness or timing yet; GPU released"
+}

@@ -1,7 +1,8 @@
 # One full-row backbone attention candidate
 
-CPU-only preparation against source 754d7f4. No model, Torch import, JIT,
-NVCC, or GPU was run. Performance and final compiler resource use are unknown.
+Initial CPU-only preparation used source754d7f4 (lab commit6e8d927).
+The subsequent authorized zero-input resource observation is recorded below.
+Actual-input correctness and performance remain unknown.
 
 ## Hypothesis and fixed geometry
 
@@ -131,3 +132,34 @@ Run with the usual environment and PYTHONPATH, using:
 
 CPU checks: python3 -m py_compile lab/pi05/backbone_fullrow.py and targeted
 source/shape arithmetic review. Production, registry and routing are untouched.
+
+## Authorized resource observation
+
+The sole candidate compiled and its zero-input launch completed successfully
+on2026-09-14 at23:49:48.596–23:49:52.564 UTC. Invocation cwd was main at
+cad1246, using the worker absolute script6e8d927 and main's existing environment.
+Results are in results/rtx5090-pi05/gpt6-backbone-fullrow:
+invocation.json, compile.log, resources.json, ptx-evidence.json, and the selected
+original-numbered ptx-boundaries.txt. Full resources.ptx remains beside them
+as an untracked generated artifact.
+
+The reported resources are255 registers/thread, n_spills26, and67,584 bytes
+shared. In installed Triton3.7.1 driver.c lines189–190, n_spills is
+CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES divided by4. The observation therefore
+means104 B/thread local-memory footprint; it does not count spill accesses or
+establish a latency penalty. Shared allocation is66 KiB, within the launch's
+available capacity. GPU was released immediately after this resource stage.
+
+Both BF16 boundaries survive compilation. After the QK loop's final MMA and
+backedge, PTX700–827 explicitly rounds FP32 scores to BF16, and829–956 widens
+back to FP32 before the separate scale and mask arithmetic. Full-row division
+is at2061–2188;2190–2253 rounds normalized probabilities into BF16x2. These
+packed probabilities pass through shared/layout/gather operations and BF16
+ldmatrix loads into the PV mma.sync.f32.bf16.bf16.f32 instructions from6946.
+This is PTX dataflow evidence, not an assertion based only on source casts.
+
+The gather path includes4,096 static shfl.sync.idx instructions in PTX input;
+this count precedes PTXAS optimization and does not establish executed SASS
+count. Resource pressure warrants inspection but does not prove the candidate
+is slower. No actual17-layer capture, correctness pass, or ABBA has run.
+Continue only if the experiment owner authorizes the unchanged mapping.
