@@ -113,3 +113,19 @@ Snapshots are retained at:
 local.json and representative.json retain all metrics and raw timing samples.
 dispatch.json retains the dispatch and exact MMA lines, with paths to the
 untracked raw trace/PTX. Production routing is outside this lab experiment.
+
+## Optional backend for serial integration
+
+The follow-up source is
+src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/triton_qk_attention.py.
+It specializes the chosen QK to 32x32x64 and imports the existing Target's
+lazy native softmax library. The original fused_attention.py remains the
+control. FP32 logits and BF16 probability scratch roles, runtime mask,
+softmax, torch PV and output aliasing Q remain unchanged.
+
+This optional production wrapper was prepared under a CPU-only window.
+AST and wrapper declaration with CUDA_HOME unset and no visible CUDA device
+pass. The final fixed-constant production function has not yet been JIT
+compiled or measured. Registry/plan routing, official alignment and deployed
+E2E ABBA belong to the serial model loop. No local timing extrapolation has
+been counted as a deployed gain.
