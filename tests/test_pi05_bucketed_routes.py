@@ -12,7 +12,9 @@ _MASKED_DOWN = _DOWN + "_masked"
 
 
 def test_saved_dense_plan_keeps_both_cutlass_routes(tmp_path):
-    control = declare("rtx5090/pi05")
+    dense = dict(declare("rtx5090/pi05").identity.plan)
+    dense[_MASKED_UP] = dense[_MASKED_DOWN] = "cutlass-backbone"
+    control = declare("rtx5090/pi05", dense)
     saved = dict(control.identity.plan)
     saved[_UP] = saved.pop(_MASKED_UP)
     saved[_DOWN] = saved.pop(_MASKED_DOWN)
@@ -26,8 +28,11 @@ def test_saved_dense_plan_keeps_both_cutlass_routes(tmp_path):
 
 
 def test_candidate_changes_only_two_routes_and_accepts_legacy_keys():
-    control = declare("rtx5090/pi05")
-    plan = dict(control.target.plan)
+    dense = dict(declare("rtx5090/pi05").identity.plan)
+    dense[_MASKED_UP] = dense[_MASKED_DOWN] = "cutlass-backbone"
+    control = declare("rtx5090/pi05", dense)
+    plan = {name: backend for name, backend in control.identity.plan.items()
+            if name not in (_MASKED_UP, _MASKED_DOWN)}
     plan[_UP] = plan[_DOWN] = "bucketed-backbone"
     candidate = declare("rtx5090/pi05", plan)
     changed = {name for name, backend in candidate.identity.plan.items()
