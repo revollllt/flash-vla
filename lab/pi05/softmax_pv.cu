@@ -11,7 +11,7 @@
 #include <cute/atom/copy_traits_sm75.hpp>
 #include <cute/atom/mma_traits_sm80.hpp>
 
-namespace {
+namespace softmax_pv_lab {
 using namespace cute;
 using Element = cute::bfloat16_t;
 using PAtom = decltype(composition(
@@ -149,15 +149,16 @@ void softmax_pv(const float* __restrict__ logits,
     rounded(i) = Element(accum(i));
   copy(rounded, tOut);
 }
-}  // namespace
+}  // namespace softmax_pv_lab
 
 extern "C" int32_t softmax_pv_launch(
     const void* logits, const void* mask, const void* values, void* output,
     void* diagnostic_p, void* stream) {
-  softmax_pv<<<dim3(25,8),128,0,static_cast<cudaStream_t>(stream)>>>(
+  softmax_pv_lab::softmax_pv<<<dim3(25,8),128,0,static_cast<cudaStream_t>(stream)>>>(
       static_cast<const float*>(logits),
       static_cast<const __nv_bfloat16*>(mask),
-      static_cast<const Element*>(values), static_cast<Element*>(output),
+      static_cast<const softmax_pv_lab::Element*>(values),
+      static_cast<softmax_pv_lab::Element*>(output),
       static_cast<__nv_bfloat16*>(diagnostic_p));
   return static_cast<int32_t>(cudaGetLastError());
 }
