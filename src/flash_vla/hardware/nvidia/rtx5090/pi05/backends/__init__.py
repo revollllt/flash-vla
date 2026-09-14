@@ -9,6 +9,7 @@ from . import fused_qkv as _fused_qkv
 from . import fused_backbone as _fused_backbone
 from . import packed_ffn as _packed_ffn
 from . import fused_attention as _fused_attention
+from . import fused_residual as _fused_residual
 
 BACKENDS = {
     "torch": _torch,
@@ -17,6 +18,7 @@ BACKENDS = {
     "fused-backbone": _fused_backbone,
     "packed-ffn": _packed_ffn,
     "fused-attention": _fused_attention,
+    "fused-residual": _fused_residual,
 }
 
 REGISTRY = Registry(BACKENDS, default="torch")
