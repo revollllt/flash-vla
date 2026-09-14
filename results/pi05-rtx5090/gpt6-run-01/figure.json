@@ -1,0 +1,8 @@
+{
+  "title": "Pi0.5 on RTX 5090: active optimization",
+  "subtitle": "Belt-cup real weights; bf16; 18 layers; 10 denoise steps",
+  "metric_label": "deployed end-to-end median (ms)",
+  "roofline_ms": 25.14322002671756,
+  "reachable_ms": 25.20247597232463,
+  "note": "floor-initial.json uses tools.profiling.floor.site_row and existing RTX5090 constants; cold DRAM model excludes host work and is guidance, not a stopping target. See caveats there."
+}

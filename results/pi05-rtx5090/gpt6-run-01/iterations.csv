@@ -1,0 +1,5 @@
+iteration,change,latency_ms,decision,report,revision,label,group
+0,Initial all-torch Pi0.5 deployment,59.57790347747505,start,measurements/000.json,5ac75bc,torch deployment,whole model
+1,Expert FFN AdaRMS and bias/GELU/product fusion,55.4514960385859,keep,measurements/001.json,23f3c8b,expert FFN pointwise,action expert
+2,Expert QKV RMS/scale and factor/bias/RoPE fusion,49.880102975293994,keep,measurements/002.json,c8f5e15,expert QKV pointwise,action expert
+3,Backbone FFN RMSNorm and GELU/product fusion,45.86823342833668,keep,measurements/003.json,571b9b4,backbone FFN pointwise,llm backbone

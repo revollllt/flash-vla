@@ -1,0 +1,54 @@
+# Pi0.5 on RTX 5090 — gpt6 run 01
+
+Active optimization run on branch `gpt6-pi05-5090`, starting at `5ac75bc`.
+
+Workload: converted kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha weights; bf16; batch 1; 3 x 224 x 224 images; 200 prompt slots; chunk 50; 18 layers; 10 denoising steps. Timing input seed 42. The existing official oracle uses its saved seed-0 fixture, so correctness and timing fixtures are identified separately.
+
+Environment: RTX 5090 (170 SMs, 96 MiB L2), driver 580.142, torch 2.13.0+cu130, Triton 3.7.1; CUDA 13.1 for native builds. Clocks unlocked, unchanged. Machine paths are configured by the ignored `artifacts/rtx5090-pi05/gpt6-env.sh`. The previously absent tokenizer was obtained from OpenPI's documented PaliGemma asset before the first valid measurement; oracle token IDs agree.
+
+Measurements use the workflow's existing 5 warmup / 100 repetitions in a fresh process per version, initial capture only. End-to-end wall time includes input staging, host processing, graph replay and final synchronization, excluding load/capture. Timing runs without a profiler, serially on this GPU. Xorg is present; there were no other compute processes before the initial run.
+
+## Commands
+
+Source the ignored environment file. CHECKPOINT resolves to the converted belt-cup directory. Each raw measurement records resolved options.
+
+```sh
+. artifacts/rtx5090-pi05/gpt6-env.sh
+.venv/bin/python -m benchmarks latency --target rtx5090/pi05 --plan shipped --seed 42 --option converted_checkpoint="$CHECKPOINT" --option checkpoint_id=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha --option checkpoint_digest=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha --out results/pi05-rtx5090/gpt6-run-01/measurements/NNN.json
+.venv/bin/python -m eval.pi05.parity compare --oracle artifacts/rtx5090-pi05/oracle-belt-cup --checkpoint "$CHECKPOINT" --checkpoint-id kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha --target rtx5090/pi05 --plan shipped
+```
+
+## Evidence and current uncertainty
+
+- Initial median: 59.5779 ms, min 59.4828, p99 59.6741; raw samples in `measurements/000.json`.
+- Initial full-depth official comparison passed; `correctness/000-official.json` contains prefix KV and action errors. Oracle provenance is a vendored OpenPI forward and records its dirty source status. This is numerical agreement, not robot task-success validation.
+- The separate pi05_base checkpoint previously failed prefix KV tolerance. This run does not claim its correctness or performance.
+- Leading bottlenecks and reachable floor are pending current-workload profiling.
+
+![Optimization progress](progress.svg)
+
+## Initial profiling and candidate selection
+
+Full-forward GPU correlation groups map to vision 5.493 ms, backbone 25.458 ms, expert 28.592 ms (profiling overhead excluded from speedup claims). The expert's FFN is 8.559 ms / 3780 launches and QKV 7.768 ms / 4860 launches. Two independent candidate worktrees fuse their pointwise chains around unchanged GEMMs. The backbone FFN is 15.466 ms / 272 launches, so its norm/GELU/product fusion is a third candidate. GPU jobs remain serial.
+
+A default native-SDPA screening on random actual-shape attention tensors was slower: 76.27 us vs 32.44 us warm-cache call time. Explicit efficient-attention dispatch agrees; this installed cuDNN attention route rejects head_dim 256. This rejects these tested dispatches, not fused attention in general. Raw records: measurements/sdpa-screen.json and sdpa-dispatch.json.
+
+The existing cost model predicts a 25.143 ms datasheet floor and 25.202 ms measured-primitive estimate. It prices every call's traffic as cold DRAM and omits host work; cache-sensitive rows and changing unlocked clocks prevent treating this sum as proof of exhaustion. Individual expert FFN estimate is 2.647 ms and QKV 1.268 ms.
+
+## 001 — Expert FFN pointwise fusion, retained
+
+Hypothesis: remove 17 pointwise/cast launches per FFN call while retaining both torch.mm and all bf16 rounding points. Actual belt-cup invocation snapshots at seed42 gave exact outputs/factors for calls 0/17/90/179; local 180-call graph median 54.9115 -> 25.8879 us/call (5.224 ms sum-equivalent estimate, not a deployment measurement). Full-depth official parity passed after integration.
+
+Deployed shipped median 59.5779 -> 55.4515 ms (-4.1264 ms, -6.93%). Raw reports 000/001 use matched conditions and independent processes. Observed clocks were 2872/2865 MHz and memory 13801 MHz, both ending at 52 C; candidate reports a software-power clock reason, so its smaller gain than the local estimate is not assigned solely to one cause. Large median separation versus within-run spread supports retaining it; no periodic control rerun was added. Source revision 23f3c8b.
+
+## 002 — Expert QKV pointwise fusion, retained
+
+Two native kernels around the unchanged BF16 GEMM remove repeated casts and elementwise launches. Synthetic actual-shape tests at magnitudes 1, 1e-3 and 1e3 are bitwise equal including the factor, preserving KV-cache prefix sentinels; cold rotating graph samples are saved in the QKV candidate record. Full-depth real-weight official comparison passed after integration and its action metrics equal 001.
+
+Deployed median 55.4515 -> 49.8801 ms, source c8f5e15. It is compared to the already-retained FFN version, not the initial model. The complete loaded plan is in measurements/002.json.
+
+## 003 — Backbone FFN pointwise fusion, retained
+
+Hypothesis: remove full FP32 cast/intermediate traversals around the two unchanged large GEMMs. Seventeen real call snapshots passed existing shallow tolerance: worst output rel_rms 1.14e-4 and minimum cosine 0.9999999935. Local graph totals torch 15.698/15.975 ms vs fused 11.936/11.971 ms, with reference drift noted. Full-depth official comparison passed after deployment.
+
+Deployed median 49.8801 -> 45.8682 ms, source 571b9b4. Raw local/official/end-to-end evidence is saved alongside this trial. The change affects prefix KV numerics within existing tolerances, not the model precision policy.

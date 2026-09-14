@@ -1,0 +1,350 @@
+{
+  "kind": "Analytical guidance from existing machine constants; no new hardware timing",
+  "source": "tools.profiling.floor.site_row",
+  "constants_source": "src/flash_vla/hardware/nvidia/rtx5090/measured/constants.yaml",
+  "constants": {
+    "stream": {
+      "tag": "ld.bw.dev.dram",
+      "value": 1.524,
+      "units": "MB per us marginal (1.598 TB/s, 89% of the 1.792 TB/s datasheet peak) behind 3.35 us of fixed cost, fitted over 16-128 MB as a 1-node CUDA graph replay with L2 flushed outside the timed region. Launching the same kernel from a stream instead fits 3.93 + MB/1.539, agreeing within the 6% noise floor -- this fixed cost is the memory system's own spin-up, NOT launch overhead, because an event pair around a launch measures GPU-side kernel duration",
+      "short": "3.35us + MB/1.524",
+      "fixed_us": 3.35
+    },
+    "tensor": {
+      "tag": "mma.tflops.dev.bf16",
+      "value": 253,
+      "units": "TFLOP/s bf16 with fp32 accumulate, sustained across the whole device, from wall time rather than a clock assumption; 248.8 at 4 warps per SM rising to 253.2 at 12, register-resident operands. This is mma.rate.sm.bf16's 512 FLOP/cycle/SM at the 2.89 GHz this part was observed running (mma.clock.sm), and the two must move together",
+      "short": "253 TFLOP/s observed"
+    },
+    "launch": {
+      "tag": "launch.lat.dev.ramp",
+      "value": 0.45,
+      "units": "us per launch INSIDE a CUDA graph, 256 threads, from a 64-node graph replayed under one event pair; 0.419 at 1 CTA, 0.449 at 170, 0.515 at 340, 0.802 at 1024 -- so unlike a stream launch it does rise with grid size. The same empty kernel launched back-to-back from a STREAM costs 2.05 us and is flat in grid size, the fixed submission cost hiding the ramp",
+      "short": "0.45 us/launch in-graph (2.05 in-stream)"
+    },
+    "knee": {
+      "tag": "ld.ctas.dev.knee",
+      "value": 340,
+      "units": "CTAs at which a cold 16 MB read reaches its best time (14.34 us); exactly 2x the 170 SMs, and flat from there to 2720",
+      "short": "knee @ 2x SM count"
+    }
+  },
+  "peaks": {
+    "hbm_bps": 1792000000000.0,
+    "bf16_fps": 209600000000000.0,
+    "source": "flash_vla.hardware.nvidia.rtx5090.spec.RTX5090Spec"
+  },
+  "stages": {
+    "vision_encoder": [
+      {
+        "call_site": "vision_encoder_patch_embed",
+        "count": 1,
+        "bytes": 4619520,
+        "flops": 1040449536,
+        "bound": "compute",
+        "roofline_us_each": 4.96397679389313,
+        "roofline_us": 4.96397679389313,
+        "ceiling_us_each": 6.381181102362205,
+        "ceiling_us": 6.381181102362205,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+        }
+      },
+      {
+        "call_site": "vision_encoder_norm_qkv",
+        "count": 27,
+        "bytes": 15052032,
+        "flops": 6115295232,
+        "bound": "compute",
+        "roofline_us_each": 29.176026870229006,
+        "roofline_us": 787.7527254961832,
+        "ceiling_us_each": 24.17112739920949,
+        "ceiling_us": 652.6204397786562,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+        }
+      },
+      {
+        "call_site": "vision_encoder_attention",
+        "count": 27,
+        "bytes": 7077888,
+        "flops": 905969664,
+        "bound": "compute",
+        "roofline_us_each": 4.322374351145038,
+        "roofline_us": 116.70410748091604,
+        "ceiling_us_each": 7.994283464566928,
+        "ceiling_us": 215.84565354330707,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+        }
+      },
+      {
+        "call_site": "vision_encoder_out_proj_residual",
+        "count": 27,
+        "bytes": 7964928,
+        "flops": 2038431744,
+        "bound": "compute",
+        "roofline_us_each": 9.725342290076336,
+        "roofline_us": 262.5842418320611,
+        "ceiling_us_each": 8.576330708661416,
+        "ceiling_us": 231.56092913385822,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+        }
+      },
+      {
+        "call_site": "vision_encoder_norm_ffn_up",
+        "count": 27,
+        "bytes": 18310048,
+        "flops": 7615807488,
+        "bound": "compute",
+        "roofline_us_each": 36.33495938931298,
+        "roofline_us": 981.0439035114504,
+        "ceiling_us_each": 30.102005881422926,
+        "ceiling_us": 812.754158798419,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+        }
+      },
+      {
+        "call_site": "vision_encoder_ffn_down_residual",
+        "count": 27,
+        "bytes": 20068608,
+        "flops": 7615807488,
+        "bound": "compute",
+        "roofline_us_each": 36.33495938931298,
+        "roofline_us": 981.0439035114504,
+        "ceiling_us_each": 30.102005881422926,
+        "ceiling_us": 812.754158798419,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+        }
+      }
+    ],
+    "llm_backbone": [
+      {
+        "call_site": "llm_backbone_projector",
+        "count": 1,
+        "bytes": 10461696,
+        "flops": 3623878656,
+        "bound": "compute",
+        "roofline_us_each": 17.289497404580153,
+        "roofline_us": 17.289497404580153,
+        "ceiling_us_each": 14.3236310513834,
+        "ceiling_us": 14.3236310513834,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+        }
+      },
+      {
+        "call_site": "llm_backbone_embed_prompt",
+        "count": 1,
+        "bytes": 1638400,
+        "flops": 0,
+        "bound": "memory",
+        "roofline_us_each": 0.9142857142857143,
+        "roofline_us": 0.9142857142857143,
+        "ceiling_us_each": 4.4250656167979,
+        "ceiling_us": 4.4250656167979,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+        }
+      },
+      {
+        "call_site": "llm_backbone_norm_qkv_rope",
+        "count": 18,
+        "bytes": 19902464,
+        "flops": 10150215680,
+        "bound": "compute",
+        "roofline_us_each": 48.426601526717555,
+        "roofline_us": 871.678827480916,
+        "ceiling_us_each": 40.11942956521739,
+        "ceiling_us": 722.149732173913,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+        }
+      },
+      {
+        "call_site": "llm_backbone_attention",
+        "count": 17,
+        "bytes": 8923024,
+        "flops": 7676100608,
+        "bound": "compute",
+        "roofline_us_each": 36.622617404580154,
+        "roofline_us": 622.5844958778627,
+        "ceiling_us_each": 30.34031860869565,
+        "ceiling_us": 515.7854163478261,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+        }
+      },
+      {
+        "call_site": "llm_backbone_out_proj_residual",
+        "count": 17,
+        "bytes": 20283392,
+        "flops": 8120172544,
+        "bound": "compute",
+        "roofline_us_each": 38.74128122137405,
+        "roofline_us": 658.6017807633589,
+        "ceiling_us_each": 32.095543652173916,
+        "ceiling_us": 545.6242420869565,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+        }
+      },
+      {
+        "call_site": "llm_backbone_norm_gated_ffn",
+        "count": 17,
+        "bytes": 169902080,
+        "flops": 129922760704,
+        "bound": "compute",
+        "roofline_us_each": 619.8604995419848,
+        "roofline_us": 10537.628492213742,
+        "ceiling_us_each": 513.5286984347827,
+        "ceiling_us": 8729.987873391305,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+        }
+      },
+      {
+        "call_site": "llm_backbone_ffn_down_residual",
+        "count": 17,
+        "bytes": 106758144,
+        "flops": 64961380352,
+        "bound": "compute",
+        "roofline_us_each": 309.9302497709924,
+        "roofline_us": 5268.814246106871,
+        "ceiling_us_each": 256.7643492173913,
+        "ceiling_us": 4364.993936695652,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+        }
+      }
+    ],
+    "action_expert": [
+      {
+        "call_site": "action_expert_action_in_proj",
+        "count": 10,
+        "bytes": 173184,
+        "flops": 3276800,
+        "bound": "memory",
+        "roofline_us_each": 0.09664285714285714,
+        "roofline_us": 0.9664285714285714,
+        "ceiling_us_each": 3.4636377952755906,
+        "ceiling_us": 34.63637795275591,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+        }
+      },
+      {
+        "call_site": "action_expert_norm_qkv_rope",
+        "count": 180,
+        "bytes": 5634048,
+        "flops": 262144000,
+        "bound": "memory",
+        "roofline_us_each": 3.1439999999999997,
+        "roofline_us": 565.92,
+        "ceiling_us_each": 7.04688188976378,
+        "ceiling_us": 1268.4387401574804,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+        }
+      },
+      {
+        "call_site": "action_expert_attention",
+        "count": 180,
+        "bytes": 1454068,
+        "flops": 416972800,
+        "bound": "compute",
+        "roofline_us_each": 1.9893740458015268,
+        "roofline_us": 358.08732824427483,
+        "ceiling_us_each": 4.304112860892388,
+        "ceiling_us": 774.7403149606299,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+        }
+      },
+      {
+        "call_site": "action_expert_out_proj_residual",
+        "count": 180,
+        "bytes": 4605952,
+        "flops": 209715200,
+        "bound": "memory",
+        "roofline_us_each": 2.5702857142857143,
+        "roofline_us": 462.6514285714286,
+        "ceiling_us_each": 6.372278215223098,
+        "ceiling_us": 1147.0100787401575,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+        }
+      },
+      {
+        "call_site": "action_expert_norm_gated_ffn",
+        "count": 180,
+        "bytes": 17307648,
+        "flops": 838860800,
+        "bound": "memory",
+        "roofline_us_each": 9.658285714285714,
+        "roofline_us": 1738.4914285714285,
+        "ceiling_us_each": 14.70672440944882,
+        "ceiling_us": 2647.2103937007873,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+        }
+      },
+      {
+        "call_site": "action_expert_ffn_down_residual",
+        "count": 180,
+        "bytes": 9005056,
+        "flops": 419430400,
+        "bound": "memory",
+        "roofline_us_each": 5.025142857142858,
+        "roofline_us": 904.5257142857145,
+        "ceiling_us_each": 9.25882939632546,
+        "ceiling_us": 1666.5892913385828,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+        }
+      },
+      {
+        "call_site": "action_expert_action_out_proj",
+        "count": 10,
+        "bytes": 174400,
+        "flops": 3276800,
+        "bound": "memory",
+        "roofline_us_each": 0.09732142857142857,
+        "roofline_us": 0.9732142857142857,
+        "ceiling_us_each": 3.4644356955380577,
+        "ceiling_us": 34.64435695538058,
+        "ceiling_source": {
+          "declared": false,
+          "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+        }
+      }
+    ]
+  },
+  "totals_ms": {
+    "roofline_ms": 25.14322002671756,
+    "ceiling_ms": 25.20247597232463
+  },
+  "caveat": "Current floor model assumes cold DRAM traffic per call site even for cache-resident activations. Datasheet boost peak can be below measured throughput at observed higher clocks; rows with roofline > measured ceiling are not valid stopping targets. Excludes host work and transfer."
+}
