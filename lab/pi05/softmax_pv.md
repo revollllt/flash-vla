@@ -57,3 +57,20 @@ mkdir -p artifacts/rtx5090-pi05/softmax-pv
   --library artifacts/rtx5090-pi05/softmax-pv/softmax_pv.so \
   --output results/rtx5090-pi05/gpt6-attention-softmax-pv-screen/abba.json
 ```
+
+## First build outcome: host-stub compilation failure
+
+The fixed source was committed as 4aad6eb before compilation. Device ptxas
+completed with 166 registers/thread, 47104 bytes shared, one barrier, and no
+reported stack or spills. The host stub then failed: the anonymous namespace
+containing Element became ambiguous with CuTe's imported anonymous namespace.
+The compiler exited 1 and produced no loadable candidate library.
+
+The serial GPU/NVCC window was released. No kernel launch, actual pair/P
+comparison, resource trace, or ABBA followed. The error has not been retried.
+It is a source/host-stub issue, not numerical or performance evidence about the
+mapping. A named namespace is a possible mechanical repair, but has not been
+applied or validated in this attempt.
+
+The retained compile-failure.txt records the diagnostic. Production and vendor
+files remain untouched.

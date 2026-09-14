@@ -1,0 +1,101 @@
+ptxas info    : 11 bytes gmem
+ptxas info    : Compiling entry function '_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe34610softmax_pvEPKfPK13__nv_bfloat16PKN7cutlass10bfloat16_tEPS6_PS2_' for 'sm_120a'
+ptxas info    : Function properties for _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe34610softmax_pvEPKfPK13__nv_bfloat16PKN7cutlass10bfloat16_tEPS6_PS2_
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 166 registers, used 1 barriers, 47104 bytes smem
+ptxas info    : Compile time = 60.782 ms
+tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:1:28: error: reference to ‘_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346’ is ambiguous
+/home/ubuntu/flash-vla/third_party/cutlass/include/cute/atom/mma_traits_sm70.hpp:41:94: note: candidates are: ‘namespace cute::_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346 { }’
+   41 | namespace {
+      |                                                                                              ^
+lab/pi05/softmax_pv.cu:14:94: note:                 ‘namespace _GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346 { }’
+   14 | namespace {
+      |                                                                                              ^
+In file included from tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:1:
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:11:257: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ does not name a type
+   11 | extern __attribute__((visibility("hidden"))) void __device_stub__ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe34610softmax_pvEPKfPK13__nv_bfloat16PKN7cutlass10bfloat16_tEPS6_PS2_(const float *__restrict__, const struct __nv_bfloat16 *__restrict__, const _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, struct __nv_bfloat16 *__restrict__);
+      |                                                                                                                                                                                                                                                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:11:333: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ has not been declared
+   11 | extern __attribute__((visibility("hidden"))) void __device_stub__ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe34610softmax_pvEPKfPK13__nv_bfloat16PKN7cutlass10bfloat16_tEPS6_PS2_(const float *__restrict__, const struct __nv_bfloat16 *__restrict__, const _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, struct __nv_bfloat16 *__restrict__);
+      |                                                                                                                                                                                                                                                                                                                                             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:14:264: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ does not name a type
+   14 | __attribute__((visibility("hidden"))) void __device_stub__ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe34610softmax_pvEPKfPK13__nv_bfloat16PKN7cutlass10bfloat16_tEPS6_PS2_(const float *__restrict__ __par0, const struct __nv_bfloat16 *__restrict__ __par1, const _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__ __par2, _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__ __par3, struct __nv_bfloat16 *__restrict__ __par4){ const float *__T36917;
+      |                                                                                                                                                                                                                                                                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:14:347: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ has not been declared
+   14 | __attribute__((visibility("hidden"))) void __device_stub__ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe34610softmax_pvEPKfPK13__nv_bfloat16PKN7cutlass10bfloat16_tEPS6_PS2_(const float *__restrict__ __par0, const struct __nv_bfloat16 *__restrict__ __par1, const _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__ __par2, _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__ __par3, struct __nv_bfloat16 *__restrict__ __par4){ const float *__T36917;
+      |                                                                                                                                                                                                                                                                                                                                                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c: In function ‘void __device_stub__ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe34610softmax_pvEPKfPK13__nv_bfloat16PKN7cutlass10bfloat16_tEPS6_PS2_(const float*, const __nv_bfloat16*, const int*, int*, __nv_bfloat16*)’:
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:16:8: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ does not name a type
+   16 |  const _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__T36919;
+      |        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:17:2: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ was not declared in this scope; did you mean ‘_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346’?
+   17 |  _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__T36920;
+      |  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |  _GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:17:64: error: ‘__T36920’ was not declared in this scope; did you mean ‘__T36918’?
+   17 |  _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__T36920;
+      |                                                                ^~~~~~~~
+      |                                                                __T36918
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:19:133: error: ‘__T36919’ was not declared in this scope; did you mean ‘__T36918’?
+   19 | __cudaLaunchPrologue(5);__T36917 = __par0;__cudaSetupArgSimple(__T36917, 0UL);__T36918 = __par1;__cudaSetupArgSimple(__T36918, 8UL);__T36919 = __par2;__cudaSetupArgSimple(__T36919, 16UL);__T36920 = __par3;__cudaSetupArgSimple(__T36920, 24UL);__T36921 = __par4;__cudaSetupArgSimple(__T36921, 32UL);__cudaLaunch(((char *)((void ( *)(const float *__restrict__, const struct __nv_bfloat16 *__restrict__, const _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, struct __nv_bfloat16 *__restrict__))_NV_ANON_NAMESPACE::softmax_pv)));}
+      |                                                                                                                                     ^~~~~~~~
+      |                                                                                                                                     __T36918
+In file included from /tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:8:
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:19:298: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ does not name a type
+   19 | __cudaLaunchPrologue(5);__T36917 = __par0;__cudaSetupArgSimple(__T36917, 0UL);__T36918 = __par1;__cudaSetupArgSimple(__T36918, 8UL);__T36919 = __par2;__cudaSetupArgSimple(__T36919, 16UL);__T36920 = __par3;__cudaSetupArgSimple(__T36920, 24UL);__T36921 = __par4;__cudaSetupArgSimple(__T36921, 32UL);__cudaLaunch(((char *)((void ( *)(const float *__restrict__, const struct __nv_bfloat16 *__restrict__, const _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, struct __nv_bfloat16 *__restrict__))_NV_ANON_NAMESPACE::softmax_pv)));}
+      |                                                                                                                                                                                                                                                                                                          ^~~~~~~~~~~~
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:19:298: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ is not a type
+   19 | __cudaLaunchPrologue(5);__T36917 = __par0;__cudaSetupArgSimple(__T36917, 0UL);__T36918 = __par1;__cudaSetupArgSimple(__T36918, 8UL);__T36919 = __par2;__cudaSetupArgSimple(__T36919, 16UL);__T36920 = __par3;__cudaSetupArgSimple(__T36920, 24UL);__T36921 = __par4;__cudaSetupArgSimple(__T36921, 32UL);__cudaLaunch(((char *)((void ( *)(const float *__restrict__, const struct __nv_bfloat16 *__restrict__, const _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, struct __nv_bfloat16 *__restrict__))_NV_ANON_NAMESPACE::softmax_pv)));}
+      |                                                                                                                                                                                                                                                                                                          ^~~~~~~~~~~~
+tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:1:28: error: reference to ‘_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346’ is ambiguous
+/home/ubuntu/flash-vla/third_party/cutlass/include/cute/atom/mma_traits_sm70.hpp:41:94: note: candidates are: ‘namespace cute::_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346 { }’
+   41 | namespace {
+      |                                                                                              ^
+lab/pi05/softmax_pv.cu:14:94: note:                 ‘namespace _GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346 { }’
+   14 | namespace {
+      |                                                                                              ^
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:19:298: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ does not name a type
+   19 | __cudaLaunchPrologue(5);__T36917 = __par0;__cudaSetupArgSimple(__T36917, 0UL);__T36918 = __par1;__cudaSetupArgSimple(__T36918, 8UL);__T36919 = __par2;__cudaSetupArgSimple(__T36919, 16UL);__T36920 = __par3;__cudaSetupArgSimple(__T36920, 24UL);__T36921 = __par4;__cudaSetupArgSimple(__T36921, 32UL);__cudaLaunch(((char *)((void ( *)(const float *__restrict__, const struct __nv_bfloat16 *__restrict__, const _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, struct __nv_bfloat16 *__restrict__))_NV_ANON_NAMESPACE::softmax_pv)));}
+      |                                                                                                                                                                                                                                                                                                          ^~~~~~~~~~~~
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:19:298: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ is not a type
+   19 | __cudaLaunchPrologue(5);__T36917 = __par0;__cudaSetupArgSimple(__T36917, 0UL);__T36918 = __par1;__cudaSetupArgSimple(__T36918, 8UL);__T36919 = __par2;__cudaSetupArgSimple(__T36919, 16UL);__T36920 = __par3;__cudaSetupArgSimple(__T36920, 24UL);__T36921 = __par4;__cudaSetupArgSimple(__T36921, 32UL);__cudaLaunch(((char *)((void ( *)(const float *__restrict__, const struct __nv_bfloat16 *__restrict__, const _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, _ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE *__restrict__, struct __nv_bfloat16 *__restrict__))_NV_ANON_NAMESPACE::softmax_pv)));}
+      |                                                                                                                                                                                                                                                                                                          ^~~~~~~~~~~~
+tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:1:28: error: reference to ‘_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346’ is ambiguous
+/home/ubuntu/flash-vla/third_party/cutlass/include/cute/atom/mma_traits_sm70.hpp:41:94: note: candidates are: ‘namespace cute::_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346 { }’
+   41 | namespace {
+      |                                                                                              ^
+lab/pi05/softmax_pv.cu:14:94: note:                 ‘namespace _GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346 { }’
+   14 | namespace {
+      |                                                                                              ^
+lab/pi05/softmax_pv.cu: At global scope:
+tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:1:28: error: reference to ‘_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346’ is ambiguous
+tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:1:28: note: in definition of macro ‘_NV_ANON_NAMESPACE’
+/home/ubuntu/flash-vla/third_party/cutlass/include/cute/atom/mma_traits_sm70.hpp:41:94: note: candidates are: ‘namespace cute::_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346 { }’
+   41 | namespace {
+      |                                                                                              ^
+lab/pi05/softmax_pv.cu:14:94: note:                 ‘namespace _GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346 { }’
+   14 | namespace {
+      |                                                                                              ^
+lab/pi05/softmax_pv.cu:50:131: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ does not name a type
+   50 | void softmax_pv(const float* __restrict__ logits,
+      |                                                                                                                                   ^                                                           
+lab/pi05/softmax_pv.cu:50:215: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ has not been declared
+   50 | void softmax_pv(const float* __restrict__ logits,
+      |                                                                                                                                                                                                                       ^                                                           
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c: In function ‘void __nv_cudaEntityRegisterCallback(void**)’:
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:1:264: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ does not name a type
+    1 | #pragma GCC diagnostic push
+      |                                                                                                                                                                                                                                                                        ^                                                           
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:1:340: error: ‘_ZN46_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe3467ElementE’ has not been declared
+    1 | #pragma GCC diagnostic push
+      |                                                                                                                                                                                                                                                                                                                                                    ^                                                           
+tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:1:28: error: reference to ‘_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346’ is ambiguous
+/tmp/tmpxft_0016ce9e_00000000-6_softmax_pv.cudafe1.stub.c:1:452: note: in expansion of macro ‘_NV_ANON_NAMESPACE’
+    1 | #pragma GCC diagnostic push
+      |                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ^                 
+/home/ubuntu/flash-vla/third_party/cutlass/include/cute/atom/mma_traits_sm70.hpp:41:94: note: candidates are: ‘namespace cute::_GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346 { }’
+   41 | namespace {
+      |                                                                                              ^
+lab/pi05/softmax_pv.cu:14:94: note:                 ‘namespace _GLOBAL__N__819d1cc9_13_softmax_pv_cu_abcfe346 { }’
+   14 | namespace {
+      |                                                                                              ^
