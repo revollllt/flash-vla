@@ -85,17 +85,21 @@ the alternative; an ambiguous result revises it rather than adding a candidate.
    the deployed version. Re-validate only what the change touches, and reuse a
    profile whose bottleneck has not moved.
 
-   **To end**, answer the six [conclusions](references/conclusions.md) checks and
-   give each leading hotspot its share of reachable capability and the reason no
-   candidate remains; without both it is not finished. Replacing a deployed
-   implementation needs no approval; the numerical contract, a change of
-   measurement conditions and an exhausted budget do.
+   **To end**, answer the six [conclusions](references/conclusions.md) checks,
+   then give each leading hotspot its share of reachable capability and why no
+   candidate remains; without both it is not finished. Only three things need
+   approval: the numerical contract, changed measurement conditions, an
+   exhausted budget.
 
 Save each round's change, revision, command, environment, correctness result and
-raw benchmark JSON under `results/<target>/<run>/`, updating `iterations.csv`
-and `progress.svg` ([results tools](../../../lab/results/README.md)). Keep the
-candidates that did not gain, but let only retained versions advance the curve
--- a kernel's local gain never stands in for model latency on it. Report the
+raw benchmark JSON under `results/<target>/<run>/`, append the trial to
+`iterations.csv`, and redraw with `python -m lab.results curve
+results/<target>/<run>`. Step 7's two denominators go in that run's
+`figure.json`, which is what draws the share-of-floor panel; without it the same
+renderer produces the same figure with a panel missing ([results
+tools](../../../lab/results/README.md)). Keep the candidates that did not gain,
+but let only retained versions advance the curve -- a kernel's local gain never
+stands in for model latency on it. Report the
 deployed version and its comparable end-to-end change, correctness evidence,
 failed and uncertain conclusions, remaining bottlenecks and the next hypothesis;
 an unmeasured gain is not reported, and no round adds a hash, contract or gate.
