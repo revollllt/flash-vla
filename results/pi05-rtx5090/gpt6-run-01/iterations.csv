@@ -19,3 +19,4 @@ iteration,change,latency_ms,decision,report,revision,label,group
 17,Reuse shared vision bias GEMM for output projection,32.61078556533903,keep,measurements/017.json,eb8c16a,vision output GEMM,vision encoder
 18,Replace expert PV with one Triton kernel; timing inconclusive,32.49937703367323,revert,measurements/018.json,34add1b,PV timing inconclusive,action expert
 19,Use fixed Triton GEMM inside the existing expert QKV chain,32.42688346654177,keep,measurements/019.json,0dcb021,expert QKV GEMM,action expert
+20,Use fixed Triton QK while retaining FP32 scores and original softmax/PV,32.17171900905669,keep,measurements/020.json,76086d9,expert FP32-score QK,action expert
