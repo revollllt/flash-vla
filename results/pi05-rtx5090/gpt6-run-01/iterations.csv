@@ -16,3 +16,4 @@ iteration,change,latency_ms,decision,report,revision,label,group
 14,Reuse BF16-rounded gated epilogue for expert output projection,32.845290028490126,keep,measurements/014.json,7669007,expert output epilogue,action expert
 15,Reuse the vision bias GEMM tile for QKV projection,32.80773910228163,keep,measurements/015.json,5772cf2,vision QKV GEMM,vision encoder
 16,Fuse two BF16-rounded expert FFN projections with gated activation,32.743963529355824,keep,measurements/016.json,78c8ca1,dual-dot expert FFN,action expert
+17,Reuse shared vision bias GEMM for output projection,32.61078556533903,keep,measurements/017.json,eb8c16a,vision output GEMM,vision encoder

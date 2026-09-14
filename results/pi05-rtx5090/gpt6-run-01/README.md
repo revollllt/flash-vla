@@ -156,3 +156,15 @@ One short Triton kernel replaces the packed BF16 GEMM plus bias/GELU/product ker
 Local suffix ABBA gives A16.0462/16.1280 us and B14.3022/14.3253 us per call, suggesting 0.31–0.33 ms over 180 calls. Full-depth official comparison passed with action metrics equal to 015. Fresh-process end-to-end ABBA gives prior plan 32.861063/32.857811 ms and candidate 32.743964/32.777847 ms. The mean of medians improves by 0.098532 ms; A/B drift is 0.003253/0.033883 ms. Only action_expert_norm_gated_ffn differs. The deployment gain is smaller than the local estimate; no additional repeats were used to seek a larger result.
 
 Ending SM clocks are 2872/2865/2865/2865 MHz, memory 13801 MHz, temperatures 57/59/59/57 C and power 586.45/598.67/597.60/588.57 W. Power and thermal behavior may interact with the unlocked clock policy, but these snapshots do not establish why the local gain shrank. The shipped route is retained based on the separated end-to-end medians. CPU backend declaration/route checks passed 9/9 without CUDA initialization before integration. Source 78c8ca1.
+
+## 017 — Reuse vision bias GEMM for output projection, retained
+
+Reuse cfg10 for M768/K1152/N1152 with bias, then retain the separate BF16 residual add. The existing residual wrapper takes K from the weight shape and serves both vision output and FFN down projection. No new native kernel or ABI is added. All 27 actual layers pass existing shallow tolerance (worst rel_rms 0.00105418, minimum cosine 0.999999444); these outputs are not bitwise equal to cuBLAS, while repeated candidate replay is identical. Local complete-chain ABBA gives A0.587776/B0.454656/B0.454656/A0.587776 ms, or 0.133120 ms separation. The 68.34375 MiB weight set can fit L2, so deployment was measured independently.
+
+Full-depth official comparison passed (action cosine 0.9999912284, rel_rms 0.00418872). Fresh-process end-to-end ABBA gives prior plan 32.771943/32.782361 ms and candidate 32.610786/32.613452 ms. The mean of medians improves by 0.165034 ms; A/B drift is 0.010418/0.002666 ms. Only vision_encoder_out_proj_residual differs between the loaded plans. Ending SM clocks are 2865/2872/2865/2865 MHz, memory 13801 MHz and temperatures 58/59/59/58 C. Source eb8c16a.
+
+## Rejected PV padding dispatch screen
+
+The 010 expert attention trace assigns 0.804084 ms to QK, 0.384005 ms to softmax, and 1.008733 ms to PV GEMM plus split-K reduction over 180 calls. There is no independent copy/memset in this chain. A single real step0/layer0 P/V pair tested whether padding K from 1018 to 1024 could improve the PV dispatch. Padding was excluded from timing, giving this candidate an optimistic screen.
+
+The original path measured 5.583/5.774 us against padded 6.928/6.926 us. Padding removed split-K reduction but selected a slower 32x32 WMMA align8 GEMM. The padded result passed existing shallow tolerance and was not bitwise equal. This candidate is rejected before any full attention implementation; no production padding was introduced. Detailed evidence is in results/rtx5090-pi05/gpt6-attention-pv-padding.
