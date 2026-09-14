@@ -23,7 +23,7 @@ Source the ignored environment file. CHECKPOINT resolves to the converted belt-c
 - Initial median: 59.5779 ms, min 59.4828, p99 59.6741; raw samples in `measurements/000.json`.
 - Initial full-depth official comparison passed; `correctness/000-official.json` contains prefix KV and action errors. Oracle provenance is a vendored OpenPI forward and records its dirty source status. This is numerical agreement, not robot task-success validation.
 - The separate pi05_base checkpoint previously failed prefix KV tolerance. This run does not claim its correctness or performance.
-- Profiling and the initial floor estimate are recorded below. The latest focused expert trace is after 019; it is diagnostic rather than an end-to-end timing result.
+- Profiling and the initial floor estimate are recorded below. The latest focused expert trace is after 019 and the latest whole-forward overview is after 021; both are diagnostic rather than end-to-end timing results.
 
 ![Optimization progress](progress.svg)
 
@@ -220,3 +220,15 @@ Full-depth official comparison passed with action metrics equal to 020. The scop
 That reverse block gives B32.139037/A32.250799/A32.248522/B32.162340 ms. Its mean-of-medians gain is 0.098972 ms; A/B drift is 0.002277/0.023303 ms and minimum separation 0.086182 ms. All eight mean medians favor the candidate by 0.110772 ms. Candidate/control medians stay separated in both orders, supporting retention. The curve uses the first candidate measurement by the same convention as earlier iterations; the four candidate medians span 32.041923–32.162340 ms, so that first point alone is not the incremental gain estimate.
 
 The eight ending SM clocks are 2857/2865/2857/2865/2857/2865/2857/2857 MHz, memory 13801 MHz, with temperatures 57/56/59/59/60/61/58/59 C. These snapshots do not establish identical clock histories. Only action_expert_norm_qkv_rope changes across the verified complete plan maps. No GPU work, compilation or model loading overlapped these end-to-end runs. Source 4de57c9; all reports and the predeclared follow-up decision are retained.
+
+## Rejected fixed-cfg0 backbone up/GELU epilogue
+
+A same-library experiment reads the already rounded gate as matrix C and fuses GELU/product into the up GEMM epilogue. The original up BF16 roundtrip, exact tanhf expression and compiler precision flags are preserved. Both original and fused cfg0 compile at 254 registers with no spills; all 17 real layers match bitwise.
+
+One fixed local ABBA across the 17 actual up weights gives A5.528512/B5.716608/B5.778464/A5.623680 ms. The candidate is slower by 0.171440 ms using mean medians, and even the faster candidate is 0.092928 ms slower than the slower control. It is rejected before deployment testing. Pre-materialized gate matrices change the local cache context, so the result does not isolate the cause or establish a deployment slowdown. Production native/ABI edits and the experimental binary were removed; the exact reproducible patch, resource excerpt, numerical errors and all 60 samples remain in lab/pi05/cutlass_gelu_up.md and measurements/backbone-gelu-up-cfg0-rejected.json.
+
+## Whole-forward profile after 021
+
+GPU events correlated with the three graph launches attribute vision 4.095025 ms / 302 launches, backbone 18.564488 ms / 233 launches and expert 9.383119 ms / 1870 launches. All 2405 kernel launches map to a segment. The latest expert count reflects the QKV finish launch removal. The overview reports approximately 0.518 ms of gaps in its GPU span, but profiling perturbs scheduling and this is not an unprofiled host-overhead estimate. No end-to-end improvement is inferred by subtracting old profiler sums.
+
+The 27 independent vision GELU launches still total 90.916 us, close to the older 015 diagnostic value. This bounds the small upcoming vision fusion opportunity before replacement work. Compact evidence is profile-021-summary.json; raw trace/report remain under profiles/021-overview.

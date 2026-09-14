@@ -1,0 +1,24 @@
+{
+  "source_revision": "17f8c435dcbe3f8f518a7177d4832bfc1ee7ffb8",
+  "diagnostic_only": true,
+  "segments": {
+    "segment:vision_encoder": {
+      "kernel_sum_ms": 4.095025,
+      "launches": 302
+    },
+    "segment:llm_backbone": {
+      "kernel_sum_ms": 18.564488,
+      "launches": 233
+    },
+    "segment:action_expert": {
+      "kernel_sum_ms": 9.383119,
+      "launches": 1870
+    }
+  },
+  "total_kernel_launches": 2405,
+  "unmapped_kernel_launches": 0,
+  "gpu_activity_us": 32042.6044921875,
+  "gpu_span_us": 32560.5185546875,
+  "gpu_gaps_us": 517.9140625,
+  "note": "Segment annotations measure CPU launch scopes; use GPU events in the trace for execution time. Profiling perturbs scheduling; benchmark separately."
+}
