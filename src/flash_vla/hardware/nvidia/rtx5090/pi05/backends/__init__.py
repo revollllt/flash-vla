@@ -10,6 +10,7 @@ from . import fused_backbone as _fused_backbone
 from . import packed_ffn as _packed_ffn
 from . import fused_attention as _fused_attention
 from . import fused_residual as _fused_residual
+from . import cutlass_backbone as _cutlass_backbone
 
 BACKENDS = {
     "torch": _torch,
@@ -19,6 +20,7 @@ BACKENDS = {
     "packed-ffn": _packed_ffn,
     "fused-attention": _fused_attention,
     "fused-residual": _fused_residual,
+    "cutlass-backbone": _cutlass_backbone,
 }
 
 REGISTRY = Registry(BACKENDS, default="torch")
