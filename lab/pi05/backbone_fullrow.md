@@ -200,3 +200,36 @@ additional tile, stage, warp, gather implementation, or timing round was tried;
 there is no production change or E2E measurement. GPU was released immediately
 after the single ABBA process exited. Invocation timestamps and full logs remain
 in the result directory; the actual snapshot remains in ignored artifacts.
+
+## Independent BM16 follow-up: CPU preparation
+
+The M32 trial is complete. The subsequent bounded question changes only BM
+from32 to16. It retains8 warps, one stage, QK BK32, PV BK64, full-row softmax,
+both BF16 boundaries, and the same gather expression. There is no tuner or
+parameter grid; the explicit --block-m option accepts16 or32 and defaults to32
+so the prior invocation remains replayable. Existing M32 records are untouched.
+
+At16 rows, the distributed FP32 score payload falls from128 to64 values/thread,
+the BF16 probability payload falls from64 to32 KiB/CTA, and PV accumulator
+payload falls from32 to16 values/thread. The QK staged operand payload becomes
+65 KiB (64 KiB K plus1 KiB Q). These are payload arithmetic, not a prediction
+of the compiler's register allocation or spill behavior. CTA count increases
+from242 to484 and logical K/V reads double from239,878,144 to479,756,288 B/call.
+This tests the net tradeoff; M32's slowdown is not attributed to spills alone.
+
+Use the existing artifacts/rtx5090-pi05/backbone-fullrow-024-17.safetensors.
+There is no new capture or model load. After a separate resource authorization,
+compile only BM16 and save resources-m16.json/resources-m16.ptx plus its
+invocation/log. Check both BF16 boundaries in the new PTX. Then wait for the
+owner's decision before actual-input check and the single predefined ABBA:
+
+    python -m lab.pi05.backbone_fullrow resources --block-m 16       --output "$RESULTS/resources-m16.json"
+    python -m lab.pi05.backbone_fullrow check --block-m 16       --snapshot "$SNAPSHOT" --output "$RESULTS/check-m16.json"
+    python -m lab.pi05.backbone_fullrow time --block-m 16       --snapshot "$SNAPSHOT" --output "$RESULTS/abba-m16.json"
+
+All outputs, PTX, invocation records and logs use the -m16 suffix; they never overwrite M32 artifacts.
+The actual-input check and timer reuse the identical17-layer snapshot, common
+Q/out addresses, equal Q reset, shallow tolerance, warm working set, and
+4 chains/graph with30 samples/leg. Failure stops this BM16 trial. There is no
+BM8, warp, stage, BK, or gather sweep. CPU syntax checking passed; no new
+kernel compilation or GPU work has run.

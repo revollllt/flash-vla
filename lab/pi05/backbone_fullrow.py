@@ -1,4 +1,4 @@
-"""Fixed M32 full-row backbone attention; preserve BF16 score and probability."""
+"""Fixed full-row backbone attention; explicit M32 or M16, with BF16 score/P."""
 from __future__ import annotations
 
 import argparse
@@ -19,12 +19,12 @@ from flash_vla.hardware.nvidia.rtx5090.pi05.backends.torch_ops import llm_backbo
 
 
 @triton.jit
-def _attention(Q, K, V, Mask, Out):
-    rows = tl.program_id(0) * 32 + tl.arange(0, 32)
+def _attention(Q, K, V, Mask, Out, BLOCK_M: tl.constexpr):
+    rows = tl.program_id(0) * BLOCK_M + tl.arange(0, BLOCK_M)
     keys = tl.arange(0, 1024)
     depth = tl.arange(0, 32)
-    scores = tl.zeros((32, 1024), tl.float32)
-    # One 64 KiB K tile plus 2 KiB Q tile; never stage K=64 at this N.
+    scores = tl.zeros((BLOCK_M, 1024), tl.float32)
+    # One 64 KiB K tile plus 1 or 2 KiB Q tile; never stage K=64 at this N.
     for start in range(0, 256, 32):
         q = tl.load(Q + rows[:, None] * 256 + start + depth[None, :])
         k = tl.load(K + keys[None, :] * 256 + start + depth[:, None],
@@ -40,10 +40,10 @@ def _attention(Q, K, V, Mask, Out):
 
     channels = tl.arange(0, 256)
     kk = tl.arange(0, 64)
-    output = tl.zeros((32, 256), tl.float32)
+    output = tl.zeros((BLOCK_M, 256), tl.float32)
     for start in range(0, 1024, 64):
         # Full-row normalization and BF16 rounding have already completed.
-        indices = tl.broadcast_to((start + kk)[None, :], (32, 64))
+        indices = tl.broadcast_to((start + kk)[None, :], (BLOCK_M, 64))
         p = tl.gather(probability, indices, axis=1)
         v = tl.load(V + (start + kk[:, None]) * 256 + channels[None, :],
                     mask=start + kk[:, None] < 968, other=0.0)
@@ -51,9 +51,9 @@ def _attention(Q, K, V, Mask, Out):
     tl.store(Out + rows[:, None] * 256 + channels[None, :], output.to(tl.bfloat16))
 
 
-def candidate(q, k, v, mask, out):
-    return _attention[(242,)](
-        q, k, v, mask, out, num_warps=8, num_stages=1,
+def candidate(q, k, v, mask, out, block_m=32):
+    return _attention[(7744 // block_m,)](
+        q, k, v, mask, out, block_m, num_warps=8, num_stages=1,
         enable_fp_fusion=False, enable_reflect_ftz=False)
 
 
@@ -62,10 +62,11 @@ def resources(args):
     q = torch.zeros((7744, 256), dtype=torch.bfloat16, device="cuda")
     k = torch.zeros((968, 256), dtype=q.dtype, device=q.device)
     v, mask = torch.zeros_like(k), torch.zeros((968,), dtype=q.dtype, device=q.device)
-    compiled = candidate(q, k, v, mask, torch.empty_like(q))
+    compiled = candidate(q, k, v, mask, torch.empty_like(q), args.block_m)
     torch.cuda.synchronize()
     report = {"registers": compiled.n_regs, "spills": compiled.n_spills,
-              "shared_bytes": compiled.metadata.shared, "ctas": 242, "warps": 8, "stages": 1,
+              "shared_bytes": compiled.metadata.shared, "block_m": args.block_m,
+              "ctas": 7744 // args.block_m, "warps": 8, "stages": 1,
               "scope": "zero tensors only for compile/resources; not actual-input correctness"}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.with_suffix(".ptx").write_text(compiled.asm["ptx"])
@@ -153,7 +154,7 @@ def check(args):
         llm_backbone_attention(q, k, v, 0.0625, mask, out)
         control = error_metrics(expected, out)
         q.copy_(saved_q)
-        compiled = candidate(q, k, v, mask, out)
+        compiled = candidate(q, k, v, mask, out, args.block_m)
         metrics = error_metrics(expected, out)
         finite = bool(torch.isfinite(out).all())
         valid = int((mask == 0).sum()) * 8
@@ -168,8 +169,9 @@ def check(args):
             break
     torch.cuda.synchronize()
     report = {
-        "phase": "check", "snapshot_metadata": metadata, "tile": [32, 1024, 32],
-        "pv_tile": [32, 256, 64], "warps": 8, "stages": 1, "ctas": 242,
+        "phase": "check", "snapshot_metadata": metadata, "tile": [args.block_m, 1024, 32],
+        "pv_tile": [args.block_m, 256, 64], "warps": 8, "stages": 1,
+        "ctas": 7744 // args.block_m,
         "registers": compiled.n_regs, "spills": compiled.n_spills,
         "shared_bytes": compiled.metadata.shared, "tolerance": limit,
         "rows": rows, "passed": len(rows) == 17 and all(row["passed"] for row in rows),
@@ -190,7 +192,7 @@ def measure(args):
             if route == "control":
                 llm_backbone_attention(q, k, v, 0.0625, mask, out)
             else:
-                candidate(q, k, v, mask, out)
+                candidate(q, k, v, mask, out, args.block_m)
 
     rows = []
     for route in ("control", "candidate", "candidate", "control"):
@@ -201,7 +203,8 @@ def measure(args):
         rows.append({"route": route, "median_ms_per_17": median(samples), "samples_ms": samples})
     a1, b1, b2, a2 = [row["median_ms_per_17"] for row in rows]
     report = {
-        "phase": "single-ABBA", "snapshot_metadata": metadata, "timings": rows,
+        "phase": "single-ABBA", "block_m": args.block_m,
+        "snapshot_metadata": metadata, "timings": rows,
         "gain_ms_per_17": (a1 + a2 - b1 - b2) / 2,
         "control_drift_ms": abs(a2 - a1), "candidate_drift_ms": abs(b2 - b1),
         "conservative_gain_ms": min(a1, a2) - max(b1, b2),
@@ -218,6 +221,7 @@ def measure(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase", choices=("resources", "prepare", "check", "time"))
+    parser.add_argument("--block-m", type=int, choices=(16, 32), default=32)
     parser.add_argument("--snapshot", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--checkpoint")
