@@ -1,0 +1,12 @@
+{
+  "stage": "first actual-call correctness, before timing",
+  "call": 0,
+  "max_abs": 3.3646083643305683e+36,
+  "mean_abs": 2.1500235109608413e+32,
+  "rms_error": 1.7538044339756614e+34,
+  "rel_rms": 4.2090638395773906e+33,
+  "p99_abs": 12.211015625000016,
+  "cosine_similarity": -0.00680463159630095,
+  "timing_run": false,
+  "classification": "implementation error, investigation pending"
+}
