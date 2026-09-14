@@ -300,6 +300,40 @@ reproduced the failure once `res` was deliberately aliased to `out`, at cos
 0.962. **A parity test that does not exercise the aliasing the graph actually
 uses proves nothing about it.**
 
+## What the interventions were worth
+
+Deployed medians from `iterations.csv`, attributed by matching commit times to
+the message that preceded them. The whole run is 46.794 → 27.556 ms; the cases
+behind the corrections are in
+[docs/corrections](../../../docs/corrections/human.md).
+
+| when (UTC) | intervention | iters | deployed |
+|---|---|---|---:|
+| 09-11 19:43 | LingBot's best is ~23 ms, not 64.804 | — | corrects the premise |
+| 09-11 19:53 | port to 5090; every instruction needs evidence | — | sets the method |
+| 09-11 20:14 | the official manual is at `agent-gpu-skills`, not a wiki | — | corrects the sources |
+| 09-12 06:30 | a suspected error in the mma calculation | — | corrects the denominator |
+| 09-12 07:34 | kernels may be rewritten entirely; torch first, then SOL | 0 | opens the route |
+| 09-12 07:47-08:26 | sudo/ncu: is it really unavailable? | — | restores profiling |
+| 09-12 08:39 | the five-point optimization mandate | 1-6 | **-15.398 ms** |
+| 09-12 14:36 | keep going until there is nothing left | 9-15 | **-0.800 ms** |
+| 09-12 18:38 | the gap table, then the L2 and stale-baseline critique | 16 | **-0.847 ms** |
+| 09-12 19:08 | how many views and prompt tokens? | — | corrects the record |
+| 09-12 19:18 | rewrite every cuBLAS call site with CuTe/CUTLASS, then add PDL | 17-18 | **-1.785 ms** |
+| 09-12 20:18 | is there any room left? | 19-20 | **-0.408 ms** |
+| 09-12 20:41 | swapping kernels is allowed; deploy numbers must be real | 21 | 0 ms, three negatives |
+
+Two things this says that the iteration table does not.
+
+The mandate at 08:39 carries 80% of the total and is the least clever entry in
+the table: it asked for the documented loop to be run against a stated
+objective. Most of the distance was not bought by any insight.
+
+Of the remaining 3.84 ms, **1.785 came from one instruction that removed a
+blocker the loop had correctly identified and then accepted**, and 0.847 from
+re-opening a negative the loop had filed as settled. What paid was overriding a
+*conclusion*, not supplying an idea.
+
 ## Where the time goes now
 
 Floor model after iteration 20 (`artifacts/profile/floor9.json`), and a second
