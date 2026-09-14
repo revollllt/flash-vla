@@ -1,4 +1,4 @@
-"""Prepare one actual gate operand pair, then profile the deployed cached GEMM."""
+"""Prepare actual gate/down operands, then profile the deployed cached GEMM."""
 from __future__ import annotations
 
 import argparse
@@ -12,7 +12,7 @@ from safetensors.torch import save_file
 
 
 def prepare(args):
-    """Save deployed layer-0 normalized input and folded gate weight outside NCU."""
+    """Save deployed layer-0 GEMM operands, including down's initial residual."""
     from flash_vla.inference import build, resolve
 
     engine = build(
@@ -22,25 +22,34 @@ def prepare(args):
     inputs = engine.sample_inputs(42)
     saved = False
 
+    def save(tensors):
+        nonlocal saved
+        args.snapshot.parent.mkdir(parents=True, exist_ok=True)
+        save_file(
+            {name: tensor.detach().cpu().contiguous() for name, tensor in tensors.items()},
+            str(args.snapshot),
+            metadata={"checkpoint": args.checkpoint_id, "seed": "42", "site": args.site,
+                      "layer": "0", "identity": json.dumps(engine.identity.as_dict())})
+        saved = True
+
     def inspect(name, function):
-        if name != "llm_backbone_norm_gated_ffn":
-            return function
+        if args.site == "gate" and name == "llm_backbone_norm_gated_ffn":
+            def record_gate(x, gate_w, up_w, out, x_norm):
+                result = function(x, gate_w, up_w, out, x_norm)
+                if not saved:
+                    save({"normalized": x_norm[:x.shape[0]], "gate_weight": gate_w})
+                return result
 
-        def record(x, gate_w, up_w, out, x_norm):
-            nonlocal saved
-            result = function(x, gate_w, up_w, out, x_norm)
-            if not saved:
-                args.snapshot.parent.mkdir(parents=True, exist_ok=True)
-                save_file(
-                    {"normalized": x_norm[:x.shape[0]].detach().cpu().contiguous(),
-                     "gate_weight": gate_w.detach().cpu().contiguous()},
-                    str(args.snapshot),
-                    metadata={"checkpoint": args.checkpoint_id, "seed": "42",
-                              "layer": "0", "identity": json.dumps(engine.identity.as_dict())})
-                saved = True
-            return result
+            return record_gate
+        if args.site == "down" and name == "llm_backbone_ffn_down_residual":
+            def record_down(x, weight, out):
+                # This GEMM overwrites C=D, so preserve C before the deployed call.
+                if not saved:
+                    save({"down_input": x, "down_weight": weight, "residual": out})
+                return function(x, weight, out)
 
-        return record
+            return record_down
+        return function
 
     engine.stage(**inputs)
     with engine.instrument(inspect):
@@ -62,10 +71,18 @@ def profile(args):
     from flash_vla.runtime.runner import Scratch
 
     with safe_open(str(args.snapshot), framework="pt", device="cpu") as stored:
-        a = stored.get_tensor("normalized").to("cuda")
-        b = stored.get_tensor("gate_weight").to("cuda")
+        if args.site == "gate":
+            a = stored.get_tensor("normalized").to("cuda")
+            b = stored.get_tensor("gate_weight").to("cuda")
+            residual = None
+        else:
+            a = stored.get_tensor("down_input").to("cuda")
+            b = stored.get_tensor("down_weight").to("cuda")
+            residual = stored.get_tensor("residual").to("cuda")
         metadata = stored.metadata()
     output = torch.empty((a.shape[0], b.shape[1]), dtype=a.dtype, device=a.device)
+    beta = 1.0 if args.site == "down" else 0.0
+    nvtx_range = f"pi05_backbone_{args.site}"
     # CDLL loads the existing deployment artifact; this driver never calls nvcc.
     library = ctypes.CDLL(str(args.library))
     library.backbone_gemm_workspace.argtypes = [ctypes.c_int32] * 3
@@ -80,27 +97,32 @@ def profile(args):
     library.backbone_gemm_destroy.restype = None
     stream = torch.cuda.current_stream().cuda_stream
     scratch = Scratch(a.device)
-    plan = cutlass_backbone._Plan(library, scratch, a, b, output, beta=0.0, stream=stream)
+    plan = cutlass_backbone._Plan(library, scratch, a, b, output, beta=beta, stream=stream)
     for _ in range(50):
+        if residual is not None:
+            output.copy_(residual)
         cutlass_backbone._check(
-            library.backbone_gemm_run(plan.handle, stream), "gate warmup")
+            library.backbone_gemm_run(plan.handle, stream), f"{args.site} warmup")
+    if residual is not None:
+        output.copy_(residual)
     torch.cuda.synchronize()
     print(json.dumps({
         "mode": "single eager launch of deployed Stream-K config 0",
         "library": str(args.library), "snapshot": str(args.snapshot),
         "metadata": metadata, "a_shape": list(a.shape), "a_stride": list(a.stride()),
         "b_shape": list(b.shape), "b_stride": list(b.stride()),
-        "dtype": str(a.dtype), "warmup_calls": 50,
-        "nvtx_range": "pi05_backbone_gate"}), flush=True)
-    with torch.cuda.nvtx.range("pi05_backbone_gate"):
+        "dtype": str(a.dtype), "warmup_calls": 50, "alpha": 1.0, "beta": beta,
+        "nvtx_range": nvtx_range}), flush=True)
+    with torch.cuda.nvtx.range(nvtx_range):
         cutlass_backbone._check(
-            library.backbone_gemm_run(plan.handle, stream), "gate measured launch")
+            library.backbone_gemm_run(plan.handle, stream), f"{args.site} measured launch")
     torch.cuda.synchronize()
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=("prepare", "profile"))
+    parser.add_argument("--site", choices=("gate", "down"), default="gate")
     parser.add_argument("--snapshot", type=Path, required=True)
     parser.add_argument("--checkpoint")
     parser.add_argument("--checkpoint-id")
