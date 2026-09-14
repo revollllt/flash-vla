@@ -176,6 +176,10 @@ provides, at the cost of the round trip.
 - Against the data-parallel form of the *same* kernel, so only the schedule moves.
 - On a shape whose tile count is already a whole multiple of the grid: stream-K
   should be neutral there, and whatever it is not is fixup overhead.
+- Cost the fixup at the tier its workspace actually lives in. A partial buffer
+  of a few MB is L2-resident on a current part, and pricing its round trip at
+  DRAM bandwidth can overstate it several times over — enough to reject a
+  schedule that would have won.
 - Thresholds — minimum K depth, minimum tile count, tile shape — are a search,
   not a constant to copy. humming keeps them in a per-architecture policy module
   for that reason.

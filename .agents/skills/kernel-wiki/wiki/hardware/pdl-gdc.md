@@ -30,6 +30,19 @@ a Blackwell-only mechanism.
 3. The secondary may perform work that does not consume the primary's results,
    then calls `cudaGridDependencySynchronize()` before dependent work.
 
+## What the protocol rules out
+
+Both halves are code, so both must be yours. A library call between two
+hand-written kernels breaks the chain: it neither triggers early nor waits, so
+that boundary falls back to ordinary stream serialization and the technique is
+worth nothing across it. Measuring PDL on an isolated pair and deploying it into
+a chain that alternates with library calls is the ordinary way to get a null.
+
+The consequence for planning: PDL's value is a function of how much of the chain
+is hand-written, so it is not an independent choice and not a property of the
+workload. It becomes available as library calls are replaced, which means a null
+measured before such a replacement says nothing about after it.
+
 If a primary block does not call the trigger, its trigger occurs implicitly
 when that block exits. The secondary may start before the primary's writes are
 visible, which is why the secondary-side dependency synchronization (or another
