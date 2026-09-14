@@ -10,3 +10,4 @@ iteration,change,latency_ms,decision,report,revision,label,group
 8,CUTLASS Stream-K backbone down projection,36.2217384390533,keep,measurements/008.json,54b5946,backbone down GEMM,llm backbone
 9,Fuse vision LayerNorm and GELU around unchanged GEMMs,35.32363963313401,keep,measurements/009.json,cc5f0a8,vision norm and activation,vision encoder
 10,Fuse backbone RMSNorm and RoPE scatter around QKV GEMM,33.996566431596875,keep,measurements/010.json,7085a4b,prefix QKV pointwise,llm backbone
+11,Fuse action output RMS factor and Euler update,33.74320699367672,keep,measurements/011.json,853d1fa,action output pointwise,action expert
