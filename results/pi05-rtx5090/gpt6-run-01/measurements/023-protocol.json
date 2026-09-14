@@ -1,0 +1,26 @@
+{
+  "iteration": 23,
+  "source": "7869a5a",
+  "order": "ABBA",
+  "legs": [
+    {
+      "name": "023-control-a1",
+      "plan": "artifacts/rtx5090-pi05/023-control-plan.json"
+    },
+    {
+      "name": "023",
+      "plan": "shipped"
+    },
+    {
+      "name": "023-repeat",
+      "plan": "shipped"
+    },
+    {
+      "name": "023-control-a2",
+      "plan": "artifacts/rtx5090-pi05/023-control-plan.json"
+    }
+  ],
+  "measurement": "existing fresh-worker CLI defaults: 5 warmup, 100 measurements, seed42, firstcapture; four consecutive commands in one serial shell",
+  "preconditions": "Native build and three-case official switch check complete; scoped CPU route checks passed; root alone owns GPU; agents idle",
+  "decision": "Compare mean medians, within-plan drift and range overlap; only one fixed reverse block if the first block leaves unresolved drift."
+}

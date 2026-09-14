@@ -1,0 +1,35 @@
+{
+  "method": "direct comparison of fixture tensor descriptors and bytes; no hashes",
+  "long_oracle": "artifacts/rtx5090-pi05/oracle-belt-cup",
+  "short_oracle": "artifacts/rtx5090-pi05/oracle-belt-cup-short896",
+  "inputs": {
+    "images": {
+      "shape": [
+        3,
+        224,
+        224,
+        3
+      ],
+      "dtype": "F32",
+      "shape_dtype_equal": true,
+      "data_equal": true
+    },
+    "state": {
+      "shape": [
+        32
+      ],
+      "dtype": "F32",
+      "shape_dtype_equal": true,
+      "data_equal": true
+    },
+    "noise": {
+      "shape": [
+        50,
+        32
+      ],
+      "dtype": "F32",
+      "shape_dtype_equal": true,
+      "data_equal": true
+    }
+  }
+}

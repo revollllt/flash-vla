@@ -1,0 +1,81 @@
+{
+  "source_revision": "7869a5a",
+  "production_commits": [
+    "a1e20bd",
+    "7204975",
+    "3ebf7dd",
+    "7869a5a"
+  ],
+  "order": "ABBA",
+  "reports": [
+    "measurements/023-control-a1.json",
+    "measurements/023.json",
+    "measurements/023-repeat.json",
+    "measurements/023-control-a2.json"
+  ],
+  "medians_ms": [
+    32.06167498137802,
+    30.31566203571856,
+    30.31538100913167,
+    32.147648627869785
+  ],
+  "gain_mean_of_medians_ms": 1.7891402821987867,
+  "control_drift_ms": 0.08597364649176598,
+  "candidate_drift_ms": 0.00028102658689022064,
+  "minimum_separation_ms": 1.7460129456594586,
+  "changed_routes": {
+    "llm_backbone_norm_gated_ffn_masked": {
+      "control": "cutlass-backbone",
+      "candidate": "bucketed-backbone"
+    },
+    "llm_backbone_ffn_down_residual_masked": {
+      "control": "cutlass-backbone",
+      "candidate": "bucketed-backbone"
+    }
+  },
+  "runtime_observations": [
+    {
+      "clocks.sm": "2865",
+      "clocks.mem": "13801",
+      "pstate": "P1",
+      "temperature.gpu": "58",
+      "power.draw": "601.31",
+      "clocks_event_reasons.active": "0x0000000000000004"
+    },
+    {
+      "clocks.sm": "2865",
+      "clocks.mem": "13801",
+      "pstate": "P1",
+      "temperature.gpu": "59",
+      "power.draw": "600.67",
+      "clocks_event_reasons.active": "0x0000000000000004"
+    },
+    {
+      "clocks.sm": "2857",
+      "clocks.mem": "13801",
+      "pstate": "P1",
+      "temperature.gpu": "60",
+      "power.draw": "600.30",
+      "clocks_event_reasons.active": "0x0000000000000004"
+    },
+    {
+      "clocks.sm": "2857",
+      "clocks.mem": "13801",
+      "pstate": "P1",
+      "temperature.gpu": "59",
+      "power.draw": "600.56",
+      "clocks_event_reasons.active": "0x0000000000000004"
+    }
+  ],
+  "decision": "keep",
+  "reason": "Both candidate medians are separated from both controls; the 1.789 ms gain exceeds 0.086 ms control drift. No reverse block needed.",
+  "scope": "Fixed seed42 latency-v2 workload has 895 valid prefix rows. Physical prefix remains968, suffix KV offset968, BF16 storage/FP32 accumulation, 18layers/10steps. Runtime mask selects896 or968 every replay. Benefit is conditional on valid_prefix<=896; long-prefix latency has not been established.",
+  "correctness": [
+    "correctness/023-short896-dense-official.json",
+    "correctness/023-bucket-switch-official.json"
+  ],
+  "initial_median_ms": 59.57790347747505,
+  "reduction_from_initial_pct": 49.115930124697705,
+  "precision_note": "Bucket GEMM outputs are not bitwise equal to full-M; existing numerical tolerances pass.",
+  "measurement_note": "All builds/checks preceded four consecutive fresh-process CLI calls. No overlapping model loading/GPU work. Unlocked-clock endpoint snapshots do not identify the complete clock history."
+}

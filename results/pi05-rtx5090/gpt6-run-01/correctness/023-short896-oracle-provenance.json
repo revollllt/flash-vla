@@ -1,0 +1,50 @@
+{
+  "producer": "eval.pi05.parity capture",
+  "official": {
+    "module": "training._vendor.openpi_pi0_pytorch",
+    "source": "__init__.py",
+    "commit": "eaf90192964f3a8be8e15c307b2a9dd5004d968a",
+    "dirty": true,
+    "repository": "https://ghfast.top/https://github.com/flashrt-project/FlashRT.git",
+    "vendor_note": "VENDOR.md"
+  },
+  "config": {
+    "pi05": true,
+    "discrete_state_input": true,
+    "action_dim": 32,
+    "action_horizon": 50,
+    "max_token_len": 200,
+    "paligemma_variant": "gemma_2b",
+    "action_expert_variant": "gemma_300m",
+    "dtype": "bfloat16"
+  },
+  "checkpoint": {
+    "id": "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+    "file": "model.safetensors",
+    "weights": "converted",
+    "config_json": {
+      "action_dim": 32,
+      "action_horizon": 50,
+      "paligemma_variant": "gemma_2b",
+      "action_expert_variant": "gemma_300m",
+      "precision": "bfloat16"
+    }
+  },
+  "fixture": {
+    "seed": 0,
+    "prompt": "pick up cup",
+    "num_views": 3,
+    "prompt_tokens": 128,
+    "n_valid_prefix": 896,
+    "chunk": 50,
+    "steps": 10,
+    "bf16_representable_inputs": true
+  },
+  "exact_rope": true,
+  "rope_buffers_restored": 2,
+  "torch": "2.13.0+cu130",
+  "device": "NVIDIA GeForce RTX 5090",
+  "layers_captured": 18,
+  "prefix_layout": "openpi half-split rope channels; [layers, seq, head_dim]",
+  "finite": true
+}

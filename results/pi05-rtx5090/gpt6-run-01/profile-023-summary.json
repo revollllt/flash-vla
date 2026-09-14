@@ -1,0 +1,53 @@
+{
+  "source_revision": "7869a5a",
+  "diagnostic_only": true,
+  "segments": {
+    "segment:vision_encoder": {
+      "kernel_sum_ms": 4.095644,
+      "launches": 302
+    },
+    "segment:llm_backbone": {
+      "kernel_sum_ms": 16.720168,
+      "launches": 284
+    },
+    "segment:action_expert": {
+      "kernel_sum_ms": 9.38683,
+      "launches": 1870
+    }
+  },
+  "total_kernel_launches": 2456,
+  "unmapped_kernel_launches": 0,
+  "bucket": {
+    "launch_order": "For each of51GEMMs: M896 active then M968 inactive, from warmed handle order and runtime mask.",
+    "active_calls": 51,
+    "inactive_calls": 51,
+    "active_sum_us": 13210.523,
+    "inactive_sum_us": 82.85,
+    "inactive_median_us": 1.984,
+    "gate_up_active_grid": [
+      850,
+      1,
+      1
+    ],
+    "gate_up_inactive_grid": [
+      1020,
+      1,
+      1
+    ],
+    "down_grid": [
+      170,
+      1,
+      1
+    ],
+    "registers_per_thread": 254,
+    "shared_memory_bytes": 98304,
+    "block": [
+      128,
+      1,
+      1
+    ]
+  },
+  "gpu_activity_us": 30202.642,
+  "gpu_span_us": 30426.73046875,
+  "note": "GPU kernel durations are diagnostic, not deployed forward timing. Profiler estimates zero active CTAs for opt-in 96KiB kernels despite executed work; do not interpret that occupancy field as hardware evidence. Unchanged expert profile is reused."
+}

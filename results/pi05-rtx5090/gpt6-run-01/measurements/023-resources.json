@@ -1,0 +1,16 @@
+{
+  "source_revision": "7869a5a",
+  "compiler": "CUDA13.1, sm_120a",
+  "native_build_log": "artifacts/rtx5090-pi05/gpt6-logs/023-bucket-native-build.log",
+  "bucket_kernel": {
+    "registers": 254,
+    "shared_memory_bytes": 98304,
+    "spill_stores_bytes": 0,
+    "spill_loads_bytes": 0,
+    "stack_frame_bytes": 0
+  },
+  "workspace_per_bucket_bytes": 22283008,
+  "bucket_count": 2,
+  "workspace_roles_reused_across_serial_calls": true,
+  "total_workspace_bytes": 44566016
+}
