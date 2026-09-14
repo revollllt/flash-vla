@@ -1,0 +1,408 @@
+{
+  "source_revision": "f46185a6bca7148f5ea5e930e6120a7eb54180dd",
+  "seed": 42,
+  "options": [
+    "converted_checkpoint=/home/ubuntu/models/pi05_belt_cup_pytorch",
+    "checkpoint_id=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+    "checkpoint_digest=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha"
+  ],
+  "site": "vision_encoder_norm_ffn_up",
+  "tile": [
+    64,
+    128,
+    32
+  ],
+  "warp_tile": [
+    32,
+    64,
+    32
+  ],
+  "stages": 5,
+  "epilogue_k_is_heavy": true,
+  "phase": "complete",
+  "scope": "one complete LayerNorm/bias-GEMM/GELU chain across 27 actual layers",
+  "native_source": "/home/ubuntu/flash-vla-gpt6-backbone/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/cutlass_backbone.cu",
+  "cutlass_dir": "/home/ubuntu/flash-vla/third_party/cutlass",
+  "is_deployment_sequence": false,
+  "reps_per_leg": 15,
+  "legs": [
+    {
+      "route": "A",
+      "samples_ms_per_call": [
+        0.04963673927165844,
+        0.04809836988095884,
+        0.04798222029650653,
+        0.04784711201985677,
+        0.047867258389790855,
+        0.04790163040161133,
+        0.04790518460450349,
+        0.047868446067527486,
+        0.04782933217507822,
+        0.04784711201985677,
+        0.04783051985281485,
+        0.04797866609361437,
+        0.048020146511219164,
+        0.04790163040161133,
+        0.04801303810543484
+      ],
+      "median_us_per_call": 47.90163040161133,
+      "median_ms_all_layers": 1.2933440208435059
+    },
+    {
+      "route": "B",
+      "samples_ms_per_call": [
+        0.04751525984870063,
+        0.04651022398913348,
+        0.04642725873876501,
+        0.04639525766725893,
+        0.046384590643423575,
+        0.04637866550021701,
+        0.04638814926147461,
+        0.046312296832049335,
+        0.04638696158373797,
+        0.04630874262915717,
+        0.046392886726944534,
+        0.04635496492739077,
+        0.04638103644053141,
+        0.046313480094627095,
+        0.04631466777236373
+      ],
+      "median_us_per_call": 46.38459064342357,
+      "median_ms_all_layers": 1.2523839473724365
+    },
+    {
+      "route": "B",
+      "samples_ms_per_call": [
+        0.04745007444311072,
+        0.04634548116613318,
+        0.04642251685813621,
+        0.04673896453998707,
+        0.046779257279855234,
+        0.04681007508878355,
+        0.04679585386205603,
+        0.04668681268338804,
+        0.04669629644464563,
+        0.04676503605312771,
+        0.046793482921741625,
+        0.04676385279054995,
+        0.04680533320815475,
+        0.04676622373086435,
+        0.04678044495759187
+      ],
+      "median_us_per_call": 46.766223730864354,
+      "median_ms_all_layers": 1.2626880407333374
+    },
+    {
+      "route": "A",
+      "samples_ms_per_call": [
+        0.04921837206240053,
+        0.0482382200382374,
+        0.04800711296222828,
+        0.047939556616323965,
+        0.04794192755663836,
+        0.04789214664035373,
+        0.0480628146065606,
+        0.04798103703392877,
+        0.04798814985487196,
+        0.048060443666246205,
+        0.047966815807201246,
+        0.04799881687870732,
+        0.048003554344177246,
+        0.04800947948738381,
+        0.04801540904574924
+      ],
+      "median_us_per_call": 48.003554344177246,
+      "median_ms_all_layers": 1.2960959672927856
+    }
+  ],
+  "native_library": "/home/ubuntu/flash-vla-gpt6-backbone/.cache/cuda_ext/rtx5090_pi05_cutlass_backbone/libcutlass_backbone.so",
+  "candidate_dynamic_shared_bytes": 61440,
+  "resources": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-vision-rounded-gelu-screen-resources.txt",
+  "deployment_plan": {
+    "vision_encoder_patch_embed": "torch",
+    "vision_encoder_norm_qkv": "cutlass-vision",
+    "vision_encoder_attention": "torch",
+    "vision_encoder_out_proj_residual": "cutlass-vision",
+    "vision_encoder_norm_ffn_up": "cutlass-vision",
+    "vision_encoder_ffn_down_residual": "cutlass-vision",
+    "llm_backbone_projector": "torch",
+    "llm_backbone_embed_prompt": "torch",
+    "llm_backbone_norm_qkv_rope": "fused-prefix-qkv",
+    "llm_backbone_attention": "torch",
+    "llm_backbone_out_proj_residual": "torch",
+    "llm_backbone_norm_gated_ffn": "cutlass-backbone",
+    "llm_backbone_ffn_down_residual": "cutlass-backbone",
+    "action_expert_action_in_proj": "torch",
+    "action_expert_norm_qkv_rope": "triton-qkv-finish",
+    "action_expert_attention": "triton-qk-attention",
+    "action_expert_out_proj_residual": "cutlass-expert-residual",
+    "action_expert_norm_gated_ffn": "dual-ffn",
+    "action_expert_ffn_down_residual": "cutlass-expert-residual",
+    "action_expert_action_out_proj": "fused-qkv"
+  },
+  "actual_layers": 27,
+  "calls_per_graph": 27,
+  "shape_mkn": [
+    768,
+    1152,
+    4304
+  ],
+  "weight_rotation_bytes": 267743232,
+  "dtype": "torch.bfloat16",
+  "control_elementwise_equal_per_layer": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+  ],
+  "tolerance": {
+    "rel_rms_max": 0.066,
+    "cosine_min": 0.99978
+  },
+  "candidate_correct": true,
+  "per_layer_metrics": [
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 0.9999999999999999
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0000000000000002
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 0.9999999999999999
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 0.9999999999999999
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 0.9999999999999998
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0000000000000002
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    }
+  ],
+  "mean_leg_delta_us": 1.3771851857503208,
+  "conservative_leg_delta_us": 1.135406670746974,
+  "control_drift_us": 0.10192394256591797,
+  "candidate_drift_us": 0.3816330874407825
+}

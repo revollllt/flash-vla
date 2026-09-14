@@ -21,3 +21,4 @@ iteration,change,latency_ms,decision,report,revision,label,group
 19,Use fixed Triton GEMM inside the existing expert QKV chain,32.42688346654177,keep,measurements/019.json,0dcb021,expert QKV GEMM,action expert
 20,Use fixed Triton QK while retaining FP32 scores and original softmax/PV,32.17171900905669,keep,measurements/020.json,76086d9,expert FP32-score QK,action expert
 21,Fuse expert QKV BF16-rounded GEMM with factor bias RoPE and scatter,32.04192302655429,keep,measurements/021.json,4de57c9,expert QKV finish fusion,action expert
+22,Fuse rounded vision FFN GELU; deployment timing inconclusive,32.04644692596048,revert,measurements/022.json,8d88302,vision GELU inconclusive,vision encoder

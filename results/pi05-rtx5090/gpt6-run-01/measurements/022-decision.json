@@ -1,0 +1,51 @@
+{
+  "candidate_revision": "8d88302",
+  "initial_order": "ABBA",
+  "reports": [
+    "021-control-before-022.json",
+    "022.json",
+    "022-repeat.json",
+    "021-control-after-022.json"
+  ],
+  "medians_ms": [
+    32.067026011645794,
+    32.04644692596048,
+    32.037268509157,
+    32.181948074139655
+  ],
+  "mean_of_medians_gain_ms": 0.0826293253339827,
+  "control_drift_ms": 0.11492206249386072,
+  "candidate_drift_ms": 0.009178416803479195,
+  "minimum_separation_ms": 0.020579085685312748,
+  "next_step_declared_before_reverse_results": "One fixed fresh-process BAAB block; all four CLI invocations will run consecutively in one sequential shell after compilation and official checks are complete. No additional repetitions after that block. Initial block had manual gaps; do not assume equal idle intervals between blocks.",
+  "reverse": {
+    "order": "BAAB",
+    "reports": [
+      "022-reverse-b1.json",
+      "022-reverse-a1.json",
+      "022-reverse-a2.json",
+      "022-reverse-b2.json"
+    ],
+    "medians_ms": [
+      32.101931516081095,
+      32.154507003724575,
+      32.18677605036646,
+      32.19003335107118
+    ],
+    "mean_of_medians_gain_ms": 0.024659093469381332,
+    "control_drift_ms": 0.032269046641886234,
+    "candidate_drift_ms": 0.08810183499008417,
+    "minimum_separation_ms": -0.03552634734660387,
+    "execution": "Four consecutive serial fresh-process CLI invocations after compilation and official checks."
+  },
+  "same_route_maps_across_all_legs": true,
+  "changed_routes": {
+    "vision_encoder_norm_ffn_up": [
+      "cutlass-vision",
+      "cutlass-vision-gelu"
+    ]
+  },
+  "decision": "revert",
+  "revert_revision": "80818f9",
+  "reason": "The fixed reverse block has overlapping candidate/control medians and candidate drift larger than the observed gain. Deployment effect remains inconclusive under the current unlocked-clock policy. No additional repeats."
+}
