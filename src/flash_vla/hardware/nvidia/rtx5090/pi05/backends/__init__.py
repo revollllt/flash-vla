@@ -11,6 +11,7 @@ from . import fused_backbone as _fused_backbone
 from . import packed_ffn as _packed_ffn
 from . import dual_ffn as _dual_ffn
 from . import fused_attention as _fused_attention
+from . import triton_qk_attention as _triton_qk_attention
 from . import fused_residual as _fused_residual
 from . import cutlass_backbone as _cutlass_backbone
 from . import cutlass_vision as _cutlass_vision
@@ -27,6 +28,7 @@ BACKENDS = {
     "packed-ffn": _packed_ffn,
     "dual-ffn": _dual_ffn,
     "fused-attention": _fused_attention,
+    "triton-qk-attention": _triton_qk_attention,
     "fused-residual": _fused_residual,
     "cutlass-backbone": _cutlass_backbone,
     "cutlass-vision": _cutlass_vision,
