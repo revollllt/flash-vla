@@ -87,7 +87,7 @@ export CUTLASS_DIR=/home/ubuntu/flash-vla/third_party/cutlass
   --option converted_checkpoint=/home/ubuntu/models/pi05_belt_cup_pytorch \
   --option checkpoint_id=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha \
   --option checkpoint_digest=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha \
-  --output /home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-prefix-static-m896.json
+  --output /home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-prefix-projections-static-m896.json
 ~~~
 
 The only lab dependency is existing `lab.pi05.cutlass_gemm_screen.samples_ms`
