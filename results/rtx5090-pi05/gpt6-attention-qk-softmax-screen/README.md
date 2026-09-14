@@ -57,7 +57,11 @@ The conventional orientation has a 16-query MMA floor. The transposed form
 computes K@Q.T, placing query count on the eight-column MMA axis. This halves
 the minimum useful query grouping and must not be dismissed using the
 conventional m16 padding argument. Its FP32 result must be rearranged back to
-query-major order before the original row softmax.
+query-major order before the original row softmax. The n8 case is an
+ISA-granularity theoretical layout, not a verified Triton tl.dot layout.
+This screen did not compile that N dimension or inspect its lowering;
+Triton may impose a larger tile or different padding. The table therefore
+does not establish a directly expressible Triton kernel or its actual work.
 
 Hardware evidence from measured/unit-mma.md gives 512 BF16-with-FP32-accumulate
 FLOPs/cycle/SM. A full-key conventional m16 tile needs at least 16384 SM cycles;
@@ -107,13 +111,19 @@ does not provide a measured L2 regime for this access pattern. There is no
 counter-supported timing margin for it, and current QK is already a short
 kernel. It is not promoted to implementation in this bounded screen.
 
-A cooperative cluster could split one 16-query group across eight key CTAs:
-25 clusters / 200 CTAs, 8 KiB score per CTA, no duplicated QK. Shared/DSM exchange
-and cluster synchronization could gather the full rows for softmax. That is a
-new multi-CTA pipeline and layout, with unmeasured communication cost; it is
-outside this task's limit against a broad attention rewrite.
+Conditionally, if the current card, driver, runtime and compiler path support
+the required eight-CTA clusters, DSM access and cluster synchronization, one
+16-query group could split across eight key CTAs: 25 clusters / 200 CTAs,
+8 KiB score per CTA, no duplicated QK. Shared/DSM exchange could then gather
+full rows for softmax. This screen did not test that support on the current
+card/software combination; historical hardware notes do not validate this
+prospective kernel path. These counts are conditional layout arithmetic,
+not evidence of availability. It would also be a new multi-CTA pipeline,
+with unmeasured communication cost, outside this bounded fusion task.
 
 Sources: current triton_qk_attention.py and fused_attention.cu; profile019;
 src/flash_vla/hardware/nvidia/rtx5090/measured/unit-mma.md and isa-support.md.
 All work in this screen was source/JSON reading and CPU arithmetic. No Torch
 or Triton import, GPU work, JIT, NVCC, or model loading was performed.
+
+This fusion direction stops after the CPU screen; no implementation follows.
