@@ -6,6 +6,7 @@ from flash_vla.runtime.registry import Registry
 from . import torch_ops as _torch
 from . import fused_ffn as _fused_ffn
 from . import fused_qkv as _fused_qkv
+from . import triton_qkv as _triton_qkv
 from . import fused_backbone as _fused_backbone
 from . import packed_ffn as _packed_ffn
 from . import dual_ffn as _dual_ffn
@@ -21,6 +22,7 @@ BACKENDS = {
     "torch": _torch,
     "fused-ffn": _fused_ffn,
     "fused-qkv": _fused_qkv,
+    "triton-qkv": _triton_qkv,
     "fused-backbone": _fused_backbone,
     "packed-ffn": _packed_ffn,
     "dual-ffn": _dual_ffn,
