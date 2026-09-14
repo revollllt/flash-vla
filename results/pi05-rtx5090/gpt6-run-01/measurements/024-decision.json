@@ -1,0 +1,70 @@
+{
+  "source_revision": "cad1246",
+  "implementation_revision": "3db1e73",
+  "reports": [
+    "measurements/024-control-a1.json",
+    "measurements/024.json",
+    "measurements/024-repeat.json",
+    "measurements/024-control-a2.json"
+  ],
+  "order": "ABBA",
+  "medians_ms": [
+    30.306605040095747,
+    30.185328447259963,
+    30.194630497135222,
+    30.378585448488593
+  ],
+  "gain_mean_of_medians_ms": 0.15261577209457755,
+  "control_drift_ms": 0.07198040839284658,
+  "candidate_drift_ms": 0.0093020498752594,
+  "minimum_separation_ms": 0.11197454296052456,
+  "changed_routes": {
+    "llm_backbone_out_proj_residual_masked": {
+      "control": "torch",
+      "candidate": "bucketed-backbone"
+    }
+  },
+  "runtime_observations": [
+    {
+      "clocks.sm": "2865",
+      "clocks.mem": "13801",
+      "pstate": "P1",
+      "temperature.gpu": "56",
+      "power.draw": "600.48",
+      "clocks_event_reasons.active": "0x0000000000000004"
+    },
+    {
+      "clocks.sm": "2857",
+      "clocks.mem": "13801",
+      "pstate": "P1",
+      "temperature.gpu": "58",
+      "power.draw": "600.99",
+      "clocks_event_reasons.active": "0x0000000000000004"
+    },
+    {
+      "clocks.sm": "2857",
+      "clocks.mem": "13801",
+      "pstate": "P1",
+      "temperature.gpu": "59",
+      "power.draw": "600.00",
+      "clocks_event_reasons.active": "0x0000000000000004"
+    },
+    {
+      "clocks.sm": "2857",
+      "clocks.mem": "13801",
+      "pstate": "P1",
+      "temperature.gpu": "60",
+      "power.draw": "596.74",
+      "clocks_event_reasons.active": "0x0000000000000004"
+    }
+  ],
+  "decision": "keep",
+  "reason": "Both candidate medians below both controls; conservative median separation exceeds the larger within-control drift. No reverse block.",
+  "scope": "Unchanged seed42 fixed forward,895 valid prefix rows. Long-prefix correctness verified; its latency not measured.",
+  "correctness": "correctness/024-bucket-switch-official.json",
+  "native_resources": "Reuse unchanged023 bucket kernel, ABI, workspaces and evidence; no new CUDA build or profile.",
+  "cpu_checks": "11 scoped pytest tests;8 declarations and1 route check passed.",
+  "initial_median_ms": 59.57790347747505,
+  "reduction_from_initial_pct": 49.33469174746591,
+  "measurement_note": "Fresh-process first capture, 5 warmup/100samples. All checks before four serial consecutive commands. No overlapping GPU/model loading/compilation; endpoint clocks are not a frequency history."
+}

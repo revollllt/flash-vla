@@ -1,0 +1,25 @@
+{
+  "iteration": 24,
+  "order": "ABBA",
+  "legs": [
+    {
+      "name": "024-control-a1",
+      "plan": "artifacts/rtx5090-pi05/024-control-plan.json"
+    },
+    {
+      "name": "024",
+      "plan": "shipped"
+    },
+    {
+      "name": "024-repeat",
+      "plan": "shipped"
+    },
+    {
+      "name": "024-control-a2",
+      "plan": "artifacts/rtx5090-pi05/024-control-plan.json"
+    }
+  ],
+  "measurement": "existing fresh-worker CLI defaults: 5 warmup, 100 measurements, seed42, firstcapture; four consecutive commands in one serial shell",
+  "preconditions": "No CUDA changes/new build. Three-case official switch passed and scoped CPU route checks passed; root alone owns GPU; other agents paused.",
+  "decision": "Assess mean median gain, within-route drift and overlap. One fixed reverse BAAB only if evidence remains ambiguous or drift is close to gain; no repetition until favorable."
+}

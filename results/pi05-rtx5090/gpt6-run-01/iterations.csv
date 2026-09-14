@@ -23,3 +23,4 @@ iteration,change,latency_ms,decision,report,revision,label,group
 21,Fuse expert QKV BF16-rounded GEMM with factor bias RoPE and scatter,32.04192302655429,keep,measurements/021.json,4de57c9,expert QKV finish fusion,action expert
 22,Fuse rounded vision FFN GELU; deployment timing inconclusive,32.04644692596048,revert,measurements/022.json,8d88302,vision GELU inconclusive,vision encoder
 23,Skip masked backbone FFN M128 tail tile using runtime896/968 buckets,30.31566203571856,keep,measurements/023.json,7869a5a,runtime prefix FFN buckets,llm backbone
+24,Reuse runtime896/968 buckets for backbone output projection,30.185328447259963,keep,measurements/024.json,cad1246,runtime prefix out projection,llm backbone
