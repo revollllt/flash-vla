@@ -29,7 +29,7 @@ class Pi05RTX5090(Pi05):
 
     #: Native pointwise fusion around the existing bf16 GEMMs.
     plan: Mapping[str, str] = {
-        "vision_encoder_norm_qkv": "fused-vision",
+        "vision_encoder_norm_qkv": "cutlass-vision",
         "vision_encoder_norm_ffn_up": "cutlass-vision",
         "vision_encoder_ffn_down_residual": "cutlass-vision",
         "action_expert_norm_gated_ffn": "packed-ffn",
