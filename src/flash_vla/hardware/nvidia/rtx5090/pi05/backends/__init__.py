@@ -1,17 +1,12 @@
-"""Backend registry for Pi0.5 on the RTX 5090.
-
-One backend: `torch`, every call site in plain torch. Both plans point at it
-until kernels for this machine exist. H100/Pi0.5's six are not registered --
-`wgmma` does not assemble for sm_120a and its TileLang tiles assume 227 KB of
-shared memory against this part's 99 KB. See `../../measured/README.md`.
-"""
+"""Pi0.5 RTX 5090 routes: torch reference and measured native CUDA fusions."""
 from __future__ import annotations
 
 from flash_vla.runtime.registry import Registry
 
 from . import torch_ops as _torch
+from . import fused_ffn as _fused_ffn
 
-BACKENDS = {"torch": _torch}
+BACKENDS = {"torch": _torch, "fused-ffn": _fused_ffn}
 
 REGISTRY = Registry(BACKENDS, default="torch")
 

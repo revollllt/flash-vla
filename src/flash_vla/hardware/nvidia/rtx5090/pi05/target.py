@@ -1,15 +1,7 @@
-"""Pi0.5 on the RTX 5090: the same graph, a different machine underneath.
+"""Pi0.5 on RTX 5090, with a torch reference and native pointwise fusions.
 
-The bring-up route, deliberately slow: every call site runs in plain torch
-(`backends/torch_ops.py`), so what it measures starts the optimization workflow
-rather than claiming anything.
-
-Nothing is inherited from H100/Pi0.5's routing -- `wgmma` ptxas refuses on
-sm_120a [isa.wgmma.absent], and its tiles assume 227 KB of shared memory against
-this part's 99 KB [smem.bytes.cta.max]. It does import H100/Pi0.5's graph and
-host slot, the same bring-up shortcut `rtx5090/pi0` takes: the rule against
-importing another Target exists to stop two Targets sharing kernel routing and
-tuning, and this one shares neither.
+The graph and host slot are reused from the existing Pi0.5 model path;
+backend routing and CUDA kernels belong to this hardware Target.
 """
 from __future__ import annotations
 
@@ -21,7 +13,7 @@ from .backends import REGISTRY
 
 
 class Pi05RTX5090(Pi05):
-    """Pi0.5 on one RTX 5090: three stages, one host slot, bf16, torch only.
+    """Pi0.5 on one RTX 5090: three stages, one host slot, bf16.
 
     Identity is what makes this a separate Target rather than a flag. A
     measurement taken here must not be recorded against `h100-sxm5-80gb`: the
@@ -35,11 +27,8 @@ class Pi05RTX5090(Pi05):
 
     registry = REGISTRY
 
-    #: One backend, so the shipped route and the numerical reference route are
-    #: the same program. `eval.correctness` therefore reports agreement rather
-    #: than evidence until a second backend exists; what gates this Target today
-    #: is the official comparison in `eval/pi05/`, against OpenPI's own forward.
-    plan: Mapping[str, str] = {}
+    #: Native pointwise fusion around the existing bf16 GEMMs.
+    plan: Mapping[str, str] = {"action_expert_norm_gated_ffn": "fused-ffn"}
     reference_plan: Mapping[str, str] = {}
 
     #: H100's `action_expert_norm_gated_ffn` ceiling is a measured H100 number
