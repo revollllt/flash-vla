@@ -46,3 +46,29 @@ PYTHONPATH="$PWD/src:$PWD" python -m lab.pi05.rtx5090_fused_ffn --seed 42 \
 
 The backend is intentionally unregistered here; serial model integration owns
 route selection and deployed correctness/latency checks.
+
+## Follow-up: pack gate and up into one GEMM
+
+The single changed hypothesis is that M=50 pays a fixed GEMM cost twice.
+The Pi0 RTX 5090 wrapper documents 10.31 us for N=8192 versus 10.34 us for one
+N=4096 half at M=51; that is motivating evidence only, with a different target
+and GEMM route. The new `packed_ffn` backend concatenates each immutable layer's
+gate/up weights during warmup and runs `torch.mm` once into a bf16 Mx8192
+scratch buffer. Both CUDA arithmetic stages are the same as `fused_ffn`, with
+only activation input indexing specialized for the packed row stride.
+`fused_ffn.make_wrappers` stays available as the unchanged two-GEMM route.
+
+The weight cache belongs to the wrapper closure and retains each pair's source
+tensors. Scratch owns every packed allocation, giving 288 MiB for 18 distinct
+pairs plus 900 KiB for the normalized and projected activation buffers.
+
+Using the same belt-cup seed 42 workload and 30 samples over all 180 calls:
+
+- CUDA build and capture succeeded; calls 0, 17, 90 and 179 were again exact
+  against the torch reference for both output and bf16 RMS factor.
+- Two-GEMM fused median: 25.8104 us/call. Packed median: 17.1574 us/call.
+  This is a local reduction of 33.53%, or 1.5575 ms over 180 calls; deployed
+  latency and official parity remain the integration loop's measurements.
+- Raw samples: `artifacts/rtx5090-pi05/gpt6-ffn-packed-local.json` in the main
+  checkout. Add `--candidate packed` to the command above to reproduce; this
+  compares the two-GEMM fused route with the packed route under one timer.

@@ -11,7 +11,7 @@ import torch
 from benchmarks.kernels import _graph_samples
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
-from flash_vla.hardware.nvidia.rtx5090.pi05.backends import fused_ffn, torch_ops
+from flash_vla.hardware.nvidia.rtx5090.pi05.backends import fused_ffn, packed_ffn, torch_ops
 from flash_vla.inference import build, parse_options, resolve
 from flash_vla.runtime.runner import Scratch
 
@@ -65,18 +65,27 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--reps", type=int, default=30)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--candidate", choices=("fused", "packed"), default="fused")
     args = parser.parse_args()
     engine = build(resolve("rtx5090/pi05"), "reference", seed=args.seed,
                    **parse_options(args.option))
     engine.forward(**engine.sample_inputs(args.seed))
     calls = _record(engine)
     scratch = Scratch(torch.device("cuda"))
-    candidate = fused_ffn.make_wrappers(scratch)[fused_ffn.NAMES[0]]
+    backend = fused_ffn if args.candidate == "fused" else packed_ffn
+    candidate = backend.make_wrappers(scratch)[fused_ffn.NAMES[0]]
+    # Visit all layer pairs before freezing; packing must never occur in capture.
+    for call in calls:
+        candidate(*call)
     correctness = _correctness(calls, candidate)
     scratch.freeze()
     timings = {}
-    for name, fn in (("torch", torch_ops.action_expert_norm_gated_ffn),
-                     ("fused", candidate)):
+    comparison = torch_ops.action_expert_norm_gated_ffn
+    comparison_name = "torch"
+    if args.candidate == "packed":
+        comparison_name = "fused"
+        comparison = fused_ffn.make_wrappers(Scratch(torch.device("cuda")))[fused_ffn.NAMES[0]]
+    for name, fn in ((comparison_name, comparison), (args.candidate, candidate)):
         samples = _graph_samples(lambda i: fn(*calls[i % len(calls)]),
                                  n_inner=len(calls), reps=args.reps)
         timings[name] = {"median_ms": statistics.median(samples), "samples_ms": samples}
@@ -84,6 +93,7 @@ def main() -> None:
               "invocations": len(calls), "timer": "amortized CUDA graph",
               "cache": "recorded layer weights, cycling all 180 call-site invocations",
               "correctness": correctness, "timings": timings,
+              "candidate": args.candidate, "scratch_bytes": scratch.nbytes,
               "identity": engine.identity.as_dict()}
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)

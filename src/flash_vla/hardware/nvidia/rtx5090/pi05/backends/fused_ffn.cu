@@ -54,6 +54,7 @@ __global__ void ada_rms_kernel(const bf16 *__restrict__ x,
   }
 }
 
+template <bool Packed>
 __global__ void gated_activation_kernel(const bf16 *__restrict__ gate,
                                         const bf16 *__restrict__ up,
                                         const bf16 *__restrict__ gate_bias,
@@ -64,8 +65,9 @@ __global__ void gated_activation_kernel(const bf16 *__restrict__ gate,
     const int32_t index = blockIdx.x * 1024 + threadIdx.x + i * 256;
     if (index < elements) {
       const int32_t col = index % 4096;
-      const float g = __bfloat162float(gate[index]) + __bfloat162float(gate_bias[col]);
-      const float u = __bfloat162float(up[index]) + __bfloat162float(up_bias[col]);
+      const int32_t source = Packed ? (index / 4096) * 8192 + col : index;
+      const float g = __bfloat162float(gate[source]) + __bfloat162float(gate_bias[col]);
+      const float u = __bfloat162float(up[source]) + __bfloat162float(up_bias[col]);
       // Match torch's fp32 approximate="tanh" expression before bf16 output.
       const float cube = g * g * g;
       const float gelu = 0.5f * g * (1.f + tanhf(0.7978845608028654f *
@@ -87,7 +89,19 @@ extern "C" int32_t ada_rms_launch(const void *x, const void *scale, void *a,
 extern "C" int32_t gated_activation_launch(const void *gate, const void *up,
                                             const void *gate_bias, const void *up_bias,
                                             void *out, int32_t rows, void *stream) {
-  gated_activation_kernel<<<rows * 4, 256, 0, static_cast<cudaStream_t>(stream)>>>(
+  gated_activation_kernel<false><<<rows * 4, 256, 0, static_cast<cudaStream_t>(stream)>>>(
+      static_cast<const bf16 *>(gate), static_cast<const bf16 *>(up),
+      static_cast<const bf16 *>(gate_bias), static_cast<const bf16 *>(up_bias),
+      static_cast<bf16 *>(out), rows * 4096);
+  return static_cast<int32_t>(cudaGetLastError());
+}
+
+extern "C" int32_t packed_gated_activation_launch(const void *gate, const void *up,
+                                                   const void *gate_bias,
+                                                   const void *up_bias,
+                                                   void *out, int32_t rows,
+                                                   void *stream) {
+  gated_activation_kernel<true><<<rows * 4, 256, 0, static_cast<cudaStream_t>(stream)>>>(
       static_cast<const bf16 *>(gate), static_cast<const bf16 *>(up),
       static_cast<const bf16 *>(gate_bias), static_cast<const bf16 *>(up_bias),
       static_cast<bf16 *>(out), rows * 4096);
