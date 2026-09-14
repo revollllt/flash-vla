@@ -52,3 +52,15 @@ Deployed median 55.4515 -> 49.8801 ms, source c8f5e15. It is compared to the alr
 Hypothesis: remove full FP32 cast/intermediate traversals around the two unchanged large GEMMs. Seventeen real call snapshots passed existing shallow tolerance: worst output rel_rms 1.14e-4 and minimum cosine 0.9999999935. Local graph totals torch 15.698/15.975 ms vs fused 11.936/11.971 ms, with reference drift noted. Full-depth official comparison passed after deployment.
 
 Deployed median 49.8801 -> 45.8682 ms, source 571b9b4. Raw local/official/end-to-end evidence is saved alongside this trial. The change affects prefix KV numerics within existing tolerances, not the model precision policy.
+
+## 004 — Packed expert FFN, retained
+
+Hypothesis: pay skinny-GEMM launch/scheduling overhead once for gate and up. One BF16 GEMM writes two contiguous halves; native activation preserves BF16 projection rounding. Source tensors and packed weights are retained in the wrapper; all GPU storage uses runner scratch. Additional packed weights: 288 MiB for 18 layers.
+
+Selected real invocation outputs/factors were bitwise equal; local median 25.8104 -> 17.1574 us/call, 1.5575 ms estimated across180 calls. Full-depth official comparison passed. Deployed shipped median 45.8682 -> 44.4914 ms, source ebfde75.
+
+## 005 — Expert masked attention, retained
+
+Hypothesis: use tensor-core BF16 inputs with FP32 score output to remove Q/K casts and FP32 SIMT GEMM, then fuse scale/mask/softmax into one native kernel, preserving BF16 probabilities before the unchanged P@V GEMM. Synthetic real-shape tests include out=Q alias, runtime mask changes, and masked-V independence; worst output rel_rms 1.56e-4. Local graph medians 37.8 -> 15.2 us include identical Q reset copy on both sides. Full-depth real-weight official comparison passed.
+
+Deployed shipped median 44.4914 -> 41.0824 ms, source 4d53ad7. This native chain replaces only expert attention; the rejected native-SDPA screen remains separately recorded.

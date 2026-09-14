@@ -3,3 +3,5 @@ iteration,change,latency_ms,decision,report,revision,label,group
 1,Expert FFN AdaRMS and bias/GELU/product fusion,55.4514960385859,keep,measurements/001.json,23f3c8b,expert FFN pointwise,action expert
 2,Expert QKV RMS/scale and factor/bias/RoPE fusion,49.880102975293994,keep,measurements/002.json,c8f5e15,expert QKV pointwise,action expert
 3,Backbone FFN RMSNorm and GELU/product fusion,45.86823342833668,keep,measurements/003.json,571b9b4,backbone FFN pointwise,llm backbone
+4,Pack expert gate and up weights into one GEMM,44.49138150084764,keep,measurements/004.json,ebfde75,packed expert FFN,action expert
+5,BF16 QK with FP32 scores and fused masked softmax,41.082439944148064,keep,measurements/005.json,4d53ad7,expert masked attention,action expert
