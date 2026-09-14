@@ -251,6 +251,10 @@ def _read_csv(path: str, fields: tuple[str, ...]) -> list[dict[str, Any]]:
                 for key, value in zip(fields, parts):
                     if key == "timestamp":
                         row["unix"] = _parse_stamp(value)
+                    elif key == "process_name":
+                        # nvidia-smi returns each process's full binary path,
+                        # including other users'. Contention needs the name.
+                        row[key] = os.path.basename(value)
                     else:
                         row[key] = _number(value)
                 rows.append(row)

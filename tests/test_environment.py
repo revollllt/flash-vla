@@ -1,5 +1,6 @@
 """Environment provenance follows the CUDA device and fails visibly on missing evidence."""
 from contextlib import nullcontext
+import platform
 import subprocess
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -145,3 +146,29 @@ def test_explicit_device_is_used_for_every_latency_leg_and_collector():
     device.assert_called_once_with("cuda:1")
     selector.assert_called_once_with("cuda:1")
     collector.assert_called_once_with(device_index="GPU-other")
+
+
+@pytest.mark.parametrize("relative", ["results/run-01/measurements/000.json", "lab/plans/x.json"])
+def test_recorded_path_under_the_project_stays_relative_to_it(relative, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True)
+    target.touch()
+    assert metrics.record_path(target) == relative
+
+
+@pytest.mark.parametrize("outside", ["/data/user/someone/checkpoints/model.safetensors",
+                                     "/opt/env/bin/python"])
+def test_recorded_path_outside_the_project_keeps_only_its_name(outside, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    recorded = metrics.record_path(outside)
+    assert recorded == outside.rsplit("/", 1)[1]
+    assert "/" not in recorded
+
+
+def test_environment_block_records_the_python_version_not_the_interpreter_path():
+    with patch.object(metrics.torch.cuda, "get_device_name", return_value="H100"):
+        block = metrics.env_block()
+    assert block["python"] == platform.python_version()
+    assert not any(isinstance(value, str) and value.startswith("/")
+                   for value in block.values())

@@ -4,8 +4,8 @@ import csv
 import os
 import platform
 import subprocess
-import sys
 import time
+from pathlib import Path
 from importlib import metadata
 from typing import Any
 import torch
@@ -19,11 +19,26 @@ def env_block(device=None) -> dict[str, Any]:
 
     return {
         "gpu": torch.cuda.get_device_name(device),
-        "python": sys.executable,
+        "python": platform.python_version(),
         "torch": torch.__version__,
         "torch_cuda": torch.version.cuda,
         "tilelang": tilelang_version,
     }
+
+
+def record_path(path) -> str:
+    """Record a path as provenance without stamping this machine's layout.
+
+    An absolute path outside the project identifies the machine that ran the
+    job, not the thing that was run, and every caller already writes a logical
+    id or digest beside it that survives the move to another machine. Paths
+    under the project root stay relative to it; anything else keeps its name.
+    """
+    path = Path(path)
+    try:
+        return str(path.resolve().relative_to(Path.cwd().resolve()))
+    except (ValueError, OSError):
+        return path.name
 
 
 def require_cuda() -> None:

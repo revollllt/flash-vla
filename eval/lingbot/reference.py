@@ -22,6 +22,19 @@ from safetensors.torch import save_file
 import torch
 
 
+def record_path(path) -> str:
+    """Record a path without stamping this machine's layout.
+
+    A copy of `flash_vla.environment.record_path`, not an import: this adapter
+    runs inside the upstream LingBot environment, where flash_vla is absent.
+    """
+    path = Path(path)
+    try:
+        return str(path.resolve().relative_to(Path.cwd().resolve()))
+    except (ValueError, OSError):
+        return path.name
+
+
 UPSTREAM_COMMIT = "4eb34b7693a0565c67433f8fac9c59a2e67eb60b"
 CHECKPOINT_REVISION = "fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e"
 QWEN_REVISION = "66285546d2b821cf421d4f5eb2576359d3770cd3"
@@ -261,9 +274,9 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             "lerobot": importlib.metadata.version("lerobot"),
             "datasets": importlib.metadata.version("datasets"),
             "numpy": np.__version__,
-            "upstream": str(upstream),
-            "checkpoint": str(args.checkpoint.resolve()),
-            "qwen": str(args.qwen.resolve()),
+            "upstream": record_path(upstream),
+            "checkpoint": record_path(args.checkpoint),
+            "qwen": record_path(args.qwen),
             "slurm_job": os.environ.get("SLURM_JOB_ID"),
         },
         "elapsed_s": time.time() - started,

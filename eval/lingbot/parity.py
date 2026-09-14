@@ -12,6 +12,7 @@ from safetensors.torch import load_file
 import torch
 import yaml
 
+from flash_vla.environment import record_path
 from flash_vla.inference import resolve_assets
 from flash_vla.inference import build
 from eval.tolerances import tolerances
@@ -91,7 +92,7 @@ def run(plan: str = "reference", oracle: Path | None = None,
         "identity": engine.identity.as_dict(),
         "implementation_source": getattr(engine, "implementation_source", None),
         "measurement_context": engine.measurement_context,
-        "oracle": str(oracle / "official-eager.safetensors"),
+        "oracle": record_path(oracle / "official-eager.safetensors"),
         "reference_provenance": dict(oracle_metadata["identity"],
             repository="https://github.com/Robbyant/lingbot-vla.git",
             commit=oracle_metadata["identity"]["upstream_commit"]),
