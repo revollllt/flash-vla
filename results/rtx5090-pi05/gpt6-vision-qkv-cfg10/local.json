@@ -1,0 +1,613 @@
+{
+  "target": "rtx5090/pi05",
+  "checkpoint": "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+  "seed": 42,
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "torch": "2.13.0+cu130",
+  "site": "vision_encoder_norm_qkv",
+  "calls": 27,
+  "x_shape": [
+    3,
+    256,
+    1152
+  ],
+  "weight_shape": [
+    1152,
+    3456
+  ],
+  "weight_stride": [
+    3456,
+    1
+  ],
+  "dtype": "torch.bfloat16",
+  "config": 10,
+  "timer": "CUDA graph on capture stream, cycles actual 27-layer input/weight snapshots",
+  "reset": "None on both paths: immutable inputs and completely overwritten output",
+  "cache_policy": "Actual 27-layer rotation, no artificial cache flush",
+  "weight_unique_data_ptrs": 27,
+  "input_and_weight_bytes": 263077632,
+  "parity": [
+    {
+      "layer": 0,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 1,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 2,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 3,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 4,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 5,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 6,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 7,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 8,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 9,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 10,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 11,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 12,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 13,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 14,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 15,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 16,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 17,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 18,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 19,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 20,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 21,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 22,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 23,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 24,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 25,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    },
+    {
+      "layer": 26,
+      "output": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "bitwise_equal": true,
+      "bias_shape": [
+        3456
+      ],
+      "bias_dtype": "torch.bfloat16"
+    }
+  ],
+  "timings": [
+    {
+      "backend": "fused-vision",
+      "samples_ms_per_call": [
+        0.03912770306622541,
+        0.037911702085424354,
+        0.03774814694016068,
+        0.037466075685289174,
+        0.03748859299553765,
+        0.03727051946851942,
+        0.037616592866403085,
+        0.03744948351824725,
+        0.03734992610083686,
+        0.0372562982417919,
+        0.03740326122001365,
+        0.03762251800960965,
+        0.037480296912016695,
+        0.03729659098166006,
+        0.03731437082643862,
+        0.037252739623740865,
+        0.03752059406704373,
+        0.037454220983717174,
+        0.037423407589947735,
+        0.03747200082849573,
+        0.03732148364738182,
+        0.037381927172342934,
+        0.03756088680691189,
+        0.03726103570726183,
+        0.037315554089016385,
+        0.037415111506426776,
+        0.03756918730559172,
+        0.03736888920819318,
+        0.0373416300173159,
+        0.03749926001937301
+      ],
+      "median_ms_per_call": 0.03743644555409749,
+      "median_ms_all_layers": 1.010784029960632
+    },
+    {
+      "backend": "cfg10",
+      "samples_ms_per_call": [
+        0.037028740953516076,
+        0.0357997042161447,
+        0.03567644401832863,
+        0.03565392670808015,
+        0.03592770408701013,
+        0.03569659259584215,
+        0.035611258612738714,
+        0.03565392670808015,
+        0.035588741302490234,
+        0.03587911084846214,
+        0.03560651893968935,
+        0.035665776994493276,
+        0.035666962464650474,
+        0.03558992677264743,
+        0.03608770282180221,
+        0.035665776994493276,
+        0.03559703738601119,
+        0.03557333239802608,
+        0.035581630689126474,
+        0.03573688975086919,
+        0.03568948198247839,
+        0.03561244408289591,
+        0.035587555832333036,
+        0.03562074016641687,
+        0.03572029537624783,
+        0.035717926643512865,
+        0.035617185963524714,
+        0.035602962529217755,
+        0.03578429531168054,
+        0.035966815771879976
+      ],
+      "median_ms_per_call": 0.035665776994493276,
+      "median_ms_all_layers": 0.9629759788513185
+    },
+    {
+      "backend": "cfg10",
+      "samples_ms_per_call": [
+        0.0366589625676473,
+        0.03566459152433607,
+        0.035616000493367515,
+        0.03610311172626637,
+        0.03565037029760855,
+        0.03582577793686478,
+        0.03568000042880023,
+        0.035574517868183275,
+        0.0358850359916687,
+        0.035719112113670064,
+        0.035611258612738714,
+        0.03558399942186144,
+        0.03558637036217584,
+        0.03572029537624783,
+        0.03572148084640503,
+        0.03567288981543647,
+        0.03560651893968935,
+        0.035559111171298556,
+        0.03580562935935126,
+        0.03586844382462678,
+        0.03575822159096047,
+        0.03566222279160111,
+        0.035659851851286714,
+        0.035947852664523654,
+        0.03587673990814774,
+        0.03570607414952031,
+        0.035753481917911105,
+        0.03568355463169239,
+        0.03575703612080327,
+        0.035981036998607496
+      ],
+      "median_ms_per_call": 0.03571259313159519,
+      "median_ms_all_layers": 0.9642400145530701
+    },
+    {
+      "backend": "fused-vision",
+      "samples_ms_per_call": [
+        0.039143111970689565,
+        0.03787022166781955,
+        0.03828385141160753,
+        0.03767585312878644,
+        0.03773747991632532,
+        0.03769955370161268,
+        0.03837392506776033,
+        0.03791407302573875,
+        0.038089482872574416,
+        0.0378085904651218,
+        0.037803852999651874,
+        0.03789392665580467,
+        0.03828029720871537,
+        0.03795674112108019,
+        0.03771259166576244,
+        0.037909331145109956,
+        0.03850903775956896,
+        0.03800888856252035,
+        0.03789392665580467,
+        0.0381487387197989,
+        0.038083557729367855,
+        0.038269630184880006,
+        0.03809422033804434,
+        0.038362074781347205,
+        0.03804207289660418,
+        0.03808711193226002,
+        0.03814992639753553,
+        0.03818785261224817,
+        0.03794133221661603,
+        0.03795081597787363
+      ],
+      "median_ms_per_call": 0.038025480729562265,
+      "median_ms_all_layers": 1.0266879796981812
+    }
+  ]
+}

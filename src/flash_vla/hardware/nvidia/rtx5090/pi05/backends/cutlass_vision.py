@@ -1,4 +1,4 @@
-"""Pi0.5 vision FFN on one CUTLASS bias-GEMM tile and existing pointwise stages.
+"""Pi0.5 vision projections on one CUTLASS bias-GEMM tile and pointwise stages.
 
 Config 10 preserves FP32 accumulation plus BF16 bias before its BF16 output.
 Up then applies the existing GELU; down adds that BF16 projection to out.
@@ -13,7 +13,8 @@ import torch
 
 from . import cutlass_backbone, fused_vision
 
-NAMES = frozenset({"vision_encoder_norm_ffn_up", "vision_encoder_ffn_down_residual"})
+NAMES = frozenset({"vision_encoder_norm_qkv", "vision_encoder_norm_ffn_up",
+                   "vision_encoder_ffn_down_residual"})
 
 
 def _library():
@@ -47,9 +48,10 @@ class _Plan:
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
-    """Bind contiguous CUDA BF16 vision FFN tensors without loading native code.
+    """Bind contiguous CUDA BF16 vision tensors without loading native code.
 
-    Up: x(views,256,1152), norm vectors(1152), weight(1152,4304), bias(4304),
+    QKV: x(views,256,1152), norm vectors(1152), weight(1152,3456), bias(3456),
+    out(views,256,3456). Up: same x/norm, weight(1152,4304), bias(4304),
     out(views,256,4304). Down: x(views,256,4304), weight(4304,1152), bias(1152),
     out(views,256,1152), with out containing the initial residual. Warmup
     plans all pointer sets and scratch before capture; replay allocates nothing.
@@ -73,6 +75,12 @@ def make_wrappers(scratch, selected_names=None) -> dict:
         cutlass_backbone._check(library.vision_bias_gemm_run(plan.handle, stream),
                                f"vision_bias_gemm_run M={a.shape[0]} K={a.shape[1]}")
 
+    def vision_encoder_norm_qkv(x, norm_w, norm_b, qkv_w, qkv_b, out):
+        normalized = fused_vision._norm(x, norm_w, norm_b, scratch)
+        gemm(normalized, qkv_w, qkv_b, out.view(-1, 3456),
+             torch.cuda.current_stream().cuda_stream)
+        return out
+
     def vision_encoder_norm_ffn_up(x, norm_w, norm_b, weight, bias, out):
         nonlocal pointwise
         normalized = fused_vision._norm(x, norm_w, norm_b, scratch)
@@ -93,6 +101,7 @@ def make_wrappers(scratch, selected_names=None) -> dict:
         return out
 
     wrappers = {
+        "vision_encoder_norm_qkv": vision_encoder_norm_qkv,
         "vision_encoder_norm_ffn_up": vision_encoder_norm_ffn_up,
         "vision_encoder_ffn_down_residual": vision_encoder_ffn_down_residual,
     }
