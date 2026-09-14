@@ -1,0 +1,35 @@
+{
+  "source_revision": "7085a4b",
+  "workload": "actual layer0 normalized A and folded gate weight, BF16 M968 K2048 N16384",
+  "report": "artifacts/rtx5090-pi05/backbone-gate-layer0-cold.ncu-rep",
+  "cache_control": "all",
+  "clock_control": "none",
+  "replay": "kernel",
+  "passes": 5,
+  "metrics": {
+    "gpu__time_duration.sum": "313.216000",
+    "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_elapsed": "92.061607",
+    "dram__throughput.avg.pct_of_peak_sustained_elapsed": "14.625002",
+    "lts__throughput.avg.pct_of_peak_sustained_elapsed": "49.030587",
+    "sm__warps_active.avg.pct_of_peak_sustained_active": "8.332426",
+    "smsp__warps_eligible.avg.per_cycle_active": "0.068734",
+    "smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio": "0.340779",
+    "launch__waves_per_multiprocessor": "6",
+    "launch__registers_per_thread": "254",
+    "launch__shared_mem_per_block_dynamic": "98.304000",
+    "Block Size": "(128, 1, 1)",
+    "Grid Size": "(1020, 1, 1)"
+  },
+  "interpretation": "Tensor activity is high while DRAM utilization is low; cold isolated capture supports tensor work as the leading limitation. Low warp occupancy alone does not imply an opportunity. This is diagnostic evidence, not a deployment speed measurement.",
+  "units": {
+    "gpu__time_duration.sum": "us",
+    "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_elapsed": "%",
+    "dram__throughput.avg.pct_of_peak_sustained_elapsed": "%",
+    "lts__throughput.avg.pct_of_peak_sustained_elapsed": "%",
+    "sm__warps_active.avg.pct_of_peak_sustained_active": "%",
+    "smsp__warps_eligible.avg.per_cycle_active": "warp",
+    "smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio": "inst",
+    "launch__registers_per_thread": "register/thread",
+    "launch__shared_mem_per_block_dynamic": "Kbyte/block"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "source_revision": "7085a4b",
+  "diagnostic_only": true,
+  "mapping_valid": true,
+  "unattributed": {
+    "launches": 0,
+    "dur_us": 0.0,
+    "names": []
+  },
+  "marker_note": "Ninja unavailable; all launches mapped by CUDA correlation; no sequence mismatches.",
+  "call_sites": {
+    "llm_backbone_norm_gated_ffn": {
+      "duration_us": 10508.294,
+      "launches": 68
+    },
+    "llm_backbone_ffn_down_residual": {
+      "duration_us": 4835.0830000000005,
+      "launches": 17
+    },
+    "llm_backbone_attention": {
+      "duration_us": 1113.1200000000001,
+      "launches": 68
+    },
+    "llm_backbone_norm_qkv_rope": {
+      "duration_us": 1019.5160000000002,
+      "launches": 54
+    },
+    "llm_backbone_out_proj_residual": {
+      "duration_us": 838.0410000000002,
+      "launches": 17
+    },
+    "llm_backbone_projector": {
+      "duration_us": 42.144999999999996,
+      "launches": 8
+    },
+    "llm_backbone_embed_prompt": {
+      "duration_us": 3.778,
+      "launches": 2
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "segment:vision_encoder": {
+    "kernel_sum_ms": 4.539463999999994,
+    "launches": 302
+  },
+  "segment:llm_backbone": {
+    "kernel_sum_ms": 18.386034000000006,
+    "launches": 233
+  },
+  "segment:action_expert": {
+    "kernel_sum_ms": 10.717351000000019,
+    "launches": 3080
+  }
+}

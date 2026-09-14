@@ -1,0 +1,66 @@
+{
+  "source_revision": "7085a4b",
+  "diagnostic_only": true,
+  "mapping_valid": true,
+  "unattributed": {
+    "launches": 0,
+    "dur_us": 0.0,
+    "names": []
+  },
+  "call_sites": {
+    "action_expert_norm_gated_ffn": {
+      "duration_us": 2840.4850000000015,
+      "launches": 540
+    },
+    "action_expert_attention": {
+      "duration_us": 2196.822000000002,
+      "launches": 720
+    },
+    "action_expert_norm_qkv_rope": {
+      "duration_us": 2130.5189999999943,
+      "launches": 540
+    },
+    "action_expert_ffn_down_residual": {
+      "duration_us": 1870.4559999999956,
+      "launches": 540
+    },
+    "action_expert_out_proj_residual": {
+      "duration_us": 1375.3659999999943,
+      "launches": 540
+    },
+    "action_expert_action_out_proj": {
+      "duration_us": 217.34899999999993,
+      "launches": 170
+    },
+    "action_expert_action_in_proj": {
+      "duration_us": 47.969,
+      "launches": 30
+    }
+  },
+  "residual_kernel_groups": {
+    "action_expert_out_proj_residual:GEMM": {
+      "duration_us": 974.4940000000003,
+      "launches": 180
+    },
+    "action_expert_out_proj_residual:void cublasLt::splitKreduce_kernel<32, 16, int, __nv_bfloat16, __nv_bfloat16, float, __nv_bfloat16, false, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, true, false, false, false>(cublasLt::cublasSplitKParams<float>, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, __nv_bfloat16*, float const*, float const*, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, void*, long, float*, int*, float*, float*, float const*, float const*, float const*, float const*, float const*)": {
+      "duration_us": 216.41699999999994,
+      "launches": 180
+    },
+    "action_expert_out_proj_residual:(anonymous namespace)::gated_residual_kernel(__nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, int)": {
+      "duration_us": 184.455,
+      "launches": 180
+    },
+    "action_expert_ffn_down_residual:GEMM": {
+      "duration_us": 1422.1579999999992,
+      "launches": 180
+    },
+    "action_expert_ffn_down_residual:void cublasLt::splitKreduce_kernel<32, 16, int, __nv_bfloat16, __nv_bfloat16, float, __nv_bfloat16, false, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, true, false, false, false>(cublasLt::cublasSplitKParams<float>, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, __nv_bfloat16*, float const*, float const*, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, void*, long, float*, int*, float*, float*, float const*, float const*, float const*, float const*, float const*)": {
+      "duration_us": 263.1389999999999,
+      "launches": 180
+    },
+    "action_expert_ffn_down_residual:(anonymous namespace)::gated_residual_kernel(__nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, int)": {
+      "duration_us": 185.15900000000005,
+      "launches": 180
+    }
+  }
+}
