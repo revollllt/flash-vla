@@ -44,3 +44,33 @@ def test_plot_keeps_reanchors_and_context_only_trials_out_of_promotions():
     assert points[2].candidate_ms == 90. and points[2].promotion == "context_only"
     row.update(verdict="invalid", candidate_latency_ms=None)
     assert plot.from_trace(value)[1][-1].candidate_ms is None
+
+
+def test_index_keeps_hand_written_notes_and_names_the_legacy_table(tmp_path):
+    """The index is regenerated, but not at the cost of what a human added.
+
+    The legacy table's "Current best ms" column is a retired controller's last
+    measurement. When the note saying so was hand-written it was dropped by the
+    next rebuild, and one of those numbers was then quoted as a current best.
+    """
+    from lab.results import index
+
+    run = tmp_path / "pi0-rtx5090" / "run-01"
+    run.mkdir(parents=True)
+    (run / "iterations.csv").write_text(
+        "iteration,change,latency_ms,decision,report,revision\n"
+        "0,Start,10.0,start,,rev\n")
+    (run / "README.md").write_text(
+        "# run-01\n\nFirst run, see [the plan](../plan.md): **10.0 ms**.\n")
+
+    index.rebuild(tmp_path)
+    text = (tmp_path / "README.md").read_text()
+    assert "## Current optimization runs" in text
+    # The run's own summary is quoted rather than restated, with its relative
+    # links flattened: they do not resolve from the index's depth.
+    assert "First run, see the plan: **10.0 ms**." in text
+    assert "(../plan.md)" not in text
+
+    (tmp_path / "README.md").write_text(text + "\nA hand-written caveat.\n")
+    index.rebuild(tmp_path)
+    assert "A hand-written caveat." in (tmp_path / "README.md").read_text()
