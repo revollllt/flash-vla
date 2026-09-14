@@ -1,0 +1,8 @@
+{
+  "source_revision": "34add1b",
+  "decision": "revert",
+  "reason": "inconclusive: reverse-order deployment medians overlap amid clock drift",
+  "abba_gain_ms": 0.06250839214771986,
+  "baab_gain_ms": 0.051971874199807644,
+  "all_eight_mean_median_gain_ms": 0.05724013317376375
+}
