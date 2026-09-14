@@ -194,3 +194,9 @@ Full-depth official comparison passed with action metrics equal to 017. Fresh-pr
 The current torch addmm already combines FP32 accumulation and the old residual before one BF16 store. Reusing the existing cfg0 backbone-down closure for M968/K2048/N2048 preserves those rounding locations and C=D aliasing; no extra residual kernel exists to remove. All 17 actual-layer outputs match bitwise. The 136 MiB weight set exceeds L2, and both paths use the same residual reset excluded from timing.
 
 Single-tile ABBA totals A0.895008/B0.901120/B0.901120/A0.894976 ms across 17 calls. The existing cfg0 reuse is slower by 0.006128 ms versus the mean control, so its production wrapper change was removed and no additional tile was tried. This result rejects only that reuse candidate. Lab reproduction and all 60 samples remain in lab/pi05/cutlass_backbone_outproj.md and measurements/backbone-outproj-cfg0-rejected.json.
+
+## Focused expert profile after 019
+
+The refreshed positional mapping matches all 2050 launches, with no mismatched position or unattributed launch. Attributed kernel time is 9.655205 ms: FFN 2.735196 ms, attention 2.202637 ms, QKV 1.917469 ms, FFN down 1.526675 ms, output projection 1.174537 ms, action output 0.050338 ms and action input 0.048353 ms.
+
+The current QKV split is prepare 0.223818 ms, GEMM 1.476047 ms, finish 0.217604 ms. Attention remains QK 0.803068 ms, softmax 0.383206 ms, PV GEMM 0.736895 ms and PV reduction 0.279468 ms. This supports continuing the already-prepared QK and QKV-finish experiments; it is a diagnostic snapshot, not another deployment measurement or an explanation of all differences from the older profile. The optional marker extension remains unavailable because Ninja is absent; all launches were nevertheless mapped by correlation and sequence. Compact evidence is profile-019-expert-summary.json.

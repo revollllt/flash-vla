@@ -1,0 +1,82 @@
+{
+  "source_revision": "0dcb021",
+  "diagnostic_only": true,
+  "mapping_valid": true,
+  "mapping": "single_stream_positional",
+  "mismatched_positions": [],
+  "unattributed": {
+    "launches": 0,
+    "dur_us": 0.0,
+    "names": []
+  },
+  "total_us": 9655.205,
+  "launches": 2050,
+  "call_sites": {
+    "action_expert_norm_gated_ffn": {
+      "duration_us": 2735.1959999999995,
+      "launches": 360
+    },
+    "action_expert_attention": {
+      "duration_us": 2202.637000000006,
+      "launches": 720
+    },
+    "action_expert_norm_qkv_rope": {
+      "duration_us": 1917.4689999999975,
+      "launches": 540
+    },
+    "action_expert_ffn_down_residual": {
+      "duration_us": 1526.6750000000006,
+      "launches": 180
+    },
+    "action_expert_out_proj_residual": {
+      "duration_us": 1174.5370000000007,
+      "launches": 180
+    },
+    "action_expert_action_out_proj": {
+      "duration_us": 50.338,
+      "launches": 40
+    },
+    "action_expert_action_in_proj": {
+      "duration_us": 48.35300000000001,
+      "launches": 30
+    }
+  },
+  "kernel_groups": {
+    "action_expert_norm_qkv_rope:pi05_qkv_scale_factor(__nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, __nv_bfloat16*)": {
+      "duration_us": 223.81800000000007,
+      "launches": 180
+    },
+    "action_expert_norm_qkv_rope:_qkv_mm": {
+      "duration_us": 1476.0470000000003,
+      "launches": 180
+    },
+    "action_expert_norm_qkv_rope:pi05_qkv_factor_bias_rope_scatter(__nv_bfloat162 const*, __nv_bfloat16 const*, __nv_bfloat162 const*, __nv_bfloat162 const*, __nv_bfloat162*, __nv_bfloat162*, __nv_bfloat162*)": {
+      "duration_us": 217.60399999999967,
+      "launches": 180
+    },
+    "action_expert_attention:void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_32x32_64x1_tn_align2>(cutlass_80_wmma_tensorop_s161616gemm_bf16_32x32_64x1_tn_align2::Params)": {
+      "duration_us": 803.0680000000002,
+      "launches": 180
+    },
+    "action_expert_attention:pi05_attention_softmax(float const*, __nv_bfloat16 const*, __nv_bfloat16*, int, float)": {
+      "duration_us": 383.2060000000008,
+      "launches": 180
+    },
+    "action_expert_attention:void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_bf16_128x64_64x3_nn_align2>(cutlass_80_tensorop_bf16_s16816gemm_bf16_128x64_64x3_nn_align2::Params)": {
+      "duration_us": 736.8950000000006,
+      "launches": 180
+    },
+    "action_expert_attention:void cublasLt::splitKreduce_kernel<32, 16, int, __nv_bfloat16, __nv_bfloat16, float, __nv_bfloat16, false, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, true, false, false, false>(cublasLt::cublasSplitKParams<float>, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, __nv_bfloat16*, float const*, float const*, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, void*, long, float*, int*, float*, float*, float const*, float const*, float const*, float const*, float const*)": {
+      "duration_us": 279.4680000000003,
+      "launches": 180
+    },
+    "action_expert_norm_gated_ffn:(anonymous namespace)::ada_rms_kernel(__nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, __nv_bfloat16*)": {
+      "duration_us": 258.5689999999996,
+      "launches": 180
+    },
+    "action_expert_norm_gated_ffn:_dual_dot": {
+      "duration_us": 2476.6269999999995,
+      "launches": 180
+    }
+  }
+}
