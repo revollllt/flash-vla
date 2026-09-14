@@ -64,5 +64,47 @@ CUTLASS_DIR=/home/ubuntu/flash-vla/third_party/cutlass:
 
 The script imports the existing lab/pi05/cutlass_gemm_screen.py timing helper,
 which is present in the base revision. Initial checks are py_compile and a
-scoped source diff check. Actual numerical and timing evidence follows only
-inside the explicitly granted GPU window.
+scoped source diff check. The following actual numerical and timing evidence
+was obtained inside the explicitly granted GPU window.
+
+## Measured result: stop
+
+Source and recorded engine revision:
+91754966653991f2fc2c9b85301d8915bb73ef8c, based on 86f58f3.
+The captured shipped plan is retained 021, including fused-prefix-qkv and
+the original cutlass-vision FFN up. Seed 42 and converted belt-cup checkpoint
+identity/options are saved in the raw result.
+
+All 18 control and all 18 candidate Q, K, V and x_norm tensors are exactly
+equal to the corresponding captured outputs. No non-exact fallback metric
+calculation was needed. The candidate used only
+/home/ubuntu/flash-vla-gpt6-backbone/.cache/cuda_ext/rtx5090_pi05_cutlass_backbone/libcutlass_backbone.so.
+Its reusable workspace is 131200 bytes and the common BF16 projected buffer
+is 4956160 bytes. The 18 distinct weights total 188743680 bytes (180 MiB).
+The run log contains no CUTLASS ptxas rebuild output; the existing cfg0 cache
+was reused.
+
+| Leg | Total median ms / 18 calls | Total IQR ms |
+|---|---:|---:|
+| A1 current | 1.043584 | 1.043168–1.044944 |
+| B1 cfg0 | 1.046688 | 1.046224–1.047616 |
+| B2 cfg0 | 1.047520 | 1.045936–1.048368 |
+| A2 current | 1.052352 | 1.051472–1.052592 |
+
+Mean-of-leg-medians apparent gain is only 0.000863969 ms, compared with
+0.008767962 ms control drift and 0.000832081 ms candidate drift.
+The conservative separation min(A)-max(B) is negative, -0.003936052 ms.
+Both candidate medians are slower than A1. The mean gain therefore does not
+establish an improvement above observed drift; no mechanism is assigned.
+
+This fixed cfg0 reuse stops without production integration, another tile,
+another comparison or a deployed end-to-end run. All 60 timing samples
+retain their first measured value; no observations were discarded.
+
+Tracked raw result:
+results/rtx5090-pi05/gpt6-prefix-cfg0/local.json.
+Original stdout and JSON:
+- /home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-prefix-cfg0-screen.log
+- /home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-prefix-cfg0-screen.json
+
+GPU/JIT/NVCC ownership was returned immediately after successful process exit.
