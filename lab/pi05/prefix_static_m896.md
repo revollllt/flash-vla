@@ -94,3 +94,49 @@ The only lab dependency is existing `lab.pi05.cutlass_gemm_screen.samples_ms`
 already present in main. Native code is reused from the current Target.
 Preparation validation is Python py_compile and a scoped diff check only;
 no Torch/CUDA/model/JIT/NVCC execution has occurred for this probe.
+
+## Measured decisions
+
+Runtime source and loaded identity: `754d7f43d975a86c9488dd2218d2c0a6987183e0`
+(the retained 023 production implementation). Probe revision:
+`32ea1aac164a4873d509bbffc19a9bf962a93dbb`. Recording confirmed 895 valid rows
+and mask[896] = -3.00405527047391e38. All native calls used the existing main
+library; the original log has zero ptxas lines.
+
+| Site, total ms | A1 Torch968 | B1 cfg0 M896 | B2 cfg0 M896 | A2 Torch968 |
+| --- | ---: | ---: | ---: | ---: |
+| QKV full chain, 18 calls | 1.044480 | 1.042432 | 1.042432 | 1.043808 |
+| Out-projection with reset, 17 calls | 0.912320 | 0.735360 | 0.735104 | 0.910144 |
+
+**QKV: stop.** All 18 controls and candidates are exactly equal on the compared
+Q/K/V prefixes; full968 x_norm is exact and all physical outputs remain finite.
+Mean gain is only 0.001712024 ms / 18 calls, conservative gap 0.001376033 ms,
+control drift 0.000671983 ms, candidate drift zero. Within-leg IQR widths are
+about 0.0020–0.0030 ms and overlap across controls/candidates. This small static
+benefit does not establish room for the extra runtime inactive launch and tail
+handling of a deployable candidate. No tile, repeat or production QKV change.
+
+**Out-projection: advance to a bounded deployable candidate.** All 17 controls
+are exact against captured outputs. All 17 candidates pass the existing shallow
+limits on both 895 and 896 rows, but are not bit-exact. Worst rel_rms is
+0.00011054231, minimum cosine 0.999999993894, and maximum absolute difference
+4.0 at layer14. All padded rows remain finite. These are local checks, not
+official full-model validation.
+
+Mean gain is 0.175999969 ms, conservative gap 0.174783945 ms, control drift
+0.002176046 ms, candidate drift 0.000256002 ms. Same-condition separation is
+clear. The M896 out-projection workspace is 22,283,008 bytes; QKV uses 131,200.
+The comparison changes both implementation (Torch versus cfg0) and M; changed
+Stream-K scheduling/workspace may contribute. Do not attribute the speedup only
+to omitting one eighth of row tiles, or count it as end-to-end gain.
+
+Both sites completed their single planned ABBA and all 120 samples are retained.
+GPU ownership was returned immediately after the successful process exit.
+Tracked raw numerical/timing output:
+[`local.json`](../../results/rtx5090-pi05/gpt6-prefix-projections-m896/local.json).
+
+Original untouched artifacts:
+- `artifacts/rtx5090-pi05/gpt6-prefix-projections-static-m896.json`
+- `artifacts/rtx5090-pi05/gpt6-prefix-projections-static-m896.log`
+
+The earlier FFN file `gpt6-prefix-static-m896.json` was not overwritten.
