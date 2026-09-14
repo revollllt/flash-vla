@@ -1,45 +1,22 @@
-# Corrections caught by the loop, and independently confirmed
+# agent 自查的纠正
 
-Cases the loop found in its own earlier conclusions. Same shape as
-[human.md](human.md), same failure modes, one extra requirement: the reasoning
-that produced the wrong conclusion also produces the retrospective about it, so
-nothing is admitted on the loop's own word.
+收录门槛见 [README](README.md):可证伪的产物、推翻而非不同、独立复核。
 
-**No entries yet.** The bar below has not been cleared, and an empty file is the
-honest state — the alternative is a list of self-assessments with nothing
-holding them up.
+**暂无条目。** 门槛还没有被跨过,空着是诚实的状态——否则就是一串没有支撑的自我
+评价。
 
-## Before adding one
+## 待复核的候选
 
-Read [README](README.md) for the full rule. In short, an entry needs a
-falsifiable artifact rather than a narrative, that artifact has to contradict
-the earlier conclusion rather than merely differ from it, and a reader that
-produced neither the conclusion nor the retrospective has to confirm both, in a
-fresh context, following
-[correction-review](../../.agents/skills/correction-review/SKILL.md).
+列在这里以免丢失,也以免把"没有条目"误读成"没有发生过"。三条都是后续 session 里
+真实的自我纠正,都没经过独立检查。
 
-Record the confirmation with the entry: who checked it, what they re-ran, and
-what they found. A confirmation that only restates the claim is not one.
+- **tile 扫描是对着 cache 做的。** `3950103` 之前每次扫描复用同一个权重 buffer,
+  第一轮之后它就在 L2 里,而部署时 action expert 一次 forward 走 18 层十遍,没有
+  一次读是热的。冷扫重测,九个 tile 里三个换了。
+- **floor 模型的 ceiling 偏乐观。** 它把每个 compute-bound 站点按 100% tensor peak
+  除,而本路线没有 kernel 到得了;按实际的 90% 重算,floor 从 22.07 移到 23.76 ms
+  (`2d1b18d`)。
+- **一次配对 A/B 是在被污染的 GPU 上测的。** 改动在一个有残留进程占着 7.4 GB 显存
+  的窗口里完成比较并被提交;干净重跑后结论反转,改动撤回(`76d90e9`)。
 
-## Candidates that have not been through this
-
-Named so they are not lost, and so nobody mistakes their absence for absence of
-evidence. Each is a real self-correction from a later session; none has been
-independently checked, so none is an entry.
-
-- **Tile sweeps were run against a cache.** Every sweep up to `3950103` reused
-  one weight buffer, so after the first iteration it sat in L2 and each tile was
-  chosen against a cache the deployed route does not have — the action expert
-  walks 18 layers ten times a forward. Re-swept cold, three of nine tiles moved.
-  Same mode as *an estimate assumed the wrong memory*, and if it survives review
-  it belongs beside that case.
-- **The floor model's ceiling was optimistic.** It divides every compute-bound
-  site by 100% of the measured tensor peak, which nothing in the route reaches;
-  re-derived at the 90% the stack delivers, the floor moves 22.07 → 23.76 ms
-  (`2d1b18d`). Same mode as *a ratio was taken against an unchecked
-  denominator*.
-- **A paired A/B was measured on a contaminated GPU.** A change was committed on
-  a comparison that fell inside a window when a stale process held 7.4 GB of the
-  card; re-run clean, the comparison reversed and the change was withdrawn
-  (`76d90e9`). This one is the most interesting of the three, because the loop
-  caught it only by re-running for an unrelated reason.
+第三条最值得看:loop 是因为**别的原因**重跑才发现的,不是靠自查。

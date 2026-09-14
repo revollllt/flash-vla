@@ -1,124 +1,82 @@
-# Corrections caught from outside the loop
+# 介入记录 — pi0 / RTX 5090 run-01
 
-Cases where a reader asked about a number and the conclusion changed. Grouped by
-failure mode; see [README](README.md) for what earns a place here and
-[the workflow](../optimization.md) for the review list these produced.
+Loop 在哪里停住,以及是什么让它继续。技术事实不记在这里:那些属于
+[kernel-wiki](../../.agents/skills/kernel-wiki/SKILL.md) 或硬件轴的 `measured/`,
+补进去就能避免重犯。这里只记**人判断进入 loop 的那几次**,因为它们补不进任何
+手册。
 
-All of these come from one engagement — the RTX 5090 bring-up and its first
-optimization run, 46.794 → 27.556 ms. Six conclusions were wrong when they were
-written and none was caught by the loop. Two had already been filed as settled,
-one of them a measured negative on what was then the largest remaining call
-site.
+全程 46.794 → 27.556 ms。下面是它停下的四种方式。
 
-## A number was carried, never measured
+## 1. 报告完就停
 
-**LingBot's best was quoted as 64.804 ms.** It was read off the top table of
-`results/README.md`, which rendered the retired Campaign controller's legacy
-entries with a column called "Current best ms" and no marker that they were
-historical. The real figure was 23.497 ms
-([lingbot-h100/run-02](../../results/lingbot-h100/run-02/README.md)) — a 2.8x
-error, in the direction that made the existing work look worse.
+迭代 6(31.396 ms)后 agent 输出了结论和剩余瓶颈,然后等待。
 
-The generator has since been fixed so the caveat cannot be lost again: current
-runs come first and the legacy table carries its own heading and disclaimer
-(`b314280`). The note that used to say this was hand-written, and the rebuild
-overwrote it.
+> 继续，直到完全无法继续优化才能停止
 
-**A smaller instance.** `run-01`'s shape line claimed "768 visual + 200 prompt
-tokens" for a route whose every measurement records `prompt_len0`. Nobody had
-measured the 200 (`d67659a`).
+迭代 9–15,**−0.800 ms**。没有新想法,只是没停。
 
-## A ratio was taken against an unchecked denominator
+## 2. 把自己的结论归档为"已定论"
 
-**`mma.sync` was reported at 60% of peak**, i.e. 40% left on the table. Two
-independent errors: the peak came from `spec.py`'s fp16-*accumulate* figure
-while the measurement ran fp32 accumulate, and it was computed at the 2.407 GHz
-marketed boost while the part runs ~2.89 GHz under load.
+action_expert_attention 的融合被测成 79.5 µs,连同机理和扫描一起记为负面结论,
+站点划掉。
 
-The tell was already on the page. A measured 253 TFLOP/s against a "peak" of
-209.5 is impossible, and an impossible ratio was reported rather than
-investigated. Re-measured clock-free as FLOP/cycle/SM it is 99.9% of 512
-(`measured/unit-mma.md`, `40816f3`); there was no 40%.
+> 估算有个明显的漏洞:5.2 MB 的 partial 完全装得进 L2……用 DRAM 模型去估一个
+> L2 常驻的 workspace,是把回程代价高估了三倍。还有一个更糟的问题:那 79.5 µs
+> 的基线,三个后来被证明值 2.5× 的手段一个都没用上。
 
-## An estimate assumed the wrong memory
+重做后 32.3 µs,切 key 轴后 18.94 µs,迭代 16,**−0.847 ms**——全run 最大的单步。
 
-**Split-KV for the action expert's attention was dismissed on a combine cost of
-6.8 µs**, computed by running a 5.2 MB partial buffer through
-`[ld.bw.dev.dram]`'s 1524 GB/s. That buffer is L2-resident, and this machine's
-own `copy_` measures 4879 GB/s in `lab/sm120/pi0_bandwidth_bench.py` — the bench
-that produced the correcting number had been written by the same loop and was
-not consulted.
+两处错误都不是算错:一处用错了存储层级,一处拿过期的基线下了结论。**loop 自己
+不会去质疑一条自己刚写完的负面结论。**
 
-Three times too expensive, and used to reject a design by comparing it against
-the main loop it was supposed to shorten.
+## 3. 把阻碍写进 next-steps,然后当成世界的属性
 
-## A negative outlived its toolbox
+PDL 探过了、确认 sm_120 可用、实测 graph 重放 1.166×,然后以一个**准确的**理由
+搁置:需要生产者和消费者都是手写 kernel,而 cuBLAS 夹在几乎每一对之间。这条理由
+被写成 *"it grows as more GEMMs become hand-written"*,没有任何让它发生的步骤。
 
-**A fused tensor-core attention was measured at 79.5 µs and recorded as
-rejected**, with a scaling sweep and a mechanism, and the call site written off.
+同一轮里 agent 还判定:剩余 12 个 gap 有 9 个在 cuBLAS GEMM 内部,需要一个能打过
+cuBLAS 的手写 GEMM,不现实。
 
-That kernel predated the fused QKV projection and used none of what it had
-established: `ldmatrix` instead of twelve scalar shared loads, one job per warp
-instead of one warp per scheduler, and operands staged in their natural order
-instead of a scatter-transposed V carrying the exact 8-way bank conflict
-`ldmatrix.trans` exists to remove. Rebuilt with all three and numerically
-unchanged: **32.3 µs, 2.46x**. With the key axis split eight ways: **18.94 µs
-against the split form's 25.2**, and **−0.847 ms deployed** (`c76fe4b`).
+> 重写所有使用的 cublas kernel，可以使用 cute 和 cutlass 以帮助优化，并在此基础
+> 上加入 PDL。对于 PDL 的加入位置参考 wiki 文档，需要做消融实验选择最优位置。
 
-What survived was narrower and still true: 408 flat queries is 26 mma M tiles,
-and no scheduler invents tiles. The error was concluding from that that the site
-had no room, while the key axis sat unused.
+一条指令同时跨掉了被归档成两件事的东西,迭代 17–18,**−1.785 ms**。
 
-**This is the mode worth generalizing.** When the toolbox gains a technique
-measured to be worth a factor, every negative recorded before it is provisional
-until re-run.
+## 4. 为已经获授权的事请示
 
-## A limit was declared from one attempt
+agent 提出换掉一个已经上线的 kernel 前先征求同意。
 
-**`measured/ncu-metrics.md` said profiling was "blocked entirely"** after one
-`ERR_NVGPUCTRPERM`. That error gates *counters*; CUPTI activity tracing was
-never blocked, and `sudo ncu` works with no module change and no reboot
-(`47ee0d5`). The whole timeline method was declared impossible on one error
-string.
+> 我同意换 kernel 继续优化，按照我们的 workflow 优化流程本身就允许换 kernel。
+> 最重要的是确保 end2end 的 deploy 结果真实可靠即可
 
-**The same mode in the source hierarchy.** The sm_120 ISA facts were first taken
-from a widely-mirrored community wiki, and both of its load-bearing claims were
-false — it says sm_120 keeps `wgmma`, and that clusters are limited to one CTA.
-`ptxas` rejects `wgmma` for every sm_120 target, and this part launches an
-8-CTA cluster with working distributed shared memory (`[cluster.count.max]`).
-The method that replaced it is in `measured/isa-support.md`: ptxas is the oracle
-because it is the implementation.
+workflow 第 7 步的 model 外循环就是"每次只把一个胜出候选接入当前最佳模型和 plan"
+——替换已上线的实现是这个循环的常规动作,不是需要批准的例外。**把常规动作当成了
+例外。**
 
-## A dependency was treated as a property of the world
+## 一次正确的停止
 
-**Programmatic dependent launch was probed, found available on sm_120 and
-measured at 1.166x under graph replay** (`lab/sm120/pdl_unit.cu`), then set
-aside with an accurate reason: PDL needs the producer *and* the consumer to
-carry `griddepcontrol`, and a cuBLAS call between two hand-written kernels
-breaks the chain — which here was nearly every pair.
+fp8 实测在 backbone gated FFN 上 2.34×,但相对误差 3.7e-02 对 bf16 的 1.7e-03,
+且 `eval/tolerances.py` 只注册了 bf16 一种 precision policy。agent 没有自行决定,
+而是把分叉交出来。
 
-That reason went into the next-steps list as *"it grows as more GEMMs become
-hand-written"*, with no step proposed to make that happen. The blocker was named
-precisely and left standing.
+> 先做 stream-K，不碰精度
 
-One instruction then spanned what the loop had filed as two separate items — a
-GEMM problem it judged too large, and a technique it judged blocked — by asking
-for every cuBLAS call site to be rewritten with CuTe/CUTLASS and PDL built on
-top. **−1.785 ms across two iterations, the largest single intervention of the
-run** (`fdfe281`, `624ab17`).
+这次停对了:它改变的是部署的数值契约,`parity.md` 明确写着"a kernel task does not
+invent one"。**该停的是契约,不是结论。**
 
-Nothing in that analysis was measured wrongly. A correctly identified dependency
-was recorded as a property of the world rather than as the next thing to attack.
+## 收益分布
 
-## A case that produced no check
+| 介入 | 迭代 | 收益 |
+|---|---|---:|
+| 五点优化指令(启动) | 1–6 | **−15.398 ms** |
+| 重写 cuBLAS + CUTLASS + PDL | 17–18 | **−1.785 ms** |
+| L2 估算 + 陈旧基线批评 | 16 | **−0.847 ms** |
+| 继续,直到无法继续 | 9–15 | **−0.800 ms** |
+| 还有空间吗 | 19–20 | **−0.408 ms** |
 
-**Scope was inherited from the previous hardware.** The first plan ported H100
-TileLang configurations by reducing `NUM_STAGES` to fit 99 KB of shared memory.
-It ran end to end at cos 0.898 with `replay_identical` false, because three of
-those configs feed warp-specialised builders where the stages *are* the producer
-buffer: at one stage the producer has nothing to fill. A race, not a tolerance.
+启动指令占 80%,内容只是"按文档里的 loop 对着一个明确目标跑"。剩下 3.84 ms 里
+**2.63 ms(68%)来自推翻 agent 自己的结论**——拆掉一个它接受了的阻碍,重开一个
+它归档了的负面结论。
 
-The instruction that unblocked it — each hardware axis gets its own
-implementation and the kernels may be rewritten entirely, torch first for an
-end-to-end number, then optimized toward SOL — is now the route's premise rather
-than a check, which is why it appears here without one.
+**付钱的介入是推翻*结论*的,不是提供*想法*的。**
