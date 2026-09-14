@@ -1,0 +1,3511 @@
+{
+  "deployment_revision_before_import": "cb927cfde6221691b00349f6c1186c1afafa7bc8",
+  "deployment_plan": {
+    "vision_encoder_patch_embed": "torch",
+    "vision_encoder_norm_qkv": "cutlass-vision",
+    "vision_encoder_attention": "torch",
+    "vision_encoder_out_proj_residual": "cutlass-vision",
+    "vision_encoder_norm_ffn_up": "cutlass-vision",
+    "vision_encoder_ffn_down_residual": "cutlass-vision",
+    "llm_backbone_projector": "torch",
+    "llm_backbone_embed_prompt": "torch",
+    "llm_backbone_norm_qkv_rope": "fused-prefix-qkv",
+    "llm_backbone_attention": "torch",
+    "llm_backbone_out_proj_residual": "torch",
+    "llm_backbone_norm_gated_ffn": "cutlass-backbone",
+    "llm_backbone_ffn_down_residual": "cutlass-backbone",
+    "action_expert_action_in_proj": "torch",
+    "action_expert_norm_qkv_rope": "fused-qkv",
+    "action_expert_attention": "fused-attention",
+    "action_expert_out_proj_residual": "cutlass-expert-residual",
+    "action_expert_norm_gated_ffn": "dual-ffn",
+    "action_expert_ffn_down_residual": "cutlass-expert-residual",
+    "action_expert_action_out_proj": "fused-qkv"
+  },
+  "source_qkv": "/home/ubuntu/flash-vla/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/fused_qkv.py",
+  "timing_helper": "/home/ubuntu/flash-vla-gpt6-backbone/lab/pi05/cutlass_gemm_screen.py",
+  "seed": 42,
+  "options": [
+    "converted_checkpoint=/home/ubuntu/models/pi05_belt_cup_pytorch",
+    "checkpoint_id=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+    "checkpoint_digest=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha"
+  ],
+  "triton_version": "3.7.1",
+  "enable_fp_fusion": false,
+  "enable_reflect_ftz": false,
+  "num_warps": 4,
+  "num_stages": 3,
+  "reps_per_leg": 15,
+  "input_source": "first actual QKV call per distinct layer weight",
+  "scope": "replace only BF16 GEMM; unchanged prepare and finish",
+  "cache_pressure_sequence_is_deployment_sequence": false,
+  "phase": "complete",
+  "results": [
+    {
+      "tile": [
+        32,
+        32,
+        32
+      ],
+      "correct": true,
+      "per_layer_metrics": [
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000004
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        }
+      ],
+      "registers": 38,
+      "spills": 0,
+      "shared_bytes": 8192,
+      "ctas": 160,
+      "ptx": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-expert-qkv-matmul-screen-32x32x32.ptx",
+      "cache_pressure": {
+        "legs": [
+          {
+            "route": "A",
+            "samples_ms_per_call": [
+              0.01088355564408832,
+              0.010056888891590966,
+              0.00998044427898195,
+              0.009949333137936063,
+              0.010016000105275048,
+              0.009922666682137383,
+              0.009946666657924652,
+              0.00998755544424057,
+              0.010013333625263639,
+              0.010005333357387118,
+              0.009990221924251981,
+              0.00998577806684706,
+              0.009988444546858469,
+              0.009934222532643212,
+              0.010006222460005019
+            ],
+            "median_us_per_call": 9.988444546858469
+          },
+          {
+            "route": "B",
+            "samples_ms_per_call": [
+              0.009511111511124505,
+              0.009116444322797988,
+              0.009151111046473185,
+              0.009138666921191745,
+              0.009140444298585257,
+              0.00907199995385276,
+              0.009147555463843875,
+              0.009080000221729279,
+              0.00904977818330129,
+              0.009156444834338294,
+              0.009159999589125315,
+              0.009104000197516548,
+              0.009131555755933126,
+              0.009128000173303816,
+              0.009135111338562436
+            ],
+            "median_us_per_call": 9.135111338562437
+          },
+          {
+            "route": "B",
+            "samples_ms_per_call": [
+              0.009494221872753568,
+              0.009160888691743216,
+              0.009101333717505137,
+              0.009132444030708738,
+              0.009304000271691216,
+              0.009090666969617208,
+              0.00907911111911138,
+              0.00908088849650489,
+              0.009137777818573846,
+              0.00907911111911138,
+              0.0090844440791342,
+              0.009191999832789103,
+              0.00908266670174069,
+              0.009083555804358589,
+              0.009124444590674506
+            ],
+            "median_us_per_call": 9.101333717505137
+          },
+          {
+            "route": "A",
+            "samples_ms_per_call": [
+              0.010387555592589907,
+              0.009967111051082611,
+              0.01000711073478063,
+              0.00996800015370051,
+              0.0099973330895106,
+              0.00997333311372333,
+              0.009843555589516958,
+              0.01000355515215132,
+              0.010004444254769219,
+              0.010013333625263639,
+              0.01000177777475781,
+              0.01000088867213991,
+              0.01016800022787518,
+              0.009953777823183272,
+              0.010063110954231687
+            ],
+            "median_us_per_call": 10.00177777475781
+          }
+        ],
+        "mean_leg_delta_us": 0.876888632774353,
+        "conservative_leg_delta_us": 0.8533332082960321,
+        "control_drift_us": 0.013333227899341438,
+        "candidate_drift_us": 0.03377762105730042
+      }
+    },
+    {
+      "tile": [
+        16,
+        64,
+        32
+      ],
+      "correct": true,
+      "per_layer_metrics": [
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000004
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        }
+      ],
+      "registers": 40,
+      "spills": 0,
+      "shared_bytes": 10240,
+      "ctas": 160,
+      "ptx": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-expert-qkv-matmul-screen-16x64x32.ptx",
+      "cache_pressure": {
+        "legs": [
+          {
+            "route": "A",
+            "samples_ms_per_call": [
+              0.01071822229358885,
+              0.009926222264766693,
+              0.009948444035318162,
+              0.010015111002657149,
+              0.010011555420027839,
+              0.009983110758993361,
+              0.00998577806684706,
+              0.009901333186361525,
+              0.01000711073478063,
+              0.009955555200576782,
+              0.010069333016872406,
+              0.009960888988441892,
+              0.009934222532643212,
+              0.00999466660949919,
+              0.010007999837398529
+            ],
+            "median_us_per_call": 9.98577806684706
+          },
+          {
+            "route": "B",
+            "samples_ms_per_call": [
+              0.009567110902733274,
+              0.009094222552246518,
+              0.009104889300134447,
+              0.00924711094962226,
+              0.009077333741717868,
+              0.009069333473841349,
+              0.009157333109113906,
+              0.009135999613338046,
+              0.009021333522266813,
+              0.009083555804358589,
+              0.009105777574910058,
+              0.00907377815908856,
+              0.00906666699382994,
+              0.009126221968068017,
+              0.009128889275921715
+            ],
+            "median_us_per_call": 9.104889300134447
+          },
+          {
+            "route": "B",
+            "samples_ms_per_call": [
+              0.009396444592210982,
+              0.00904888908068339,
+              0.009089777866999308,
+              0.009043555292818282,
+              0.009101333717505137,
+              0.009076444639099969,
+              0.00904622260067198,
+              0.009105777574910058,
+              0.009132444030708738,
+              0.009043555292818282,
+              0.009077333741717868,
+              0.009104889300134447,
+              0.009047110875447592,
+              0.009080000221729279,
+              0.009080000221729279
+            ],
+            "median_us_per_call": 9.080000221729279
+          },
+          {
+            "route": "A",
+            "samples_ms_per_call": [
+              0.010418666733635796,
+              0.009955555200576782,
+              0.009840000006887648,
+              0.00998577806684706,
+              0.009931555224789513,
+              0.009948444035318162,
+              0.00998933364947637,
+              0.010020444790522257,
+              0.00998755544424057,
+              0.009927111367384592,
+              0.009986666341622671,
+              0.00998933364947637,
+              0.009957333405812582,
+              0.009957333405812582,
+              0.009927111367384592
+            ],
+            "median_us_per_call": 9.957333405812582
+          }
+        ],
+        "mean_leg_delta_us": 0.8791109753979587,
+        "conservative_leg_delta_us": 0.8524441056781349,
+        "control_drift_us": 0.028444661034477292,
+        "candidate_drift_us": 0.02488907840516852
+      }
+    },
+    {
+      "tile": [
+        16,
+        32,
+        32
+      ],
+      "correct": true,
+      "per_layer_metrics": [
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000004
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999998
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0000000000000002
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        },
+        {
+          "projected": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "q": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 0.9999999999999999
+          },
+          "k": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "v": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          },
+          "factor": {
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+            "rms_error": 0.0,
+            "rel_rms": 0.0,
+            "p99_abs": 0.0,
+            "cosine_similarity": 1.0
+          }
+        }
+      ],
+      "registers": 40,
+      "spills": 0,
+      "shared_bytes": 6144,
+      "ctas": 320,
+      "ptx": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-expert-qkv-matmul-screen-16x32x32.ptx",
+      "cache_pressure": {
+        "legs": [
+          {
+            "route": "A",
+            "samples_ms_per_call": [
+              0.010766222245163388,
+              0.009983110758993361,
+              0.01000177777475781,
+              0.009946666657924652,
+              0.00999288923210568,
+              0.010008888940016428,
+              0.009878222313192155,
+              0.00998399986161126,
+              0.010004444254769219,
+              0.009949333137936063,
+              0.009983110758993361,
+              0.009944889280531142,
+              0.01001066631740994,
+              0.010041777458455827,
+              0.01001066631740994
+            ],
+            "median_us_per_call": 9.99288923210568
+          },
+          {
+            "route": "B",
+            "samples_ms_per_call": [
+              0.009311999711725447,
+              0.008615111311276754,
+              0.00853066643079122,
+              0.008563555777072906,
+              0.008561777571837107,
+              0.008568888737095727,
+              0.008567999634477828,
+              0.008568888737095727,
+              0.008571555217107138,
+              0.008567999634477828,
+              0.008568888737095727,
+              0.00850755555762185,
+              0.00853422201342053,
+              0.008565333154466417,
+              0.008572444319725037
+            ],
+            "median_us_per_call": 8.567999634477827
+          },
+          {
+            "route": "B",
+            "samples_ms_per_call": [
+              0.008947555389669206,
+              0.008604444563388824,
+              0.008569777839713626,
+              0.008569777839713626,
+              0.008570666942331526,
+              0.008571555217107138,
+              0.008625778059164682,
+              0.008626666333940294,
+              0.008567999634477828,
+              0.008561777571837107,
+              0.008563555777072906,
+              0.008567111359702216,
+              0.008628444539176093,
+              0.008567111359702216,
+              0.008569777839713626
+            ],
+            "median_us_per_call": 8.569777839713625
+          },
+          {
+            "route": "A",
+            "samples_ms_per_call": [
+              0.010386666489972008,
+              0.009952888720565371,
+              0.009928888744778104,
+              0.00999111102686988,
+              0.009895111123720804,
+              0.009953777823183272,
+              0.00998044427898195,
+              0.00998755544424057,
+              0.00999111102686988,
+              0.009869332942697737,
+              0.009878222313192155,
+              0.009952888720565371,
+              0.009932444327407412,
+              0.009928888744778104,
+              0.009984888964229159
+            ],
+            "median_us_per_call": 9.95288872056537
+          }
+        ],
+        "mean_leg_delta_us": 1.4040002392397994,
+        "conservative_leg_delta_us": 1.3831108808517456,
+        "control_drift_us": 0.0400005115403097,
+        "candidate_drift_us": 0.0017782052357979694
+      }
+    }
+  ],
+  "actual_layers": 18,
+  "shape_mkn": [
+    50,
+    1024,
+    2560
+  ],
+  "dtype": "torch.bfloat16",
+  "original_weight_bytes": 94371840,
+  "tolerance": {
+    "rel_rms_max": 0.066,
+    "cosine_min": 0.99978
+  },
+  "control_correct": true,
+  "control_per_layer_metrics": [
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000004
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999998
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0000000000000002
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    },
+    {
+      "projected": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "q": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 0.9999999999999999
+      },
+      "k": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "v": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      },
+      "factor": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "rms_error": 0.0,
+        "rel_rms": 0.0,
+        "p99_abs": 0.0,
+        "cosine_similarity": 1.0
+      }
+    }
+  ],
+  "cache_pressure_calls_per_graph": 36,
+  "cache_pressure_weight_bytes": 188743680,
+  "cache_pressure_order": "all original layer weights, then all cloned layer weights",
+  "l2_bytes": 100663296,
+  "best_cache_pressure_tile": [
+    16,
+    32,
+    32
+  ],
+  "winner_chain_correct": true,
+  "original_weight_chain": {
+    "calls_per_graph": 18,
+    "weight_bytes": 94371840,
+    "is_deployment_sequence": false,
+    "scope": "complete prepare/GEMM/finish chain, first actual call of each layer",
+    "legs": [
+      {
+        "route": "A",
+        "samples_ms_per_call": [
+          0.012824888858530257,
+          0.011669333610269759,
+          0.011598221957683563,
+          0.011610666910807291,
+          0.011578666667143503,
+          0.011580444044537015,
+          0.011607111328177981,
+          0.011621333658695221,
+          0.01162844482395384,
+          0.011621333658695221,
+          0.011571555501884885,
+          0.011676444775528379,
+          0.011505777637163797,
+          0.011552000211344825,
+          0.011621333658695221
+        ],
+        "median_us_per_call": 11.610666910807291
+      },
+      {
+        "route": "B",
+        "samples_ms_per_call": [
+          0.011575111084514193,
+          0.009950222240553962,
+          0.010062221851613786,
+          0.009914666414260864,
+          0.00979733301533593,
+          0.010012444522645738,
+          0.009923555784755282,
+          0.009838222629494138,
+          0.010014221900039248,
+          0.009918221996890174,
+          0.009895111123720804,
+          0.009948444035318162,
+          0.010021333065297868,
+          0.009907555249002244,
+          0.009912889036867354
+        ],
+        "median_us_per_call": 9.923555784755282
+      },
+      {
+        "route": "B",
+        "samples_ms_per_call": [
+          0.011448889142937131,
+          0.010243555737866296,
+          0.010229333407349057,
+          0.010245333115259806,
+          0.010232888989978366,
+          0.01017777787314521,
+          0.010231110784742568,
+          0.010225777824719747,
+          0.010216889282067617,
+          0.01018844462103314,
+          0.010293333066834344,
+          0.010298666854699453,
+          0.010236444572607676,
+          0.01019022199842665,
+          0.010311110979980893
+        ],
+        "median_us_per_call": 10.232888989978365
+      },
+      {
+        "route": "A",
+        "samples_ms_per_call": [
+          0.012451555165979598,
+          0.011189333266682096,
+          0.011139555937714048,
+          0.011167999770906236,
+          0.011152000062995486,
+          0.011136000355084738,
+          0.011114666859308878,
+          0.011164444188276926,
+          0.0110862221982744,
+          0.011121778024567498,
+          0.011155555645624796,
+          0.011150221857759688,
+          0.01109511074092653,
+          0.0110862221982744,
+          0.011139555937714048
+        ],
+        "median_us_per_call": 11.139555937714048
+      }
+    ],
+    "mean_leg_delta_us": 1.2968890368938464,
+    "conservative_leg_delta_us": 0.9066669477356832,
+    "control_drift_us": 0.4711109730932428,
+    "candidate_drift_us": 0.3093332052230835
+  }
+}

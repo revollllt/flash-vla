@@ -180,3 +180,17 @@ The first fresh-process ABBA gave A32.596582/B32.499377/B32.533664/A32.561475 ms
 The fixed BAAB returned B32.489375/A32.557318/A32.638460/B32.602458 ms. It has a positive mean-of-medians difference of 0.051972 ms, but candidate/control medians overlap; A/B drift is 0.081142/0.113082 ms. Ending clocks change from 2865 MHz in B1/A1 to 2857 MHz in A2/B2, with temperatures 60/62/62/61 C. These snapshots cannot isolate the clock contribution. All eight mean medians favor the candidate by 0.057240 ms, but the reverse-order check does not provide stable separation under the existing deployment policy.
 
 The candidate is recorded as inconclusive and its production module, registry entry and shipped route were removed in 1542c05. The original source is reviewable at 34add1b; lab experiments and all latency/correctness reports remain. The curve marks this measured trial as withdrawn and retains 017 as the deployed version. No more repetitions were used to seek a favorable result.
+
+## 019 — Expert QKV Triton GEMM, retained
+
+The fixed 16x32x32 Triton tile replaces only the middle GEMM; the existing native prepare, public factor, bias/RoPE/scatter and BF16 projected scratch stay in use. The two losing experimental tiles are not deployed. All 18 captured real layer calls match bitwise for projected output, Q/K/V and factor. PTX confirms BF16-input FP32-accumulator MMA followed by BF16 round-to-nearest before the store. The winner uses 40 registers, 6 KiB shared memory and no spills.
+
+Because the actual 18 weights total 90 MiB and can fit L2, the pure-GEMM screen explicitly rotates two independent copies of the same real weights (180 MiB), with identical addresses/order for A and B. This is a cache-pressure experiment, not the deployment sequence. Its ABBA gives A9.9929/9.9529 us and B8.5680/8.5698 us. The subsequent original-18-weight full-chain ABBA gives A11.6107/11.1396 us and B9.9236/10.2329 us. The latter control/candidate drift is 0.4711/0.3093 us; its conservative separation is 0.9067 us/call, and the drift is retained in the report.
+
+Full-depth official comparison passed with action metrics equal to 017. Fresh-process deployment ABBA gives prior plan 32.565772/32.616870 ms and candidate 32.426883/32.429453 ms. The mean of medians improves by 0.163153 ms; A/B drift is 0.051099/0.002570 ms. Only action_expert_norm_qkv_rope differs. All ending SM clocks are 2865 MHz, memory 13801 MHz and temperatures 59/59/57/58 C. The separated medians support retaining the gain, while the control drift limits exact attribution. CPU declaration/route checks passed 9/9 without CUDA initialization before integration. Source 0dcb021.
+
+## Rejected cfg0 reuse for backbone output projection
+
+The current torch addmm already combines FP32 accumulation and the old residual before one BF16 store. Reusing the existing cfg0 backbone-down closure for M968/K2048/N2048 preserves those rounding locations and C=D aliasing; no extra residual kernel exists to remove. All 17 actual-layer outputs match bitwise. The 136 MiB weight set exceeds L2, and both paths use the same residual reset excluded from timing.
+
+Single-tile ABBA totals A0.895008/B0.901120/B0.901120/A0.894976 ms across 17 calls. The existing cfg0 reuse is slower by 0.006128 ms versus the mean control, so its production wrapper change was removed and no additional tile was tried. This result rejects only that reuse candidate. Lab reproduction and all 60 samples remain in lab/pi05/cutlass_backbone_outproj.md and measurements/backbone-outproj-cfg0-rejected.json.

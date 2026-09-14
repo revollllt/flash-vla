@@ -1,0 +1,270 @@
+{
+  "source_revision": "cb927cfde6221691b00349f6c1186c1afafa7bc8",
+  "seed": 42,
+  "options": [
+    "converted_checkpoint=/home/ubuntu/models/pi05_belt_cup_pytorch",
+    "checkpoint_id=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+    "checkpoint_digest=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha"
+  ],
+  "base_plan": {
+    "vision_encoder_patch_embed": "torch",
+    "vision_encoder_norm_qkv": "cutlass-vision",
+    "vision_encoder_attention": "torch",
+    "vision_encoder_out_proj_residual": "cutlass-vision",
+    "vision_encoder_norm_ffn_up": "cutlass-vision",
+    "vision_encoder_ffn_down_residual": "cutlass-vision",
+    "llm_backbone_projector": "torch",
+    "llm_backbone_embed_prompt": "torch",
+    "llm_backbone_norm_qkv_rope": "fused-prefix-qkv",
+    "llm_backbone_attention": "torch",
+    "llm_backbone_out_proj_residual": "torch",
+    "llm_backbone_norm_gated_ffn": "cutlass-backbone",
+    "llm_backbone_ffn_down_residual": "cutlass-backbone",
+    "action_expert_action_in_proj": "torch",
+    "action_expert_norm_qkv_rope": "fused-qkv",
+    "action_expert_attention": "fused-attention",
+    "action_expert_out_proj_residual": "cutlass-expert-residual",
+    "action_expert_norm_gated_ffn": "dual-ffn",
+    "action_expert_ffn_down_residual": "cutlass-expert-residual",
+    "action_expert_action_out_proj": "fused-qkv"
+  },
+  "site": "llm_backbone_out_proj_residual",
+  "calls": 17,
+  "shape_mkn": [
+    968,
+    2048,
+    2048
+  ],
+  "dtype": "torch.bfloat16",
+  "alpha": 1,
+  "beta": 1,
+  "c_aliases_d": true,
+  "weight_bytes": 142606336,
+  "per_layer_metrics": [
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 0.9999999999999999
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0000000000000002
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 0.9999999999999998
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 0.9999999999999999
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0000000000000002
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 0.9999999999999998
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0000000000000002
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 0.9999999999999998
+    },
+    {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "rms_error": 0.0,
+      "rel_rms": 0.0,
+      "p99_abs": 0.0,
+      "cosine_similarity": 1.0
+    }
+  ],
+  "correct": true,
+  "scratch_bytes": 131200,
+  "timer": "CUDA graph; same residual reset excluded from both routes",
+  "legs": [
+    {
+      "route": "A",
+      "samples_ms_per_call": [
+        0.05288658773197847,
+        0.05276799903196447,
+        0.05276611622642068,
+        0.05276611622642068,
+        0.05276611622642068,
+        0.052643765421474684,
+        0.052647531032562256,
+        0.05276611622642068,
+        0.052643765421474684,
+        0.05264564822701847,
+        0.052643765421474684,
+        0.052643765421474684,
+        0.052647531032562256,
+        0.05264564822701847,
+        0.05264564822701847
+      ],
+      "median_ms_total": 0.8950080275535583
+    },
+    {
+      "route": "B",
+      "samples_ms_per_call": [
+        0.053219763671650606,
+        0.05288658773197847,
+        0.053007059237536264,
+        0.053007059237536264,
+        0.05300894204308005,
+        0.05300894204308005,
+        0.05300894204308005,
+        0.053007059237536264,
+        0.053007059237536264,
+        0.05288658773197847,
+        0.05288847053752226,
+        0.053007059237536264,
+        0.05288658773197847,
+        0.05288658773197847,
+        0.053007059237536264
+      ],
+      "median_ms_total": 0.9011200070381165
+    },
+    {
+      "route": "B",
+      "samples_ms_per_call": [
+        0.05306729499031516,
+        0.05288658773197847,
+        0.05288658773197847,
+        0.053007059237536264,
+        0.05288658773197847,
+        0.053007059237536264,
+        0.05288658773197847,
+        0.053007059237536264,
+        0.05288658773197847,
+        0.05288658773197847,
+        0.05288658773197847,
+        0.053007059237536264,
+        0.053007059237536264,
+        0.053007059237536264,
+        0.053007059237536264
+      ],
+      "median_ms_total": 0.9011200070381165
+    },
+    {
+      "route": "A",
+      "samples_ms_per_call": [
+        0.05280564813052907,
+        0.05264564822701847,
+        0.05264564822701847,
+        0.05264564822701847,
+        0.05264564822701847,
+        0.052525176721460676,
+        0.05264564822701847,
+        0.052647531032562256,
+        0.05264564822701847,
+        0.052643765421474684,
+        0.05264564822701847,
+        0.052525176721460676,
+        0.05252705952700447,
+        0.05264564822701847,
+        0.05264564822701847
+      ],
+      "median_ms_total": 0.894976019859314
+    }
+  ]
+}
