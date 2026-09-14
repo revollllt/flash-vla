@@ -1,0 +1,50 @@
+{
+  "candidate_revision": "4de57c9",
+  "initial_order": "ABBA",
+  "reports": [
+    "020-control-before-021.json",
+    "021.json",
+    "021-repeat.json",
+    "020-control-after-021.json"
+  ],
+  "medians_ms": [
+    32.19498635735363,
+    32.04192302655429,
+    32.142266631126404,
+    32.23434847313911
+  ],
+  "mean_of_medians_gain_ms": 0.12257258640602231,
+  "control_drift_ms": 0.039362115785479546,
+  "candidate_drift_ms": 0.10034360457211733,
+  "minimum_separation_ms": 0.05271972622722387,
+  "next_step_declared_before_reverse_results": "One fixed fresh-process BAAB block because candidate drift is near the observed mean gain. Preserve all eight reports. No additional repetitions after that block.",
+  "reverse": {
+    "order": "BAAB",
+    "reports": [
+      "021-reverse-b1.json",
+      "021-reverse-a1.json",
+      "021-reverse-a2.json",
+      "021-reverse-b2.json"
+    ],
+    "medians_ms": [
+      32.13903703726828,
+      32.25079900585115,
+      32.24852203857154,
+      32.16234047431499
+    ],
+    "mean_of_medians_gain_ms": 0.09897176641970873,
+    "control_drift_ms": 0.002276967279613018,
+    "candidate_drift_ms": 0.023303437046706676,
+    "minimum_separation_ms": 0.08618156425654888
+  },
+  "same_route_maps_across_all_legs": true,
+  "changed_routes": {
+    "action_expert_norm_qkv_rope": [
+      "triton-qkv",
+      "triton-qkv-finish"
+    ]
+  },
+  "decision": "keep",
+  "reason": "The predeclared reverse block retains separated candidate/control medians with drift well below the gain. All eight results are retained; no more repetitions.",
+  "all_eight_mean_of_medians_gain_ms": 0.11077217641286552
+}

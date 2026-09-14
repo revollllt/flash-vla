@@ -23,7 +23,7 @@ Source the ignored environment file. CHECKPOINT resolves to the converted belt-c
 - Initial median: 59.5779 ms, min 59.4828, p99 59.6741; raw samples in `measurements/000.json`.
 - Initial full-depth official comparison passed; `correctness/000-official.json` contains prefix KV and action errors. Oracle provenance is a vendored OpenPI forward and records its dirty source status. This is numerical agreement, not robot task-success validation.
 - The separate pi05_base checkpoint previously failed prefix KV tolerance. This run does not claim its correctness or performance.
-- Leading bottlenecks and reachable floor are pending current-workload profiling.
+- Profiling and the initial floor estimate are recorded below. The latest focused expert trace is after 019; it is diagnostic rather than an end-to-end timing result.
 
 ![Optimization progress](progress.svg)
 
@@ -210,3 +210,13 @@ Full-depth official comparison passed with action metrics equal to 019. Fresh-pr
 Ending SM clocks are 2857/2865/2857/2865 MHz, memory 13801 MHz and temperatures 59/58/60/57 C. Both routes include one sample at each ending SM clock; these snapshots do not establish identical frequency histories. The gain is retained as deployment behavior under the existing policy without assigning the entire difference to isolated QK time. CPU wrapper declaration passed without CUDA initialization before integration. Source 76086d9.
 
 A separate CPU-only layout hypothesis was dismissed: backbone QK and PV already use flat 2D GEMMs with Q/out(7744,256), K/V(968,256), and score/P(7744,968). There is no remaining batch dimension to remove by changing matmul to mm. No code, GPU screen or new softmax was introduced for that hypothesis.
+
+## 021 — Expert QKV rounded finish fusion, retained
+
+The existing 16x32x32 Triton GEMM tile now performs the original factor multiplication, bias, adjacent-pair RoPE and output scatter after an explicit BF16 roundtrip. Native prepare and the public factor stay unchanged. K/V use the caller-provided suffix views without adding a second prefix offset. The 256,000-byte projected scratch and one finish launch are removed. All 18 actual-layer Q/K/V/factor outputs match bitwise and prefix caches stay identical. Compiled resources remain 40 registers, 6 KiB shared memory and no spills. Local complete-chain ABBA is A10.807111/B9.637333/B9.630222/A10.775111 us/call; its same-weight local cache conditions differ from deployment.
+
+Full-depth official comparison passed with action metrics equal to 020. The scoped CPU Target check passes all 8 declarations and 1 route check. Fresh-process end-to-end ABBA gives A32.194986/B32.041923/B32.142267/A32.234348 ms. Mean-of-medians gain is 0.122573 ms, but B drift is 0.100344 ms versus A drift 0.039362 ms. Because candidate drift is close to the gain, one fixed reverse-order BAAB block was declared before collecting further results.
+
+That reverse block gives B32.139037/A32.250799/A32.248522/B32.162340 ms. Its mean-of-medians gain is 0.098972 ms; A/B drift is 0.002277/0.023303 ms and minimum separation 0.086182 ms. All eight mean medians favor the candidate by 0.110772 ms. Candidate/control medians stay separated in both orders, supporting retention. The curve uses the first candidate measurement by the same convention as earlier iterations; the four candidate medians span 32.041923–32.162340 ms, so that first point alone is not the incremental gain estimate.
+
+The eight ending SM clocks are 2857/2865/2857/2865/2857/2865/2857/2857 MHz, memory 13801 MHz, with temperatures 57/56/59/59/60/61/58/59 C. These snapshots do not establish identical clock histories. Only action_expert_norm_qkv_rope changes across the verified complete plan maps. No GPU work, compilation or model loading overlapped these end-to-end runs. Source 4de57c9; all reports and the predeclared follow-up decision are retained.

@@ -1,0 +1,1596 @@
+{
+  "deployment_revision_before_import": "bf2a9ba86d5e25d444583b234fe3dd3c346ed998",
+  "deployment_plan": {
+    "vision_encoder_patch_embed": "torch",
+    "vision_encoder_norm_qkv": "cutlass-vision",
+    "vision_encoder_attention": "torch",
+    "vision_encoder_out_proj_residual": "cutlass-vision",
+    "vision_encoder_norm_ffn_up": "cutlass-vision",
+    "vision_encoder_ffn_down_residual": "cutlass-vision",
+    "llm_backbone_projector": "torch",
+    "llm_backbone_embed_prompt": "torch",
+    "llm_backbone_norm_qkv_rope": "fused-prefix-qkv",
+    "llm_backbone_attention": "torch",
+    "llm_backbone_out_proj_residual": "torch",
+    "llm_backbone_norm_gated_ffn": "cutlass-backbone",
+    "llm_backbone_ffn_down_residual": "cutlass-backbone",
+    "action_expert_action_in_proj": "torch",
+    "action_expert_norm_qkv_rope": "triton-qkv",
+    "action_expert_attention": "fused-attention",
+    "action_expert_out_proj_residual": "cutlass-expert-residual",
+    "action_expert_norm_gated_ffn": "dual-ffn",
+    "action_expert_ffn_down_residual": "cutlass-expert-residual",
+    "action_expert_action_out_proj": "fused-qkv"
+  },
+  "control_source": "/home/ubuntu/flash-vla/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/triton_qkv.py",
+  "timing_helper": "/home/ubuntu/flash-vla-gpt6-backbone/lab/pi05/cutlass_gemm_screen.py",
+  "seed": 42,
+  "options": [
+    "converted_checkpoint=/home/ubuntu/models/pi05_belt_cup_pytorch",
+    "checkpoint_id=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+    "checkpoint_digest=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha"
+  ],
+  "triton_version": "3.7.1",
+  "tile": [
+    16,
+    32,
+    32
+  ],
+  "num_warps": 4,
+  "num_stages": 3,
+  "enable_fp_fusion": false,
+  "enable_reflect_ftz": false,
+  "scope": "complete prepare/GEMM/epilogue chain on the first actual call of each layer",
+  "is_deployment_sequence": false,
+  "reps_per_leg": 15,
+  "phase": "complete",
+  "legs": [
+    {
+      "route": "A",
+      "samples_ms_per_call": [
+        0.012563555604881711,
+        0.01088355564408832,
+        0.010817777779367235,
+        0.010807111031479306,
+        0.010919111470381418,
+        0.01071822229358885,
+        0.010867555936177572,
+        0.010764444039927589,
+        0.010766222245163388,
+        0.01089422239197625,
+        0.010643555886215635,
+        0.010760889285140567,
+        0.010757333702511258,
+        0.010970667004585266,
+        0.010807111031479306
+      ],
+      "median_us_per_call": 10.807111031479307
+    },
+    {
+      "route": "B",
+      "samples_ms_per_call": [
+        0.010545777777830759,
+        0.009658666948477427,
+        0.009745777481132083,
+        0.009747555686367882,
+        0.0096124443742964,
+        0.00960533320903778,
+        0.009520000053776635,
+        0.00961599995692571,
+        0.009637333452701569,
+        0.009553777674833933,
+        0.009525333013799455,
+        0.009857777920034196,
+        0.009646221995353699,
+        0.009646221995353699,
+        0.009631999664836459
+      ],
+      "median_us_per_call": 9.637333452701569
+    },
+    {
+      "route": "B",
+      "samples_ms_per_call": [
+        0.0105582219031122,
+        0.009690666364298927,
+        0.009631999664836459,
+        0.00977777772479587,
+        0.009635555247465769,
+        0.009742221898502774,
+        0.0096124443742964,
+        0.009626666704813639,
+        0.009626666704813639,
+        0.009530666801664565,
+        0.009630222287442949,
+        0.009516444471147325,
+        0.009630222287442949,
+        0.009525333013799455,
+        0.010254222485754225
+      ],
+      "median_us_per_call": 9.63022228744295
+    },
+    {
+      "route": "A",
+      "samples_ms_per_call": [
+        0.011706666813956367,
+        0.010926222635640038,
+        0.010775110787815519,
+        0.010764444039927589,
+        0.010874666273593903,
+        0.010878221856223213,
+        0.010766222245163388,
+        0.010766222245163388,
+        0.010773333410422007,
+        0.010869333313571082,
+        0.01088355564408832,
+        0.010760889285140567,
+        0.010869333313571082,
+        0.010759111079904769,
+        0.010755555497275459
+      ],
+      "median_us_per_call": 10.77511078781552
+    }
+  ],
+  "actual_layers": 18,
+  "calls_per_graph": 18,
+  "shape_mkn": [
+    50,
+    1024,
+    2560
+  ],
+  "weight_rotation_bytes": 94371840,
+  "prefix_rows": [
+    968,
+    968,
+    968,
+    968,
+    968,
+    968,
+    968,
+    968,
+    968,
+    968,
+    968,
+    968,
+    968,
+    968,
+    968,
+    968,
+    968,
+    968
+  ],
+  "actual_k_offset_elements": [
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808
+  ],
+  "actual_v_offset_elements": [
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808,
+    247808
+  ],
+  "ctas": 320,
+  "tolerance": {
+    "rel_rms_max": 0.066,
+    "cosine_min": 0.99978
+  },
+  "A_correctness": {
+    "correct": true,
+    "per_layer_metrics": [
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      }
+    ],
+    "prefix_unchanged_per_layer": [
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      }
+    ]
+  },
+  "B_correctness": {
+    "correct": true,
+    "per_layer_metrics": [
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999998
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      },
+      {
+        "q": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999
+        },
+        "k": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "v": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        },
+        "factor": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0
+        }
+      }
+    ],
+    "prefix_unchanged_per_layer": [
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      },
+      {
+        "k": true,
+        "v": true
+      }
+    ]
+  },
+  "registers": 40,
+  "spills": 0,
+  "shared_bytes": 6144,
+  "ptx": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-expert-qkv-finish-screen.ptx",
+  "mean_leg_delta_us": 1.157333039575155,
+  "conservative_leg_delta_us": 1.1377773351139506,
+  "control_drift_us": 0.03200024366378784,
+  "candidate_drift_us": 0.007111165258619323
+}
