@@ -117,31 +117,36 @@ def _draw_line(ax, points, key):
 
 
 def _callouts(ax, points, key):
-    """Annotate the rows that asked for it.
+    """Annotate the rows that asked for it, in lanes across the top.
 
-    The side is taken from where the point sits, because text placed outward
-    from a point in the last third of the axis runs off the figure; the
-    vertical offset cycles so two callouts close in x do not stack.
+    Offsets measured from each point do not work here: two points at different
+    heights can be pushed to the same absolute height and collide. The text is
+    therefore placed in axes fractions -- a small set of lanes below the top
+    edge -- with a leader down to the point, which also keeps it inside the
+    axes. The side is taken from where the point sits, so text near the right
+    edge reads inward.
     """
+    from datetime import datetime as _datetime
+    from matplotlib.dates import date2num
+
     marked = [p for p in points if p["callout"]]
     if not marked:
         return
-    span = [p[key] for p in points]
-    low, high = min(span), max(span)
-    reach = (high - low) or 1
+    left_edge, right_edge = ax.get_xlim()
+    reach = (right_edge - left_edge) or 1
+    lanes = (0.98, 0.80, 0.89, 0.71)
     for index, point in enumerate(marked):
-        fraction = (point[key] - low) / reach
+        value = point[key]
+        numeric = date2num(value) if isinstance(value, _datetime) else value
+        fraction = (numeric - left_edge) / reach
         left = fraction > 0.55
-        dx = -30 if left else 30
-        # Always upward. A retained-latency curve descends, so the band above
-        # it is the empty one; placing a callout below runs it into the axis
-        # floor exactly where the curve is flattest and the points crowd.
-        dy = (36, 66, 46, 86)[index % 4]
+        text_x = min(max(fraction + (-0.03 if left else 0.03), 0.015), 0.985)
         ax.annotate(
             f'{point["ms"]:.3f}  {fill(point["callout"], 24)}',
-            xy=(point[key], point["ms"]), xytext=(dx, dy),
-            textcoords="offset points", fontsize=8.5, color=point["colour"],
-            ha="right" if left else "left", linespacing=1.4, zorder=5,
+            xy=(value, point["ms"]), xycoords="data",
+            xytext=(text_x, lanes[index % len(lanes)]),
+            textcoords="axes fraction", fontsize=8.5, color=point["colour"],
+            ha="right" if left else "left", va="top", linespacing=1.4, zorder=5,
             arrowprops=dict(arrowstyle="-", linewidth=0.9,
                             color=point["colour"], shrinkA=2, shrinkB=5,
                             connectionstyle="angle,angleA=0,angleB=75,rad=0"))
@@ -157,7 +162,15 @@ def _style(ax):
     ax.set_axisbelow(True)
 
 
-def render(table, output, *, title=None, subtitle=None, note=None):
+def _order_axis(ax, points, order):
+    """Shared x axis of the milestone panels: one tick per retained model."""
+    ax.set_xticks(order)
+    ax.set_xticklabels([f'{p["iteration"]:02d}  {p["label"]}' for p in points],
+                       rotation=32, ha="right", fontsize=8.5, color=MUTED)
+
+
+def render(table, output, *, title=None, subtitle=None, note=None,
+           roofline_ms=None, reachable_ms=None):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -176,12 +189,14 @@ def render(table, output, *, title=None, subtitle=None, note=None):
     attempted = sum(1 for row in rows if row["decision"] not in {"start"})
     rejected = sum(1 for row in rows if row["decision"] in {"revert", "failed"})
 
-    height = 11.6 if dual else 6.6
+    share = roofline_ms is not None
+    height = (13.4 if share else 11.6) if dual else (8.4 if share else 6.6)
     fig = plt.figure(figsize=(12.6, height), layout="constrained")
-    top = 0.875 if dual else 0.80
+    top = (0.895 if share else 0.875) if dual else 0.84
     fig.get_layout_engine().set(rect=(0.010, 0.042, 0.982, top - 0.042))
-    grid = fig.add_gridspec(2 if dual else 1, 1,
-                            height_ratios=[1.0, 1.2] if dual else [1.0])
+    rows_of = (1 if dual else 0) + 1 + (1 if share else 0)
+    ratios = ([1.0] if dual else []) + [1.15] + ([0.72] if share else [])
+    grid = fig.add_gridspec(rows_of, 1, height_ratios=ratios)
 
     fig.text(0.010, 0.985, heading, ha="left", va="top", fontsize=21,
              weight="bold", color=INK)
@@ -212,13 +227,14 @@ def render(table, output, *, title=None, subtitle=None, note=None):
             if trial["when"] is not None:
                 ax.scatter(trial["when"], trial["ms"], s=34, facecolor="none",
                            edgecolor=trial["colour"], linewidth=1.2, zorder=2)
-        _callouts(ax, timed, "when")
         ax.set_title("A   Measurement time", loc="left", fontsize=11.5,
                      weight="bold", color=INK, pad=10)
         ax.set_ylabel("deployed end-to-end median (ms)", fontsize=9.5,
                       color=MUTED)
         ax.xaxis.set_major_formatter(DateFormatter("%b %d\n%H:%M"))
-        ax.margins(x=0.10, y=0.30)
+        ax.margins(x=0.10, y=0.34)
+        ax.autoscale_view()
+        _callouts(ax, timed, "when")
 
     # -- Panel B: what was done, in order -----------------------------------
     ax = fig.add_subplot(grid[1] if dual else grid[0])
@@ -241,12 +257,46 @@ def render(table, output, *, title=None, subtitle=None, note=None):
             ax.scatter(max(lower) + 0.5, trial["ms"], s=34, facecolor="none",
                        edgecolor=trial["colour"], linewidth=1.2, zorder=2)
     ax.set_xticks(order)
-    ax.set_xticklabels([f'{p["iteration"]:02d}  {p["label"]}' for p in points],
-                       rotation=32, ha="right", fontsize=8.5, color=MUTED)
+    if not share:
+        _order_axis(ax, points, order)
     ax.set_title("B   Milestone order", loc="left", fontsize=11.5,
                  weight="bold", color=INK, pad=10)
     ax.set_ylabel("deployed end-to-end median (ms)", fontsize=9.5, color=MUTED)
     ax.margins(x=0.04, y=0.20)
+    order_ax = ax
+
+    # -- Panel C: the same points against the floor ------------------------
+    if share:
+        ax = fig.add_subplot(grid[rows_of - 1], sharex=order_ax)
+        _style(ax)
+        pct = [roofline_ms / p["ms"] * 100 for p in points]
+        ax.plot(order, pct, color="#95a0ad", linewidth=1.8, zorder=1,
+                solid_capstyle="round")
+        for point, x, value in zip(points, order, pct):
+            ax.scatter(x, value, s=42, color=point["colour"], zorder=3,
+                       edgecolor="white", linewidth=0.8)
+        for index in (0, len(points) - 1):
+            ax.annotate(f'{pct[index]:.0f}%', xy=(order[index], pct[index]),
+                        xytext=(0, 9), textcoords="offset points", ha="center",
+                        fontsize=9, weight="bold", color=points[index]["colour"])
+        if reachable_ms:
+            # The model divides compute-bound sites by 100% of the tensor peak,
+            # which nothing in this route reaches; this is the same ceiling
+            # re-derived at the share the stack actually delivers.
+            limit = roofline_ms / reachable_ms * 100
+            ax.axhline(limit, color="#b2456e", linewidth=1.1,
+                       linestyle=(0, (5, 3)), zorder=2)
+            ax.annotate(f'{limit:.0f}%  reachable floor, {reachable_ms:.2f} ms',
+                        xy=(order[-1], limit), xytext=(-4, 7),
+                        textcoords="offset points", ha="right", fontsize=8.5,
+                        color="#b2456e")
+        _order_axis(ax, points, order)
+        order_ax.tick_params(labelbottom=False)
+        ax.set_title("C   Share of the floor reached", loc="left",
+                     fontsize=11.5, weight="bold", color=INK, pad=10)
+        ax.set_ylabel(f"% of the {roofline_ms:.3f} ms ceiling", fontsize=9.5,
+                      color=MUTED)
+        ax.margins(x=0.04, y=0.28)
 
     footer = ["Solid: consecutive retained models. Dashed: a gap where trials "
               "were measured and rejected. Hollow: measured, not retained."]

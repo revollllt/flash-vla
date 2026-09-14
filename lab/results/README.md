@@ -28,6 +28,11 @@ python -m lab.results curve results/<target>/<run>/iterations.csv \
   --title "Pi0 on RTX 5090: 46.794 -> 27.556 ms" --subtitle "..."
 ```
 
+`--roofline-ms` adds panel C, the share of the floor each milestone reached;
+`--reachable-ms` draws the reference line for a ceiling re-derived at the share
+the stack actually delivers. Both come from the floor model, so state which
+report they came from in `--note` rather than leaving the denominator implicit.
+
 Panel A needs each row's `report` to resolve, since the time comes from the
 benchmark JSON's `measurement_context.timestamp`; with none resolvable the
 figure falls back to panel B alone.

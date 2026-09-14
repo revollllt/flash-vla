@@ -21,13 +21,18 @@ def main(argv=None):
     curve.add_argument("--title")
     curve.add_argument("--subtitle")
     curve.add_argument("--note", help="one extra line under the figure")
+    curve.add_argument("--roofline-ms", type=float,
+                       help="floor-model ceiling; adds the share-of-floor panel")
+    curve.add_argument("--reachable-ms", type=float,
+                       help="ceiling re-derived at the share this stack reaches")
     args = parser.parse_args(argv)
     if args.command == "rebuild":
         result = rebuild(args.root)
     elif args.command == "curve":
         from .curve import render
-        render(args.table, args.out, title=args.title,
-               subtitle=args.subtitle, note=args.note)
+        render(args.table, args.out, title=args.title, subtitle=args.subtitle,
+               note=args.note, roofline_ms=args.roofline_ms,
+               reachable_ms=args.reachable_ms)
         result = {"plot": str(args.out)}
     else:
         metadata, points = plot.from_trace(read_json(args.trace))
