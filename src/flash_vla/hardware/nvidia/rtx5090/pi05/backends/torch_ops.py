@@ -13,6 +13,11 @@ from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.wrappers import (
     ROUTE_CONSTRAINTS,
 )
 
+NAMES = NAMES | {
+    "llm_backbone_norm_gated_ffn_masked",
+    "llm_backbone_ffn_down_residual_masked",
+}
+
 #: Mirrored from the TileLang wrappers so this module reads on its own.
 VISION_TOKENS = 256
 VISION_DIM = 1152
@@ -261,6 +266,14 @@ def action_expert_action_out_proj(x, weight, bias, out, norm_factor):
     out.copy_((((x @ weight).float() * factor[:, None].float()
                 + bias.float() + out.float())).to(out.dtype))
     return out
+
+
+def llm_backbone_norm_gated_ffn_masked(x, gate_w, up_w, out, x_norm, mask):
+    return llm_backbone_norm_gated_ffn(x, gate_w, up_w, out, x_norm)
+
+
+def llm_backbone_ffn_down_residual_masked(x, weight, out, mask):
+    return llm_backbone_ffn_down_residual(x, weight, out)
 
 
 ALL_WRAPPERS = {

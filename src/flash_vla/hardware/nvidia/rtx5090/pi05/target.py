@@ -5,11 +5,14 @@ backend routing and CUDA kernels belong to this hardware Target.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Mapping
 
 from flash_vla.hardware.nvidia.h100.pi05.target import Pi05, forward_prefix, set_task
+from flash_vla.runtime.graph import Graph
 
 from .backends import REGISTRY
+from .backends.bucketed_backbone import MASKED_CALL_SITES
 
 
 class Pi05RTX5090(Pi05):
@@ -44,6 +47,24 @@ class Pi05RTX5090(Pi05):
         "action_expert_action_out_proj": "fused-qkv",
     }
     reference_plan: Mapping[str, str] = {}
+
+    def build(self, g: Graph, shape: Mapping[str, int]) -> None:
+        super().build(g, shape)
+        mask = g.buf("mask_bias")[:shape["prefix_len"]]
+        for index, node in enumerate(g.nodes):
+            if node.call_site in MASKED_CALL_SITES:
+                g.nodes[index] = replace(
+                    node, call_site=MASKED_CALL_SITES[node.call_site],
+                    args=(*node.args, mask))
+
+    def select_plan(self, plan: Any) -> dict[str, str]:
+        routes = super().select_plan(plan)
+        # Saved dense plans use standard names; explicit masked routes override them.
+        for original, masked in MASKED_CALL_SITES.items():
+            if original in routes:
+                backend = routes.pop(original)
+                routes.setdefault(masked, backend)
+        return routes
 
     #: H100's `action_expert_norm_gated_ffn` ceiling is a measured H100 number
     #: (`tma.bw.dev.burst`, job 591174) and says nothing about this part. Cleared

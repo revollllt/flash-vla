@@ -17,7 +17,10 @@ import torch
 
 from . import fused_backbone
 
-NAMES = frozenset({"llm_backbone_norm_gated_ffn", "llm_backbone_ffn_down_residual"})
+NAMES = frozenset({
+    "llm_backbone_norm_gated_ffn", "llm_backbone_ffn_down_residual",
+    "llm_backbone_norm_gated_ffn_masked", "llm_backbone_ffn_down_residual_masked",
+})
 _SOURCE = Path(__file__).with_suffix(".cu")
 
 
@@ -136,8 +139,16 @@ def make_wrappers(scratch, selected_names=None) -> dict:
         gemm(x, weight, out, beta=1.0, stream=torch.cuda.current_stream().cuda_stream)
         return out
 
+    def llm_backbone_norm_gated_ffn_masked(x, gate_w, up_w, out, x_norm, mask):
+        return llm_backbone_norm_gated_ffn(x, gate_w, up_w, out, x_norm)
+
+    def llm_backbone_ffn_down_residual_masked(x, weight, out, mask):
+        return llm_backbone_ffn_down_residual(x, weight, out)
+
     wrappers = {
         "llm_backbone_norm_gated_ffn": llm_backbone_norm_gated_ffn,
         "llm_backbone_ffn_down_residual": llm_backbone_ffn_down_residual,
+        "llm_backbone_norm_gated_ffn_masked": llm_backbone_norm_gated_ffn_masked,
+        "llm_backbone_ffn_down_residual_masked": llm_backbone_ffn_down_residual_masked,
     }
     return {name: wrappers[name] for name in names}
