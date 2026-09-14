@@ -7,6 +7,11 @@ performs BF16-input/FP32-accumulator PV. Its main risk is eightfold duplicated
 softmax work. There is no speed prediction or demonstrated end-to-end gain.
 This screen performed only source/JSON reads and CPU arithmetic.
 
+Subsequent fixed experiment: lab/pi05/softmax_pv.md records the prototype.
+All nine actual P/output checks passed, but its one reset-inclusive ABBA was
+slower by 1.838889 us/call, well beyond observed drift. That fixed mapping was
+locally rejected; the CPU-stage estimates below are not measured speedups.
+
 Inspected main revision: 6982545. Current route is triton-qk-attention.
 Q/out is BF16[400,256], logits FP32[400,1018], V BF16[1018,256], mask BF16[1018].
 QK remains the current 32x32x64 Triton kernel and still writes the full logits.

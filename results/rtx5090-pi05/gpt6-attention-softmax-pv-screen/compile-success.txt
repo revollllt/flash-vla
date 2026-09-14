@@ -1,0 +1,6 @@
+ptxas info    : 11 bytes gmem
+ptxas info    : Compiling entry function '_ZN14softmax_pv_lab10softmax_pvEPKfPK13__nv_bfloat16PKN7cutlass10bfloat16_tEPS6_PS2_' for 'sm_120a'
+ptxas info    : Function properties for _ZN14softmax_pv_lab10softmax_pvEPKfPK13__nv_bfloat16PKN7cutlass10bfloat16_tEPS6_PS2_
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 166 registers, used 1 barriers, 47104 bytes smem
+ptxas info    : Compile time = 65.529 ms
