@@ -7,6 +7,7 @@ checkpoint, inputs, shape and execution policy on both sides.
 python -m eval.correctness --target h100/pi0 --plan shipped --steps 1 --layers 1
 python -m eval.pi0.reference --help
 python -m eval.pi05.reference --help
+python -m eval.pi05.parity --help
 python -m eval.lingbot.parity --help
 ```
 
@@ -16,6 +17,14 @@ adapters. `metrics.py` owns error calculations; `tolerances.py` owns the existin
 numerical thresholds. Use the configured upstream environment and real asset
 options for official comparisons; missing assets are reported as unavailable.
 Synthetic checks do not establish policy quality.
+
+`pi05/reference.py` runs OpenPI and the Target in one process, which needs the
+whole upstream stack importable beside `flash_vla`. `pi05/parity.py` is the same
+comparison split across two interpreters, for a machine whose environment is the
+pinned flash-vla one: `capture` writes the official tensors and the fixture it
+used, `compare` replays that fixture through the Target. `OPENPI_PI05_MODULE`
+names the module the official forward comes from, and the oracle records which
+one ran.
 
 LIBERO and other task-success evaluations will be added when integrated. There
 is no placeholder suite or claim of task-quality coverage today.

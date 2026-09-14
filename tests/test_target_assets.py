@@ -222,3 +222,31 @@ def test_converted_pi05_checkpoint_states_the_provenance_it_cannot_resolve():
         build(converted_checkpoint="b", checkpoint_id="id", checkpoint_digest="digest",
               openpi_config="pi05_aloha", target=stub)
 
+def test_pi05_parity_refuses_an_oracle_built_on_another_prompt(tmp_path, monkeypatch):
+    """The oracle carries its own fixture, so a Target that tokenized something else is a mismatch.
+
+    Capture and compare run in different interpreters and can drift apart. The
+    prompt is where that shows first -- Pi0.5 puts the state in it -- and a
+    silent mismatch would read as a model difference.
+    """
+    from types import SimpleNamespace
+    from eval.pi05 import parity
+
+    (tmp_path / "official-eager.json").write_text(json.dumps({
+        "layers_captured": 18,
+        "fixture": {"chunk": 50, "steps": 10, "n_valid_prefix": 903,
+                    "prompt": "another task", "seed": 0}}))
+    staged = torch.arange(4, dtype=torch.int32)
+    tensors = {"images": torch.zeros(1), "state": torch.zeros(1), "noise": torch.zeros(1),
+               "prompt_tokens": staged + 1, "prefix_k": torch.zeros(1),
+               "prefix_v": torch.zeros(1), "actions": torch.zeros(1)}
+    monkeypatch.setattr(parity, "load_file", lambda path: tensors)
+    engine = SimpleNamespace(
+        identity=SimpleNamespace(as_dict=lambda: {}, precision="bf16"),
+        measurement_context={}, plan="shipped", buffers={"prompt_ids": staged},
+        forward=lambda **kw: torch.zeros(1))
+    monkeypatch.setattr(parity, "build", lambda *a, **kw: engine)
+    monkeypatch.setattr(torch.cuda, "synchronize", lambda: None)
+    report = parity.compare(str(tmp_path), "checkpoint", checkpoint_id="id")
+    assert report["passed"] is False
+    assert "tokenized a different prompt" in report["error"]

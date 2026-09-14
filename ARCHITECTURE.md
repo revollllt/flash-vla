@@ -81,7 +81,10 @@ process environment.
 Official references use `OPENPI_PYTHON` or `LINGBOT_PYTHON`. Pi0 official weights
 also use `OPENPI_PI0_CHECKPOINT` and its explicit immutable ID. Missing reference
 configuration is reported as unavailable rather than replaced with another
-checkpoint.
+checkpoint. Where the upstream stack cannot be imported beside `flash_vla`, the
+comparison runs in two interpreters instead of one: `eval.pi05.parity` captures
+the official tensors with the fixture that produced them, `OPENPI_PI05_MODULE`
+names the module the official forward came from, and the oracle records it.
 
 ## Optimization and evidence
 
