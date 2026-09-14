@@ -1,6 +1,6 @@
 # Expert QKV GEMM bounded probe
 
-CPU preparation only. This probe does not edit a production backend or route.
+The bounded GPU screen is complete. This probe does not edit a production backend or route.
 
 ## Evidence and hypothesis
 
@@ -87,3 +87,50 @@ set -o pipefail
   --output /home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-expert-qkv-matmul-screen.json \
   2>&1 | tee /home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-expert-qkv-matmul-screen.log
 ```
+
+## Measured result
+
+The fixed screen completed against imported deployment
+`cb927cfde6221691b00349f6c1186c1afafa7bc8`, QKV route `fused-qkv`,
+Triton 3.7.1. All three tiles were elementwise identical to the control for
+projected, Q, K, V, and factor on the first captured call of each of the 18 layers: max absolute
+and relative RMS errors were zero. This is not a check of all ten denoising steps.
+
+Each entry below is a leg median in microseconds per call. All 15 raw samples
+per leg remain in the JSON; the first sample was retained, not discarded.
+
+| Tile | A1 | B1 | B2 | A2 | Mean A-B | Conservative min(A)-max(B) |
+|---|---:|---:|---:|---:|---:|---:|
+| 32/32/32 | 9.9884 | 9.1351 | 9.1013 | 10.0018 | 0.8769 | 0.8533 |
+| 16/64/32 | 9.9858 | 9.1049 | 9.0800 | 9.9573 | 0.8791 | 0.8524 |
+| 16/32/32 | 9.9929 | 8.5680 | 8.5698 | 9.9529 | 1.4040 | 1.3831 |
+
+The first two configurations are similar within their observed leg drift.
+The sole winner is 16/32/32. Its A drift is 0.0400 us and B drift 0.0018 us.
+It uses 320 CTAs, 40 registers/thread, 0 spills, and 6,144 B shared memory.
+The other tiles use 38/40 registers and 8,192/10,240 B shared memory,
+respectively, also without spills.
+
+For the original 18-weight complete QKV chain:
+
+| A1 | B1 | B2 | A2 | Mean A-B | Conservative min(A)-max(B) |
+|---:|---:|---:|---:|---:|---:|
+| 11.6107 | 9.9236 | 10.2329 | 11.1396 | 1.2969 | 0.9067 |
+
+This chain has larger drift: A 0.4711 us, B 0.3093 us. Every B leg remains faster
+than every A leg, but the exact magnitude is less stable than the cache-pressure
+screen. Neither sequence proves deployed E2E savings or identifies the cause of
+the drift. No additional timings or configs were run.
+
+The winner's emitted PTX contains
+`mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32` (lines 165,168),
+then explicit `cvt.rn.bf16.f32` (205-208) before the projected global store
+(line 250). The following native finish remains separate.
+
+Raw artifacts in the main checkout:
+
+- `artifacts/rtx5090-pi05/gpt6-expert-qkv-matmul-screen.json`
+- `artifacts/rtx5090-pi05/gpt6-expert-qkv-matmul-screen.log`
+- `artifacts/rtx5090-pi05/gpt6-expert-qkv-matmul-screen-{32x32x32,16x64x32,16x32x32}.ptx`
+
+The GPU/JIT slot was released immediately after the successful process exit.
