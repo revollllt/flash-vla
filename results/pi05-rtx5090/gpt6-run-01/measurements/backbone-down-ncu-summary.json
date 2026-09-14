@@ -1,0 +1,36 @@
+{
+  "source_revision": "853d1fa",
+  "workload": "actual layer0 down activation, folded weight and initial residual, BF16 M968 K16384 N2048, alpha=beta=1,C=D",
+  "report": "artifacts/rtx5090-pi05/backbone-down-layer0-cold.ncu-rep",
+  "cache_control": "all",
+  "clock_control": "none",
+  "replay": "kernel",
+  "passes": 5,
+  "metrics": {
+    "gpu__time_duration.sum": "303.168000",
+    "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_elapsed": "95.898375",
+    "dram__throughput.avg.pct_of_peak_sustained_elapsed": "20.359251",
+    "lts__throughput.avg.pct_of_peak_sustained_elapsed": "50.244929",
+    "sm__warps_active.avg.pct_of_peak_sustained_active": "8.330416",
+    "smsp__warps_eligible.avg.per_cycle_active": "0.064832",
+    "smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio": "0.217282",
+    "launch__waves_per_multiprocessor": "1",
+    "sm__cycles_elapsed.avg.per_second": "2.725260",
+    "launch__registers_per_thread": "254",
+    "launch__shared_mem_per_block_dynamic": "98.304000",
+    "Block Size": "(128, 1, 1)",
+    "Grid Size": "(170, 1, 1)"
+  },
+  "units": {
+    "gpu__time_duration.sum": "us",
+    "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_elapsed": "%",
+    "dram__throughput.avg.pct_of_peak_sustained_elapsed": "%",
+    "lts__throughput.avg.pct_of_peak_sustained_elapsed": "%",
+    "sm__warps_active.avg.pct_of_peak_sustained_active": "%",
+    "smsp__warps_eligible.avg.per_cycle_active": "warp",
+    "smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio": "inst",
+    "sm__cycles_elapsed.avg.per_second": "Ghz",
+    "launch__registers_per_thread": "register/thread",
+    "launch__shared_mem_per_block_dynamic": "Kbyte/block"
+  }
+}
