@@ -168,3 +168,5 @@ Full-depth official comparison passed (action cosine 0.9999912284, rel_rms 0.004
 The 010 expert attention trace assigns 0.804084 ms to QK, 0.384005 ms to softmax, and 1.008733 ms to PV GEMM plus split-K reduction over 180 calls. There is no independent copy/memset in this chain. A single real step0/layer0 P/V pair tested whether padding K from 1018 to 1024 could improve the PV dispatch. Padding was excluded from timing, giving this candidate an optimistic screen.
 
 The original path measured 5.583/5.774 us against padded 6.928/6.926 us. Padding removed split-K reduction but selected a slower 32x32 WMMA align8 GEMM. The padded result passed existing shallow tolerance and was not bitwise equal. This candidate is rejected before any full attention implementation; no production padding was introduced. Detailed evidence is in results/rtx5090-pi05/gpt6-attention-pv-padding.
+
+The scoped CPU Target check after 017 passed all 8 declarations and 1 route check with CUDA_VISIBLE_DEVICES empty and CUDA_HOME/TORCH_CUDA_ARCH_LIST unset. This covers the new vision residual route without a CUDA compiler or device.
