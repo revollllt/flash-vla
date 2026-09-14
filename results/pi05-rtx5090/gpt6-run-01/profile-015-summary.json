@@ -1,0 +1,18 @@
+{
+  "source_revision": "5772cf2",
+  "diagnostic_only": true,
+  "segments": {
+    "segment:vision_encoder": {
+      "kernel_sum_ms": 4.169159,
+      "launches": 302
+    },
+    "segment:llm_backbone": {
+      "kernel_sum_ms": 18.379232,
+      "launches": 233
+    },
+    "segment:action_expert": {
+      "kernel_sum_ms": 10.020472999999999,
+      "launches": 2230
+    }
+  }
+}
