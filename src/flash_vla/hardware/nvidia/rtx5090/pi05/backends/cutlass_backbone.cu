@@ -153,6 +153,58 @@ VisionBiasGemm::Arguments vision_bias_arguments(
       int64_t(m) * k, int64_t(k) * n, 0, int64_t(m) * n,
       int64_t(k), int64_t(n), 0, int64_t(n));
 }
+
+// Lab candidate: preserve the existing biased BF16 output before tanh GELU.
+// fused_vision.cu is compiled with --fmad=false, while this shared library is
+// not. Explicit RN intrinsics preserve its left-associated expression locally.
+class VisionRoundedGelu : public Epilogue {
+ public:
+  using Epilogue::Epilogue;
+  static constexpr bool kIsHeavy = true;
+
+  CUTLASS_DEVICE FragmentOutput operator()(
+      FragmentAccumulator const& accum, FragmentSource const& source) const {
+    return activate(Epilogue::operator()(accum, source));
+  }
+
+  CUTLASS_DEVICE FragmentOutput operator()(FragmentAccumulator const& accum) const {
+    return activate(Epilogue::operator()(accum));
+  }
+
+ private:
+  CUTLASS_DEVICE FragmentOutput activate(FragmentOutput const& rounded) const {
+    cutlass::NumericArrayConverter<float, Element, kCount> to_float;
+    cutlass::NumericArrayConverter<Element, float, kCount> to_bf16;
+    const FragmentCompute values = to_float(rounded);
+    FragmentCompute result;
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < kCount; ++i) {
+      const float x = values[i];
+      const float cubic = __fmul_rn(__fmul_rn(__fmul_rn(0.044715f, x), x), x);
+      const float inner = __fmul_rn(0.7978845608028654f, __fadd_rn(x, cubic));
+      result[i] = __fmul_rn(__fmul_rn(0.5f, x), __fadd_rn(1.0f, tanhf(inner)));
+    }
+    return to_bf16(result);
+  }
+};
+
+using VisionGeluGemm = cutlass::gemm::device::GemmUniversal<
+    Element, RowMajor, Element, RowMajor, Element, RowMajor, float,
+    cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<64, 128, 32>,
+    cutlass::gemm::GemmShape<32, 64, 32>,
+    cutlass::gemm::GemmShape<16, 8, 16>, VisionRoundedGelu,
+    cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, 5, 8, 8>;
+
+VisionGeluGemm::Arguments vision_gelu_arguments(
+    int32_t m, int32_t k, int32_t n, const void* a, const void* b,
+    const void* bias, void* output) {
+  return VisionGeluGemm::Arguments(
+      cutlass::gemm::GemmUniversalMode::kGemm, {m, n, k}, 1,
+      {1.f, 1.f}, a, b, bias, output,
+      int64_t(m) * k, int64_t(k) * n, 0, int64_t(m) * n,
+      int64_t(k), int64_t(n), 0, int64_t(n));
+}
 }  // namespace
 
 extern "C" int64_t backbone_gemm_workspace(int32_t m, int32_t k, int32_t n) {
@@ -255,4 +307,44 @@ extern "C" int32_t vision_bias_gemm_run(void* handle, void* stream) {
 
 extern "C" void vision_bias_gemm_destroy(void* handle) {
   delete static_cast<VisionBiasGemm*>(handle);
+}
+
+
+extern "C" int64_t vision_gelu_gemm_workspace(int32_t m, int32_t k, int32_t n) {
+  return static_cast<int64_t>(VisionGeluGemm::get_workspace_size(
+      vision_gelu_arguments(m, k, n, nullptr, nullptr, nullptr, nullptr)));
+}
+
+extern "C" int32_t vision_gelu_gemm_plan(
+    int32_t m, int32_t k, int32_t n, const void* a, const void* b,
+    const void* bias, void* output, void* workspace, void* stream, void** handle) {
+  const auto args = vision_gelu_arguments(m, k, n, a, b, bias, output);
+  cutlass::Status status = VisionGeluGemm::can_implement(args);
+  if (status != cutlass::Status::kSuccess)
+    return kCutlassError + static_cast<int32_t>(status);
+  auto* plan = new VisionGeluGemm;
+  status = plan->initialize(args, workspace, static_cast<cudaStream_t>(stream));
+  if (status != cutlass::Status::kSuccess) {
+    delete plan;
+    return kCutlassError + static_cast<int32_t>(status);
+  }
+  *handle = plan;
+  return 0;
+}
+
+extern "C" int32_t vision_gelu_gemm_run(void* handle, void* stream) {
+  const cutlass::Status status =
+      static_cast<VisionGeluGemm*>(handle)->run(static_cast<cudaStream_t>(stream));
+  if (status != cutlass::Status::kSuccess)
+    return kCutlassError + static_cast<int32_t>(status);
+  return static_cast<int32_t>(cudaGetLastError());
+}
+
+extern "C" void vision_gelu_gemm_destroy(void* handle) {
+  delete static_cast<VisionGeluGemm*>(handle);
+}
+
+// Resource evidence for the lab probe; the launch uses this dynamic allocation.
+extern "C" int64_t vision_gelu_gemm_shared_bytes() {
+  return sizeof(VisionGeluGemm::GemmKernel::SharedStorage);
 }
