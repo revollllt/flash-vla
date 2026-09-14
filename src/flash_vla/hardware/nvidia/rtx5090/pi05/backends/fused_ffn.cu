@@ -76,6 +76,19 @@ __global__ void gated_activation_kernel(const bf16 *__restrict__ gate,
     }
   }
 }
+
+__global__ void gated_residual_kernel(const bf16 *__restrict__ projected,
+                                      const bf16 *__restrict__ gate,
+                                      bf16 *__restrict__ out, int32_t elements) {
+  const int32_t index = blockIdx.x * 256 + threadIdx.x;
+  if (index < elements) {
+    const float product = __bfloat162float(projected[index]) *
+                          __bfloat162float(gate[index % 1024]);
+    // The translation unit uses --fmad=false: torch rounds multiply and add
+    // separately in fp32, after the GEMM has already written its bf16 result.
+    out[index] = __float2bfloat16_rn(product + __bfloat162float(out[index]));
+  }
+}
 }  // namespace
 
 extern "C" int32_t ada_rms_launch(const void *x, const void *scale, void *a,
@@ -105,5 +118,14 @@ extern "C" int32_t packed_gated_activation_launch(const void *gate, const void *
       static_cast<const bf16 *>(gate), static_cast<const bf16 *>(up),
       static_cast<const bf16 *>(gate_bias), static_cast<const bf16 *>(up_bias),
       static_cast<bf16 *>(out), rows * 4096);
+  return static_cast<int32_t>(cudaGetLastError());
+}
+
+extern "C" int32_t gated_residual_launch(const void *projected, const void *gate,
+                                         void *out, int32_t rows, void *stream) {
+  // Four CTAs per row give 200 independent blocks at the deployed M=50.
+  gated_residual_kernel<<<rows * 4, 256, 0, static_cast<cudaStream_t>(stream)>>>(
+      static_cast<const bf16 *>(projected), static_cast<const bf16 *>(gate),
+      static_cast<bf16 *>(out), rows * 1024);
   return static_cast<int32_t>(cudaGetLastError());
 }
