@@ -52,7 +52,7 @@ deployed inference. Model loading and capture are setup work.
 
 - A CUDA graph captures and replays on one dedicated stream; caller-stream input
   and output dependencies are preserved. Measurement protocol is owned by the
-  [optimization workflow](docs/optimization.md).
+  [optimization workflow](.agents/skills/model-optimization/SKILL.md).
 - Resolve plans and route constraints before capture. The static arena owns
   buffer addresses, padding and aliases; no allocation follows its freeze.
 - Operators write to their declared output buffers. The graph, not return-value
@@ -85,7 +85,7 @@ checkpoint.
 
 ## Optimization and evidence
 
-[docs/optimization.md](docs/optimization.md) owns the two optimization loops and
+[.agents/skills/model-optimization/SKILL.md](.agents/skills/model-optimization/SKILL.md) owns the two optimization loops and
 links the relevant skills. Hardware rooflines and measured primitive limits
 guide hypotheses; deployed end-to-end measurements decide whether a change helps.
 

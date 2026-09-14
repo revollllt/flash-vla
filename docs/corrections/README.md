@@ -9,7 +9,7 @@
 - [agent.md](agent.md) — agent 自查出来的纠正。**不自证**:产生错误的那套推理也在
   写关于这个错误的复盘,两者可以同错,所以需要独立复核才收录。
 
-[workflow](../optimization.md) 的"结论复核"是这些的可执行形式;每轮读那六条就够。
+[workflow](../../.agents/skills/model-optimization/SKILL.md) 的"结论复核"是这些的可执行形式;每轮读那六条就够。
 
 ## agent.md 的收录门槛
 

@@ -11,7 +11,7 @@ paths:
 
 # Performance and Validation
 
-Follow [the optimization workflow](../../docs/optimization.md). Its top-down
+Follow [the optimization workflow](../../.agents/skills/model-optimization/SKILL.md). Its top-down
 profiling, independent first-capture timing, relevant correctness checks and
 recording rules are the defaults. Optional legacy qualification policies do not
 add mandatory Campaign, A/B/A, re-anchor or publication steps to that workflow.

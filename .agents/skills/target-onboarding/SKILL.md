@@ -1,6 +1,6 @@
 ---
 name: target-onboarding
-description: Add a model or model/hardware Target that is not yet registered in flash-vla. Use for model bring-up and compatibility; existing Target optimization belongs to docs/optimization.md.
+description: Add a model or model/hardware Target that is not yet registered in flash-vla. Use for model bring-up and compatibility; existing Target optimization belongs to the model-optimization skill.
 ---
 
 # New Target bring-up
@@ -11,14 +11,22 @@ loop begins after that model's semantics and correctness reference are understoo
 1. Read [architecture](../../../ARCHITECTURE.md) and the upstream forward,
    checkpoint format and preprocessing. State the intended shapes, precision,
    inputs/outputs and unresolved compatibility questions.
-2. Reuse runtime vocabulary and existing components to express the graph. Model
-   details stay in the Target; a shared runtime change needs a model-independent
-   reason. Use existing operators before designing a new kernel.
+2. Reuse runtime vocabulary and existing components to express the graph in
+   plain PyTorch, preserving the upstream algorithm — this is the numerical
+   reference every later optimization is checked against. Model details stay in
+   the Target; a shared runtime change needs a model-independent reason. Use
+   existing operators before designing a new kernel.
 3. Load real assets and compare against the upstream reference with the existing
-   numerical requirements. Establish a working benchmark of this workload;
+   numerical requirements, descending to intermediate activations only where the
+   outputs already differ. Establish a working benchmark of this workload;
    make no speedup claim against a mismatched checkpoint or execution mode.
-4. Register the Target, assets and plans, then hand the identified bottlenecks to
-   the [optimization workflow](../../../docs/optimization.md).
+4. Register the Target, assets and plans, record the upstream source and revision
+   with the commands that run and check it, then hand the identified bottlenecks
+   to the [optimization workflow](../model-optimization/SKILL.md).
+
+Adding a GPU to a model that already has a Target reuses that reference: adapt
+the environment and device placement and verify it runs. Do not re-derive the
+model.
 
 ## Example
 

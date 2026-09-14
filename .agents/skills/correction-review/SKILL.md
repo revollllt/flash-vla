@@ -9,7 +9,7 @@ allowed-tools: "Bash Read Grep Glob"
 Own the admission check for a single self-reported correction. The record it
 guards is in [docs/corrections](../../../docs/corrections/README.md); the
 failure modes and the review list live there and in
-[the workflow](../../../docs/optimization.md).
+[the workflow](../model-optimization/SKILL.md).
 
 This exists because the loop's self-assessment is not independent evidence: the
 reasoning that reached a wrong conclusion also writes the account of why it was

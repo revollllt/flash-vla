@@ -19,7 +19,7 @@ evidence_basis:
 # Historical A/B/A measurements
 
 This page records older experiment evidence. The current
-[optimization workflow](../../../../../docs/optimization.md) owns timing:
+[optimization workflow](../../../model-optimization/SKILL.md) owns timing:
 independent processes, first capture, a graph fixed to its stream, and median
 with raw samples. A/B/A is an optional drift diagnostic, not a required model loop.
 The old unpinned-clock observations do not establish a universal noise threshold

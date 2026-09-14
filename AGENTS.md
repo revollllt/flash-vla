@@ -1,8 +1,11 @@
 # Agent instructions
 
-For a new optimization task, use [.agents/prompts/optimize.md](.agents/prompts/optimize.md)
-as the shared task prompt. [docs/optimization.md](docs/optimization.md) owns experiment
-steps; use its direct commands and load only the skill needed for the current step.
+For an optimization round load the
+[model-optimization](.agents/skills/model-optimization/SKILL.md) skill; for a
+model or hardware not yet registered,
+[target-onboarding](.agents/skills/target-onboarding/SKILL.md). Each owns its
+whole procedure: use its direct commands and load only the further skill a step
+needs. [prompts/](prompts/) holds the per-run task briefs and nothing else.
 [ARCHITECTURE.md](ARCHITECTURE.md) owns module boundaries; source owns API details.
 Historical plans and Agent Notes do not override this path.
 

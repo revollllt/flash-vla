@@ -305,7 +305,7 @@ uses proves nothing about it.**
 Deployed medians from `iterations.csv`, attributed by matching commit times to
 the message that preceded them. The whole run is 46.794 → 27.556 ms; the cases
 behind the corrections are in
-[docs/corrections](../../../docs/corrections/human.md).
+[docs/corrections](../../../docs/corrections/README.md).
 
 | when (UTC) | intervention | iters | deployed |
 |---|---|---|---:|

@@ -2,12 +2,13 @@
 
 run-01 有五次人为推动,其中四次是"继续/再看一眼",一次是"停"(fp8,而且是 agent
 自己请示的)。下面是让下一轮少几次的具体改动,每条写明**改哪里**、**拦住的是哪一
-次**、**怎么验证**。1、3、4、5 已凝练进 [workflow](../optimization.md);2 和"只能
-减轻的一条"还没动。
+次**、**怎么验证**。1、3、4、5 已凝练进 [workflow](../../.agents/skills/model-optimization/SKILL.md),2 落在
+[kernel-design](../../.agents/skills/kernel-design/SKILL.md);"只能减轻的一条"还
+没动。
 
 ## 1. 退出条件必须被逐条回答 · 已落地
 
-**改** `docs/optimization.md` 第 7 步。现在退出条件是散文——"主要热点接近有证据
+**改** `.agents/skills/model-optimization/SKILL.md` 第 7 步。现在退出条件是散文——"主要热点接近有证据
 支持的可达能力且无值得尝试的新方案时结束"。改成:结束前对排名靠前的热点逐条给出
 「当前在可达能力的百分之几」和「为什么没有候选」。给不出就不算结束。
 
@@ -15,11 +16,12 @@ run-01 有五次人为推动,其中四次是"继续/再看一眼",一次是"停"
 
 **验证** 下一轮是自己带着这段陈述结束,还是又要人说一句"继续"。
 
-## 2. 说"只能自己写"之前先搜,并写明搜了什么 · 待办
+## 2. 说"只能自己写"之前先搜,并写明搜了什么 · 已落地
 
 **改** `.agents/skills/kernel-design/SKILL.md` 第 1 步。现在只要求先查 Pi0/Pi0.5 和
 共享组件的已有实现——覆盖项目内复用,不覆盖上游。加上已 vendor 的库
-(`third_party/cutlass`)和 kernel-wiki;并要求:得出"需要自己写"时必须列出搜过什么。
+(`third_party/` 下的 cutlass、deepgemm、flashmla)和 kernel-wiki;并要求:得出
+"需要自己写"时必须列出搜过什么。
 
 **拦住** 第 3 次推动(CUTLASS stream-K,**−1.785 ms**)。当时的结论是"需要一个能
 打过 cuBLAS 的手写 GEMM,不现实",而 CUTLASS 的 stream-K swizzle 一直在
@@ -39,7 +41,7 @@ stream-K 在整个语料里不存在,于是转向"只能自己写"。
 
 ## 4. 常规动作不请示,契约变更必须请示 · 已落地
 
-**改** `docs/optimization.md` 第 7 步,写明两件事:替换已上线的实现是 model 外循环的
+**改** `.agents/skills/model-optimization/SKILL.md` 第 7 步,写明两件事:替换已上线的实现是 model 外循环的
 常规动作,不需要单独批准;需要请示的是三类——数值契约(precision policy)、测量条件
 变更、预算耗尽。
 
@@ -49,7 +51,7 @@ stream-K 在整个语料里不存在,于是转向"只能自己写"。
 
 ## 5. 默认方向反转 · 已落地
 
-**改** `docs/optimization.md` 开头。写明:loop 跑到退出条件为止,人的介入默认是叫停
+**改** `.agents/skills/model-optimization/SKILL.md` 开头。写明:loop 跑到退出条件为止,人的介入默认是叫停
 而不是叫它继续。
 
 前四条都可以被一句"我先汇报一下"绕过,所以这条要单独写出来。

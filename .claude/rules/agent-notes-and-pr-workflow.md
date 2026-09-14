@@ -1,7 +1,7 @@
 # Documentation and changes
 
 README owns setup/use, ARCHITECTURE owns module boundaries, and
-[the optimization workflow](../../docs/optimization.md) owns experiment steps.
+[the optimization workflow](../../.agents/skills/model-optimization/SKILL.md) owns experiment steps.
 Skills provide task-specific methods. Update one owner and link to it elsewhere;
 examples should help someone run the project, not duplicate implementation.
 

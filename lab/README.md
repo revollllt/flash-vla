@@ -1,6 +1,6 @@
 # Experiments
 
-Use [the optimization workflow](../docs/optimization.md). Candidate plans live
+Use [the optimization workflow](../.agents/skills/model-optimization/SKILL.md). Candidate plans live
 under `plans/`; model/component directories hold focused experiments and parity
 harnesses. They may import production code; production never imports `lab/`.
 A candidate enters deployment only through its Target's plan and backend.

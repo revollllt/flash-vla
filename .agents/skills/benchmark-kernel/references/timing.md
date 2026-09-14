@@ -13,7 +13,7 @@ Commands run from the project root in the active workload environment.
 
 Choose the same timer and cache policy on both sides. A local speedup does not
 establish a model speedup; integration and deployment timing belong to the
-[model workflow](../../../../docs/optimization.md).
+[model workflow](../../model-optimization/SKILL.md).
 
 ## Target call site
 

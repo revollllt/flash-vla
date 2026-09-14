@@ -96,4 +96,4 @@ speedup uses its own recorded anchor. Rebuilding is a presentation operation,
 not a new validation of historical performance.
 
 Campaign creation, resume, qualification and automatic publication have been
-retired. New optimization work follows [the workflow](../../docs/optimization.md).
+retired. New optimization work follows [the workflow](../../.agents/skills/model-optimization/SKILL.md).

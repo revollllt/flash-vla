@@ -17,6 +17,8 @@ implements the candidate; profiling and timing have separate owners.
    and [benchmark-kernel](../benchmark-kernel/SKILL.md) to verify a candidate.
 4. Return the useful pattern, its applicability limits and a concrete code/page
    location. Existing measured results are evidence for their stated conditions.
+   On a miss where the problem has a known solution, writing that page is part of
+   the round's output, not extra work.
 
 ## Example
 

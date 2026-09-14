@@ -40,29 +40,19 @@ that stated workload. Each command exposes its options through `--help`.
 
 ## Optimize
 
-Start with **[the optimization workflow](docs/optimization.md)**. It defines the
-kernel and model loops, measurement conditions and the skill to use at each step.
-A normal iteration needs a relevant correctness check, local kernel timing and
-end-to-end timing after deployment. It can reuse applicable measurements.
+The workflow lives in the
+**[model-optimization](.agents/skills/model-optimization/SKILL.md)** skill, which
+defines the kernel and model loops, measurement conditions and the skill to use
+at each step. A normal iteration needs a relevant correctness check, local kernel
+timing and end-to-end timing after deployment, and can reuse applicable
+measurements.
 
-Use the versioned **[optimization startup prompt](.agents/prompts/optimize.md)**
-for each new optimization task. It separates shared instructions from run inputs,
-as in [LLM4LLM's prompt templates](https://github.com/hzeng2000/LLM4LLM/blob/main/llm4llm/prompts/prompts.toml),
-and refers to the workflow above for experiment details. Send this task brief,
-filling in the values; change the phase to `执行` when starting an authorized run:
-
-```text
-读取并按 .agents/prompts/optimize.md 处理本轮任务。
-阶段：仅规划
-目标：<模型 + GPU，或已有 target>
-工作负载：<checkpoint/config、输入、shape、精度和推理参数；已明确则沿用>
-预算：<本轮时间、token 或实验次数；规划阶段写“仅制定方案”>
-参考材料：<额外参考路径，例如教师 trace；无则写“无”>
-```
-
-Keep the actual prompt and task inputs in the existing run notes. Comparing agents
-also requires matching project instructions, tools and budgets; the shared prompt
-standardizes the task brief but does not make execution deterministic.
+Launch a run with the brief in **[prompts/](prompts/)**, filling in the model,
+GPU, workload and budget. The brief carries only those values; the launching
+agent binds the skill so its text is injected in full, and the run record keeps
+both the injected text and the filled-in values. Comparing agents needs matching
+project instructions, tools and budgets — a shared brief standardizes the task,
+not the execution.
 
 ## Find the right place
 

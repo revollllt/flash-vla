@@ -54,7 +54,7 @@ separate mechanism and needs no permission, which is what
 `ProfilerActivity.CUDA`). Measured here: a capture returns kernel-level device
 time, naming the kernel (`cutlass_80_wmma_tensorop_bf16_s16816...` for a bf16
 matmul). So step 4 of
-[the optimization workflow](../../../../../../docs/optimization.md) runs
+[the optimization workflow](../../../../../../.agents/skills/model-optimization/SKILL.md) runs
 unprivileged, and `sudo` is only needed once the timeline has selected a kernel
 worth NCU's attention.
 
