@@ -1,0 +1,581 @@
+{
+  "source_revision": "698254577d37b74abf40d09da4baa2379d595b46",
+  "kernel_source": "/home/ubuntu/flash-vla-gpt6-ffn/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/dual_ffn.py",
+  "seed": 42,
+  "options": [
+    "converted_checkpoint=/home/ubuntu/models/pi05_belt_cup_pytorch",
+    "checkpoint_id=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+    "checkpoint_digest=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha"
+  ],
+  "triton_version": "3.7.1",
+  "tile": [
+    16,
+    64,
+    32
+  ],
+  "grid": [
+    4,
+    64
+  ],
+  "warps": [
+    4,
+    8
+  ],
+  "num_stages": 3,
+  "enable_fp_fusion": false,
+  "enable_reflect_ftz": false,
+  "phase": "complete",
+  "resources": [],
+  "correctness": [
+    {
+      "layer": 0,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 1,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0000000000000002,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 2,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 3,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 4,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 5,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 6,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 7,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 8,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 9,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 10,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 11,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 12,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 13,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 14,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 15,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 16,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 1.0,
+          "exact": true
+        }
+      },
+      "correct": true
+    },
+    {
+      "layer": 17,
+      "output": {
+        "A": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999,
+          "exact": true
+        },
+        "B": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "rms_error": 0.0,
+          "rel_rms": 0.0,
+          "p99_abs": 0.0,
+          "cosine_similarity": 0.9999999999999999,
+          "exact": true
+        }
+      },
+      "correct": true
+    }
+  ],
+  "legs": [
+    {
+      "route": "A",
+      "samples_ms_per_call": [
+        0.015623110863897536,
+        0.01423822177780999,
+        0.014360888136757744,
+        0.014327110515700446,
+        0.01421866648726993,
+        0.014195554786258273,
+        0.014183110660976835,
+        0.014335999886194864,
+        0.014295111099878946,
+        0.01423111061255137,
+        0.014341332846217685,
+        0.01421866648726993,
+        0.014177777700954013,
+        0.014175999495718215,
+        0.014051554931534661
+      ],
+      "median_us_per_call": 14.23111061255137
+    },
+    {
+      "route": "B",
+      "samples_ms_per_call": [
+        0.01532444523440467,
+        0.014428445034556918,
+        0.014512000812424554,
+        0.014293332894643148,
+        0.014296889305114746,
+        0.014327110515700446,
+        0.014293332894643148,
+        0.014296889305114746,
+        0.01440177857875824,
+        0.014510222607188754,
+        0.014410666293568082,
+        0.01440000037352244,
+        0.014289778139856126,
+        0.014298665854665969,
+        0.01440177857875824
+      ],
+      "median_us_per_call": 14.40000037352244
+    },
+    {
+      "route": "B",
+      "samples_ms_per_call": [
+        0.015255111787054274,
+        0.014458666245142618,
+        0.01443377799457974,
+        0.014282666974597506,
+        0.014410666293568082,
+        0.014398222168286642,
+        0.014287999934620328,
+        0.014344889256689284,
+        0.014286221729384528,
+        0.01440711153878106,
+        0.014513777361975776,
+        0.014392889208263822,
+        0.014403555128309462,
+        0.014314666390419006,
+        0.014410666293568082
+      ],
+      "median_us_per_call": 14.403555128309462
+    },
+    {
+      "route": "A",
+      "samples_ms_per_call": [
+        0.014972445037629869,
+        0.01420800056722429,
+        0.014282666974597506,
+        0.01421866648726993,
+        0.014286221729384528,
+        0.014204444156752693,
+        0.014179555906189812,
+        0.01422222289774153,
+        0.014183110660976835,
+        0.014174222946166992,
+        0.01422755585776435,
+        0.014334221680959066,
+        0.014167111780908372,
+        0.014165333575672574,
+        0.014186667071448432
+      ],
+      "median_us_per_call": 14.20800056722429
+    }
+  ],
+  "scope": "same deployed dual-dot suffix; prepare excluded from both",
+  "is_deployment_sequence": false,
+  "reps_per_leg": 15,
+  "deployment_plan": {
+    "vision_encoder_patch_embed": "torch",
+    "vision_encoder_norm_qkv": "cutlass-vision",
+    "vision_encoder_attention": "torch",
+    "vision_encoder_out_proj_residual": "cutlass-vision",
+    "vision_encoder_norm_ffn_up": "cutlass-vision",
+    "vision_encoder_ffn_down_residual": "cutlass-vision",
+    "llm_backbone_projector": "torch",
+    "llm_backbone_embed_prompt": "torch",
+    "llm_backbone_norm_qkv_rope": "fused-prefix-qkv",
+    "llm_backbone_attention": "torch",
+    "llm_backbone_out_proj_residual": "torch",
+    "llm_backbone_norm_gated_ffn": "cutlass-backbone",
+    "llm_backbone_ffn_down_residual": "cutlass-backbone",
+    "action_expert_action_in_proj": "torch",
+    "action_expert_norm_qkv_rope": "triton-qkv-finish",
+    "action_expert_attention": "triton-qk-attention",
+    "action_expert_out_proj_residual": "cutlass-expert-residual",
+    "action_expert_norm_gated_ffn": "dual-ffn",
+    "action_expert_ffn_down_residual": "cutlass-expert-residual",
+    "action_expert_action_out_proj": "fused-qkv"
+  },
+  "calls": 18,
+  "weight_rotation_bytes": 301989888,
+  "mean_leg_gain_us": -0.18222216102812006,
+  "control_drift_us": 0.02311004532707983,
+  "candidate_drift_us": 0.003554754787021608,
+  "conservative_gain_us": -0.19555456108517077,
+  "local_gain_exceeds_drift": false
+}

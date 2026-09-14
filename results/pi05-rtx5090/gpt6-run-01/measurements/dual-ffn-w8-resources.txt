@@ -1,0 +1,84 @@
+Fixed dual FFN num_warps 4 -> 8; Triton 3.7.1
+Same tile 16x64x32, grid 4x64, stages 3, fp_fusion=False, reflect_ftz=False.
+Resource values come from CompiledKernel handles; PTX is compiler output, not a profiler attribution.
+
+num_warps=4: registers=64, spills=0, shared_bytes=18432
+.reqntid 128
+#mma = #ttg.nvidia_mma<{versionMajor = 2, versionMinor = 0, warpsPerCTA = [1, 4], instrShape = [16, 8]}>
+Static mma.sync instructions in loop body per warp: 8
+Static tanhf exit blocks per thread: 8
+
+num_warps=8: registers=40, spills=0, shared_bytes=18432
+.reqntid 256
+#mma = #ttg.nvidia_mma<{versionMajor = 2, versionMinor = 0, warpsPerCTA = [1, 8], instrShape = [16, 8]}>
+Static mma.sync instructions in loop body per warp: 4
+Static tanhf exit blocks per thread: 4
+
+Selected 8-warp PTX with original line numbers:
+RN BF16 accumulator conversions precede FP32 bias additions. add.rn.f32.bf16 combines
+the expansion of the already-rounded BF16 value with the FP32 add.
+The unchanged libdevice tanhf implementation contains internal FMA instructions.
+
+259: 	cvt.rn.bf16.f32 	%rs1, %r256;
+260: 	cvt.rn.bf16.f32 	%rs2, %r257;
+261: 	cvt.rn.bf16.f32 	%rs3, %r258;
+262: 	cvt.rn.bf16.f32 	%rs4, %r259;
+263: 	.loc	1 35 37                         // dual_ffn.py:35:37
+264: 	mul.wide.u32 	%rd28, %r104, 2;
+265: 	add.s64 	%rd26, %rd1, %rd28;
+266: 	.loc	1 35 26                         // dual_ffn.py:35:26
+267: 	// begin inline asm
+268: 	mov.u32 %r99, 0x0;
+269: 	ld.global.b32 { %r99 }, [ %rd26 + 0 ];
+270: 	// end inline asm
+271: 	mov.b32 	{%rs5, %rs6}, %r99;
+272: 	.loc	1 35 55                         // dual_ffn.py:35:55
+273: 	cvt.f32.bf16 	%r105, %rs5;
+274: 	cvt.f32.bf16 	%r106, %rs6;
+275: 	.loc	1 35 18                         // dual_ffn.py:35:18
+276: 	add.rn.f32.bf16 	%r14, %rs1, %r105;
+277: 	add.rn.f32.bf16 	%r15, %rs2, %r106;
+278: 	add.rn.f32.bf16 	%r16, %rs3, %r105;
+279: 	add.rn.f32.bf16 	%r17, %rs4, %r106;
+
+451: 	cvt.rn.bf16.f32 	%rs11, %r255;
+452: 	.loc	1 36 22                         // dual_ffn.py:36:22
+453: 	mov.b32 	{%rs12, %rs13}, %r100;
+454: 	.loc	1 36 49                         // dual_ffn.py:36:49
+455: 	cvt.f32.bf16 	%r207, %rs13;
+456: 	.loc	1 36 14                         // dual_ffn.py:36:14
+457: 	add.rn.f32.bf16 	%r208, %rs11, %r207;
+458: 	.loc	1 34 19                         // dual_ffn.py:34:19
+459: 	cvt.rn.bf16.f32 	%rs14, %r254;
+460: 	.loc	1 36 49                         // dual_ffn.py:36:49
+461: 	cvt.f32.bf16 	%r209, %rs12;
+462: 	.loc	1 36 14                         // dual_ffn.py:36:14
+463: 	add.rn.f32.bf16 	%r210, %rs14, %r209;
+464: 	.loc	1 34 19                         // dual_ffn.py:34:19
+465: 	cvt.rn.bf16.f32 	%rs15, %r253;
+466: 	.loc	1 36 14                         // dual_ffn.py:36:14
+467: 	add.rn.f32.bf16 	%r211, %rs15, %r207;
+468: 	.loc	1 34 19                         // dual_ffn.py:34:19
+469: 	cvt.rn.bf16.f32 	%rs16, %r252;
+470: 	.loc	1 36 14                         // dual_ffn.py:36:14
+471: 	add.rn.f32.bf16 	%r212, %rs16, %r209;
+
+477: 	add.rn.f32 	%r215, %r260, 0f3F800000;
+478: 	add.rn.f32 	%r216, %r261, 0f3F800000;
+479: 	add.rn.f32 	%r217, %r262, 0f3F800000;
+480: 	add.rn.f32 	%r218, %r263, 0f3F800000;
+481: 	.loc	1 38 25                         // dual_ffn.py:38:25
+482: 	mul.rn.f32 	%r219, %r206, %r215;
+483: 	mul.rn.f32 	%r220, %r205, %r216;
+484: 	mul.rn.f32 	%r221, %r204, %r217;
+485: 	mul.rn.f32 	%r222, %r203, %r218;
+486: 	.loc	1 40 21                         // dual_ffn.py:40:21
+487: 	mul.rn.f32 	%r223, %r212, %r219;
+488: 	mul.rn.f32 	%r224, %r211, %r220;
+489: 	mul.rn.f32 	%r225, %r210, %r221;
+490: 	mul.rn.f32 	%r226, %r208, %r222;
+491: 	.loc	1 40 28                         // dual_ffn.py:40:28
+492: 	cvt.rn.bf16.f32 	%rs7, %r223;
+493: 	cvt.rn.bf16.f32 	%rs8, %r224;
+494: 	cvt.rn.bf16.f32 	%rs9, %r225;
+495: 	cvt.rn.bf16.f32 	%rs10, %r226;

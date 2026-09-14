@@ -1,0 +1,47 @@
+{
+  "source_revision": "698254577d37b74abf40d09da4baa2379d595b46",
+  "kernel_source": "/home/ubuntu/flash-vla-gpt6-ffn/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/dual_ffn.py",
+  "seed": 42,
+  "options": [],
+  "triton_version": "3.7.1",
+  "tile": [
+    16,
+    64,
+    32
+  ],
+  "grid": [
+    4,
+    64
+  ],
+  "warps": [
+    4,
+    8
+  ],
+  "num_stages": 3,
+  "enable_fp_fusion": false,
+  "enable_reflect_ftz": false,
+  "phase": "compiled",
+  "resources": [
+    {
+      "warps": 4,
+      "registers": 64,
+      "spills": 0,
+      "shared_bytes": 18432,
+      "ptx": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-dual-warps-compile-w4.ptx",
+      "ttgir": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-dual-warps-compile-w4.ttgir"
+    },
+    {
+      "warps": 8,
+      "registers": 40,
+      "spills": 0,
+      "shared_bytes": 18432,
+      "ptx": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-dual-warps-compile-w8.ptx",
+      "ttgir": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-dual-warps-compile-w8.ttgir"
+    }
+  ],
+  "correctness": [],
+  "legs": [],
+  "scope": "same deployed dual-dot suffix; prepare excluded from both",
+  "is_deployment_sequence": false,
+  "reps_per_leg": 15
+}
