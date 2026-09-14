@@ -1,0 +1,32 @@
+{
+  "source_revision": "e8e93bae81c218df5434a32a85a2b9f5f7545761",
+  "seed": 42,
+  "options": [],
+  "site": "action_expert_ffn_down_residual",
+  "shape_mkn": [
+    50,
+    4096,
+    1024
+  ],
+  "tile": [
+    32,
+    64,
+    32
+  ],
+  "warp": [
+    32,
+    16,
+    32
+  ],
+  "stages": 8,
+  "epilogue_count": 4,
+  "phase": "coverage",
+  "coverage": [],
+  "correctness": [],
+  "decomposition": [],
+  "legs": [],
+  "native_library": "/home/ubuntu/flash-vla-gpt6-qkv/.cache/cuda_ext/rtx5090_pi05_cutlass_backbone/libcutlass_backbone.so",
+  "control_workspace_bytes": 2622080,
+  "candidate_workspace_bytes": 2622080,
+  "error": "AcceleratorError: CUDA error: an illegal memory access was encountered\nSearch for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\n"
+}

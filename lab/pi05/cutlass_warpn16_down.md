@@ -41,3 +41,32 @@ export CUTLASS_DIR=/home/ubuntu/flash-vla/third_party/cutlass
   --option checkpoint_digest=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha \
   --output results/rtx5090-pi05/gpt6-expert-down-warpn-screen/actual.json
 ```
+
+## Executed result: failed constant coverage, stopped
+
+The fixed native patch compiled with the unchanged sm_120a flags. The candidate
+uses 72 registers/thread; the same-library cfg9 control uses 120. Both report
+zero stack/spills and one barrier. Queried workspace is 2,622,080 bytes for both.
+The saved static SASS excerpt contains BF16 packs and separate FP32 FMUL/FADD;
+this is instruction evidence, not completed numerical validation.
+
+The first coverage case, residual_only (x=0, weight=0, gate=0, residual=3),
+raised CUDA illegal memory access at the first synchronized output comparison.
+The process exited 1. No coverage case completed, so no resource trace, actual
+model loading, 180-call validation, decomposition, or ABBA was performed.
+The failure was saved and the exclusive GPU window released immediately.
+
+The CPU shape/mapping checks and compilation were insufficient to establish
+runtime correctness. The exact faulting instruction/path has not been localized.
+No performance conclusion follows. This fixed candidate stops here; no additional
+tile, retry, sanitizer run, or implementation expansion followed.
+
+[Failure JSON](../../results/rtx5090-pi05/gpt6-expert-down-warpn-screen/coverage.json)
+and [compiler/SASS excerpt](../../results/rtx5090-pi05/gpt6-expert-down-warpn-screen/resources.txt)
+retain the bounded evidence. The full compiler/error log and SASS remain under
+the worktree's ignored artifacts/rtx5090-pi05/warpn16 directory.
+
+The native experiment delta was restored and its local experiment library
+removed. The committed patch preserves the exact candidate alongside the fixed
+probe for reproduction. Production routes, native source, vendor files, and the
+original M16 probe are unchanged.

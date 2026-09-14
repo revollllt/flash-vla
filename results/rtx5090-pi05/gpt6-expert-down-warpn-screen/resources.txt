@@ -1,0 +1,66 @@
+ptxas info    : Function properties for _ZN7cutlass7Kernel2INS_4gemm6kernel28GemmStreamkWithFusedEpilogueINS1_11threadblock13MmaMultistageINS1_9GemmShapeILi32ELi64ELi32EEENS_9transform11threadblock28PredicatedTileAccessIteratorINS_11MatrixShapeILi32ELi32EEENS_10bfloat16_tENS_6layout8RowMajorELi1ENS8_29PitchLinearWarpRakedThreadMapINS_16PitchLinearShapeILi32ELi32EEELi128ENSH_ILi4ELi8EEELi8EEENS_5ArrayISD_Li8ELb0EEELb0ENSE_9NoPermuteEEENS9_25RegularTileAccessIteratorISC_SD_NSE_37RowMajorTensorOpMultiplicandCrosswiseILi16ELi32EEELi0ESK_Li16EEELNS_4arch14CacheOperation4KindE1ENSA_INSB_ILi32ELi64EEESD_SF_Li0ENSG_INSH_ILi64ELi32EEELi128ENSH_ILi8ELi4EEELi8EEESM_Lb0ESN_EENSP_ISW_SD_NSE_37RowMajorTensorOpMultiplicandCongruousILi16ELi64EEELi0ESZ_Li16EEELSV_1EfSF_NS4_9MmaPolicyINS1_4warp11MmaTensorOpINS6_ILi32ELi16ELi32EEESD_SR_SD_S12_fSF_NS15_17MmaTensorOpPolicyINST_3MmaINS6_ILi16ELi8ELi16EEELi32ESD_SF_SD_NSE_11ColumnMajorEfSF_NST_13OpMultiplyAddEEENSB_ILi1ELi1EEEEELi1ELb0EbEENSB_ILi0ELi0EEES1H_Li1EEELi8ELNS1_23SharedMemoryClearOptionE0EbEEN52_GLOBAL__N__a470f275_19_cutlass_backbone_cu_9916ad3219WarpN16DownEpilogueENS4_25ThreadblockSwizzleStreamKELb1EEEEEvNT_6ParamsE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers
+ptxas info    : Compile time = 49.172 ms
+
+ptxas info    : Function properties for _ZN7cutlass7Kernel2INS_4gemm6kernel28GemmStreamkWithFusedEpilogueINS1_11threadblock13MmaMultistageINS1_9GemmShapeILi32ELi64ELi32EEENS_9transform11threadblock28PredicatedTileAccessIteratorINS_11MatrixShapeILi32ELi32EEENS_10bfloat16_tENS_6layout8RowMajorELi1ENS8_29PitchLinearWarpRakedThreadMapINS_16PitchLinearShapeILi32ELi32EEELi64ENSH_ILi4ELi8EEELi8EEENS_5ArrayISD_Li8ELb0EEELb0ENSE_9NoPermuteEEENS9_25RegularTileAccessIteratorISC_SD_NSE_37RowMajorTensorOpMultiplicandCrosswiseILi16ELi32EEELi0ESK_Li16EEELNS_4arch14CacheOperation4KindE1ENSA_INSB_ILi32ELi64EEESD_SF_Li0ENSG_INSH_ILi64ELi32EEELi64ENSH_ILi8ELi4EEELi8EEESM_Lb0ESN_EENSP_ISW_SD_NSE_37RowMajorTensorOpMultiplicandCongruousILi16ELi64EEELi0ESZ_Li16EEELSV_1EfSF_NS4_9MmaPolicyINS1_4warp11MmaTensorOpINS6_ILi32ELi32ELi32EEESD_SR_SD_S12_fSF_NS15_17MmaTensorOpPolicyINST_3MmaINS6_ILi16ELi8ELi16EEELi32ESD_SF_SD_NSE_11ColumnMajorEfSF_NST_13OpMultiplyAddEEENSB_ILi1ELi1EEEEELi1ELb0EbEENSB_ILi0ELi0EEES1H_Li1EEELi8ELNS1_23SharedMemoryClearOptionE0EbEEN52_GLOBAL__N__a470f275_19_cutlass_backbone_cu_9916ad3212DownEpilogueENS4_25ThreadblockSwizzleStreamKELb1EEEEEvNT_6ParamsE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 120 registers, used 1 barriers
+ptxas info    : Compile time = 62.269 ms
+
+Candidate SASS excerpt (static instruction evidence only):
+        /*3720*/                   F2FP.BF16.F32.PACK_AB R36, R21, R20 ;                                         /* 0x000000141524723e */
+                                                                                                                 /* 0x002fc400000010ff */
+        /*3730*/                   F2FP.BF16.F32.PACK_AB R21, R23, R22 ;                                         /* 0x000000161715723e */
+                                                                                                                 /* 0x000fe400000010ff */
+        /*3740*/                   LOP3.LUT R5, R36.reuse, 0xffff0000, RZ, 0xc0, !PT ;                           /* 0xffff000024057812 */
+                                                                                                                 /* 0x040fe200078ec0ff */
+        /*3750*/                   IMAD.U32 R17, R36, 0x10000, RZ ;                                              /* 0x0001000024117824 */
+                                                                                                                 /* 0x000fe200078e00ff */
+        /*3760*/                   LOP3.LUT R4, R21.reuse, 0xffff0000, RZ, 0xc0, !PT ;                           /* 0xffff000015047812 */
+                                                                                                                 /* 0x040fe200078ec0ff */
+        /*3770*/                   IMAD.U32 R36, R21, 0x10000, RZ ;                                              /* 0x0001000015247824 */
+                                                                                                                 /* 0x000fe400078e00ff */
+        /*3780*/                   FMUL R16, R5, R34 ;                                                           /* 0x0000002205107220 */
+                                                                                                                 /* 0x000fe20000400000 */
+        /*3790*/                   FMUL R17, R17, R32 ;                                                          /* 0x0000002011117220 */
+                                                                                                                 /* 0x000fe20000400000 */
+        /*37a0*/                   FMUL R5, R36, R33 ;                                                           /* 0x0000002124057220 */
+                                                                                                                 /* 0x000fe20000400000 */
+        /*37b0*/                   FMUL R4, R4, R35 ;                                                            /* 0x0000002304047220 */
+                                                                                                                 /* 0x000fe20000400000 */
+        /*37c0*/                   MOV R36, R40 ;                                                                /* 0x0000002800247202 */
+                                                                                                                 /* 0x000fca0000000f00 */
+        /*37d0*/                   IADD.64 R36, R26, R36 ;                                                       /* 0x000000241a247235 */
+                                                                                                                 /* 0x000fc600078e0200 */
+        /*37e0*/                   LOP3.LUT R23, R24.reuse, 0xffff0000, RZ, 0xc0, !PT ;                          /* 0xffff000018177812 */
+                                                                                                                 /* 0x044fe200078ec0ff */
+        /*37f0*/                   IMAD.U32 R20, R25.reuse, 0x10000, RZ ;                                        /* 0x0001000019147824 */
+                                                                                                                 /* 0x040fe200078e00ff */
+        /*3800*/                   LOP3.LUT R21, R25, 0xffff0000, RZ, 0xc0, !PT ;                                /* 0xffff000019157812 */
+                                                                                                                 /* 0x000fe200078ec0ff */
+        /*3810*/                   IMAD.U32 R22, R24, 0x10000, RZ ;                                              /* 0x0001000018167824 */
+                                                                                                                 /* 0x000fe400078e00ff */
+        /*3820*/                   FADD R5, R20, R5 ;                                                            /* 0x0000000514057221 */
+                                                                                                                 /* 0x000fe20000000000 */
+        /*3830*/                   FADD R16, R23, R16 ;                                                          /* 0x0000001017107221 */
+                                                                                                                 /* 0x000fe20000000000 */
+        /*3840*/                   FADD R17, R22, R17 ;                                                          /* 0x0000001116117221 */
+                                                                                                                 /* 0x000fe20000000000 */
+        /*3850*/                   FADD R20, R21, R4 ;                                                           /* 0x0000000415147221 */
+                                                                                                                 /* 0x000fc80000000000 */
+        /*3860*/                   F2FP.BF16.F32.PACK_AB R4, R16, R17 ;                                          /* 0x000000111004723e */
+                                                                                                                 /* 0x000fe400000010ff */
+        /*3870*/                   F2FP.BF16.F32.PACK_AB R5, R20, R5 ;                                           /* 0x000000051405723e */
+                                                                                                                 /* 0x000fca00000010ff */
+        /*3880*/               @P2 STG.E.64 desc[UR32][R36.64], R4 ;                                             /* 0x0000000424002986 */
+                                                                                                                 /* 0x000be8000c101b20 */
+        /*3890*/               @P0 LDG.E.LTC128B.64 R24, desc[UR32][R38.64] ;                                    /* 0x0000002026180981 */
+                                                                                                                 /* 0x0002a2000c1e1b20 */
+        /*38a0*/                   IADD R16, R29, 0x10 ;                                                         /* 0x000000101d107835 */
+                                                                                                                 /* 0x000fe200078e0000 */
+        /*38b0*/                   BAR.SYNC.DEFER_BLOCKING 0x0 ;                                                 /* 0x0000000000007b1d */
+                                                                                                                 /* 0x000fe20000010000 */
+        /*38c0*/                   ISETP.NE.S64.AND P3, PT, R26, RZ, P3 ;                                        /* 0x000000ff1a00720c */
+                                                                                                                 /* 0x000fc60001f75270 */
+        /*38d0*/                   ISETP.LT.AND P0, PT, R16, UR4, !P1 ;                                          /* 0x0000000410007c0c */
