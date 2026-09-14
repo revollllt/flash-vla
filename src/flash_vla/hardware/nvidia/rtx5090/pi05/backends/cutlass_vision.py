@@ -1,7 +1,7 @@
 """Pi0.5 vision projections on one CUTLASS bias-GEMM tile and pointwise stages.
 
 Config 10 preserves FP32 accumulation plus BF16 bias before its BF16 output.
-Up then applies the existing GELU; down adds that BF16 projection to out.
+Up then applies the existing GELU; residual sites add the BF16 projection to out.
 Plans and device workspaces belong to the wrapper instance and runner scratch.
 """
 from __future__ import annotations
@@ -14,7 +14,7 @@ import torch
 from . import cutlass_backbone, fused_vision
 
 NAMES = frozenset({"vision_encoder_norm_qkv", "vision_encoder_norm_ffn_up",
-                   "vision_encoder_ffn_down_residual"})
+                   "vision_encoder_ffn_down_residual", "vision_encoder_out_proj_residual"})
 
 
 def _library():
@@ -53,7 +53,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     QKV: x(views,256,1152), norm vectors(1152), weight(1152,3456), bias(3456),
     out(views,256,3456). Up: same x/norm, weight(1152,4304), bias(4304),
     out(views,256,4304). Down: x(views,256,4304), weight(4304,1152), bias(1152),
-    out(views,256,1152), with out containing the initial residual. Warmup
+    out(views,256,1152). Attention out-projection has K=1152 instead of 4304.
+    Both residual sites read and update out in place, with res aliasing out. Warmup
     plans all pointer sets and scratch before capture; replay allocates nothing.
     """
     names = NAMES if selected_names is None else set(selected_names)
@@ -92,10 +93,11 @@ def make_wrappers(scratch, selected_names=None) -> dict:
             out.data_ptr(), out.numel(), stream), "pi05_vision_gelu")
         return out
 
-    def vision_encoder_ffn_down_residual(x, weight, bias, res, out):
-        projected = scratch(f"{role}_projection", (x.numel() // 4304, 1152),
+    def projection_residual(x, weight, bias, res, out):
+        k = weight.shape[0]
+        projected = scratch(f"{role}_projection", (x.numel() // k, 1152),
                             x.dtype, x.device)
-        gemm(x.view(-1, 4304), weight, bias, projected,
+        gemm(x.view(-1, k), weight, bias, projected,
              torch.cuda.current_stream().cuda_stream)
         out.add_(projected.view_as(out))
         return out
@@ -103,7 +105,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     wrappers = {
         "vision_encoder_norm_qkv": vision_encoder_norm_qkv,
         "vision_encoder_norm_ffn_up": vision_encoder_norm_ffn_up,
-        "vision_encoder_ffn_down_residual": vision_encoder_ffn_down_residual,
+        "vision_encoder_ffn_down_residual": projection_residual,
+        "vision_encoder_out_proj_residual": projection_residual,
     }
     return {name: wrappers[name] for name in names}
 
