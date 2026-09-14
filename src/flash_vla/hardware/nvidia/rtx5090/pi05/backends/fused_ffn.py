@@ -42,6 +42,8 @@ def _library():
     lib.gated_activation_launch.argtypes = [ctypes.c_void_p] * 5 + [
         ctypes.c_int32, ctypes.c_void_p]
     lib.gated_activation_launch.restype = ctypes.c_int32
+    lib.packed_gated_activation_launch.argtypes = lib.gated_activation_launch.argtypes
+    lib.packed_gated_activation_launch.restype = ctypes.c_int32
     return lib
 
 
