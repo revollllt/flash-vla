@@ -2,7 +2,7 @@
 
 Initial CPU-only preparation used source754d7f4 (lab commit6e8d927).
 The subsequent authorized zero-input resource observation is recorded below.
-Actual-input correctness and performance remain unknown.
+The later authorized actual-input check and sole ABBA are recorded below.
 
 ## Hypothesis and fixed geometry
 
@@ -163,3 +163,40 @@ this count precedes PTXAS optimization and does not establish executed SASS
 count. Resource pressure warrants inspection but does not prove the candidate
 is slower. No actual17-layer capture, correctness pass, or ABBA has run.
 Continue only if the experiment owner authorizes the unchanged mapping.
+
+## Actual-input result: fixed mapping rejected
+
+The subsequent authorized capture used main c6a7d56, which differs from the
+retained 024 revision 84f50c7 only by adding this lab source/documentation.
+Capture metadata confirms all three masked backbone outproj/FFN routes were
+bucketed-backbone; attention remained torch. There were 17 actual layer calls,
+one shared Q address and one distinct shared out address. The seed42 input had
+895 valid prefix keys. No candidate output was fed into capture.
+
+All 17 candidate outputs passed the existing shallow tolerance, including
+all-row finiteness. Worst rel_rms was 5.217102491502758e-5 and minimum cosine
+was 0.9999999986391401. The unchanged control also passed against the captured
+outputs. Detailed per-layer and valid-query-row metrics are in check.json.
+
+The only ABBA measured the complete attention chain plus the identical Q reset:
+
+| Leg | Median ms per 17 calls |
+| --- | ---: |
+| A1 control | 1.158411979675293 |
+| B1 candidate | 1.7525280117988586 |
+| B2 candidate | 1.7547000050544739 |
+| A2 control | 1.1904480457305908 |
+
+Candidate minus control was +0.5791839957 ms per 17 calls, or +34.06965 us/call.
+Within-control drift was 0.0320360661 ms and within-candidate drift
+0.0021719933 ms. Even the closest A/B medians were separated by 0.5620799661 ms.
+The fixed mapping is therefore locally rejected. All 120 raw samples are
+preserved in abba.json, along with exact cache/reset/timer conditions.
+
+The observed slowdown cannot be attributed uniquely to local-memory footprint,
+gather shuffles, repeated K/V reads, or GEMM efficiency from this experiment.
+It establishes the complete-chain cost of this one unchanged mapping. No
+additional tile, stage, warp, gather implementation, or timing round was tried;
+there is no production change or E2E measurement. GPU was released immediately
+after the single ABBA process exited. Invocation timestamps and full logs remain
+in the result directory; the actual snapshot remains in ignored artifacts.

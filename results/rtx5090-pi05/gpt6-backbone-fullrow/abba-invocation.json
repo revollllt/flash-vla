@@ -1,0 +1,14 @@
+{
+  "command": [
+    "/home/ubuntu/flash-vla/.venv/bin/python",
+    "/home/ubuntu/flash-vla-gpt6-qkv/lab/pi05/backbone_fullrow.py",
+    "time",
+    "--snapshot",
+    "/home/ubuntu/flash-vla-gpt6-qkv/artifacts/rtx5090-pi05/backbone-fullrow-024-17.safetensors",
+    "--output",
+    "/home/ubuntu/flash-vla-gpt6-qkv/results/rtx5090-pi05/gpt6-backbone-fullrow/abba.json"
+  ],
+  "started_utc": "2026-09-14T23:55:03.371807+00:00",
+  "finished_utc": "2026-09-14T23:55:08.333622+00:00",
+  "exit_code": 0
+}

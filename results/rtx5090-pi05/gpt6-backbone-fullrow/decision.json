@@ -1,0 +1,39 @@
+{
+  "decision": "local rejection of the fixed M32/N1024/QK-BK32/PV-BK64/8warp/stage1 mapping",
+  "production_changed": false,
+  "actual_layers": 17,
+  "seed": 42,
+  "valid_prefix_keys": 895,
+  "all_checks_passed": true,
+  "worst_candidate_rel_rms": 5.217102491502758e-05,
+  "minimum_candidate_cosine": 0.9999999986391401,
+  "maximum_candidate_abs_error": 0.03125,
+  "worst_control_rel_rms": 0.0,
+  "all_outputs_finite": true,
+  "medians_ms_per_17": [
+    1.158411979675293,
+    1.7525280117988586,
+    1.7547000050544739,
+    1.1904480457305908
+  ],
+  "control_mean_median_ms_per_17": 1.174430012702942,
+  "candidate_mean_median_ms_per_17": 1.7536140084266663,
+  "candidate_slower_ms_per_17": 0.5791839957237244,
+  "candidate_slower_us_per_call": 34.069646807277906,
+  "control_drift_ms": 0.03203606605529785,
+  "candidate_drift_ms": 0.0021719932556152344,
+  "minimum_separation_ms": 0.5620799660682678,
+  "raw_sample_counts": [
+    30,
+    30,
+    30,
+    30
+  ],
+  "resource_observation": {
+    "registers": 255,
+    "local_bytes_per_thread": 104,
+    "shared_bytes": 67584
+  },
+  "limitations": "One fixed tile and one warm-working-set ABBA; no E2E. Not enough evidence to isolate spills, gather, K/V rereads or MMA efficiency as the cause. Both BF16 boundaries were verified in PTX.",
+  "followup": "Stop this mapping; no tile/gather/warp/stage changes or additional timing rounds."
+}

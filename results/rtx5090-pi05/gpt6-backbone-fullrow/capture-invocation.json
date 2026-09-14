@@ -1,0 +1,19 @@
+{
+  "command": [
+    "/home/ubuntu/flash-vla/.venv/bin/python",
+    "/home/ubuntu/flash-vla-gpt6-qkv/lab/pi05/backbone_fullrow.py",
+    "prepare",
+    "--snapshot",
+    "/home/ubuntu/flash-vla-gpt6-qkv/artifacts/rtx5090-pi05/backbone-fullrow-024-17.safetensors",
+    "--checkpoint",
+    "/home/ubuntu/models/pi05_belt_cup_pytorch",
+    "--checkpoint-id",
+    "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha"
+  ],
+  "cwd": "/home/ubuntu/flash-vla",
+  "main_revision": "c6a7d564dfcd4696877264a19da9d57140702cd5",
+  "worker_revision": "c3c53f3258977c774c8cbbdfe2e4c60fe6bdaa31",
+  "started_utc": "2026-09-14T23:53:11.994257+00:00",
+  "finished_utc": "2026-09-14T23:53:22.472588+00:00",
+  "exit_code": 0
+}
