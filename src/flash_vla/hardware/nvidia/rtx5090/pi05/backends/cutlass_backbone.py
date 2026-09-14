@@ -52,10 +52,10 @@ def _library():
     library.backbone_gemm_run.restype = ctypes.c_int32
     library.backbone_gemm_destroy.argtypes = [ctypes.c_void_p]
     library.backbone_gemm_destroy.restype = None
-    library.expert_down_workspace.argtypes = []
+    library.expert_down_workspace.argtypes = [ctypes.c_int32]
     library.expert_down_workspace.restype = ctypes.c_int64
-    library.expert_down_plan.argtypes = [ctypes.c_void_p] * 6 + [
-        ctypes.POINTER(ctypes.c_void_p)]
+    library.expert_down_plan.argtypes = (
+        [ctypes.c_int32] + [ctypes.c_void_p] * 6 + [ctypes.POINTER(ctypes.c_void_p)])
     library.expert_down_plan.restype = ctypes.c_int32
     library.expert_down_run.argtypes = [ctypes.c_void_p] * 2
     library.expert_down_run.restype = ctypes.c_int32
