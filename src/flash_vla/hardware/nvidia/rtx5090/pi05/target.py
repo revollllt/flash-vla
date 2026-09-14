@@ -28,7 +28,10 @@ class Pi05RTX5090(Pi05):
     registry = REGISTRY
 
     #: Native pointwise fusion around the existing bf16 GEMMs.
-    plan: Mapping[str, str] = {"action_expert_norm_gated_ffn": "fused-ffn"}
+    plan: Mapping[str, str] = {
+        "action_expert_norm_gated_ffn": "fused-ffn",
+        "action_expert_norm_qkv_rope": "fused-qkv",
+    }
     reference_plan: Mapping[str, str] = {}
 
     #: H100's `action_expert_norm_gated_ffn` ceiling is a measured H100 number

@@ -5,8 +5,9 @@ from flash_vla.runtime.registry import Registry
 
 from . import torch_ops as _torch
 from . import fused_ffn as _fused_ffn
+from . import fused_qkv as _fused_qkv
 
-BACKENDS = {"torch": _torch, "fused-ffn": _fused_ffn}
+BACKENDS = {"torch": _torch, "fused-ffn": _fused_ffn, "fused-qkv": _fused_qkv}
 
 REGISTRY = Registry(BACKENDS, default="torch")
 
