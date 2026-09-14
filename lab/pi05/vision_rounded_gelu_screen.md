@@ -2,8 +2,8 @@
 
 Prepared on a fresh branch from main `4de57c9`. This revision adds one optional
 native GEMM type plus lab code; it does not change a production route.
-CUDA C++ has not been compiled yet. The experiment must wait for an exclusive
-NVCC/GPU window.
+The fixed experiment has completed in its exclusive NVCC/GPU window; measured
+evidence is recorded below.
 
 ## Evidence and scope
 
@@ -96,3 +96,56 @@ set -o pipefail
   --output /home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-vision-rounded-gelu-screen.json \
   2>&1 | tee /home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-vision-rounded-gelu-screen.log
 ```
+
+## Measured result
+
+The single experiment completed at source `f46185a` with old and new cfg10
+types in the same updated worktree library. The initial compile used the
+existing optimization/architecture flags plus --keep/--keep-dir to retain PTX;
+no arithmetic code-generation flag changed. The prepared probe then reused
+that library rather than rebuilding it.
+
+All 27 unchanged-control outputs matched the recorded model call elementwise.
+The candidate also matched every element: max absolute error and relative RMS
+error were zero. The actual shape was M768 K1152 N4304, and the 27 weights
+occupied 267,743,232 bytes.
+
+One ABBA, reported as each leg's median over 15 raw samples:
+
+| A1 (ms/27 layers) | B1 | B2 | A2 |
+|---:|---:|---:|---:|
+| 1.293344 | 1.252384 | 1.262688 | 1.296096 |
+
+Mean A-B is 0.037184 ms; conservative min(A)-max(B) is 0.030656 ms.
+Control drift is 0.002752 ms and candidate drift is 0.010304 ms.
+The second B leg has a visible step within its raw samples; all samples were
+retained, and the cause was not diagnosed. The conservative gain exceeds the
+observed local leg drift, supporting one deployment experiment, but this small
+local difference is not established E2E savings. No repeat, tile, or hint sweep
+was run. The exclusive window was returned immediately on successful exit.
+
+Resource evidence from the same build: candidate 156 registers/thread versus
+control 160; both have zero stack bytes and zero spill stores/loads. The candidate
+query reports 61,440 B of compiled dynamic shared storage. The register reduction
+does not by itself explain the timing result.
+
+The extracted candidate PTX confirms the intended boundary and sequence.
+Lines 726-733 apply the existing alpha/beta accumulator-plus-bias operation;
+734-746 explicitly convert it to BF16 RN. Lines 749-756 widen the BF16 bits back
+to FP32. Lines 758-765 show the three left-associated RN products, RN addition,
+inner multiplier and half multiplier; 784-785 show the final RN addition and
+product after tanhf. FMA and approximate instructions inside the lowered tanhf,
+and FMA in the preexisting alpha/beta operation, must not be mistaken for
+contraction of the explicitly separated GELU arithmetic.
+
+Raw artifacts in the main checkout:
+
+- `artifacts/rtx5090-pi05/gpt6-vision-rounded-gelu-build.log`
+- `artifacts/rtx5090-pi05/gpt6-vision-rounded-gelu-kernel.ptx` (candidate entry only)
+- `artifacts/rtx5090-pi05/gpt6-vision-rounded-gelu-screen.json`
+- `artifacts/rtx5090-pi05/gpt6-vision-rounded-gelu-screen.log`
+- `artifacts/rtx5090-pi05/gpt6-vision-rounded-gelu-screen-resources.txt`
+
+The complete kept PTX remains under this worktree's ignored
+`.cache/cuda_ext/rtx5090_pi05_cutlass_backbone/vision_rounded_gelu_keep/`.
+Generated files are not included in the source commit.
