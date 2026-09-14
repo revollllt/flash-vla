@@ -1,0 +1,439 @@
+{
+  "analysis_source_revision": "2e7deeebed244ddca7574aa0d7a4794c3484fa1e",
+  "method": "CPU stdlib json/struct safetensors header + BF16 mask byte read; no Torch/model/CUDA",
+  "producer": "lab/sm120/pi05_attention_qk_triton_confirm.py:prepare",
+  "producer_input": "build(shipped, seed=42, default prompt); inputs=engine.sample_inputs(42); actual host/program; before attention",
+  "default_prompt": "pick up the plate and put it in the sink",
+  "snapshots": [
+    {
+      "path": "/home/ubuntu/flash-vla-gpt6-qkv/artifacts/rtx5090-pi05/attention-qk-nine-pairs.safetensors",
+      "seed": 42,
+      "capture_source_revision": "bf2a9ba86d5e25d444583b234fe3dd3c346ed998",
+      "checkpoint": "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+      "capture_boundary": "before actual attention; Q has not been overwritten",
+      "mask_cases": [
+        {
+          "tensor": "step0_layer0_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step0_layer17_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step0_layer8_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step4_layer0_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step4_layer17_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step4_layer8_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step9_layer0_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step9_layer17_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step9_layer8_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-softmax-128-nine.safetensors",
+      "seed": 42,
+      "capture_source_revision": "6f8aec5125349b7e820d857d3a25c188de70af18",
+      "checkpoint": "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+      "capture_boundary": "before actual attention; Q has not been overwritten",
+      "mask_cases": [
+        {
+          "tensor": "step0_layer0_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step0_layer17_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step0_layer8_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step4_layer0_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step4_layer17_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step4_layer8_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step9_layer0_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step9_layer17_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        },
+        {
+          "tensor": "step9_layer8_mask",
+          "shape": [
+            1018
+          ],
+          "prompt_tokens": 127,
+          "n_valid": 895,
+          "zero_prefix_range": [
+            0,
+            895
+          ],
+          "masked_prefix_range": [
+            895,
+            968
+          ],
+          "masked_bf16_bits": 65378,
+          "mask896_bf16_bits": 65378,
+          "zero_suffix_range": [
+            968,
+            1018
+          ]
+        }
+      ]
+    }
+  ],
+  "official": {
+    "metadata_path": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/oracle-belt-cup/official-eager.json",
+    "comparison_path": "results/pi05-rtx5090/gpt6-run-01/correctness/021-qkv-finish-official.json",
+    "seed": 0,
+    "prompt_tokens": 135,
+    "n_valid": 903,
+    "bucket_m": 968
+  },
+  "conclusion": {
+    "latency_seed42_n_valid": 895,
+    "latency_seed42_bucket_m": 896,
+    "omitted_rows": 72,
+    "remaining_masked_rows_in_short_bucket": 1,
+    "not_a_model_invariant": true,
+    "no_performance_measurement": true
+  }
+}
