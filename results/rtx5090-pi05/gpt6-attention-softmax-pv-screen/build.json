@@ -1,0 +1,16 @@
+{
+  "source_revision": "4aad6eb",
+  "phase": "host_stub_compile_failed",
+  "exit_code": 1,
+  "device_ptxas": {
+    "registers": 166,
+    "shared_bytes": 47104,
+    "barriers": 1
+  },
+  "error": "NVCC host stub: anonymous namespace / Element name ambiguous with imported cute anonymous namespace",
+  "gpu_launches": 0,
+  "actual_pairs_checked": 0,
+  "timing_legs": 0,
+  "decision": "stopped after implementation failure; no numerical/performance conclusion",
+  "gpu_window": "released"
+}
