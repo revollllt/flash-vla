@@ -32,6 +32,7 @@ class Pi05RTX5090(Pi05):
         "action_expert_norm_gated_ffn": "packed-ffn",
         "action_expert_norm_qkv_rope": "fused-qkv",
         "llm_backbone_norm_gated_ffn": "cutlass-backbone",
+        "llm_backbone_ffn_down_residual": "cutlass-backbone",
         "action_expert_attention": "fused-attention",
         "action_expert_out_proj_residual": "fused-residual",
         "action_expert_ffn_down_residual": "fused-residual",
