@@ -53,7 +53,12 @@ def restore_rope_precision(model) -> int:
     return fixed
 
 
-def _validate_config(config) -> None:
+def validate_config(config) -> None:
+    """Reject an upstream config whose semantics this adapter does not implement.
+
+    Public because every entry point that builds the official model -- in this
+    process or in another one -- applies the same rule before it allocates.
+    """
     expected = dict(pi05=True, discrete_state_input=True, action_dim=32,
                     max_token_len=200, paligemma_variant="gemma_2b",
                     action_expert_variant="gemma_300m")
@@ -99,7 +104,7 @@ def resolve_config(checkpoint: str | Path | None, config_name: str | None):
     else:
         from openpi.training.config import get_config
         config = replace(get_config(config_name).model, pytorch_compile_mode=None)
-    _validate_config(config)
+    validate_config(config)
     _validate_checkpoint_config(checkpoint, config)
     return config
 
@@ -115,7 +120,7 @@ def checkpoint_contract(checkpoint: str | Path, config) -> dict:
     from flash_vla.models.pi05 import spec
     from flash_vla.runtime.identity import validate_weight_schema
 
-    _validate_config(config)
+    validate_config(config)
     _validate_checkpoint_config(checkpoint, config)
     path = Path(checkpoint)
     if path.is_dir():
@@ -159,7 +164,7 @@ def build_model(checkpoint: str | Path | None = None,
     if config is None:
         config = resolve_config(checkpoint, None)
     config = replace(config, pytorch_compile_mode=None)
-    _validate_config(config)
+    validate_config(config)
 
     _validate_checkpoint_config(checkpoint, config)
     if checkpoint is not None:
@@ -186,6 +191,32 @@ def build_model(checkpoint: str | Path | None = None,
     if exact_rope:
         restore_rope_precision(model)
     return model
+
+
+def converted_checkpoint(checkpoint: str | Path) -> dict[str, torch.Tensor]:
+    """The Target's packed weights from an already-converted OpenPI PyTorch checkpoint.
+
+    `build_model` needs OpenPI, JAX and a patched `transformers`; a deployment
+    machine need not host them, and the conversion has already happened. This
+    reads the stored state dict through the same `target_checkpoint`
+    normalization, restoring the ties `save_model` stores once. It establishes
+    tensor compatibility only -- the caller states which checkpoint this is.
+    """
+    from safetensors import safe_open
+    from safetensors.torch import load_file
+    from types import SimpleNamespace
+
+    path = Path(checkpoint)
+    if path.is_dir():
+        path = path / "model.safetensors"
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    state = load_file(str(path), device="cpu")
+    with safe_open(str(path), framework="pt", device="cpu") as source:
+        for name, original in (source.metadata() or {}).items():
+            if name not in state and original in state:
+                state[name] = state[original]
+    return target_checkpoint(SimpleNamespace(state_dict=lambda: state))
 
 
 def _decoder_qkv(state: dict[str, torch.Tensor], layer: int) -> torch.Tensor:

@@ -26,6 +26,8 @@ Commands below run from the project root in the configured GPU environment.
 | `h100/pi0` | Seeded synthetic weights and inputs |
 | `h100/pi05` | Synthetic weights, or an explicit OpenPI checkpoint/config |
 | `h100/lingbot_vla` | Real checkpoint and fixture, resolved through `FLASH_VLA_ASSETS` |
+| `rtx5090/pi0` | Seeded synthetic weights and inputs |
+| `rtx5090/pi05` | Synthetic weights, or a checkpoint OpenPI's converter wrote |
 
 ```bash
 python -m benchmarks latency --target h100/pi0 --plan shipped --out artifacts/current.json

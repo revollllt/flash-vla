@@ -32,22 +32,44 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
           steps: int = 10, layers: int = 18, prompt_len: int | None = None,
           device: str = "cuda", prompt: str = DEFAULT_PROMPT, tokenizer_path: str | None = None,
           declare: bool = False, checkpoint: str | None = None,
+          converted_checkpoint: str | None = None,
           checkpoint_id: str | None = None, checkpoint_digest: str | None = None,
-          openpi_config: str | None = None):
-    from flash_vla.hardware.nvidia.h100.pi05 import TARGET
+          openpi_config: str | None = None, target=None):
+    """Build a Pi0.5 runner on synthetic or OpenPI weights.
+
+    `target` defaults to H100; Pi0.5's checkpoint, tokenizer and fixture carry no
+    hardware, so both Targets share this factory. Weights come from `seed`,
+    from `checkpoint` (loaded through OpenPI, which validates the named upstream
+    config), or from `converted_checkpoint` (already converted, read without
+    OpenPI -- it resolves no config, so the caller supplies the shape profile
+    and the immutable ID).
+    """
+    if target is None:
+        from flash_vla.hardware.nvidia.h100.pi05 import TARGET as target
+    from flash_vla.models.pi05 import openpi as openpi05
     from flash_vla.models.pi05.spec import MAX_TOKEN_LEN, random_checkpoint_revision
     from flash_vla.models.pi05.tokenize import Pi05Tokenizer
     from flash_vla.models.pi05.weights import fold, random_checkpoint
 
-    if checkpoint is None:
+    if checkpoint is not None and converted_checkpoint is not None:
+        raise ValueError("pass checkpoint or converted_checkpoint, not both")
+    # The chunk is the Target's own default unless an upstream config names one.
+    default_chunk = target.configure().chunk_size
+    if checkpoint is None and converted_checkpoint is None:
         if any(value is not None for value in (checkpoint_id, checkpoint_digest, openpi_config)):
             raise ValueError("checkpoint provenance/config requires a real checkpoint path")
         checkpoint_id = checkpoint_digest = random_checkpoint_revision(seed)
-        chunk_size = 50 if chunk_size is None else chunk_size
+        chunk_size = default_chunk if chunk_size is None else chunk_size
+    elif converted_checkpoint is not None:
+        if not all((checkpoint_id, checkpoint_digest)):
+            raise ValueError("a converted checkpoint requires checkpoint_id and checkpoint_digest")
+        if openpi_config is not None:
+            raise ValueError("a converted checkpoint resolves no OpenPI config; "
+                             "pass `checkpoint` to have OpenPI resolve and validate one")
+        chunk_size = default_chunk if chunk_size is None else chunk_size
     else:
         if not all((checkpoint_id, checkpoint_digest, openpi_config)):
             raise ValueError("real checkpoint requires checkpoint_id, checkpoint_digest and openpi_config")
-        from flash_vla.models.pi05 import openpi as openpi05
         reference_config = openpi05.resolve_config(checkpoint, openpi_config)
         if chunk_size is not None and chunk_size != reference_config.action_horizon:
             raise ValueError("chunk_size differs from the checkpoint's explicit OpenPI config")
@@ -58,17 +80,19 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
     config = dict(num_views=num_views, chunk_size=chunk_size, steps=steps, layers=layers,
                   prompt_len=prompt_len or MAX_TOKEN_LEN, prompt=prompt)
     if declare:
-        runner = ModelRunner(TARGET, None, checkpoint_id=checkpoint_id,
+        runner = ModelRunner(target, None, checkpoint_id=checkpoint_id,
                              checkpoint_digest=checkpoint_digest, plan=plan,
                              device=device, capture=False, **config)
     else:
-        if checkpoint is None:
+        if converted_checkpoint is not None:
+            source = openpi05.converted_checkpoint(converted_checkpoint)
+        elif checkpoint is None:
             source = random_checkpoint(seed=seed, device=device)
         else:
             model = openpi05.build_model(checkpoint, device, seed=seed, config=reference_config)
             source = openpi05.target_checkpoint(model)
             del model
-        runner = ModelRunner(TARGET, fold(source, steps=steps), checkpoint_id=checkpoint_id,
+        runner = ModelRunner(target, fold(source, steps=steps), checkpoint_id=checkpoint_id,
                              checkpoint_digest=checkpoint_digest, plan=plan, device=device,
                              tokenizer=Pi05Tokenizer(tokenizer_path), **config)
     fixture = {"producer": "flash-vla/pi05-inputs-v1", "seed": seed, "prompt": prompt}
@@ -166,12 +190,19 @@ def _pi0_rtx5090(plan: Any = "shipped", **overrides):
     return _pi0(plan, target=TARGET, **overrides)
 
 
+def _pi05_rtx5090(plan: Any = "shipped", **overrides):
+    """Pi0.5 on the RTX 5090. Same model, same checkpoint options, sm_120."""
+    from flash_vla.hardware.nvidia.rtx5090.pi05 import TARGET
+    return _pi05(plan, target=TARGET, **overrides)
+
+
 #: Target name -> factory. Short aliases resolve through `resolve`.
 TARGETS: dict[str, Callable[..., Any]] = {
     "hardware/nvidia/h100/lingbot_vla": _lingbot,
     "hardware/nvidia/h100/pi05": _pi05,
     "hardware/nvidia/h100/pi0": _pi0,
     "hardware/nvidia/rtx5090/pi0": _pi0_rtx5090,
+    "hardware/nvidia/rtx5090/pi05": _pi05_rtx5090,
 }
 _ALIASES = {"h100/pi05": "hardware/nvidia/h100/pi05", "pi05": "hardware/nvidia/h100/pi05",
             "h100/pi0": "hardware/nvidia/h100/pi0", "pi0": "hardware/nvidia/h100/pi0",
@@ -179,9 +210,12 @@ _ALIASES = {"h100/pi05": "hardware/nvidia/h100/pi05", "pi05": "hardware/nvidia/h
             "lingbot_vla": "hardware/nvidia/h100/lingbot_vla",
             "rtx5090/pi0": "hardware/nvidia/rtx5090/pi0",
             "5090/pi0": "hardware/nvidia/rtx5090/pi0",
+            "rtx5090/pi05": "hardware/nvidia/rtx5090/pi05",
+            "5090/pi05": "hardware/nvidia/rtx5090/pi05",
             # The `lab/plans/<target>-<name>.json` prefix form, which cannot
             # carry a slash.
-            "rtx5090_pi0": "hardware/nvidia/rtx5090/pi0"}
+            "rtx5090_pi0": "hardware/nvidia/rtx5090/pi0",
+            "rtx5090_pi05": "hardware/nvidia/rtx5090/pi05"}
 
 #: The two plan names every Target understands.
 PLAN_NAMES = ("shipped", "reference")

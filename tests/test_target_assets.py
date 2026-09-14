@@ -195,3 +195,30 @@ def test_lingbot_parity_reports_the_cached_oracle_producer(tmp_path, monkeypatch
     assert report["reference_provenance"] == dict(
         provenance, repository="https://github.com/Robbyant/lingbot-vla.git", commit="oracle-source")
     assert report["identity"]["engine_revision"] == "candidate-source"
+
+
+def _pi05_factory():
+    """The registered Pi0.5 factory, reached without importing a hardware Target."""
+    return targets.TARGETS[targets.resolve("h100/pi05")]
+
+
+def test_converted_pi05_checkpoint_states_the_provenance_it_cannot_resolve():
+    """The converted path reads no upstream config, so the caller supplies the identity.
+
+    `checkpoint` hands the file to OpenPI, which resolves and validates a named
+    config; `converted_checkpoint` reads one OpenPI's converter already wrote, on
+    a machine where OpenPI is absent. Confusing the two would record a config
+    that was never checked, so each is refused without what it needs.
+    """
+    from types import SimpleNamespace
+
+    build = _pi05_factory()
+    stub = SimpleNamespace(configure=lambda: SimpleNamespace(chunk_size=50))
+    with pytest.raises(ValueError, match="not both"):
+        build(checkpoint="a", converted_checkpoint="b", target=stub)
+    with pytest.raises(ValueError, match="checkpoint_id and checkpoint_digest"):
+        build(converted_checkpoint="b", target=stub)
+    with pytest.raises(ValueError, match="resolves no OpenPI config"):
+        build(converted_checkpoint="b", checkpoint_id="id", checkpoint_digest="digest",
+              openpi_config="pi05_aloha", target=stub)
+
