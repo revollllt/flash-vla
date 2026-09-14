@@ -13,3 +13,4 @@ iteration,change,latency_ms,decision,report,revision,label,group
 11,Fuse action output RMS factor and Euler update,33.74320699367672,keep,measurements/011.json,853d1fa,action output pointwise,action expert
 12,Fuse BF16-rounded expert down GEMM and gated residual,33.499048091471195,keep,measurements/012.json,df996b8,expert down epilogue,action expert
 13,Use one CUTLASS bias GEMM tile for both vision FFN projections,33.057243446819484,keep,measurements/013.json,5f7ccf0,vision FFN GEMMs,vision encoder
+14,Reuse BF16-rounded gated epilogue for expert output projection,32.845290028490126,keep,measurements/014.json,7669007,expert output epilogue,action expert
