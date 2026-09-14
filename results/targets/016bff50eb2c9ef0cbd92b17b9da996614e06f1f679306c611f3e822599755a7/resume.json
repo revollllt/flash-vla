@@ -1622,8 +1622,8 @@
             "weight_dependency": "invariant"
           },
           "options": {
-            "asset_config": "/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2/artifacts/optimization/lingbot-assets-lab-h100.json",
-            "source_checkout": "/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2"
+            "asset_config": "artifacts/optimization/lingbot-assets-lab-h100.json",
+            "source_checkout": "autonomous-v2"
           }
         },
         "diagnostics": {}
@@ -1768,8 +1768,8 @@
             "weight_dependency": "invariant"
           },
           "options": {
-            "asset_config": "/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2/artifacts/optimization/lingbot-assets-lab-h100.json",
-            "source_checkout": "/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2"
+            "asset_config": "artifacts/optimization/lingbot-assets-lab-h100.json",
+            "source_checkout": "autonomous-v2"
           }
         },
         "diagnostics": {}
@@ -2497,8 +2497,8 @@
             "weight_dependency": "invariant"
           },
           "options": {
-            "asset_config": "/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2/artifacts/optimization/lingbot-assets-lab-h100.json",
-            "source_checkout": "/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2"
+            "asset_config": "artifacts/optimization/lingbot-assets-lab-h100.json",
+            "source_checkout": "autonomous-v2"
           }
         },
         "diagnostics": {}
@@ -2646,8 +2646,8 @@
             "runtime_weight_cache": "Engine-local gamma/beta tables regenerate from loaded weights before capture; no table is published or inherited."
           },
           "options": {
-            "asset_config": "/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2/artifacts/optimization/lingbot-assets-lab-h100.json",
-            "source_checkout": "/data/user/jzou521/codes/cuda/flash-vla-worktrees/lingbot-time-c516eb2"
+            "asset_config": "artifacts/optimization/lingbot-assets-lab-h100.json",
+            "source_checkout": "lingbot-time-c516eb2"
           }
         },
         "diagnostics": {}
@@ -3377,8 +3377,8 @@
             "runtime_weight_cache": "Engine-local gamma/beta tables regenerate from loaded weights before capture; no table is published or inherited."
           },
           "options": {
-            "asset_config": "/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2/artifacts/optimization/lingbot-assets-lab-h100.json",
-            "source_checkout": "/data/user/jzou521/codes/cuda/flash-vla-worktrees/lingbot-time-c516eb2"
+            "asset_config": "artifacts/optimization/lingbot-assets-lab-h100.json",
+            "source_checkout": "lingbot-time-c516eb2"
           }
         },
         "diagnostics": {}
@@ -4108,8 +4108,8 @@
             "runtime_weight_cache": "Engine-local gamma/beta tables regenerate from loaded weights before capture; no table is published or inherited."
           },
           "options": {
-            "asset_config": "/data/user/jzou521/codes/cuda/flash-vla-worktrees/autonomous-v2/artifacts/optimization/lingbot-assets-lab-h100.json",
-            "source_checkout": "/data/user/jzou521/codes/cuda/flash-vla-worktrees/lingbot-fused-norm"
+            "asset_config": "artifacts/optimization/lingbot-assets-lab-h100.json",
+            "source_checkout": "lingbot-fused-norm"
           }
         },
         "diagnostics": {}

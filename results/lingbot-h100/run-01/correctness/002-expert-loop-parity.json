@@ -63,7 +63,7 @@
       "digest": "lingbot-robotwin-canonical-v1/seed-42"
     }
   },
-  "oracle": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/onboarding/lingbot-vla-4b-h100-bf16/official/official-eager.safetensors",
+  "oracle": "artifacts/onboarding/lingbot-vla-4b-h100-bf16/official/official-eager.safetensors",
   "reference_provenance": {
     "upstream_commit": "4eb34b7693a0565c67433f8fac9c59a2e67eb60b",
     "checkpoint_revision": "fb71a2c9749ccfedbb7290c2c3f0e5e7c7305c9e",

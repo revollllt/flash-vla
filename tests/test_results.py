@@ -1,4 +1,7 @@
 """Saved result views keep checkpoint contexts and unsuccessful trials separate."""
+import pathlib
+import re
+
 from lab.results import html, plot, schema
 
 
@@ -105,3 +108,24 @@ def test_curve_reads_a_run_directory_and_renders_the_same_bytes_twice(tmp_path):
     _, _, settings = curve.resolve(run)
     assert settings == {"title": "T", "roofline_ms": 4.0}
     assert curve.render(run).exists()
+
+
+def test_no_saved_artifact_records_an_absolute_machine_path():
+    """A recorded path identifies the machine that ran the job, not the job.
+
+    Every field that once carried one -- `python`, `oracle`, `checkpoint`,
+    `asset_config`, `source_checkout`, `process_name` -- is written beside a
+    logical id or digest that survives the move to another machine, so the
+    absolute form adds only a username and a directory layout. The writers go
+    through `flash_vla.environment.record_path`; this holds the artifacts to
+    the same rule, including ones written before it existed.
+    """
+    root = pathlib.Path(__file__).resolve().parent.parent
+    quoted = re.compile(r'"(/[^"\s]*)"')
+    offenders = [
+        f"{path.relative_to(root)}: {match.group(1)}"
+        for path in sorted((root / "results").rglob("*.json"))
+        for match in quoted.finditer(path.read_text(errors="ignore"))
+        if "://" not in match.group(1)
+    ]
+    assert offenders == []

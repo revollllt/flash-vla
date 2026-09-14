@@ -91,7 +91,7 @@
   },
   "env": {
     "gpu": "NVIDIA H100 80GB HBM3",
-    "python": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/lingbot-official-4eb34b7/bin/python",
+    "python": "artifacts/envs/lingbot-official-4eb34b7/bin/python",
     "torch": "2.9.1+cu126",
     "torch_cuda": "12.6",
     "tilelang": "unavailable",
@@ -1328,19 +1328,19 @@
             {
               "unix": 1789115011.421,
               "pid": 3932677,
-              "process_name": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/lingbot-official-4eb34b7/bin/python",
+              "process_name": "python",
               "used_gpu_memory": 13998
             },
             {
               "unix": 1789115012.422,
               "pid": 3932677,
-              "process_name": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/lingbot-official-4eb34b7/bin/python",
+              "process_name": "python",
               "used_gpu_memory": 13998
             },
             {
               "unix": 1789115013.423,
               "pid": 3932677,
-              "process_name": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/lingbot-official-4eb34b7/bin/python",
+              "process_name": "python",
               "used_gpu_memory": 13998
             }
           ],
@@ -2557,19 +2557,19 @@
             {
               "unix": 1789115081.015,
               "pid": 3961303,
-              "process_name": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/lingbot-official-4eb34b7/bin/python",
+              "process_name": "python",
               "used_gpu_memory": 13998
             },
             {
               "unix": 1789115082.016,
               "pid": 3961303,
-              "process_name": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/lingbot-official-4eb34b7/bin/python",
+              "process_name": "python",
               "used_gpu_memory": 13998
             },
             {
               "unix": 1789115083.016,
               "pid": 3961303,
-              "process_name": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/lingbot-official-4eb34b7/bin/python",
+              "process_name": "python",
               "used_gpu_memory": 13998
             }
           ],
@@ -3775,19 +3775,19 @@
             {
               "unix": 1789115150.576,
               "pid": 3989209,
-              "process_name": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/lingbot-official-4eb34b7/bin/python",
+              "process_name": "python",
               "used_gpu_memory": 13998
             },
             {
               "unix": 1789115151.577,
               "pid": 3989209,
-              "process_name": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/lingbot-official-4eb34b7/bin/python",
+              "process_name": "python",
               "used_gpu_memory": 13998
             },
             {
               "unix": 1789115152.579,
               "pid": 3989209,
-              "process_name": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/lingbot-official-4eb34b7/bin/python",
+              "process_name": "python",
               "used_gpu_memory": 13998
             }
           ],

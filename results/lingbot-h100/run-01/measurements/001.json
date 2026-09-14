@@ -91,7 +91,7 @@
   },
   "env": {
     "gpu": "NVIDIA H100 80GB HBM3",
-    "python": "/data/user/jzou521/codes/cuda/flash-vla/artifacts/envs/lingbot-official-4eb34b7/bin/python",
+    "python": "artifacts/envs/lingbot-official-4eb34b7/bin/python",
     "torch": "2.9.1+cu126",
     "torch_cuda": "12.6",
     "tilelang": "unavailable",

@@ -110,7 +110,7 @@
   },
   "env": {
     "gpu": "NVIDIA GeForce RTX 5090",
-    "python": "/home/ubuntu/flash-vla/.venv/bin/python",
+    "python": ".venv/bin/python",
     "torch": "2.13.0+cu130",
     "torch_cuda": "13.0",
     "tilelang": "0.1.11",
