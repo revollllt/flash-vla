@@ -32,7 +32,7 @@ class Pi05RTX5090(Pi05):
         "vision_encoder_norm_qkv": "cutlass-vision",
         "vision_encoder_norm_ffn_up": "cutlass-vision",
         "vision_encoder_ffn_down_residual": "cutlass-vision",
-        "action_expert_norm_gated_ffn": "packed-ffn",
+        "action_expert_norm_gated_ffn": "dual-ffn",
         "action_expert_norm_qkv_rope": "fused-qkv",
         "llm_backbone_norm_qkv_rope": "fused-prefix-qkv",
         "llm_backbone_norm_gated_ffn": "cutlass-backbone",
