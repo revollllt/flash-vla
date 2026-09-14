@@ -1,4 +1,4 @@
-"""Check cfg10 on actual 27-layer vision FFN chains, then time A/B/B/A graphs."""
+"""Check cfg10 on actual 27-layer vision chains, then time A/B/B/A graphs."""
 from __future__ import annotations
 
 import argparse
@@ -18,8 +18,8 @@ from flash_vla.runtime.runner import Scratch
 from lab.pi05.cutlass_gemm_screen import samples_ms
 
 
-def record_calls(engine, inputs):
-    calls = {name: [] for name in cutlass_vision.NAMES}
+def record_calls(engine, inputs, names):
+    calls = {name: [] for name in names}
 
     def wrap(name, function):
         if name not in calls:
@@ -29,7 +29,10 @@ def record_calls(engine, inputs):
             values = list(args)
             values[0] = args[0].clone()
             values[-1] = args[-1].clone()
-            initial = values[-1].clone() if name.endswith("down_residual") else None
+            initial = None
+            if name.endswith("_residual"):
+                values[-2] = values[-1]  # Preserve the deployed res=out alias.
+                initial = values[-1].clone()
             result = function(*args)
             calls[name].append((tuple(values), initial, result.clone()))
             return result
@@ -70,26 +73,31 @@ def main():
     parser.add_argument("--option", action="append", default=[])
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--site", choices=("ffn", "out"), default="ffn")
     args = parser.parse_args()
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     engine = build(resolve("rtx5090/pi05"), "shipped", seed=args.seed,
                    **parse_options(args.option))
-    calls = record_calls(engine, engine.sample_inputs(args.seed))
+    names = (("vision_encoder_out_proj_residual",) if args.site == "out" else
+             ("vision_encoder_norm_ffn_up", "vision_encoder_ffn_down_residual"))
+    calls = record_calls(engine, engine.sample_inputs(args.seed), names)
     device = next(iter(calls.values()))[0][0][0].device
     control_scratch, candidate_scratch = Scratch(device), Scratch(device)
     control = fused_vision.make_wrappers(control_scratch, {"vision_encoder_norm_ffn_up"})
     control["vision_encoder_ffn_down_residual"] = torch_ops.vision_encoder_ffn_down_residual
-    candidate = cutlass_vision.make_wrappers(candidate_scratch)
+    control["vision_encoder_out_proj_residual"] = torch_ops.vision_encoder_out_proj_residual
+    candidate = cutlass_vision.make_wrappers(candidate_scratch, names)
     report = {"source_revision": revision, "seed": args.seed, "options": args.option,
               "base_plan": dict(engine.identity.plan), "order": ["A", "B", "B", "A"],
-              "scope": "actual 27-layer full norm/GEMM/GELU and GEMM/residual callsites",
+              "scope": "actual 27-layer complete callsites",
+              "timer": "CUDA graph; same residual reset excluded from both routes",
               "sites": []}
 
     def save():
         args.output.write_text(json.dumps(report, indent=2) + "\n")
 
     prepared = []
-    for name in ("vision_encoder_norm_ffn_up", "vision_encoder_ffn_down_residual"):
+    for name in names:
         rows = calls[name]
         outputs = [values[-1] for values, _, _ in rows]
 
@@ -124,7 +132,7 @@ def main():
             raise RuntimeError(f"candidate chain check failed: {name}")
         prepared.append((site, functions, reset))
 
-    # Both complete chains must pass before either is timed.
+    # Every selected chain must pass before timing.
     for _, functions, reset in prepared:
         reset()
         for function in functions["A"]:

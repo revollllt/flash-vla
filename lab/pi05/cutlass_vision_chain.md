@@ -47,3 +47,46 @@ The probe depends on `lab/pi05/cutlass_gemm_screen.py` from commit `9b6449e`
 `python -m lab.pi05.cutlass_vision_chain --help` for checkpoint and output
 arguments. Execute from a checkout containing the candidate; the probe does
 not redirect imports to another deployment tree.
+
+## Reusing cfg10 for attention out-projection
+
+The out-projection candidate starts from `7b2d9d0` and changes only the Python
+wrapper: the existing residual closure derives K from the weight and serves
+both FFN down and attention out-projection. The latter has contiguous BF16
+x(3,256,1152), weight(1152,1152), bias(1152), and res=out(3,256,1152).
+It preserves BF16(accumulator + bias), followed by the existing BF16 residual
+add. No native kernel, tile, ABI, or deployment route changes in this candidate.
+Both residual sites can share the existing 1,769,472-byte projection scratch.
+
+In the 010 overview trace, 27 unchanged out-projection GEMMs total 476.274 us;
+their residual adds total 40.443 us. The complete site is 516.717 us and two
+kernels per call. The candidate retains the add, so its local improvement is
+a GEMM implementation result, not a removed launch.
+
+The `--site out` probe records only the 27 actual out-projection layers and
+preserves res=out when cloning inputs. The run used the same belt-cup
+checkpoint and seed 42. Every layer passes existing shallow tolerances:
+worst relative RMS 0.001054180, minimum cosine 0.999999444, maximum absolute
+error 1.0. Outputs are not bitwise equal to cuBLAS. Repeated candidate graph
+replays from the same saved inputs are identical.
+
+| Route | Total ms / 27 calls | Median us / call |
+|---|---:|---:|
+| A1 | 0.587776 | 21.76948 |
+| B1 | 0.454656 | 16.83911 |
+| B2 | 0.454656 | 16.83911 |
+| A2 | 0.587776 | 21.76948 |
+
+Each leg retains 15 samples. The same residual reset precedes each timed graph
+on its capture stream and is excluded from both routes. Control median drift
+is zero; control median absolute deviations are 0.07467 and 0.15170 us/call.
+The 4.93037 us/call difference (0.133120 ms over 27 calls) exceeds those noise
+scales and supports an end-to-end candidate. The 27 weights total 68.34375 MiB,
+below the GPU's 96 MiB L2: isolated reuse can differ from the interleaved
+deployed model, so this is not a measured deployment gain.
+
+`gpt6-vision-outproj-local.json` in the artifact directory above records the
+source revision, plan, all 27 layer errors and 60 raw timing samples;
+`gpt6-vision-outproj-local.log` preserves stdout. Syntax and diff checks pass.
+The current native ABI includes expert K parameterization; the run used the
+matching source and native library in the candidate worktree.
