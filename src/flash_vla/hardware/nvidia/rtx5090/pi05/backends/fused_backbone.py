@@ -54,9 +54,12 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     x_norm and out are distinct writable buffers; out temporarily holds up.
     The runner must warm each shape before freezing the supplied allocator.
     """
-    library = _library()
+    library = None
 
     def llm_backbone_norm_gated_ffn(x, gate_w, up_w, out, x_norm):
+        nonlocal library
+        if library is None:
+            library = _library()
         rows = x.shape[0]
         normed, result = x_norm[:rows], out[:rows]
         gate = scratch("backbone_ffn_gate", result.shape, x.dtype, x.device)

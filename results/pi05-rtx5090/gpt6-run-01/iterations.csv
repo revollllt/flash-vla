@@ -5,3 +5,4 @@ iteration,change,latency_ms,decision,report,revision,label,group
 3,Backbone FFN RMSNorm and GELU/product fusion,45.86823342833668,keep,measurements/003.json,571b9b4,backbone FFN pointwise,llm backbone
 4,Pack expert gate and up weights into one GEMM,44.49138150084764,keep,measurements/004.json,ebfde75,packed expert FFN,action expert
 5,BF16 QK with FP32 scores and fused masked softmax,41.082439944148064,keep,measurements/005.json,4d53ad7,expert masked attention,action expert
+6,Fuse gated residual updates after expert projections,37.980626337230206,keep,measurements/006.json,e98b74c,expert gated residuals,action expert
