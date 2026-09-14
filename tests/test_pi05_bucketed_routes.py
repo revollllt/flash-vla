@@ -1,6 +1,7 @@
-"""The masked FFN graph must preserve dense saved plans and reference routes."""
+"""The masked backbone graph must preserve dense saved plans and reference routes."""
 import json
 
+import pytest
 import torch
 
 from flash_vla.inference import declare
@@ -9,6 +10,8 @@ _UP = "llm_backbone_norm_gated_ffn"
 _DOWN = "llm_backbone_ffn_down_residual"
 _MASKED_UP = _UP + "_masked"
 _MASKED_DOWN = _DOWN + "_masked"
+_OUT = "llm_backbone_out_proj_residual"
+_MASKED_OUT = _OUT + "_masked"
 
 
 def test_saved_dense_plan_keeps_both_cutlass_routes(tmp_path):
@@ -53,7 +56,7 @@ def test_reference_and_graph_keep_explicit_runtime_mask():
     runner = declare("rtx5090/pi05", "reference")
     assert set(runner.identity.plan.values()) == {"torch"}
     graph = runner.graph
-    for name in (_MASKED_UP, _MASKED_DOWN):
+    for name in (_MASKED_UP, _MASKED_DOWN, _MASKED_OUT):
         nodes = [node for node in graph.nodes if node.call_site == name]
         assert len(nodes) == 17
         for node in nodes:
@@ -64,3 +67,29 @@ def test_reference_and_graph_keep_explicit_runtime_mask():
             assert "mask_bias" in graph.reads_writes(node)[0]
     assert graph.buf("prefix_k").shape == (18, 968, 256)
     assert graph.buf("suffix_k").shape == (18, 50, 256)
+
+
+def test_saved_outproj_control_and_explicit_candidate_route(tmp_path):
+    dense = dict(declare("rtx5090/pi05").identity.plan)
+    dense[_MASKED_OUT] = "torch"
+    control = declare("rtx5090/pi05", dense)
+    saved = dict(control.identity.plan)
+    saved[_OUT] = saved.pop(_MASKED_OUT)
+    path = tmp_path / "outproj-control.json"
+    path.write_text(json.dumps(saved))
+    loaded = declare("rtx5090/pi05", str(path))
+    assert loaded.identity.plan == control.identity.plan
+    assert loaded.identity.plan[_MASKED_OUT] == "torch"
+    assert _OUT not in loaded.plan
+
+    saved[_MASKED_OUT] = "bucketed-backbone"
+    candidate = declare("rtx5090/pi05", saved)
+    changed = {name for name, backend in candidate.identity.plan.items()
+               if backend != control.identity.plan[name]}
+    assert changed == {_MASKED_OUT}
+    assert candidate.identity.plan[_MASKED_OUT] == "bucketed-backbone"
+
+
+def test_outproj_does_not_add_an_unsupported_cutlass_dense_route():
+    with pytest.raises(KeyError, match="does not implement"):
+        declare("rtx5090/pi05", {_OUT: "cutlass-backbone"})

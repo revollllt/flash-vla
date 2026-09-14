@@ -1,4 +1,4 @@
-"""Pi0.5 FFN with device-selected M896/M968 and fixed graph addresses.
+"""Pi0.5 backbone GEMMs with device-selected M896/M968 and fixed graph addresses.
 
 The mask is an explicit op argument. Both static plans are warmed and captured;
 their native entries select the active bucket from mask[896] on every replay.
@@ -19,6 +19,7 @@ from . import cutlass_backbone, fused_backbone
 MASKED_CALL_SITES = {
     "llm_backbone_norm_gated_ffn": "llm_backbone_norm_gated_ffn_masked",
     "llm_backbone_ffn_down_residual": "llm_backbone_ffn_down_residual_masked",
+    "llm_backbone_out_proj_residual": "llm_backbone_out_proj_residual_masked",
 }
 OPS = (
     OpSpec("llm_backbone_norm_gated_ffn_masked",
@@ -26,6 +27,9 @@ OPS = (
            outputs=("out", "x_norm"), weights=("gate_w", "up_w"), aux=("x_norm",),
            flops=dual_gemm("x", "gate_w")),
     OpSpec("llm_backbone_ffn_down_residual_masked",
+           ("x", "weight", "out", "mask"), outputs=("out",), inout=("out",),
+           weights=("weight",), flops=gemm("x", "weight")),
+    OpSpec("llm_backbone_out_proj_residual_masked",
            ("x", "weight", "out", "mask"), outputs=("out",), inout=("out",),
            weights=("weight",), flops=gemm("x", "weight")),
 )
@@ -74,9 +78,9 @@ class _Plan:
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
-    """Build the M968 BF16 FFN wrappers with a BF16 prefix mask of length 968.
+    """Build M968 BF16 backbone wrappers with a BF16 prefix mask of length 968.
 
-    Up writes out (968,16384) and x_norm (968,2048); down accumulates into
+    Up writes out (968,16384) and x_norm (968,2048); down/out-projection add to
     out (968,2048). The explicit mask stays at one address but may change
     between graph replays. Both plans and all workspace are created in warmup.
     """
@@ -131,5 +135,6 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     wrappers = {
         "llm_backbone_norm_gated_ffn_masked": llm_backbone_norm_gated_ffn_masked,
         "llm_backbone_ffn_down_residual_masked": llm_backbone_ffn_down_residual_masked,
+        "llm_backbone_out_proj_residual_masked": llm_backbone_ffn_down_residual_masked,
     }
     return {name: wrappers[name] for name in names}

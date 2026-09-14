@@ -16,6 +16,7 @@ from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.wrappers import (
 NAMES = NAMES | {
     "llm_backbone_norm_gated_ffn_masked",
     "llm_backbone_ffn_down_residual_masked",
+    "llm_backbone_out_proj_residual_masked",
 }
 
 #: Mirrored from the TileLang wrappers so this module reads on its own.
@@ -274,6 +275,10 @@ def llm_backbone_norm_gated_ffn_masked(x, gate_w, up_w, out, x_norm, mask):
 
 def llm_backbone_ffn_down_residual_masked(x, weight, out, mask):
     return llm_backbone_ffn_down_residual(x, weight, out)
+
+
+def llm_backbone_out_proj_residual_masked(x, weight, out, mask):
+    return llm_backbone_out_proj_residual(x, weight, out)
 
 
 ALL_WRAPPERS = {
