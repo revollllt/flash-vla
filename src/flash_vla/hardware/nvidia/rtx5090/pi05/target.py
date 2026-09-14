@@ -29,7 +29,7 @@ class Pi05RTX5090(Pi05):
 
     #: Native pointwise fusion around the existing bf16 GEMMs.
     plan: Mapping[str, str] = {
-        "action_expert_norm_gated_ffn": "fused-ffn",
+        "action_expert_norm_gated_ffn": "packed-ffn",
         "action_expert_norm_qkv_rope": "fused-qkv",
         "llm_backbone_norm_gated_ffn": "fused-backbone",
     }
