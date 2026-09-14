@@ -43,3 +43,41 @@ export PYTHONPATH="$PWD/src:$PWD"
   --option checkpoint_digest=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha \
   --output /home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-prefix-static-m896.json
 ```
+
+## One completed ABBA: static headroom remains
+
+Executed from source commit `45269d1`, using the unchanged existing cfg0 library.
+Actual host/device prefix counts both equal 895, prompt count 127, and
+`mask[896]=-3.00405527047391e38`.
+
+All 51 short GEMMs pass existing shallow tolerances on both compared ranges.
+They are not bitwise identical: no call is exact. For rows 0:895, maximum
+relative RMS is 4.7112142e-5, minimum cosine 0.9999999988902422, and maximum
+absolute difference 0.5. For rows 0:896, the corresponding values are
+4.7096198e-5, 0.9999999988909931, and 0.5. All 17 full-M968 down references are
+bitwise identical to their captured original down outputs.
+
+| Leg | Median milliseconds for 51 GEMMs |
+| --- | ---: |
+| A1 M968 | 15.1572475433 |
+| B1 M896 | 13.6232957840 |
+| B2 M896 | 13.6355838776 |
+| A2 M968 | 15.4480638504 |
+
+Mean A-minus-B gain is **1.6732158661 ms**. Control drift is 0.2908163071 ms;
+candidate drift is 0.0122880936 ms; min(A)-max(B) is 1.5216636658 ms.
+A samples visibly drift upward, and every sample was retained. Even the
+conservative separation exceeds the observed control drift, so this fixed
+static screen supports investigating the runtime implementation costs.
+No additional timing or production change followed this screen.
+
+Both independent workspace allocators hold 22,283,008 bytes. The 51 distinct
+weights rotate through 3,422,552,064 bytes (3.1875 GiB), and each call retains
+its own captured input and output allocation. These graph/cache conditions
+differ from the deployed interleaved model. The measured gain is static
+GEMM-only headroom, not an end-to-end saving or a causal hardware attribution.
+
+All 51 per-call numerical rows and 60 raw samples are preserved in
+`results/pi05-rtx5090/gpt6-run-01/measurements/prefix-static-m896.json`.
+The execution log remains
+`/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-prefix-static-m896.log`.
