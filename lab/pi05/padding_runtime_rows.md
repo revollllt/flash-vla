@@ -285,3 +285,26 @@ CPU validation, with CUDA hidden and compiler environment unset:
 These checks import Torch on CPU but do not initialize CUDA or load models.
 Native compilation, numerical transitions and complete-chain timing remain
 with the serial integration task; no candidate speed is claimed here.
+
+## Optional out-projection route after 023
+
+The mask mapping also covers `llm_backbone_out_proj_residual_masked`. It reuses
+the same bucket backend's beta=1 wrapper, native ABI and workspace roles at
+K=N=2048. The short bucket leaves the finite input residual on the last72 rows.
+No additional pointwise kernel or CUDA change is needed.
+
+Default out-projection remains the original torch dense alias until a separate
+route promotion. Saved plans using the old standard key map explicitly to this
+alias; an explicit masked candidate key overrides it. `cutlass-backbone` does
+not acquire an unsupported dense out-projection route. The candidate changes
+only this site's selected backend; the retained 023 FFN routes remain selected.
+
+The fixed static experiment is recorded separately in
+`lab/pi05/prefix_static_m896.md`. Its 0.176 ms / 17-call local gain is not a
+deployment result. Official long/short/repeated-short outputs and a single
+captured-graph transition test, followed by end-to-end ABBA, remain with the
+serial model integration task.
+
+CPU validation: the six targeted tests in `tests/test_pi05_bucketed_routes.py`
+passed with CUDA hidden and compiler environment unset. No GPU or native build
+was run for this Python-only extension.
