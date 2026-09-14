@@ -6,3 +6,5 @@ iteration,change,latency_ms,decision,report,revision,label,group
 4,Pack expert gate and up weights into one GEMM,44.49138150084764,keep,measurements/004.json,ebfde75,packed expert FFN,action expert
 5,BF16 QK with FP32 scores and fused masked softmax,41.082439944148064,keep,measurements/005.json,4d53ad7,expert masked attention,action expert
 6,Fuse gated residual updates after expert projections,37.980626337230206,keep,measurements/006.json,e98b74c,expert gated residuals,action expert
+7,CUTLASS Stream-K backbone gate and up GEMMs,37.033166037872434,keep,measurements/007.json,594e697,backbone gate/up GEMMs,llm backbone
+8,CUTLASS Stream-K backbone down projection,36.2217384390533,keep,measurements/008.json,54b5946,backbone down GEMM,llm backbone

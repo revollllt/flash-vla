@@ -72,3 +72,15 @@ Hypothesis: each projection keeps the existing BF16 GEMM and fuses its seven cas
 Deployed median41.0824 ->37.9806ms, source e98b74c. This comparison adds the same shared residual kernel at both expert projection sites; no GEMM or numerical tolerance changed.
 
 The affected CPU Target declaration test initially found native library loading in the backbone wrapper factory. Loading now occurs only on first execution, allowing graph/route declarations without a GPU/compiler. CUDA arithmetic is unchanged; the scoped declaration/route checks pass (8+1 checks). This loader-only fix does not add a timing point.
+
+## 007 — CUTLASS backbone gate/up GEMMs, retained
+
+The two large BF16 projections now use the tested128x128x64 Stream-K tile; native RMSNorm/GELU and BF16 projection output stay unchanged. The vendor revision matches the original screening library (main's cb4247394dd82148787aed73e5dc7cef33cbf862); a different installed CUTLASS checkout was detected and avoided. The two best screened tiles differed by less than the control drift, so one simpler cfg0 is used. Native compiler reports254registers and0spills; model capture/replay and all17realFFN calls passed.
+
+Local FFN total11.591/11.862 ->10.866/10.883ms; full-depth official comparison passed. Deployed median37.9806 ->37.0332ms, source594e697. Only the gate/up call site is routed to CUTLASS in this trial; down is next.
+
+## 008 — CUTLASS backbone down projection, retained
+
+The same cfg0 Stream-K tile now runs the down projection with C=D and alpha=beta=1, preserving the existing residual expression. All17 actual calls passed existing tolerance; local total5.827/5.869 ->5.038/5.039ms. Full-depth official comparison passed.
+
+Deployed median37.0332 ->36.2217ms, source54b5946. This is the incremental gain after007. Native workspace and pointer-bound plans are owned per runner and initialized during warmup.
