@@ -32,6 +32,7 @@ class Pi05RTX5090(Pi05):
         "action_expert_norm_gated_ffn": "packed-ffn",
         "action_expert_norm_qkv_rope": "fused-qkv",
         "llm_backbone_norm_gated_ffn": "fused-backbone",
+        "action_expert_attention": "fused-attention",
     }
     reference_plan: Mapping[str, str] = {}
 
