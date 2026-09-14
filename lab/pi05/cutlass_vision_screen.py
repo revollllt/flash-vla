@@ -76,14 +76,15 @@ def screen(cg, label, calls, configs, samples_ms, l2_bytes):
                 for (a, b, bias), output in zip(calls, outputs)]
     for function in controls:
         function()
-    expected = torch.cat(outputs)
+    expected = [output.clone() for output in outputs]
     rows = []
 
     def report(route, samples, **extra):
         row = {"route": route, "samples_ms": samples,
                "median_ms": statistics.median(samples), **extra}
         rows.append(row)
-        print(json.dumps({"site": label, **row}), flush=True)
+        print(json.dumps({"site": label, **{
+            key: value for key, value in row.items() if key != "per_layer_metrics"}}), flush=True)
 
     report("torch_before", samples_ms(controls, lambda: None, reps=15))
     for config, geometry in configs.items():
@@ -118,7 +119,11 @@ def screen(cg, label, calls, configs, samples_ms, l2_bytes):
                 copy_bytes = 0
             for function in functions:
                 function()
-            metrics = error_metrics(expected, torch.cat(outputs))
+            # The combined 27-layer up tensor exceeds torch.quantile's limit.
+            per_layer_metrics = [error_metrics(reference, output)
+                                 for reference, output in zip(expected, outputs)]
+            metrics = {name: (min if name == "cosine_similarity" else max)(
+                layer[name] for layer in per_layer_metrics) for name in per_layer_metrics[0]}
             limit = tolerances()["shallow"]
             valid = (metrics["rel_rms"] <= limit["rel_rms_max"]
                      and metrics["cosine_similarity"] >= limit["cosine_min"])
@@ -126,10 +131,12 @@ def screen(cg, label, calls, configs, samples_ms, l2_bytes):
                 report("cutlass", samples_ms(functions, lambda: None, reps=15),
                        config=config, geometry=geometry, metrics=metrics, native_library=native_path,
                        bias_path=bias_path, timed_bias_copy_write_bytes=copy_bytes,
-                       expanded_c_logical_read_bytes=copy_bytes)
+                       expanded_c_logical_read_bytes=copy_bytes,
+                       per_layer_metrics=per_layer_metrics)
             else:
                 row = {"route": "cutlass", "config": config,
-                       "status": "numerical_mismatch", "metrics": metrics}
+                       "status": "numerical_mismatch", "metrics": metrics,
+                       "per_layer_metrics": per_layer_metrics}
                 rows.append(row)
                 print(json.dumps({"site": label, **row}), flush=True)
         except cg.Unsupported as error:
@@ -150,7 +157,8 @@ def screen(cg, label, calls, configs, samples_ms, l2_bytes):
         "input_source": "first deployed eager torch.addmm for each distinct real weight",
         "weight_rotation_bytes": weight_bytes, "l2_bytes": l2_bytes,
         "calls_per_graph": len(calls), "reps": 15, "workspace": "one workspace per plan",
-        "timer": "CUDA graph events on its capture stream", "rows": rows,
+        "timer": "CUDA graph events on its capture stream",
+        "metrics_summary": "worst per-layer value for each metric (minimum cosine)", "rows": rows,
     }
 
 
