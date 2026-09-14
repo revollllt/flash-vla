@@ -1,51 +1,149 @@
-# 模型性能优化 workflow
+# Optimization workflow
 
-通过手写 kernel 优化逼近实际 shape 下的硬件 SOL，并降低部署后的端到端延迟。采用双循环：
+Approach the hardware's SOL at the model's real shapes with hand-written
+kernels, and cut deployed end-to-end latency. Two loops:
 
-- **Kernel 内循环，可多 agent 并行：** Profile → Analyze → Design → Implement → Validate，按结果继续迭代。
-- **Model 外循环，串行执行：** Profile → Analyze → Design → Implement → Validate → Deploy → Profile。
+- **Kernel loop**, parallel across agents: Profile → Analyze → Design →
+  Implement → Validate, iterating on the result.
+- **Model loop**, serial: Profile → Analyze → Design → Implement → Validate →
+  Deploy → Profile.
 
-循环跑到第 7 步写明的退出条件为止。有结果可汇报不是终止状态；人为介入默认用来叫停，不是叫它继续。
+The loop runs until step 7's exit condition. Having a result to report is not a
+terminal state; a human intervention is normally a stop, not a restart.
 
-1. **准备模型与环境。** 从项目根目录运行命令，沿用目标模型的 Python 环境、真实 checkpoint、固定输入及运行参数，在目标 GPU 上执行。已有 Target 直接使用；新增模型时用 [target-onboarding](../.agents/skills/target-onboarding/SKILL.md)。以下命令以 LingBot 为例，需配置已有的 `FLASH_VLA_ASSETS`。
+1. **Prepare the model and the environment.** Run from the project root on the
+   target GPU, with the model's own Python environment, real checkpoint, fixed
+   inputs and run parameters. Use an existing Target; onboard a new model with
+   [target-onboarding](../.agents/skills/target-onboarding/SKILL.md). The
+   examples below use LingBot, whose checkpoint and fixture resolve through
+   `FLASH_VLA_ASSETS` — a JSON file mapping logical asset IDs to local paths,
+   with relative entries resolved beside it. Targets on synthetic weights, such
+   as `rtx5090/pi0`, need no asset map.
 
-2. **测当前模型并确认输出。** 以当前 `shipped` 版本为比较起点，沿用已有数值参考和容差；本轮同代码、同条件的测量和正确性结果可以复用。
+2. **Measure the current model and check its output.** The current `shipped`
+   version is the comparison point. Reuse the existing numerical references and
+   tolerances, and any measurement from this round taken on the same code under
+   the same conditions.
 
    ```bash
    python -m benchmarks latency --target h100/lingbot_vla --plan shipped --seed 42 --out results/lingbot-h100/run-name/measurements/000.json
    ```
 
-   前后保持同一物理 GPU、驱动/runtime、checkpoint、输入、shape、精度和计时范围。各版本独立进程、首次 capture、一个 graph 固定一个 stream；默认 warmup 5 次、测量 100 次、无 soak，以 median 比较并保留原始样本。计时包含输入搬运、host 工作、replay 和末尾同步，不含加载与 capture。A、B 分别测，有漂移迹象才针对性复测。
+   Hold the same physical GPU, driver and runtime, checkpoint, input, shape,
+   precision and timing scope across versions. Each version runs in its own
+   process, first capture, one graph per stream; 5 warmup and 100 measured
+   iterations, compared on the median, raw samples kept. Timing covers input
+   transfer, host work, replay and the final sync, and excludes load and
+   capture. Measure A and B separately; re-measure only on evidence of drift.
 
-3. **理解模型结构。** 结合 [architecture](../ARCHITECTURE.md)，沿 `vision_encoder → llm_backbone → action_expert` 阅读推理路径，理清 shape、调用次数、已有优化和 denoising 循环中的重复计算。
+3. **Read the model.** Follow `vision_encoder → llm_backbone → action_expert`
+   against [ARCHITECTURE.md](../ARCHITECTURE.md) for shapes, call counts,
+   existing optimizations, and repeated work inside the denoising loop.
 
-4. **自顶向下 profile，选择值得优化的瓶颈。** 用 [gpu-profiler-analysis](../.agents/skills/gpu-profiler-analysis/SKILL.md) 看完整 forward 的 GPU 时间线，先定位耗时模块或 host/同步空隙，再深入该模块的 call site 和 kernel。按需用 [ncu-report](../.agents/skills/ncu-report/SKILL.md) 判断计算、访存和流水线瓶颈；结合已有 `tools.profiling.floor` 报告和 [hardware-unit-test](../.agents/skills/hardware-unit-test/SKILL.md) 的实测数据估计距可达 SOL 的空间、调用次数及端到端收益，缺数据才做针对性测量。
+4. **Profile top down and pick a bottleneck worth the work.** Take a whole
+   forward's GPU timeline with
+   [gpu-profiler-analysis](../.agents/skills/gpu-profiler-analysis/SKILL.md),
+   locate the costly module or the host/sync gap, then descend to its call sites
+   and kernels. Use [ncu-report](../.agents/skills/ncu-report/SKILL.md) where
+   counters can settle whether a kernel is compute-, memory- or pipeline-bound.
+   Size the remaining headroom from the existing `tools.profiling.floor` report
+   and the measured constants in
+   [hardware-unit-test](../.agents/skills/hardware-unit-test/SKILL.md), together
+   with the call count, and measure only what those cannot answer.
 
    ```bash
    python -m tools.profiling.model --target h100/lingbot_vla --plan shipped --seed 42 --overview --trace-dir artifacts/profile/overview
-   # 仅当整体分析指向 action_expert 时，深入该模块。
+   # Descend only when the overview points at action_expert.
    python -m tools.profiling.model --target h100/lingbot_vla --plan shipped --seed 42 --segment action_expert --trace-dir artifacts/profile/detail
    ```
 
-   Profile 与 benchmark 使用相同输入和执行配置；看 GPU 耗时，CPU segment 标签仅表示提交范围。正式延迟另起无 profiler 的进程测量。
+   Profile with the same inputs and execution config as the benchmark. Read GPU
+   time; a CPU segment label only marks submission range. Measure deployed
+   latency in a separate process with no profiler attached.
 
-5. **并行设计和实现 kernel。** 将不同 kernel 或独立融合链分给多个 agent，在独立 worktree 中用 [kernel-design](../.agents/skills/kernel-design/SKILL.md) 迭代。先查 Pi0、Pi0.5、共享组件已有实现及 [kernel-wiki](../.agents/skills/kernel-wiki/SKILL.md)，再围绕一个有依据的假设做最小改动。查 wiki 未命中、而该问题有成熟解法时，补一页是本轮产出之一，不是额外工作；"语料里没有"不等于"只能自己写"。按瓶颈优化 tile、数据布局、Tensor Core 利用率、访存和流水线；手写 CUDA/TileLang 融合 normalization、activation、residual、epilogue 等计算，减少中间张量和重复工作，不以 `torch.compile` 自动融合作为交付方案。
+5. **Design and implement kernels, in parallel.** Give each kernel or
+   independent fusion chain its own agent and worktree, iterating with
+   [kernel-design](../.agents/skills/kernel-design/SKILL.md). Search the shared
+   components and [kernel-wiki](../.agents/skills/kernel-wiki/SKILL.md) before
+   writing anything, then make the smallest change that tests one supported
+   hypothesis. A wiki miss on a problem with a known solution makes writing that
+   page part of this round's output: "the corpus does not have it" is not "it
+   has to be written from scratch."
 
-6. **Kernel Validate：确认正确性和局部收益。** 沿用现有参考与容差检查相关 shape/输入，用 [benchmark-kernel](../.agents/skills/benchmark-kernel/SKILL.md) 对齐实际数据布局、缓存和执行条件，比较 kernel 或完整融合链的耗时。失败或收益不确定就留在内循环分析、修改；**正确且有可信局部收益才交给 Model 外循环**，无需先优化到极限。同一 GPU 的性能测量串行；多 GPU 可各自做同卡前后对比，model 正式计时期间避免其他 agent 争用测量资源。
+   Tune tile shape, data layout, tensor-core utilization, memory access and the
+   pipeline against the measured bottleneck. Fusions — normalization,
+   activation, residual, epilogue — are hand-written CUDA or TileLang, to remove
+   intermediate tensors and repeated traversals. GEMMs and GEMM-shaped mainloops
+   go through CUTLASS/CuTe rather than being written from scratch: a vendored
+   collective carries schedules such as stream-K and persistent tiling that are
+   not worth re-deriving, and it is the baseline a hand-written one has to beat.
+   `torch.compile` fusion is not a delivery path.
 
-7. **Model 串行集成、验证、部署和测量。** 每次只把一个胜出候选接入当前最佳模型和 plan，做受影响的模型正确性检查；近似改动补充任务质量评估。验证通过后 Deploy 到实际推理路径，再运行第 2 步命令测部署性能，使用实际加载的 plan，结果按迭代编号另存同一 `measurements/` 目录（例如 `001.json`）。有端到端收益就保留，否则回退或记录不确定，再处理下一个候选。接受 K1 后，K2 比较 `M+K1` 与 `M+K1+K2`，逐个确认增量收益。
+6. **Validate the kernel: correctness, then local gain.** Check the relevant
+   shapes and inputs against the existing references and tolerances, and compare
+   the kernel or the whole fusion chain with
+   [benchmark-kernel](../.agents/skills/benchmark-kernel/SKILL.md) under the
+   real data layout, cache state and execution conditions. A failure or an
+   uncertain gain stays in the kernel loop. **Hand a candidate to the model loop
+   once it is correct and its local gain is credible** — it does not have to be
+   finished first. Performance measurements on one GPU are serial; with several
+   GPUs each can run its own before/after on one card, and nothing else should
+   contend during a model timing run.
 
-   局部收益未传递到模型时，回第 4 步分析并反馈内循环；收益成立后由部署版本选下一轮热点。候选适配最新模型，相关条件变化才补验证；瓶颈未变可复用 profile。按用户预算持续迭代。结束前对排名靠前的热点逐条给出「当前在可达能力的百分之几」和「为什么没有候选」；给不出就不算结束。替换已上线的实现是本循环的常规动作，不需要单独批准；需要请示的是三类：数值契约（precision policy 及其容差）、测量条件变更、预算耗尽。
+7. **Integrate, validate, deploy and measure, one candidate at a time.** Bring
+   one winning candidate into the current best model and plan, and run the
+   correctness checks it affects; an approximating change also needs a task
+   quality check. Deploy to the real inference path, then run step 2's command
+   against the plan actually loaded, saving the result under the same
+   `measurements/` directory by iteration number (`001.json`). Keep it on an
+   end-to-end gain; otherwise revert or record it as uncertain and move to the
+   next candidate. After K1 is accepted, K2 compares `M+K1` against `M+K1+K2`.
 
-**结论复核。** 下面六条针对的是*结论本身*，不是额外流程；每条都能在已经写下的数字上直接检查。每条背后的案例与代价见 [corrections](corrections/README.md)，那里按失效模式组织，新案例往那里加；agent 自查出来的纠正另存一份，且须经独立复核才收录。
+   When a local gain does not reach the model, return to step 4 and feed the
+   analysis back to the kernel loop. Otherwise pick the next hotspot from the
+   deployed version. Adapt candidates to the current model, re-validate only
+   what the change touches, and reuse a profile whose bottleneck has not moved.
 
-- **被比较的数字来自本轮实测，否则写明出处。** 汇总表里的历史条目不是当前基线。
-- **每个比值写出分母；不可能的比值先当分母的 bug，再当发现。** 实测值超过"峰值"说明峰值算错了（精度档位、时钟、单位）。
-- **估算写明假设的存储层级，并对照本机实测常数。** 放得进 L2 的 workspace 不能按 DRAM 带宽估回程代价。
-- **负面结论要带上它当时的工具箱，工具箱变了就过期。** 某个后来被实测证明值一个量级的手段，如果当初没用上，那条结论只是暂缓，必须重测才算数。
-- **"不可用"要探到边界才成立，一条报错不够。** 能力探测按 [hardware-unit-test](../.agents/skills/hardware-unit-test/SKILL.md)，实现（如 `ptxas`）比二手文档优先。
-- **被准确命名的阻碍是下一个目标，不是世界的属性。** "等 X 变了它才成立"要同时写出让 X 变的代价；否则就是把一个已验证的手段搁置在自己的结论里。
+   Before ending, give each leading hotspot its share of reachable capability
+   and the reason no candidate remains; without both, it is not finished.
+   Replacing a deployed implementation is this loop's normal operation and needs
+   no approval. Three things do: the numerical contract (precision policy and
+   its tolerances), a change of measurement conditions, and an exhausted budget.
 
-每轮在 `results/<target>/<run>/` 保存改动、代码版本或 diff、命令与环境、正确性结论及原始 benchmark JSON，并更新 `iterations.csv` 与 `progress.svg`。从当前版本的实测点开始；每次模型候选记录部署后的端到端 median，保留未获益、不确定和失败尝试，只有决定保留的版本推进主曲线。Kernel 局部收益写入实验说明，不能替代模型延迟画在主曲线上。条件变化时另起一组记录，不把不同条件的数据连成一条加速曲线。记录和绘图的简短示例见 [results 工具](../lab/results/README.md)。
+**Review the conclusions.** These six test a *conclusion*, not a process, and
+each is answerable from numbers already written down. The cases behind them are
+in [corrections](corrections/README.md).
 
-Skill 按需使用，不要求每轮全部执行；不新增 hash、冻结 contract 或 gate，不做无关全量审查。历史结果可用 `python -m lab.results rebuild` 重绘；优化过程不再维护 Campaign 状态机。
+- **A compared number comes from this round, or states its provenance.** A row
+  in a summary table is not the current baseline.
+- **A ratio names its denominator.** An impossible ratio is a bug in the
+  denominator before it is a finding: a measurement above "peak" means the peak
+  was computed wrong — wrong precision tier, wrong clock, wrong unit.
+- **An estimate names the memory tier it assumes**, against this machine's
+  measured constants. A workspace that fits L2 cannot be priced at DRAM
+  bandwidth.
+- **A negative carries the toolbox it was measured with, and expires when that
+  changes.** If a technique later measured to be worth a factor was not in it,
+  the conclusion is deferred, not settled, until it is re-run.
+- **"Unavailable" needs the boundary probed, not one error message.** Probe with
+  [hardware-unit-test](../.agents/skills/hardware-unit-test/SKILL.md); an
+  implementation such as `ptxas` outranks a second-hand document.
+- **A blocker named precisely is the next target, not a property of the world.**
+  "It holds once X changes" has to come with the cost of changing X, or it
+  parks a proven technique inside your own conclusion.
+
+Each round saves its change, code revision or diff, command and environment,
+correctness result and raw benchmark JSON under `results/<target>/<run>/`, and
+updates `iterations.csv` and `progress.svg`. Start from the current version's
+measured point. Record the deployed end-to-end median for every model candidate,
+keep the ones that did not gain and the uncertain and failed attempts, and let
+only the retained versions advance the main curve. A kernel's local gain goes in
+the experiment note; it never stands in for model latency on that curve. Changed
+conditions start a separate record — data taken under different conditions is
+never joined into one speedup curve. See [the results
+tools](../lab/results/README.md) for the short version.
+
+Load a skill when the step needs it; none of them is required every round. Do
+not add hashes, frozen contracts or gates, and do not run unrelated sweeps.
+`python -m lab.results rebuild` redraws saved results. The Campaign state machine
+is retired.

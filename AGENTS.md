@@ -1,7 +1,8 @@
 # Agent instructions
 
-For optimization, start with [docs/optimization.md](docs/optimization.md). Use its
-direct commands and load only the skill needed for the current step.
+For a new optimization task, use [.agents/prompts/optimize.md](.agents/prompts/optimize.md)
+as the shared task prompt. [docs/optimization.md](docs/optimization.md) owns experiment
+steps; use its direct commands and load only the skill needed for the current step.
 [ARCHITECTURE.md](ARCHITECTURE.md) owns module boundaries; source owns API details.
 Historical plans and Agent Notes do not override this path.
 
