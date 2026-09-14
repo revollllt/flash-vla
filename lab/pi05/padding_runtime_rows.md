@@ -254,3 +254,34 @@ same-captured-graph length transitions across <=896 and >896 with valid output
 comparisons and finite tail checks. The existing seed0 official fixture only
 exercises the long bucket and cannot validate short-bucket numerics alone.
 No implementation or measurement is included in this CPU record.
+
+## Python candidate integration
+
+The optional `bucketed-backbone` backend now implements
+`llm_backbone_norm_gated_ffn_masked` and
+`llm_backbone_ffn_down_residual_masked`. Target.build appends the existing mask
+view to those two call sites; Target.select_plan translates their old standard
+keys, and an explicit masked key takes precedence. The shipped selection stays
+on dense `cutlass-backbone` aliases; reference uses dense `torch` aliases.
+Select the candidate by overriding only those two backend values.
+
+The Python binding expects the native ABI from `479a2d8`, in the existing
+`cutlass_backbone.so` and `fused_backbone.so`. Each pointer set owns both static
+native handles and separate scratch roles for M896/M968. New workspace queries
+use the bucket entry's occupancy and expose negative error returns. The mask
+is passed at each native run and GELU launch; no runtime metadata goes through
+scratch. The original dense wrappers and their arithmetic remain the control.
+
+CPU validation, with CUDA hidden and compiler environment unset:
+
+- `python -m pytest -q tests/test_pi05_bucketed_routes.py tests/test_binding.py`:
+  9 passed. Includes old complete-plan loading, two-site candidate selection,
+  explicit masked override precedence, reference routing, and mask/layout checks.
+- `python -m tests.targets --target rtx5090/pi05`: 8/8 declaration checks and
+  1/1 route checks passed.
+- The saved 022 control plan (the retained 021 implementation) binds to the
+  same complete backend map after only the two call-site names are translated.
+
+These checks import Torch on CPU but do not initialize CUDA or load models.
+Native compilation, numerical transitions and complete-chain timing remain
+with the serial integration task; no candidate speed is claimed here.
