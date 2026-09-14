@@ -89,3 +89,63 @@ extern "C" int32_t pi05_qkv_finish(
       static_cast<__nv_bfloat162*>(v));
   return static_cast<int32_t>(cudaGetLastError());
 }
+
+// Action output consumes the RMS factor privately; the public norm_factor
+// argument is deliberately untouched, matching torch_ops.
+__global__ void pi05_action_out_factor(
+    const __nv_bfloat16* __restrict__ x, __nv_bfloat16* __restrict__ factor) {
+  const int32_t row = blockIdx.x;
+  const int32_t tid = threadIdx.x;
+  float sum = 0.0f;
+#pragma unroll
+  for (int32_t i = 0; i < 4; ++i) {
+    const float value = __bfloat162float(x[row * 1024 + tid + i * 256]);
+    sum += value * value;
+  }
+#pragma unroll
+  for (int32_t offset = 16; offset > 0; offset >>= 1)
+    sum += __shfl_down_sync(0xffffffffu, sum, offset);
+  __shared__ float warp_sums[8];
+  if ((tid & 31) == 0) warp_sums[tid >> 5] = sum;
+  __syncthreads();
+  if (tid < 32) {
+    sum = tid < 8 ? warp_sums[tid] : 0.0f;
+#pragma unroll
+    for (int32_t offset = 16; offset > 0; offset >>= 1)
+      sum += __shfl_down_sync(0xffffffffu, sum, offset);
+    if (tid == 0)
+      factor[row] = __float2bfloat16_rn(rsqrtf(sum / 1024.0f + 1e-6f));
+  }
+}
+
+__global__ void pi05_action_out_update(
+    const __nv_bfloat16* __restrict__ projected,
+    const __nv_bfloat16* __restrict__ factor,
+    const __nv_bfloat16* __restrict__ bias, __nv_bfloat16* out, int32_t elements) {
+  const int32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index < elements) {
+    // --fmad=false preserves each FP32 operation after the BF16 GEMM result.
+    const float scaled = __bfloat162float(projected[index]) *
+                         __bfloat162float(factor[index / 32]);
+    const float shifted = scaled + __bfloat162float(bias[index % 32]);
+    out[index] = __float2bfloat16_rn(shifted + __bfloat162float(out[index]));
+  }
+}
+
+extern "C" int32_t pi05_action_out_factor_launch(
+    const void* x, void* factor, int32_t rows, cudaStream_t stream) {
+  pi05_action_out_factor<<<rows, 256, 0, stream>>>(
+      static_cast<const __nv_bfloat16*>(x), static_cast<__nv_bfloat16*>(factor));
+  return static_cast<int32_t>(cudaGetLastError());
+}
+
+extern "C" int32_t pi05_action_out_update_launch(
+    const void* projected, const void* factor, const void* bias, void* out,
+    int32_t rows, cudaStream_t stream) {
+  pi05_action_out_update<<<(rows * 32 + 255) / 256, 256, 0, stream>>>(
+      static_cast<const __nv_bfloat16*>(projected),
+      static_cast<const __nv_bfloat16*>(factor),
+      static_cast<const __nv_bfloat16*>(bias), static_cast<__nv_bfloat16*>(out),
+      rows * 32);
+  return static_cast<int32_t>(cudaGetLastError());
+}
