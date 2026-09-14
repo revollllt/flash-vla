@@ -1,0 +1,64 @@
+{
+  "source_revision": "76828b7b3cc962497cd5f52b510b0998b225f0fa",
+  "triton_version": "3.7.1",
+  "shape_mkn": [
+    50,
+    4096,
+    1024
+  ],
+  "tile": [
+    16,
+    32,
+    32
+  ],
+  "grid": [
+    4,
+    32
+  ],
+  "num_warps": 4,
+  "num_stages": 3,
+  "enable_fp_fusion": false,
+  "enable_reflect_ftz": false,
+  "registers": 38,
+  "spills": 0,
+  "shared_bytes": 6144
+}
+
+PTX excerpts (original one-based line numbers):
+167: 	mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r126, %r127, %r128, %r129 }, { %r48, %r49, %r50, %r51 }, { %r52, %r53 }, { %r126, %r127, %r128, %r129 };
+168: 	// end inline asm
+169: 	// begin inline asm
+170: 	mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r126, %r127, %r128, %r129 }, { %r54, %r55, %r56, %r57 }, { %r58, %r59 }, { %r126, %r127, %r128, %r129 };
+207: 	cvt.rn.bf16.f32 	%rs1, %r126;
+208: 	cvt.rn.bf16.f32 	%rs2, %r127;
+209: 	cvt.rn.bf16.f32 	%rs3, %r128;
+210: 	cvt.rn.bf16.f32 	%rs4, %r129;
+248: 	.loc	1 43 29                         // triton_expert_down.py:43:29
+249: 	mad.wide.s32 	%rd21, %r107, 2, %rd2;
+250: 	.loc	1 43 52                         // triton_expert_down.py:43:52
+251: 	add.s64 	%rd19, %rd21, %rd20;
+252: 	.loc	1 48 24                         // triton_expert_down.py:48:24
+253: 	ld.shared.v2.b16 	{%rs5, %rs6}, [%r106+512];
+254: 	.loc	1 41 68                         // triton_expert_down.py:41:68
+255: 	cvt.f32.bf16 	%r108, %rs6;
+256: 	cvt.f32.bf16 	%r109, %rs5;
+257: 	mov.b64 	%rd22, {%r109, %r108};
+258: 	.loc	1 48 24                         // triton_expert_down.py:48:24
+259: 	ld.shared.v2.b16 	{%rs7, %rs8}, [%r104];
+260: 	.loc	1 41 68                         // triton_expert_down.py:41:68
+261: 	cvt.f32.bf16 	%r110, %rs8;
+262: 	cvt.f32.bf16 	%r111, %rs7;
+263: 	mov.b64 	%rd23, {%r111, %r110};
+296: 	mul.rn.f32x2 	%rd28, %rd23, %rd24;
+297: 	mul.rn.f32x2 	%rd29, %rd22, %rd25;
+298: 	.loc	1 46 24                         // triton_expert_down.py:46:24
+299: 	add.rn.f32x2 	%rd30, %rd28, %rd26;
+300: 	add.rn.f32x2 	%rd31, %rd29, %rd27;
+301: 	.loc	1 48 24                         // triton_expert_down.py:48:24
+302: 	mov.b64 	{%r120, %r121}, %rd30;
+303: 	cvt.rn.bf16x2.f32 	%r83, %r121, %r120;
+304: 	mov.b64 	{%r122, %r123}, %rd31;
+305: 	cvt.rn.bf16x2.f32 	%r84, %r123, %r122;
+306: 	.loc	1 48 13                         // triton_expert_down.py:48:13
+307: 	// begin inline asm
+308: 	@%p5 st.global.v2.b32 [ %rd19 + 0 ], { %r83, %r84 };
