@@ -11,6 +11,7 @@ from . import packed_ffn as _packed_ffn
 from . import fused_attention as _fused_attention
 from . import fused_residual as _fused_residual
 from . import cutlass_backbone as _cutlass_backbone
+from . import cutlass_expert_residual as _cutlass_expert_residual
 from . import fused_vision as _fused_vision
 from . import fused_prefix_qkv as _fused_prefix_qkv
 
@@ -23,6 +24,7 @@ BACKENDS = {
     "fused-attention": _fused_attention,
     "fused-residual": _fused_residual,
     "cutlass-backbone": _cutlass_backbone,
+    "cutlass-expert-residual": _cutlass_expert_residual,
     "fused-vision": _fused_vision,
     "fused-prefix-qkv": _fused_prefix_qkv,
 }
