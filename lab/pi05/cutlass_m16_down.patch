@@ -1,0 +1,103 @@
+diff --git a/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/cutlass_backbone.cu b/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/cutlass_backbone.cu
+index 52b3445..5f2c580 100644
+--- a/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/cutlass_backbone.cu
++++ b/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/cutlass_backbone.cu
+@@ -134,6 +134,56 @@ DownGemm::Arguments down_arguments(int32_t k, const void* a, const void* b, cons
+   args.ldr = 0;  // One gate vector broadcast over every output row.
+   return args;
+ }
++// Fixed lab candidate: halve only cfg9's CTA/warp M, keeping its pipeline
++// and BF16-rounded gated residual. The shipped down and out-proj keep DownGemm.
++using M16DownDefaults = cutlass::gemm::device::GemmUniversalStreamkWithBroadcast<
++    Element, RowMajor, Element, RowMajor, Element, RowMajor, float,
++    cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
++    cutlass::gemm::GemmShape<16, 64, 32>,
++    cutlass::gemm::GemmShape<16, 32, 32>,
++    cutlass::gemm::GemmShape<16, 8, 16>, RoundedGatedResidual,
++    cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, 8, 8, 8>;
++
++using M16DownEpilogueBase = M16DownDefaults::GemmKernel::Epilogue;
++
++// The M16 tile still has two accumulator fragments. Retain the same
++// Target-local destination advance as DownEpilogue; do not change the vendor.
++class M16DownEpilogue : public M16DownEpilogueBase {
++ public:
++  using M16DownEpilogueBase::M16DownEpilogueBase;
++
++  CUTLASS_DEVICE void reduce(
++      int peer_begin, int peer_end, int fragment, void* workspace,
++      OutputOp const& op, ElementVector const* gate,
++      OutputTileIterator destination, OutputTileIterator source,
++      TensorTileIterator tensor, cutlass::MatrixCoord const& problem,
++      cutlass::MatrixCoord const& offset) {
++    destination += fragment;
++    M16DownEpilogueBase::reduce(peer_begin, peer_end, fragment, workspace, op,
++                               gate, destination, source, tensor, problem, offset);
++  }
++};
++
++using M16DownGemm = cutlass::gemm::device::GemmUniversalBase<
++    cutlass::gemm::kernel::GemmStreamkWithFusedEpilogue<
++        M16DownDefaults::GemmKernel::Mma, M16DownEpilogue,
++        cutlass::gemm::threadblock::ThreadblockSwizzleStreamK>>;
++
++M16DownGemm::Arguments m16_down_arguments(
++    const void* a, const void* b, const void* gate, void* output) {
++  M16DownGemm::Arguments args;
++  args.problem_size = {50, 1024, 4096};
++  args.ptr_A = a;
++  args.ptr_B = b;
++  args.ptr_C = output;
++  args.ptr_D = output;
++  args.ptr_Vector = const_cast<void*>(gate);
++  args.lda = 4096;
++  args.ldb = args.ldc = args.ldd = 1024;
++  args.ldr = 0;
++  return args;
++}
++
+ // Config 10 serves both vision FFN projections. Bias is converted to FP32
+ // and added before the one BF16 store; GELU/residual remain separate stages.
+ using VisionBiasGemm = cutlass::gemm::device::GemmUniversal<
+@@ -223,6 +273,41 @@ extern "C" void expert_down_destroy(void* handle) {
+   delete static_cast<DownGemm*>(handle);
+ }
+
++// Lab-only ABI for the sole M50 K4096 N1024 candidate; no production route.
++extern "C" int64_t expert_m16_down_workspace() {
++  return static_cast<int64_t>(M16DownGemm::get_workspace_size(
++      m16_down_arguments(nullptr, nullptr, nullptr, nullptr)));
++}
++
++extern "C" int32_t expert_m16_down_plan(
++    const void* a, const void* b, const void* gate, void* output,
++    void* workspace, void* stream, void** handle) {
++  const auto args = m16_down_arguments(a, b, gate, output);
++  cutlass::Status status = M16DownGemm::can_implement(args);
++  if (status != cutlass::Status::kSuccess)
++    return kCutlassError + static_cast<int32_t>(status);
++  auto* plan = new M16DownGemm;
++  status = plan->initialize(args, workspace, static_cast<cudaStream_t>(stream));
++  if (status != cutlass::Status::kSuccess) {
++    delete plan;
++    return kCutlassError + static_cast<int32_t>(status);
++  }
++  *handle = plan;
++  return 0;
++}
++
++extern "C" int32_t expert_m16_down_run(void* handle, void* stream) {
++  const cutlass::Status status =
++      static_cast<M16DownGemm*>(handle)->run(static_cast<cudaStream_t>(stream));
++  if (status != cutlass::Status::kSuccess)
++    return kCutlassError + static_cast<int32_t>(status);
++  return static_cast<int32_t>(cudaGetLastError());
++}
++
++extern "C" void expert_m16_down_destroy(void* handle) {
++  delete static_cast<M16DownGemm*>(handle);
++}
++
+ extern "C" int64_t vision_bias_gemm_workspace(int32_t m, int32_t k, int32_t n) {
+   return static_cast<int64_t>(VisionBiasGemm::get_workspace_size(
+       vision_bias_arguments(m, k, n, nullptr, nullptr, nullptr, nullptr)));

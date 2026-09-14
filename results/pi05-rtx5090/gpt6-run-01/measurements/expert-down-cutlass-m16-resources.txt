@@ -1,0 +1,50 @@
+ptxas info    : Function properties for _ZN7cutlass7Kernel2INS_4gemm6kernel28GemmStreamkWithFusedEpilogueINS1_11threadblock13MmaMultistageINS1_9GemmShapeILi16ELi64ELi32EEENS_9transform11threadblock28PredicatedTileAccessIteratorINS_11MatrixShapeILi16ELi32EEENS_10bfloat16_tENS_6layout8RowMajorELi1ENS8_29PitchLinearWarpRakedThreadMapINS_16PitchLinearShapeILi32ELi16EEELi64ENSH_ILi4ELi8EEELi8EEENS_5ArrayISD_Li8ELb0EEELb0ENSE_9NoPermuteEEENS9_25RegularTileAccessIteratorISC_SD_NSE_37RowMajorTensorOpMultiplicandCrosswiseILi16ELi32EEELi0ESK_Li16EEELNS_4arch14CacheOperation4KindE1ENSA_INSB_ILi32ELi64EEESD_SF_Li0ENSG_INSH_ILi64ELi32EEELi64ENSH_ILi8ELi4EEELi8EEESM_Lb0ESN_EENSP_ISW_SD_NSE_37RowMajorTensorOpMultiplicandCongruousILi16ELi64EEELi0ESZ_Li16EEELSV_1EfSF_NS4_9MmaPolicyINS1_4warp11MmaTensorOpINS6_ILi16ELi32ELi32EEESD_SR_SD_S12_fSF_NS15_17MmaTensorOpPolicyINST_3MmaINS6_ILi16ELi8ELi16EEELi32ESD_SF_SD_NSE_11ColumnMajorEfSF_NST_13OpMultiplyAddEEENSB_ILi1ELi1EEEEELi1ELb0EbEENSB_ILi0ELi0EEES1H_Li1EEELi8ELNS1_23SharedMemoryClearOptionE0EbEEN52_GLOBAL__N__cddd9548_19_cutlass_backbone_cu_9916ad3215M16DownEpilogueENS4_25ThreadblockSwizzleStreamKELb1EEEEEvNT_6ParamsE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 1 barriers
+ptxas info    : Compile time = 48.996 ms
+ptxas info    : Function properties for _ZN7cutlass7Kernel2INS_4gemm6kernel28GemmStreamkWithFusedEpilogueINS1_11threadblock13MmaMultistageINS1_9GemmShapeILi32ELi64ELi32EEENS_9transform11threadblock28PredicatedTileAccessIteratorINS_11MatrixShapeILi32ELi32EEENS_10bfloat16_tENS_6layout8RowMajorELi1ENS8_29PitchLinearWarpRakedThreadMapINS_16PitchLinearShapeILi32ELi32EEELi64ENSH_ILi4ELi8EEELi8EEENS_5ArrayISD_Li8ELb0EEELb0ENSE_9NoPermuteEEENS9_25RegularTileAccessIteratorISC_SD_NSE_37RowMajorTensorOpMultiplicandCrosswiseILi16ELi32EEELi0ESK_Li16EEELNS_4arch14CacheOperation4KindE1ENSA_INSB_ILi32ELi64EEESD_SF_Li0ENSG_INSH_ILi64ELi32EEELi64ENSH_ILi8ELi4EEELi8EEESM_Lb0ESN_EENSP_ISW_SD_NSE_37RowMajorTensorOpMultiplicandCongruousILi16ELi64EEELi0ESZ_Li16EEELSV_1EfSF_NS4_9MmaPolicyINS1_4warp11MmaTensorOpINS6_ILi32ELi32ELi32EEESD_SR_SD_S12_fSF_NS15_17MmaTensorOpPolicyINST_3MmaINS6_ILi16ELi8ELi16EEELi32ESD_SF_SD_NSE_11ColumnMajorEfSF_NST_13OpMultiplyAddEEENSB_ILi1ELi1EEEEELi1ELb0EbEENSB_ILi0ELi0EEES1H_Li1EEELi8ELNS1_23SharedMemoryClearOptionE0EbEEN52_GLOBAL__N__cddd9548_19_cutlass_backbone_cu_9916ad3212DownEpilogueENS4_25ThreadblockSwizzleStreamKELb1EEEEEvNT_6ParamsE
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 120 registers, used 1 barriers
+ptxas info    : Compile time = 59.630 ms
+
+Candidate SASS: BF16 accumulator pack, FP32 bit expansion, independent FMUL/FADD, final BF16 pack.
+        /*3b10*/                   F2FP.BF16.F32.PACK_AB R0, R29, R28 ;                                          /* 0x0000001c1d00723e */
+        /*3b20*/                   F2FP.BF16.F32.PACK_AB R30, R31, R30 ;                                         /* 0x0000001e1f1e723e */
+        /*3b30*/                   LOP3.LUT R4, R0.reuse, 0xffff0000, RZ, 0xc0, !PT ;                            /* 0xffff000000047812 */
+        /*3b40*/                   IMAD.U32 R9, R0, 0x10000, RZ ;                                                /* 0x0001000000097824 */
+        /*3b50*/                   LOP3.LUT R0, R30.reuse, 0xffff0000, RZ, 0xc0, !PT ;                           /* 0xffff00001e007812 */
+        /*3b60*/                   IMAD.U32 R5, R30, 0x10000, RZ ;                                               /* 0x000100001e057824 */
+        /*3b70*/                   F2FP.BF16.F32.PACK_AB R24, R25, R24 ;                                         /* 0x000000181918723e */
+        /*3b80*/                   FMUL R4, R4, R39 ;                                                            /* 0x0000002704047220 */
+        /*3b90*/                   FMUL R9, R9, R2 ;                                                             /* 0x0000000209097220 */
+        /*3ba0*/                   FMUL R0, R0, R41 ;                                                            /* 0x0000002900007220 */
+        /*3bb0*/                   FMUL R5, R5, R38 ;                                                            /* 0x0000002605057220 */
+        /*3bc0*/                   LOP3.LUT R29, R20.reuse, 0xffff0000, RZ, 0xc0, !PT ;                          /* 0xffff0000141d7812 */
+        /*3bd0*/                   IMAD.U32 R8, R21.reuse, 0x10000, RZ ;                                         /* 0x0001000015087824 */
+        /*3be0*/                   LOP3.LUT R13, R21, 0xffff0000, RZ, 0xc0, !PT ;                                /* 0xffff0000150d7812 */
+        /*3bf0*/                   IMAD.U32 R28, R20, 0x10000, RZ ;                                              /* 0x00010000141c7824 */
+        /*3c00*/                   LOP3.LUT R25, R22, 0xffff0000, RZ, 0xc0, !PT ;                                /* 0xffff000016197812 */
+        /*3c10*/                   FADD R4, R29, R4 ;                                                            /* 0x000000041d047221 */
+        /*3c20*/                   F2FP.BF16.F32.PACK_AB R29, R27, R26 ;                                         /* 0x0000001a1b1d723e */
+        /*3c30*/                   FADD R0, R13, R0 ;                                                            /* 0x000000000d007221 */
+        /*3c40*/                   LOP3.LUT R26, R24.reuse, 0xffff0000, RZ, 0xc0, !PT ;                          /* 0xffff0000181a7812 */
+        /*3c50*/                   IMAD.U32 R13, R24, 0x10000, RZ ;                                              /* 0x00010000180d7824 */
+        /*3c60*/                   FADD R5, R8, R5 ;                                                             /* 0x0000000508057221 */
+        /*3c70*/                   IMAD.U32 R27, R29.reuse, 0x10000, RZ ;                                        /* 0x000100001d1b7824 */
+        /*3c80*/                   LOP3.LUT R29, R29, 0xffff0000, RZ, 0xc0, !PT ;                                /* 0xffff00001d1d7812 */
+        /*3c90*/                   IMAD.U32 R16, R22, 0x10000, RZ ;                                              /* 0x0001000016107824 */
+        /*3ca0*/                   SHF.L.U32 R12, R23, 0x10, RZ ;                                                /* 0x00000010170c7819 */
+        /*3cb0*/                   FMUL R13, R13, R40 ;                                                          /* 0x000000280d0d7220 */
+        /*3cc0*/                   LOP3.LUT R17, R23, 0xffff0000, RZ, 0xc0, !PT ;                                /* 0xffff000017117812 */
+        /*3cd0*/                   FMUL R26, R26, R43 ;                                                          /* 0x0000002b1a1a7220 */
+        /*3ce0*/                   FMUL R27, R27, R42 ;                                                          /* 0x0000002a1b1b7220 */
+        /*3cf0*/                   FMUL R8, R29, R58 ;                                                           /* 0x0000003a1d087220 */
+        /*3d00*/                   FADD R9, R28, R9 ;                                                            /* 0x000000091c097221 */
+        /*3d10*/                   FADD R13, R16, R13 ;                                                          /* 0x0000000d100d7221 */
+        /*3d20*/                   FADD R26, R25, R26 ;                                                          /* 0x0000001a191a7221 */
+        /*3d30*/                   FADD R27, R12, R27 ;                                                          /* 0x0000001b0c1b7221 */
+        /*3d40*/                   FADD R8, R17, R8 ;                                                            /* 0x0000000811087221 */
+        /*3d50*/                   F2FP.BF16.F32.PACK_AB R24, R4, R9 ;                                           /* 0x000000090418723e */
+        /*3d60*/                   F2FP.BF16.F32.PACK_AB R25, R0, R5 ;                                           /* 0x000000050019723e */
+        /*3d70*/                   F2FP.BF16.F32.PACK_AB R26, R26, R13 ;                                         /* 0x0000000d1a1a723e */
+        /*3d80*/                   F2FP.BF16.F32.PACK_AB R27, R8, R27 ;                                          /* 0x0000001b081b723e */
