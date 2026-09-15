@@ -1,0 +1,194 @@
+Selected resources-m16.ptx lines, with original line numbers.
+
+Lines 516-542:
+516: 	mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r3325, %r3326, %r3327, %r3328 }, { %r266, %r267, %r268, %r269 }, { %r298, %r299 }, { %r3325, %r3326, %r3327, %r3328 };
+517: 	// end inline asm
+518: 	// begin inline asm
+519: 	mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r3329, %r3330, %r3331, %r3332 }, { %r266, %r267, %r268, %r269 }, { %r300, %r301 }, { %r3329, %r3330, %r3331, %r3332 };
+520: 	// end inline asm
+521: 	.loc	1 28 31                         // backbone_fullrow.py:28:31
+522: 	add.s64 	%rd75, %rd75, 32;
+523: 	add.s64 	%rd74, %rd74, 64;
+524: 	setp.lt.u64 	%p3, %rd75, 224;
+525: 	@%p3 bra 	$L__BB0_1;
+526: // %bb.2:
+527: 	.loc	1 23 53                         // backbone_fullrow.py:23:53
+528: 	shr.u32 	%r358, %r6, 5;
+529: 	or.b32 	%r359, %r358, 8;
+530: 	.loc	1 24 24                         // backbone_fullrow.py:24:24
+531: 	shl.b32 	%r360, %r3, 2;
+532: 	.loc	1 34 23                         // backbone_fullrow.py:34:23
+533: 	cvt.rn.bf16.f32 	%rs1, %r3269;
+534: 	cvt.rn.bf16.f32 	%rs2, %r3270;
+535: 	cvt.rn.bf16.f32 	%rs3, %r3271;
+536: 	cvt.rn.bf16.f32 	%rs4, %r3272;
+537: 	cvt.rn.bf16.f32 	%rs5, %r3273;
+538: 	cvt.rn.bf16.f32 	%rs6, %r3274;
+539: 	cvt.rn.bf16.f32 	%rs7, %r3275;
+540: 	cvt.rn.bf16.f32 	%rs8, %r3276;
+541: 	cvt.rn.bf16.f32 	%rs9, %r3277;
+542: 	cvt.rn.bf16.f32 	%rs10, %r3278;
+
+Lines 592-609:
+592: 	cvt.rn.bf16.f32 	%rs60, %r3328;
+593: 	cvt.rn.bf16.f32 	%rs61, %r3329;
+594: 	cvt.rn.bf16.f32 	%rs62, %r3330;
+595: 	cvt.rn.bf16.f32 	%rs63, %r3331;
+596: 	cvt.rn.bf16.f32 	%rs64, %r3332;
+597: 	.loc	1 34 39                         // backbone_fullrow.py:34:39
+598: 	cvt.f32.bf16 	%r361, %rs1;
+599: 	cvt.f32.bf16 	%r362, %rs2;
+600: 	cvt.f32.bf16 	%r363, %rs3;
+601: 	cvt.f32.bf16 	%r364, %rs4;
+602: 	cvt.f32.bf16 	%r365, %rs5;
+603: 	cvt.f32.bf16 	%r366, %rs6;
+604: 	cvt.f32.bf16 	%r367, %rs7;
+605: 	cvt.f32.bf16 	%r368, %rs8;
+606: 	cvt.f32.bf16 	%r369, %rs9;
+607: 	cvt.f32.bf16 	%r370, %rs10;
+608: 	cvt.f32.bf16 	%r371, %rs11;
+609: 	cvt.f32.bf16 	%r372, %rs12;
+
+Lines 675-688:
+675: 	cvt.f32.bf16 	%r306, %rs65;
+676: 	cvt.f32.bf16 	%r307, %rs66;
+677: 	cvt.f32.bf16 	%r309, %rs67;
+678: 	cvt.f32.bf16 	%r310, %rs68;
+679: 	.loc	1 36 52                         // backbone_fullrow.py:36:52
+680: 	mul.rn.f32 	%r425, %r361, 0f3D800000;
+681: 	mul.rn.f32 	%r426, %r362, 0f3D800000;
+682: 	mul.rn.f32 	%r427, %r363, 0f3D800000;
+683: 	mul.rn.f32 	%r428, %r364, 0f3D800000;
+684: 	mul.rn.f32 	%r429, %r365, 0f3D800000;
+685: 	mul.rn.f32 	%r430, %r366, 0f3D800000;
+686: 	mul.rn.f32 	%r431, %r367, 0f3D800000;
+687: 	mul.rn.f32 	%r432, %r368, 0f3D800000;
+688: 	mul.rn.f32 	%r433, %r369, 0f3D800000;
+
+Lines 779-789:
+779: 	ld.shared.v2.b32 	{%r523, %r524}, [%r498+1536];
+780: 	ld.shared.v2.b32 	{%r525, %r526}, [%r498+1664];
+781: 	ld.shared.v2.b32 	{%r527, %r528}, [%r498+1792];
+782: 	ld.shared.v2.b32 	{%r529, %r530}, [%r498+1920];
+783: 	add.rn.f32 	%r531, %r425, %r499;
+784: 	add.rn.f32 	%r532, %r426, %r500;
+785: 	add.rn.f32 	%r533, %r427, %r499;
+786: 	add.rn.f32 	%r534, %r428, %r500;
+787: 	add.rn.f32 	%r535, %r429, %r501;
+788: 	add.rn.f32 	%r536, %r430, %r502;
+789: 	add.rn.f32 	%r537, %r431, %r501;
+
+Lines 1280-1295:
+1280: 	// end inline asm
+1281: 	bar.sync 	0;
+1282: 	ld.shared.b32 	%r914, [%r640];
+1283: 	ld.shared.b32 	%r915, [%r640+256];
+1284: $L__tmp36:
+1285: 	.loc	1 39 31                         // backbone_fullrow.py:39:31
+1286: 	div.full.f32 	%r916, %r714, %r914;
+1287: 	div.full.f32 	%r917, %r716, %r914;
+1288: 	div.full.f32 	%r918, %r718, %r915;
+1289: 	div.full.f32 	%r919, %r720, %r915;
+1290: 	div.full.f32 	%r920, %r722, %r914;
+1291: 	div.full.f32 	%r921, %r724, %r914;
+1292: 	div.full.f32 	%r922, %r726, %r915;
+1293: 	div.full.f32 	%r923, %r728, %r915;
+1294: 	div.full.f32 	%r924, %r730, %r914;
+1295: 	div.full.f32 	%r925, %r732, %r914;
+
+Lines 1345-1360:
+1345: 	div.full.f32 	%r975, %r832, %r915;
+1346: 	div.full.f32 	%r976, %r834, %r914;
+1347: 	div.full.f32 	%r977, %r836, %r914;
+1348: 	div.full.f32 	%r978, %r838, %r915;
+1349: 	div.full.f32 	%r979, %r840, %r915;
+1350: 	.loc	1 39 70                         // backbone_fullrow.py:39:70
+1351: 	cvt.rn.bf16x2.f32 	%r323, %r924, %r916;
+1352: 	cvt.rn.bf16x2.f32 	%r328, %r925, %r917;
+1353: 	cvt.rn.bf16x2.f32 	%r342, %r926, %r918;
+1354: 	cvt.rn.bf16x2.f32 	%r346, %r927, %r919;
+1355: 	cvt.rn.bf16x2.f32 	%r333, %r928, %r920;
+1356: 	cvt.rn.bf16x2.f32 	%r338, %r929, %r921;
+1357: 	cvt.rn.bf16x2.f32 	%r350, %r930, %r922;
+1358: 	cvt.rn.bf16x2.f32 	%r354, %r931, %r923;
+1359: 	cvt.rn.bf16x2.f32 	%r324, %r940, %r932;
+1360: 	cvt.rn.bf16x2.f32 	%r329, %r941, %r933;
+
+Lines 1393-1415:
+1393: 	xor.b32 	%r988, %r987, %r985;
+1394: 	or.b32 	%r989, %r986, %r988;
+1395: 	add.s32 	%r322, %r127, %r989;
+1396: 	// begin inline asm
+1397: 	st.shared.v4.b32 [ %r322 + 0 ], { %r323, %r324, %r325, %r326 };
+1398: 	// end inline asm
+1399: 	xor.b32 	%r990, %r989, 16;
+1400: 	add.s32 	%r327, %r127, %r990;
+1401: 	// begin inline asm
+1402: 	st.shared.v4.b32 [ %r327 + 0 ], { %r328, %r329, %r330, %r331 };
+1403: 	// end inline asm
+1404: 	xor.b32 	%r991, %r989, 64;
+1405: 	add.s32 	%r332, %r127, %r991;
+1406: 	// begin inline asm
+1407: 	st.shared.v4.b32 [ %r332 + 0 ], { %r333, %r334, %r335, %r336 };
+1408: 	// end inline asm
+1409: 	xor.b32 	%r992, %r989, 80;
+1410: 	add.s32 	%r337, %r127, %r992;
+1411: 	// begin inline asm
+1412: 	st.shared.v4.b32 [ %r337 + 0 ], { %r338, %r339, %r340, %r341 };
+1413: 	// end inline asm
+1414: 	bar.sync 	0;
+1415: 	and.b32 	%r993, %r2, 24;
+
+Lines 1442-1448:
+1442: 	ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%r1017, %r1018, %r1019, %r1020}, [%r1004+1536];
+1443: 	shr.u32 	%r48, %r1017, 16;
+1444: 	shr.u32 	%r49, %r1018, 16;
+1445: 	shr.u32 	%r50, %r1019, 16;
+1446: 	shr.u32 	%r51, %r1020, 16;
+1447: 	bar.sync 	0;
+1448: 	// begin inline asm
+
+Lines 3640-3655:
+3640: 	shfl.sync.idx.b32 	%r3239, %r66, %r1193, 31, -1;
+3641: 	shfl.sync.idx.b32 	%r3240, %r99, %r1193, 31, -1;
+3642: 	shfl.sync.idx.b32 	%r3241, %r67, %r1193, 31, -1;
+3643: 	prmt.b32 	%r1064, %r1194, %r1227, 0x5410U;
+3644: 	prmt.b32 	%r1065, %r1260, %r1293, 0x5410U;
+3645: 	prmt.b32 	%r1066, %r1326, %r1359, 0x5410U;
+3646: 	prmt.b32 	%r1067, %r1392, %r1425, 0x5410U;
+3647: 	// begin inline asm
+3648: 	st.shared.v4.b32 [ %r1063 + 0 ], { %r1064, %r1065, %r1066, %r1067 };
+3649: 	// end inline asm
+3650: 	prmt.b32 	%r1069, %r2218, %r2251, 0x5410U;
+3651: 	prmt.b32 	%r1070, %r2284, %r2317, 0x5410U;
+3652: 	prmt.b32 	%r1071, %r2350, %r2383, 0x5410U;
+3653: 	prmt.b32 	%r1072, %r2416, %r2449, 0x5410U;
+3654: 	// begin inline asm
+3655: 	st.shared.v4.b32 [ %r1068 + 0 ], { %r1069, %r1070, %r1071, %r1072 };
+
+Lines 3816-3840:
+3816: 	// end inline asm
+3817: 	.loc	1 47 35                         // backbone_fullrow.py:47:35
+3818: 	ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%r1144, %r1145, %r1146, %r1147}, [%r100];
+3819: 	ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%r1156, %r1157, %r1158, %r1159}, [%r101];
+3820: 	ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%r1168, %r1169, %r1170, %r1171}, [%r102];
+3821: 	ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%r1180, %r1181, %r1182, %r1183}, [%r103];
+3822: 	.loc	1 48 20                         // backbone_fullrow.py:48:20
+3823: 	bar.sync 	0;
+3824: 	ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%r1148, %r1149, %r1160, %r1161}, [%r104];
+3825: 	ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%r1172, %r1173, %r1184, %r1185}, [%r105];
+3826: 	ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%r1150, %r1151, %r1162, %r1163}, [%r106];
+3827: 	ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%r1174, %r1175, %r1186, %r1187}, [%r107];
+3828: 	ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%r1152, %r1153, %r1164, %r1165}, [%r108];
+3829: 	ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%r1176, %r1177, %r1188, %r1189}, [%r109];
+3830: 	ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%r1154, %r1155, %r1166, %r1167}, [%r110];
+3831: 	ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%r1178, %r1179, %r1190, %r1191}, [%r111];
+3832: 	.loc	1 50 30                         // backbone_fullrow.py:50:30
+3833: 	// begin inline asm
+3834: 	mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r3333, %r3334, %r3335, %r3336 }, { %r1144, %r1145, %r1146, %r1147 }, { %r1148, %r1149 }, { %r3333, %r3334, %r3335, %r3336 };
+3835: 	// end inline asm
+3836: 	// begin inline asm
+3837: 	mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r3337, %r3338, %r3339, %r3340 }, { %r1144, %r1145, %r1146, %r1147 }, { %r1150, %r1151 }, { %r3337, %r3338, %r3339, %r3340 };
+3838: 	// end inline asm
+3839: 	// begin inline asm
+3840: 	mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 { %r3341, %r3342, %r3343, %r3344 }, { %r1144, %r1145, %r1146, %r1147 }, { %r1152, %r1153 }, { %r3341, %r3342, %r3343, %r3344 };

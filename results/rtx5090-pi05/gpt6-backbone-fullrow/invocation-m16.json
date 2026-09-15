@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/home/ubuntu/flash-vla/.venv/bin/python",
+    "/home/ubuntu/flash-vla-gpt6-qkv/lab/pi05/backbone_fullrow.py",
+    "resources",
+    "--block-m",
+    "16",
+    "--output",
+    "/home/ubuntu/flash-vla-gpt6-qkv/results/rtx5090-pi05/gpt6-backbone-fullrow/resources-m16.json"
+  ],
+  "cwd": "/home/ubuntu/flash-vla",
+  "worker_revision": "4c6b8cf54b0b599aab1eb608e4af8fcd52a425ec",
+  "main_revision": "0325a34a7f4c1207a92c1680085e54959308772c",
+  "started_utc": "2026-09-15T00:00:35.635243+00:00",
+  "finished_utc": "2026-09-15T00:00:39.142244+00:00",
+  "exit_code": 0,
+  "scope": "one resources launch; BM16, otherwise unchanged mapping; no actual check or timing"
+}

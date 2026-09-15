@@ -1,0 +1,10 @@
+{
+  "registers": 206,
+  "spills": 0,
+  "shared_bytes": 66560,
+  "block_m": 16,
+  "ctas": 484,
+  "warps": 8,
+  "stages": 1,
+  "scope": "zero tensors only for compile/resources; not actual-input correctness"
+}

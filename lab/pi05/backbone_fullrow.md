@@ -233,3 +233,42 @@ Q/out addresses, equal Q reset, shallow tolerance, warm working set, and
 4 chains/graph with30 samples/leg. Failure stops this BM16 trial. There is no
 BM8, warp, stage, BK, or gather sweep. CPU syntax checking passed; no new
 kernel compilation or GPU work has run.
+
+## BM16 resource and actual-input result: rejected
+
+The authorized BM16-only compile completed with 206 registers/thread,
+n_spills=0 (0 B/thread local footprint), 66,560 B shared (65 KiB), and 484 CTAs.
+It used eight warps and one stage as prescribed. The two BF16 boundaries
+survived: resources-m16.ptx533–596 rounds QK scores to BF16,598–661 widens them
+before scale/mask;1286–1349 performs full-row normalization,1351–1382 rounds
+probabilities to BF16x2, and the subsequent BF16 ldmatrix operands enter
+PV mma.sync at3834. The selected original-numbered evidence is saved in
+ptx-boundaries-m16.txt and ptx-evidence-m16.json.
+
+After those checks, a separate explicit authorization allowed use of the same
+024 snapshot. No model or capture was rerun. All 17 candidate outputs passed
+with worst rel_rms5.217102491502758e-5, minimum cosine0.9999999986391401,
+maximum absolute error0.03125, and finite output everywhere. Control outputs
+remained exactly equal to the captured outputs.
+
+The only BM16 ABBA retained the full chain, equal Q reset, shared Q/out
+addresses, original cache policy, and 30 samples per leg:
+
+| Leg | Median ms per 17 calls |
+| --- | ---: |
+| A1 control | 1.1596199870109558 |
+| B1 BM16 | 1.8588799834251404 |
+| B2 BM16 | 1.8592239618301392 |
+| A2 control | 1.1904000043869019 |
+
+BM16 was slower by0.6840419769 ms per17 calls (40.23776 us/call). Control
+drift was0.0307800174 ms and candidate drift0.0003439784 ms; the closest
+A/B medians remained0.6684799790 ms apart. It is clearly locally rejected.
+
+The reduced measured registers and zero local footprint did not yield a net
+advantage over this trial's control. This does not isolate the cost of doubled
+K/V reads, gather, register pressure, or scheduling. M32 and M16 ran in separate
+ABBA windows; their difference is not a simultaneous controlled comparison.
+Both original M32 records and all120 BM16 raw samples remain. GPU was released
+immediately after timing. There is no production change and no further BM,
+warp, stage, BK, gather, or timing search.
