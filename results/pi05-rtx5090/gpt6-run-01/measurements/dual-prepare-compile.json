@@ -1,0 +1,52 @@
+{
+  "phase": "compiled",
+  "seed": 42,
+  "options": [],
+  "source_revision": "747382927fab0924e80b5cb628d0ecd6799e5ca6",
+  "probe_revision": "c00e1c23d429ce76bb3641a72b496af8432eac2d",
+  "control_source": "/home/ubuntu/flash-vla/src/flash_vla/hardware/nvidia/rtx5090/pi05/backends/dual_ffn.py",
+  "probe_source": "/home/ubuntu/flash-vla-gpt6-ffn/lab/pi05/dual_ffn_prepare.py",
+  "triton_version": "3.7.1",
+  "tile": [
+    16,
+    64,
+    32
+  ],
+  "grid": [
+    4,
+    64
+  ],
+  "num_warps": 4,
+  "num_stages": 3,
+  "enable_fp_fusion": false,
+  "enable_reflect_ftz": false,
+  "rms_prelude": [
+    16,
+    256,
+    4
+  ],
+  "resources": [
+    {
+      "route": "A",
+      "registers": 64,
+      "spills": 0,
+      "shared_bytes": 18432,
+      "ptx": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-dual-prepare-compile-A.ptx",
+      "ttgir": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-dual-prepare-compile-A.ttgir"
+    },
+    {
+      "route": "B",
+      "registers": 72,
+      "spills": 0,
+      "shared_bytes": 19584,
+      "ptx": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-dual-prepare-compile-B.ptx",
+      "ttgir": "/home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-dual-prepare-compile-B.ttgir"
+    }
+  ],
+  "correctness": [],
+  "legs": [],
+  "scope": "native prepare plus original dual_dot versus fused prepare/dual-dot",
+  "timer": "one 15xABBA; graph of 180 actual calls, original 18-weight order",
+  "shared_addresses": "both routes use the same Packed, Out and Factor allocations",
+  "is_deployment_sequence": false
+}

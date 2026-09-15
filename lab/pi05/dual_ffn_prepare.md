@@ -59,3 +59,48 @@ export PYTHONPATH=/home/ubuntu/flash-vla/src:/home/ubuntu/flash-vla
   --option checkpoint_digest=kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha \
   --output /home/ubuntu/flash-vla/artifacts/rtx5090-pi05/gpt6-dual-prepare-local.json
 ```
+
+## Outcome: reject this fixed candidate
+
+First compilation succeeded. A used 64 registers and 18,432 shared bytes;
+B used 72 registers and 19,584 shared bytes. Both had zero spills.
+The required factor, normalized, scaled-A and projection BF16 boundaries
+remained in compiler output. The two successive rounded products lowered to
+separate mul.rn.bf16 instructions. Factor stores were guarded by N tile zero.
+
+The compiler retained two-buffer asynchronous global-to-shared copies for
+raw X, scale and both weight branches. It then read raw X from shared memory,
+performed the two rounded products, and wrote the resulting A back to shared
+memory before ldmatrix. Thus the initial risk of losing all A async loading
+did not occur; added preprocessing and shared work still remained.
+
+Against deployment source 7473829, both routes were bitwise equal to all 180
+captured actual Out and Factor results: maximum relative RMS and maximum
+absolute error were zero. There were 18 packed pairs (288 MiB), packed once
+for both lab routes. No numerical failure preceded timing.
+
+| Leg | Median microseconds per complete call |
+| --- | ---: |
+| A1 native prepare + original dual-dot | 15.8597336875 |
+| B1 fused prepare + dual-dot | 16.4250665241 |
+| B2 fused prepare + dual-dot | 16.4414220386 |
+| A2 native prepare + original dual-dot | 15.8903108703 |
+
+Mean A-minus-B was **-0.5582220025 us/call**. The candidate was slower by
+approximately 0.10048 ms over 180 calls, with A/B drift only
+0.0305771828/0.0163555145 us/call. Conservative min(A)-max(B) was
+-0.5816883511 us/call. All 60 samples, including high first samples, remain.
+
+Reject this fixed candidate and stop. No reduction, tile, stage, flag or
+tolerance changes, extra timings, profiler work, or production integration
+followed. The comparison does not attribute the slowdown to a specific
+hardware bottleneck and is not a deployed latency measurement.
+
+Tracked evidence under results/pi05-rtx5090/gpt6-run-01/measurements:
+
+- dual-prepare-compile.json: both resource records and full PTX/TTGIR paths.
+- dual-prepare-resources.txt: selected compiler excerpts with original lines.
+- dual-prepare-rejected.json: all 180 per-call numerical checks and 60 samples.
+
+Complete stdout/stderr logs remain under the ignored artifact directory as
+gpt6-dual-prepare-compile.log and gpt6-dual-prepare-local.log.

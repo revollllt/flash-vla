@@ -1,0 +1,139 @@
+Fixed RMS-prelude dual FFN compiler evidence (no candidate/source revision after first compile).
+Tile16x64x32, num_warps4, num_stages3, fp_fusion=False, reflect_ftz=False.
+A: registers=64, spills=0, shared_bytes=18432
+B: registers=72, spills=0, shared_bytes=19584
+
+B TTGIR: factor roundtrip, guarded store, two normalized/scaled A roundtrips, both projections:
+114:     }) : (tensor<16x256xf32, #blocked1>) -> tensor<16xf32, #ttg.slice<{dim = 1, parent = #blocked1}>> loc(#loc178)
+115:     %factor_bf16 = arith.divf %summed, %cst_14 : tensor<16xf32, #ttg.slice<{dim = 1, parent = #blocked1}>> loc(#loc116)
+116:     %factor_bf16_73 = arith.addf %factor_bf16, %cst_15 : tensor<16xf32, #ttg.slice<{dim = 1, parent = #blocked1}>> loc(#loc117)
+117:     %factor_bf16_74 = tt.extern_elementwise %factor_bf16_73 {libname = "", libpath = "", pure = true, symbol = "__nv_rsqrtf"} : (tensor<16xf32, #ttg.slice<{dim = 1, parent = #blocked1}>>) -> tensor<16xf32, #ttg.slice<{dim = 1, parent = #blocked1}>> loc(#loc118)
+118:     %factor_bf16_75 = arith.truncf %factor_bf16_74 : tensor<16xf32, #ttg.slice<{dim = 1, parent = #blocked1}>> to tensor<16xbf16, #ttg.slice<{dim = 1, parent = #blocked1}>> loc(#loc119)
+119:     %factor = arith.extf %factor_bf16_75 : tensor<16xbf16, #ttg.slice<{dim = 1, parent = #blocked1}>> to tensor<16xf32, #ttg.slice<{dim = 1, parent = #blocked1}>> loc(#loc120)
+120:     %0 = tt.get_program_id y : i32 loc(#loc25)
+121:     %1 = arith.cmpi eq, %0, %c0_i32 : i32 loc(#loc26)
+122:     scf.if %1 {
+123:       %10 = arith.cmpi slt, %rows_37, %cst_12 : tensor<16xi32, #blocked3> loc(#loc28)
+124:       %11 = tt.splat %Factor : !tt.ptr<bf16> -> tensor<16x!tt.ptr<bf16>, #blocked3> loc(#loc29)
+125:       %12 = tt.addptr %11, %rows_37 : tensor<16x!tt.ptr<bf16>, #blocked3>, tensor<16xi32, #blocked3> loc(#loc29)
+126:       %13 = ttg.convert_layout %factor_bf16_75 : tensor<16xbf16, #ttg.slice<{dim = 1, parent = #blocked1}>> -> tensor<16xbf16, #blocked3> loc(#loc30)
+127:       tt.store %12, %13, %10 : tensor<16x!tt.ptr<bf16>, #blocked3> loc(#loc30)
+128:     } loc(#loc27)
+
+197:       %up_acc_171 = arith.cmpi slt, %up_acc_160, %c960_i32 : i32 loc(#loc180)
+198:       %up_acc_172 = arith.addi %up_acc_162, %c1_i32 : i32 loc(#loc180)
+199:       %up_acc_173 = arith.cmpi sge, %up_acc_172, %c2_i32 : i32 loc(#loc180)
+200:       %up_acc_174 = arith.select %up_acc_173, %c0_i32, %up_acc_172 : i32 loc(#loc180)
+201:       %raw_a_175 = ttg.async_wait %raw_a_163, %scale_165, %gate_w_167, %up_w_169 {num = 4 : i32} loc(#loc127)
+202:       %raw_a_176 = ttg.memdesc_index %raw_a_88[%up_acc_174] : !ttg.memdesc<2x16x32xbf16, #shared, #smem, mutable> -> !ttg.memdesc<16x32xbf16, #shared, #smem, mutable> loc(#loc127)
+203:       %a = ttg.local_load %raw_a_176 token %raw_a_175 : !ttg.memdesc<16x32xbf16, #shared, #smem, mutable> -> tensor<16x32xbf16, #blocked1> loc(#loc144)
+204:       %raw_a_177 = arith.extf %a : tensor<16x32xbf16, #blocked1> to tensor<16x32xf32, #blocked1> loc(#loc145)
+205:       %normalized_178 = arith.mulf %raw_a_177, %normalized_84 : tensor<16x32xf32, #blocked1> loc(#loc129)
+206:       %normalized_179 = arith.truncf %normalized_178 : tensor<16x32xf32, #blocked1> to tensor<16x32xbf16, #blocked1> loc(#loc146)
+207:       %scale_180 = ttg.memdesc_index %scale[%up_acc_174] : !ttg.memdesc<2x32xbf16, #shared1, #smem, mutable> -> !ttg.memdesc<32xbf16, #shared1, #smem, mutable> loc(#loc134)
+208:       %a_181 = ttg.local_load %scale_180 token %raw_a_175 : !ttg.memdesc<32xbf16, #shared1, #smem, mutable> -> tensor<32xbf16, #ttg.slice<{dim = 0, parent = #blocked1}>> loc(#loc144)
+209:       %scale_182 = arith.extf %a_181 : tensor<32xbf16, #ttg.slice<{dim = 0, parent = #blocked1}>> to tensor<32xf32, #ttg.slice<{dim = 0, parent = #blocked1}>> loc(#loc147)
+210:       %a_183 = arith.extf %normalized_179 : tensor<16x32xbf16, #blocked1> to tensor<16x32xf32, #blocked1> loc(#loc148)
+211:       %a_184 = tt.expand_dims %scale_182 {axis = 0 : i32} : tensor<32xf32, #ttg.slice<{dim = 0, parent = #blocked1}>> -> tensor<1x32xf32, #blocked1> loc(#loc149)
+212:       %a_185 = tt.broadcast %a_184 : tensor<1x32xf32, #blocked1> -> tensor<16x32xf32, #blocked1> loc(#loc150)
+213:       %a_186 = arith.mulf %a_183, %a_185 : tensor<16x32xf32, #blocked1> loc(#loc150)
+214:       %a_187 = arith.truncf %a_186 : tensor<16x32xf32, #blocked1> to tensor<16x32xbf16, #blocked1> loc(#loc144)
+215:       %a_188 = ttg.local_alloc %a_187 : (tensor<16x32xbf16, #blocked1>) -> !ttg.memdesc<16x32xbf16, #shared, #smem> loc(#loc144)
+216:       %a_189 = ttg.local_load %a_188 : !ttg.memdesc<16x32xbf16, #shared, #smem> -> tensor<16x32xbf16, #ttg.dot_op<{opIdx = 0, parent = #mma, kWidth = 2}>> loc(#loc144)
+217:       %gate_w_190 = ttg.memdesc_index %gate_w_89[%up_acc_174] : !ttg.memdesc<2x32x64xbf16, #shared2, #smem, mutable> -> !ttg.memdesc<32x64xbf16, #shared2, #smem, mutable> loc(#loc135)
+218:       %gate_w_191 = ttg.local_load %gate_w_190 token %raw_a_175 : !ttg.memdesc<32x64xbf16, #shared2, #smem, mutable> -> tensor<32x64xbf16, #ttg.dot_op<{opIdx = 1, parent = #mma, kWidth = 2}>> loc(#loc135)
+219:       %up_w_192 = ttg.memdesc_index %up_w[%up_acc_174] : !ttg.memdesc<2x32x64xbf16, #shared2, #smem, mutable> -> !ttg.memdesc<32x64xbf16, #shared2, #smem, mutable> loc(#loc136)
+220:       %up_w_193 = ttg.local_load %up_w_192 token %raw_a_175 : !ttg.memdesc<32x64xbf16, #shared2, #smem, mutable> -> tensor<32x64xbf16, #ttg.dot_op<{opIdx = 1, parent = #mma, kWidth = 2}>> loc(#loc136)
+221:       %gate_acc = tt.dot %a_189, %gate_w_191, %arg8, inputPrecision = tf32 : tensor<16x32xbf16, #ttg.dot_op<{opIdx = 0, parent = #mma, kWidth = 2}>> * tensor<32x64xbf16, #ttg.dot_op<{opIdx = 1, parent = #mma, kWidth = 2}>> -> tensor<16x64xf32, #mma> loc(#loc151)
+222:       %up_acc_194 = tt.dot %a_189, %up_w_193, %arg9, inputPrecision = tf32 : tensor<16x32xbf16, #ttg.dot_op<{opIdx = 0, parent = #mma, kWidth = 2}>> * tensor<32x64xbf16, #ttg.dot_op<{opIdx = 1, parent = #mma, kWidth = 2}>> -> tensor<16x64xf32, #mma> loc(#loc152)
+
+261:     ttg.local_dealloc %gate_w_89 : !ttg.memdesc<2x32x64xbf16, #shared2, #smem, mutable> loc(#loc180)
+262:     ttg.local_dealloc %scale : !ttg.memdesc<2x32xbf16, #shared1, #smem, mutable> loc(#loc180)
+263:     ttg.local_dealloc %raw_a_88 : !ttg.memdesc<2x16x32xbf16, #shared, #smem, mutable> loc(#loc180)
+264:     %gate = arith.truncf %up_acc#0 : tensor<16x64xf32, #mma> to tensor<16x64xbf16, #mma> loc(#loc153)
+265:     %gate_136 = arith.extf %gate : tensor<16x64xbf16, #mma> to tensor<16x64xf32, #mma> loc(#loc154)
+266:     %up = arith.truncf %up_acc#1 : tensor<16x64xf32, #mma> to tensor<16x64xbf16, #mma> loc(#loc155)
+267:     %up_137 = arith.extf %up : tensor<16x64xbf16, #mma> to tensor<16x64xf32, #mma> loc(#loc156)
+268:     %gate_138 = tt.splat %GateBias : !tt.ptr<bf16> -> tensor<64x!tt.ptr<bf16>, #ttg.slice<{dim = 0, parent = #mma}>> loc(#loc157)
+269:     %gate_139 = tt.addptr %gate_138, %cols_81 : tensor<64x!tt.ptr<bf16>, #ttg.slice<{dim = 0, parent = #mma}>>, tensor<64xi32, #ttg.slice<{dim = 0, parent = #mma}>> loc(#loc157)
+270:     %gate_140 = tt.load %gate_139 : tensor<64x!tt.ptr<bf16>, #ttg.slice<{dim = 0, parent = #mma}>> loc(#loc158)
+271:     %gate_141 = tt.expand_dims %gate_140 {axis = 0 : i32} : tensor<64xbf16, #ttg.slice<{dim = 0, parent = #mma}>> -> tensor<1x64xbf16, #mma> loc(#loc159)
+272:     %gate_142 = arith.extf %gate_141 : tensor<1x64xbf16, #mma> to tensor<1x64xf32, #mma> loc(#loc160)
+273:     %gate_143 = tt.broadcast %gate_142 : tensor<1x64xf32, #mma> -> tensor<16x64xf32, #mma> loc(#loc161)
+274:     %gate_144 = arith.addf %gate_136, %gate_143 : tensor<16x64xf32, #mma> loc(#loc161)
+275:     %up_145 = tt.splat %UpBias : !tt.ptr<bf16> -> tensor<64x!tt.ptr<bf16>, #ttg.slice<{dim = 0, parent = #mma}>> loc(#loc162)
+276:     %up_146 = tt.addptr %up_145, %cols_81 : tensor<64x!tt.ptr<bf16>, #ttg.slice<{dim = 0, parent = #mma}>>, tensor<64xi32, #ttg.slice<{dim = 0, parent = #mma}>> loc(#loc162)
+277:     %up_147 = tt.load %up_146 : tensor<64x!tt.ptr<bf16>, #ttg.slice<{dim = 0, parent = #mma}>> loc(#loc163)
+278:     %up_148 = tt.expand_dims %up_147 {axis = 0 : i32} : tensor<64xbf16, #ttg.slice<{dim = 0, parent = #mma}>> -> tensor<1x64xbf16, #mma> loc(#loc164)
+279:     %up_149 = arith.extf %up_148 : tensor<1x64xbf16, #mma> to tensor<1x64xf32, #mma> loc(#loc165)
+280:     %up_150 = tt.broadcast %up_149 : tensor<1x64xf32, #mma> -> tensor<16x64xf32, #mma> loc(#loc166)
+281:     %up_151 = arith.addf %up_137, %up_150 : tensor<16x64xf32, #mma> loc(#loc166)
+282:     %cube = arith.mulf %gate_144, %gate_144 : tensor<16x64xf32, #mma> loc(#loc167)
+283:     %cube_152 = arith.mulf %cube, %gate_144 : tensor<16x64xf32, #mma> loc(#loc168)
+284:     %gelu = arith.mulf %gate_144, %cst_16 : tensor<16x64xf32, #mma> loc(#loc169)
+285:     %gelu_153 = arith.mulf %cube_152, %cst_17 : tensor<16x64xf32, #mma> loc(#loc170)
+286:     %gelu_154 = arith.addf %gate_144, %gelu_153 : tensor<16x64xf32, #mma> loc(#loc171)
+
+B PTX: factor RN BF16 and N tile zero branch:
+837: 	rsqrt.approx.f32 	%r580, %r576;
+838: 	rsqrt.approx.f32 	%r581, %r577;
+839: 	rsqrt.approx.f32 	%r582, %r578;
+840: 	rsqrt.approx.f32 	%r583, %r579;
+841: 	.loc	1 42 8                          // dual_ffn_prepare.py:42:8
+842: 	cvt.rn.bf16.f32 	%rs129, %r580;
+843: 	cvt.rn.bf16.f32 	%rs130, %r581;
+844: 	cvt.rn.bf16.f32 	%rs131, %r582;
+845: 	cvt.rn.bf16.f32 	%rs132, %r583;
+846: 	.loc	1 44 21                         // dual_ffn_prepare.py:44:21
+847: 	mov.u32 	%r10, %ctaid.y;
+848: 	.loc	1 44 27                         // dual_ffn_prepare.py:44:27
+849: 	setp.ne.b32 	%p5, %r10, 0;
+850: 	mov.b32 	%r991, global_smem;
+851: 	.loc	1 44 7                          // dual_ffn_prepare.py:44:7
+852: 	@%p5 bra 	$L__BB0_2;
+853: // %bb.1:
+854: 	.loc	1 0 7                           // dual_ffn_prepare.py:0:7
+855: 	ld.param.b64 	%rd13, [_dual_dot_with_prepare_param_6];
+880: 	bar.sync 	0;
+881: 	shl.b32 	%r590, %r7, 1;
+882: 	add.s32 	%r591, %r991, %r590;
+883: 	ld.shared.b16 	%rs133, [%r591];
+884: 	and.b32 	%r592, %r3, 112;
+885: 	setp.eq.b32 	%p8, %r592, 0;
+886: 	and.pred 	%p6, %p8, %p7;
+887: 	// begin inline asm
+888: 	@%p6 st.global.b16 [ %rd35 + 0 ], { %rs133 };
+889: 	// end inline asm
+890: $L__BB0_2:
+891: 	.loc	1 0 32                          // dual_ffn_prepare.py:0:32
+
+normalized product:
+1122: 	mul.rn.bf16 	%rs166, %rs140, %rs129;
+1123: 	mul.rn.bf16 	%rs167, %rs141, %rs129;
+1124: 	mul.rn.bf16 	%rs168, %rs138, %rs129;
+1125: 	mul.rn.bf16 	%rs169, %rs139, %rs129;
+
+scaled A product:
+1163: 	mul.rn.bf16 	%rs206, %rs166, %rs204;
+1164: 	mul.rn.bf16 	%rs207, %rs167, %rs205;
+1165: 	mul.rn.bf16 	%rs208, %rs168, %rs202;
+1166: 	mul.rn.bf16 	%rs209, %rs169, %rs203;
+
+gate projection:
+1330: 	cvt.rn.bf16.f32 	%rs238, %r1002;
+1331: 	cvt.rn.bf16.f32 	%rs239, %r1003;
+1332: 	cvt.rn.bf16.f32 	%rs240, %r1004;
+1333: 	cvt.rn.bf16.f32 	%rs241, %r1005;
+
+up projection:
+1731: 	cvt.rn.bf16.f32 	%rs250, %r1000;
+1732: 	cvt.rn.bf16.f32 	%rs251, %r1001;
+1733: 	cvt.rn.bf16.f32 	%rs252, %r998;
+1734: 	cvt.rn.bf16.f32 	%rs253, %r999;
+
+B TTGIR: asynchronous buffers include raw X, scale, gate weights and up weights.
+147:     %raw_a_88 = ttg.local_alloc : () -> !ttg.memdesc<2x16x32xbf16, #shared, #smem, mutable> loc(#loc127)
+148:     %scale = ttg.local_alloc : () -> !ttg.memdesc<2x32xbf16, #shared1, #smem, mutable> loc(#loc134)
+149:     %gate_w_89 = ttg.local_alloc : () -> !ttg.memdesc<2x32x64xbf16, #shared2, #smem, mutable> loc(#loc135)
+150:     %up_w = ttg.local_alloc : () -> !ttg.memdesc<2x32x64xbf16, #shared2, #smem, mutable> loc(#loc136)
+215:       %a_188 = ttg.local_alloc %a_187 : (tensor<16x32xbf16, #blocked1>) -> !ttg.memdesc<16x32xbf16, #shared, #smem> loc(#loc144)
