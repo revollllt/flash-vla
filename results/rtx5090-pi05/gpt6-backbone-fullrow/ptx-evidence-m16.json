@@ -1,0 +1,39 @@
+{
+  "block_m": 16,
+  "qk_bf16_roundtrip": {
+    "last_qk_mma": 519,
+    "loop_backedge": 525,
+    "round_to_bf16": [
+      533,
+      596
+    ],
+    "widen_to_fp32": [
+      598,
+      661
+    ],
+    "scale_first": 680,
+    "mask_add_first": 783
+  },
+  "normalized_probability_bf16": {
+    "fp32_division": [
+      1286,
+      1349
+    ],
+    "round_to_bf16x2": [
+      1351,
+      1382
+    ],
+    "shared_store_first": 1397,
+    "pv_ldmatrix_first": 3818,
+    "pv_bf16_mma_first": 3834
+  },
+  "resources": {
+    "registers": 206,
+    "n_spills": 0,
+    "local_bytes_per_thread": 0,
+    "shared_bytes": 66560
+  },
+  "n_spills_definition": "CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES / 4 in installed Triton driver.c:189-190",
+  "static_shfl_sync_idx": 2048,
+  "limitation": "PTXAS-input text count is not executed SASS count or runtime attribution."
+}

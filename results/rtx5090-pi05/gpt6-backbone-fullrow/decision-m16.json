@@ -1,0 +1,40 @@
+{
+  "decision": "local rejection of BM16-only follow-up",
+  "kernel_change": "BM32 to BM16; 8 warps/stage1/BK32 QK/BK64 PV/gather/BF16 boundaries unchanged",
+  "production_changed": false,
+  "snapshot": "artifacts/rtx5090-pi05/backbone-fullrow-024-17.safetensors",
+  "actual_layers": 17,
+  "all_checks_passed": true,
+  "worst_candidate_rel_rms": 5.217102491502758e-05,
+  "minimum_candidate_cosine": 0.9999999986391401,
+  "maximum_candidate_abs_error": 0.03125,
+  "worst_control_rel_rms": 0.0,
+  "all_outputs_finite": true,
+  "resources": {
+    "registers": 206,
+    "local_bytes_per_thread": 0,
+    "shared_bytes": 66560,
+    "ctas": 484
+  },
+  "medians_ms_per_17": [
+    1.1596199870109558,
+    1.8588799834251404,
+    1.8592239618301392,
+    1.1904000043869019
+  ],
+  "control_mean_median_ms_per_17": 1.1750099956989288,
+  "candidate_mean_median_ms_per_17": 1.8590519726276398,
+  "candidate_slower_ms_per_17": 0.6840419769287109,
+  "candidate_slower_us_per_call": 40.237763348747706,
+  "control_drift_ms": 0.030780017375946045,
+  "candidate_drift_ms": 0.0003439784049987793,
+  "minimum_separation_ms": 0.6684799790382385,
+  "raw_sample_counts": [
+    30,
+    30,
+    30,
+    30
+  ],
+  "limitations": "One same-snapshot ABBA. M32 and M16 were measured in separate ABBA windows; this is not a simultaneous M16-vs-M32 comparison. Zero local footprint does not itself predict speed. No isolated attribution to reads, gather or register pressure.",
+  "followup": "Stop; no BM8/warp/stage/BK/gather changes and no extra timing."
+}
