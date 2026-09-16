@@ -122,6 +122,20 @@ above. This is one measurement session with unlocked GPU clocks. A separate
 profiler overview captured all three stages; its instrumented times are not
 used as the latency result.
 
+## Shared roofline estimate
+
+The [shared analysis](../../../../lab/groot_n17/README.en.md) and its numerical
+records are versioned in this repository for all four A/B runs. For the current
+dense workload, the conditional estimate is **8.261 ms**; 90% of that estimated
+performance corresponds to **latency ≤9.179 ms**. See the analysis for assumptions
+and omitted costs; this is not a measured attainable latency.
+
+Recompute with the GR00T environment, without model weights or a GPU:
+
+```bash
+PYTHONPATH=src:. python -m lab.groot_n17.roofline --out artifacts/groot-n17/roofline.json
+```
+
 ## Implementation details that preserve the official forward
 
 - GR00T consumes `ForConditionalGeneration.hidden_states[-1]`. In the verified

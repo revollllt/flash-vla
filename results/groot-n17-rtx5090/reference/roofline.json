@@ -1,0 +1,748 @@
+{
+  "target": "rtx5090/groot_n17",
+  "reference_commit": "cf2d196",
+  "status": "conditional estimate; not measured attainable model performance",
+  "workload": {
+    "checkpoint": "GR00T-N1.7-LIBERO/libero_10",
+    "precision": "bf16",
+    "sequence_length": 156,
+    "views": 2,
+    "steps": 4,
+    "action_horizon": 40
+  },
+  "method": "flash_vla.runtime.cost.gemm/attention + tools.profiling.floor.site_row",
+  "peaks": {
+    "hbm_bps": 1792000000000.0,
+    "bf16_fps": 209600000000000.0,
+    "source": "flash_vla.hardware.nvidia.rtx5090.spec.RTX5090Spec"
+  },
+  "measured_primitives": {
+    "stream": {
+      "tag": "ld.bw.dev.dram",
+      "value": 1.524,
+      "units": "MB per us marginal (1.598 TB/s, 89% of the 1.792 TB/s datasheet peak) behind 3.35 us of fixed cost, fitted over 16-128 MB as a 1-node CUDA graph replay with L2 flushed outside the timed region. Launching the same kernel from a stream instead fits 3.93 + MB/1.539, agreeing within the 6% noise floor -- this fixed cost is the memory system's own spin-up, NOT launch overhead, because an event pair around a launch measures GPU-side kernel duration",
+      "short": "3.35us + MB/1.524",
+      "fixed_us": 3.35
+    },
+    "tensor": {
+      "tag": "mma.tflops.dev.bf16",
+      "value": 253,
+      "units": "TFLOP/s bf16 with fp32 accumulate, sustained across the whole device, from wall time rather than a clock assumption; 248.8 at 4 warps per SM rising to 253.2 at 12, register-resident operands. This is mma.rate.sm.bf16's 512 FLOP/cycle/SM at the 2.89 GHz this part was observed running (mma.clock.sm), and the two must move together",
+      "short": "253 TFLOP/s observed"
+    }
+  },
+  "assumptions": [
+    "Use BF16 input / FP32 accumulation dense throughput, never sparse or FP8 peaks.",
+    "Sum ideal per-operation costs for the current dense computation and four denoising steps.",
+    "Weight-stream model reads each selected matrix once per invocation; 32 embodiment banks are not all read.",
+    "Embedding tables are gathers, not full-table streams; lookup, bias, normalization and other pointwise costs are omitted.",
+    "Weight-stream model assumes ideal activation reuse and no persistent weight reuse between invocations; L2 is 96 MiB.",
+    "Materialized-traffic variant additionally prices every GEMM/attention input and output at DRAM; this is a sensitivity case, not the chosen denominator.",
+    "Launch, scheduling, synchronization, input staging, preprocessing and postprocessing overheads are omitted.",
+    "Static-time folding, cross-step KV reuse or other changes to required computation require recomputing this estimate.",
+    "Datasheet uses 209.6 TFLOP/s at marketed clocks; the measured primitive uses 253 TFLOP/s at its observed clocks. They are different conditions.",
+    "A 90% objective is T <= estimated_floor/0.9 under this model; attaining it is unproven and does not override the run budget."
+  ],
+  "stages": {
+    "vision_encoder": {
+      "flops": 349502963712.0,
+      "streamed_weight_bytes": 808452096.0,
+      "materialized_bytes": 1329070080.0,
+      "compute_only_ms": 1.667475971908397,
+      "weight_stream_roofline_ms": 1.667475971908397,
+      "materialized_roofline_ms": 1.667475971908397,
+      "measured_capability_estimate_ms": 1.5599223881156516
+    },
+    "llm_backbone": {
+      "flops": 254445355008.0,
+      "streamed_weight_bytes": 1610612736.0,
+      "materialized_bytes": 1835532288.0,
+      "compute_only_ms": 1.2139568464122137,
+      "weight_stream_roofline_ms": 1.2139568464122137,
+      "materialized_roofline_ms": 1.2158539152889858,
+      "measured_capability_estimate_ms": 1.485632503937008
+    },
+    "action_expert": {
+      "flops": 469315133440.0,
+      "streamed_weight_bytes": 9203179520.0,
+      "materialized_bytes": 9776341800.0,
+      "compute_only_ms": 2.239098919083969,
+      "weight_stream_roofline_ms": 5.379629439302072,
+      "materialized_roofline_ms": 5.574972030216739,
+      "measured_capability_estimate_ms": 9.690331706036744
+    }
+  },
+  "totals": {
+    "flops": 1073263452160.0,
+    "streamed_weight_bytes": 11622244352.0,
+    "materialized_bytes": 12940944168.0,
+    "compute_only_ms": 5.12053173740458,
+    "weight_stream_roofline_ms": 8.261062257622683,
+    "materialized_roofline_ms": 8.458301917414122,
+    "measured_capability_estimate_ms": 12.735886598089404
+  },
+  "goal_90pct_ms": 9.178958064025203,
+  "expanded_flops_match_stage_declarations": true,
+  "omitted_fp32_rope_flops": 59904,
+  "execution_check_record": "results/groot-n17-rtx5090/reference/roofline-execution-check.json",
+  "operations": [
+    {
+      "stage": "vision_encoder",
+      "name": "patch_projection",
+      "count": 1,
+      "geometry": {
+        "kind": "linear",
+        "m": 512,
+        "k": 1536,
+        "n": 1024
+      },
+      "flops": 1610612736,
+      "streamed_weight_bytes": 3145728,
+      "materialized_bytes": 5767168,
+      "compute_only_ms": 0.007684221068702289,
+      "weight_stream_roofline_ms": 0.007684221068702289,
+      "materialized_roofline_ms": 0.007684221068702289,
+      "measured_capability_estimate_ms": 0.006366058245059289
+    },
+    {
+      "stage": "vision_encoder",
+      "name": "qkv",
+      "count": 24,
+      "geometry": {
+        "kind": "linear",
+        "m": 512,
+        "k": 1024,
+        "n": 3072
+      },
+      "flops": 77309411328,
+      "streamed_weight_bytes": 150994944,
+      "materialized_bytes": 251658240,
+      "compute_only_ms": 0.3688426112977099,
+      "weight_stream_roofline_ms": 0.3688426112977099,
+      "materialized_roofline_ms": 0.3688426112977099,
+      "measured_capability_estimate_ms": 0.30557079576284585
+    },
+    {
+      "stage": "vision_encoder",
+      "name": "out_projection",
+      "count": 24,
+      "geometry": {
+        "kind": "linear",
+        "m": 512,
+        "k": 1024,
+        "n": 1024
+      },
+      "flops": 25769803776,
+      "streamed_weight_bytes": 50331648,
+      "materialized_bytes": 100663296,
+      "compute_only_ms": 0.12294753709923663,
+      "weight_stream_roofline_ms": 0.12294753709923663,
+      "materialized_roofline_ms": 0.12294753709923663,
+      "measured_capability_estimate_ms": 0.11342601574803149
+    },
+    {
+      "stage": "vision_encoder",
+      "name": "ffn_up",
+      "count": 24,
+      "geometry": {
+        "kind": "linear",
+        "m": 512,
+        "k": 1024,
+        "n": 4096
+      },
+      "flops": 103079215104,
+      "streamed_weight_bytes": 201326592,
+      "materialized_bytes": 327155712,
+      "compute_only_ms": 0.4917901483969465,
+      "weight_stream_roofline_ms": 0.4917901483969465,
+      "materialized_roofline_ms": 0.4917901483969465,
+      "measured_capability_estimate_ms": 0.4074277276837945
+    },
+    {
+      "stage": "vision_encoder",
+      "name": "ffn_down",
+      "count": 24,
+      "geometry": {
+        "kind": "linear",
+        "m": 512,
+        "k": 4096,
+        "n": 1024
+      },
+      "flops": 103079215104,
+      "streamed_weight_bytes": 201326592,
+      "materialized_bytes": 327155712,
+      "compute_only_ms": 0.4917901483969465,
+      "weight_stream_roofline_ms": 0.4917901483969465,
+      "materialized_roofline_ms": 0.4917901483969465,
+      "measured_capability_estimate_ms": 0.4074277276837945
+    },
+    {
+      "stage": "vision_encoder",
+      "name": "attention",
+      "count": 48,
+      "geometry": {
+        "kind": "attention",
+        "queries": 256,
+        "keys": 256,
+        "head_dim": 64,
+        "query_heads": 16,
+        "kv_heads": 16
+      },
+      "flops": 12884901888,
+      "streamed_weight_bytes": 0,
+      "materialized_bytes": 100663296,
+      "compute_only_ms": 0.061473768549618314,
+      "weight_stream_roofline_ms": 0.061473768549618314,
+      "materialized_roofline_ms": 0.061473768549618314,
+      "measured_capability_estimate_ms": 0.1608
+    },
+    {
+      "stage": "vision_encoder",
+      "name": "merger_fc1",
+      "count": 4,
+      "geometry": {
+        "kind": "linear",
+        "m": 128,
+        "k": 4096,
+        "n": 4096
+      },
+      "flops": 17179869184,
+      "streamed_weight_bytes": 134217728,
+      "materialized_bytes": 142606336,
+      "compute_only_ms": 0.08196502473282442,
+      "weight_stream_roofline_ms": 0.08196502473282442,
+      "materialized_roofline_ms": 0.08196502473282442,
+      "measured_capability_estimate_ms": 0.10146937532808399
+    },
+    {
+      "stage": "vision_encoder",
+      "name": "merger_fc2",
+      "count": 4,
+      "geometry": {
+        "kind": "linear",
+        "m": 128,
+        "k": 4096,
+        "n": 2048
+      },
+      "flops": 8589934592,
+      "streamed_weight_bytes": 67108864,
+      "materialized_bytes": 73400320,
+      "compute_only_ms": 0.04098251236641221,
+      "weight_stream_roofline_ms": 0.04098251236641221,
+      "materialized_roofline_ms": 0.04098251236641221,
+      "measured_capability_estimate_ms": 0.057434687664041986
+    },
+    {
+      "stage": "llm_backbone",
+      "name": "query_and_out",
+      "count": 32,
+      "geometry": {
+        "kind": "linear",
+        "m": 156,
+        "k": 2048,
+        "n": 2048
+      },
+      "flops": 41875931136,
+      "streamed_weight_bytes": 268435456,
+      "materialized_bytes": 309329920,
+      "compute_only_ms": 0.19978974778625952,
+      "weight_stream_roofline_ms": 0.19978974778625955,
+      "materialized_roofline_ms": 0.19978974778625955,
+      "measured_capability_estimate_ms": 0.283338750656168
+    },
+    {
+      "stage": "llm_backbone",
+      "name": "key_and_value",
+      "count": 32,
+      "geometry": {
+        "kind": "linear",
+        "m": 156,
+        "k": 2048,
+        "n": 1024
+      },
+      "flops": 20937965568,
+      "streamed_weight_bytes": 134217728,
+      "materialized_bytes": 164888576,
+      "compute_only_ms": 0.09989487389312976,
+      "weight_stream_roofline_ms": 0.09989487389312977,
+      "materialized_roofline_ms": 0.09989487389312977,
+      "measured_capability_estimate_ms": 0.19526937532808397
+    },
+    {
+      "stage": "llm_backbone",
+      "name": "gate_and_up",
+      "count": 32,
+      "geometry": {
+        "kind": "linear",
+        "m": 156,
+        "k": 2048,
+        "n": 6144
+      },
+      "flops": 125627793408,
+      "streamed_weight_bytes": 805306368,
+      "materialized_bytes": 887095296,
+      "compute_only_ms": 0.5993692433587786,
+      "weight_stream_roofline_ms": 0.5993692433587786,
+      "materialized_roofline_ms": 0.5993692433587786,
+      "measured_capability_estimate_ms": 0.635616251968504
+    },
+    {
+      "stage": "llm_backbone",
+      "name": "down",
+      "count": 16,
+      "geometry": {
+        "kind": "linear",
+        "m": 156,
+        "k": 6144,
+        "n": 2048
+      },
+      "flops": 62813896704,
+      "streamed_weight_bytes": 402653184,
+      "materialized_bytes": 443547648,
+      "compute_only_ms": 0.2996846216793893,
+      "weight_stream_roofline_ms": 0.2996846216793893,
+      "materialized_roofline_ms": 0.2996846216793893,
+      "measured_capability_estimate_ms": 0.317808125984252
+    },
+    {
+      "stage": "llm_backbone",
+      "name": "attention",
+      "count": 16,
+      "geometry": {
+        "kind": "attention",
+        "queries": 156,
+        "keys": 156,
+        "head_dim": 128,
+        "query_heads": 16,
+        "kv_heads": 8
+      },
+      "flops": 3189768192,
+      "streamed_weight_bytes": 0,
+      "materialized_bytes": 30670848,
+      "compute_only_ms": 0.015218359694656488,
+      "weight_stream_roofline_ms": 0.015218359694656488,
+      "materialized_roofline_ms": 0.01711542857142857,
+      "measured_capability_estimate_ms": 0.0536
+    },
+    {
+      "stage": "action_expert",
+      "name": "refiner_qkvo",
+      "count": 16,
+      "geometry": {
+        "kind": "linear",
+        "m": 156,
+        "k": 2048,
+        "n": 2048
+      },
+      "flops": 20937965568,
+      "streamed_weight_bytes": 134217728,
+      "materialized_bytes": 154664960,
+      "compute_only_ms": 0.09989487389312976,
+      "weight_stream_roofline_ms": 0.09989487389312977,
+      "materialized_roofline_ms": 0.09989487389312977,
+      "measured_capability_estimate_ms": 0.141669375328084
+    },
+    {
+      "stage": "action_expert",
+      "name": "refiner_ffn_up",
+      "count": 4,
+      "geometry": {
+        "kind": "linear",
+        "m": 156,
+        "k": 2048,
+        "n": 8192
+      },
+      "flops": 20937965568,
+      "streamed_weight_bytes": 134217728,
+      "materialized_bytes": 146997248,
+      "compute_only_ms": 0.09989487389312976,
+      "weight_stream_roofline_ms": 0.09989487389312977,
+      "materialized_roofline_ms": 0.09989487389312977,
+      "measured_capability_estimate_ms": 0.10146937532808399
+    },
+    {
+      "stage": "action_expert",
+      "name": "refiner_ffn_down",
+      "count": 4,
+      "geometry": {
+        "kind": "linear",
+        "m": 156,
+        "k": 8192,
+        "n": 2048
+      },
+      "flops": 20937965568,
+      "streamed_weight_bytes": 134217728,
+      "materialized_bytes": 146997248,
+      "compute_only_ms": 0.09989487389312976,
+      "weight_stream_roofline_ms": 0.09989487389312977,
+      "materialized_roofline_ms": 0.09989487389312977,
+      "measured_capability_estimate_ms": 0.10146937532808399
+    },
+    {
+      "stage": "action_expert",
+      "name": "refiner_attention",
+      "count": 4,
+      "geometry": {
+        "kind": "attention",
+        "queries": 156,
+        "keys": 156,
+        "head_dim": 64,
+        "query_heads": 32,
+        "kv_heads": 32
+      },
+      "flops": 797442048,
+      "streamed_weight_bytes": 0,
+      "materialized_bytes": 10223616,
+      "compute_only_ms": 0.003804589923664122,
+      "weight_stream_roofline_ms": 0.003804589923664122,
+      "materialized_roofline_ms": 0.0057051428571428565,
+      "measured_capability_estimate_ms": 0.0134
+    },
+    {
+      "stage": "action_expert",
+      "name": "state_fc1",
+      "count": 1,
+      "geometry": {
+        "kind": "linear",
+        "m": 1,
+        "k": 132,
+        "n": 1024
+      },
+      "flops": 270336,
+      "streamed_weight_bytes": 270336,
+      "materialized_bytes": 272648,
+      "compute_only_ms": 1.2897709923664122e-06,
+      "weight_stream_roofline_ms": 0.00015085714285714285,
+      "materialized_roofline_ms": 0.00015214732142857144,
+      "measured_capability_estimate_ms": 0.0035273858267716534
+    },
+    {
+      "stage": "action_expert",
+      "name": "state_fc2",
+      "count": 1,
+      "geometry": {
+        "kind": "linear",
+        "m": 1,
+        "k": 1024,
+        "n": 1536
+      },
+      "flops": 3145728,
+      "streamed_weight_bytes": 3145728,
+      "materialized_bytes": 3150848,
+      "compute_only_ms": 1.5008244274809159e-05,
+      "weight_stream_roofline_ms": 0.0017554285714285716,
+      "materialized_roofline_ms": 0.0017582857142857142,
+      "measured_capability_estimate_ms": 0.0054141259842519695
+    },
+    {
+      "stage": "action_expert",
+      "name": "action_encoder_w1",
+      "count": 4,
+      "geometry": {
+        "kind": "linear",
+        "m": 40,
+        "k": 132,
+        "n": 1536
+      },
+      "flops": 64880640,
+      "streamed_weight_bytes": 1622016,
+      "materialized_bytes": 2155776,
+      "compute_only_ms": 0.0003095450381679389,
+      "weight_stream_roofline_ms": 0.0009051428571428572,
+      "materialized_roofline_ms": 0.001203,
+      "measured_capability_estimate_ms": 0.014464314960629922
+    },
+    {
+      "stage": "action_expert",
+      "name": "action_encoder_w2",
+      "count": 4,
+      "geometry": {
+        "kind": "linear",
+        "m": 40,
+        "k": 3072,
+        "n": 1536
+      },
+      "flops": 1509949440,
+      "streamed_weight_bytes": 37748736,
+      "materialized_bytes": 39223296,
+      "compute_only_ms": 0.007203957251908397,
+      "weight_stream_roofline_ms": 0.021065142857142855,
+      "materialized_roofline_ms": 0.021888,
+      "measured_capability_estimate_ms": 0.038169511811023626
+    },
+    {
+      "stage": "action_expert",
+      "name": "action_encoder_w3",
+      "count": 4,
+      "geometry": {
+        "kind": "linear",
+        "m": 40,
+        "k": 1536,
+        "n": 1536
+      },
+      "flops": 754974720,
+      "streamed_weight_bytes": 18874368,
+      "materialized_bytes": 19857408,
+      "compute_only_ms": 0.0036019786259541987,
+      "weight_stream_roofline_ms": 0.010532571428571428,
+      "materialized_roofline_ms": 0.011081142857142857,
+      "measured_capability_estimate_ms": 0.02578475590551181
+    },
+    {
+      "stage": "action_expert",
+      "name": "time_fc1",
+      "count": 4,
+      "geometry": {
+        "kind": "linear",
+        "m": 1,
+        "k": 256,
+        "n": 1536
+      },
+      "flops": 3145728,
+      "streamed_weight_bytes": 3145728,
+      "materialized_bytes": 3160064,
+      "compute_only_ms": 1.5008244274809159e-05,
+      "weight_stream_roofline_ms": 0.0017554285714285716,
+      "materialized_roofline_ms": 0.0017634285714285716,
+      "measured_capability_estimate_ms": 0.015464125984251969
+    },
+    {
+      "stage": "action_expert",
+      "name": "time_fc2",
+      "count": 4,
+      "geometry": {
+        "kind": "linear",
+        "m": 1,
+        "k": 1536,
+        "n": 1536
+      },
+      "flops": 18874368,
+      "streamed_weight_bytes": 18874368,
+      "materialized_bytes": 18898944,
+      "compute_only_ms": 9.004946564885496e-05,
+      "weight_stream_roofline_ms": 0.010532571428571428,
+      "materialized_roofline_ms": 0.010546285714285715,
+      "measured_capability_estimate_ms": 0.02578475590551181
+    },
+    {
+      "stage": "action_expert",
+      "name": "dit_adaln",
+      "count": 128,
+      "geometry": {
+        "kind": "linear",
+        "m": 1,
+        "k": 1536,
+        "n": 3072
+      },
+      "flops": 1207959552,
+      "streamed_weight_bytes": 1207959552,
+      "materialized_bytes": 1209139200,
+      "compute_only_ms": 0.005763165801526717,
+      "weight_stream_roofline_ms": 0.6740845714285714,
+      "materialized_roofline_ms": 0.6747428571428571,
+      "measured_capability_estimate_ms": 1.221424377952756
+    },
+    {
+      "stage": "action_expert",
+      "name": "dit_self_qkvo",
+      "count": 256,
+      "geometry": {
+        "kind": "linear",
+        "m": 41,
+        "k": 1536,
+        "n": 1536
+      },
+      "flops": 49526341632,
+      "streamed_weight_bytes": 1207959552,
+      "materialized_bytes": 1272446976,
+      "compute_only_ms": 0.23628979786259544,
+      "weight_stream_roofline_ms": 0.6740845714285714,
+      "materialized_roofline_ms": 0.7100708571428571,
+      "measured_capability_estimate_ms": 1.650224377952756
+    },
+    {
+      "stage": "action_expert",
+      "name": "dit_self_attention",
+      "count": 64,
+      "geometry": {
+        "kind": "attention",
+        "queries": 41,
+        "keys": 41,
+        "head_dim": 48,
+        "query_heads": 32,
+        "kv_heads": 32
+      },
+      "flops": 660996096,
+      "streamed_weight_bytes": 0,
+      "materialized_bytes": 32243712,
+      "compute_only_ms": 0.0031536073282442748,
+      "weight_stream_roofline_ms": 0.0031536073282442743,
+      "materialized_roofline_ms": 0.017993142857142857,
+      "measured_capability_estimate_ms": 0.2144
+    },
+    {
+      "stage": "action_expert",
+      "name": "dit_cross_query_and_out",
+      "count": 128,
+      "geometry": {
+        "kind": "linear",
+        "m": 41,
+        "k": 1536,
+        "n": 1536
+      },
+      "flops": 24763170816,
+      "streamed_weight_bytes": 603979776,
+      "materialized_bytes": 636223488,
+      "compute_only_ms": 0.11814489893129772,
+      "weight_stream_roofline_ms": 0.3370422857142857,
+      "materialized_roofline_ms": 0.35503542857142856,
+      "measured_capability_estimate_ms": 0.825112188976378
+    },
+    {
+      "stage": "action_expert",
+      "name": "dit_cross_key_and_value",
+      "count": 128,
+      "geometry": {
+        "kind": "linear",
+        "m": 156,
+        "k": 2048,
+        "n": 1536
+      },
+      "flops": 125627793408,
+      "streamed_weight_bytes": 805306368,
+      "materialized_bytes": 948436992,
+      "compute_only_ms": 0.5993692433587786,
+      "weight_stream_roofline_ms": 0.5993692433587786,
+      "materialized_roofline_ms": 0.5993692433587786,
+      "measured_capability_estimate_ms": 0.9572162519685039
+    },
+    {
+      "stage": "action_expert",
+      "name": "dit_cross_attention",
+      "count": 64,
+      "geometry": {
+        "kind": "attention",
+        "queries": 41,
+        "keys": 156,
+        "head_dim": 48,
+        "query_heads": 32,
+        "kv_heads": 32
+      },
+      "flops": 2515009536,
+      "streamed_weight_bytes": 0,
+      "materialized_bytes": 77463552,
+      "compute_only_ms": 0.011999091297709923,
+      "weight_stream_roofline_ms": 0.011999091297709923,
+      "materialized_roofline_ms": 0.043227428571428576,
+      "measured_capability_estimate_ms": 0.2144
+    },
+    {
+      "stage": "action_expert",
+      "name": "dit_ffn_up",
+      "count": 128,
+      "geometry": {
+        "kind": "linear",
+        "m": 41,
+        "k": 1536,
+        "n": 6144
+      },
+      "flops": 99052683264,
+      "streamed_weight_bytes": 2415919104,
+      "materialized_bytes": 2496528384,
+      "compute_only_ms": 0.47257959572519087,
+      "weight_stream_roofline_ms": 1.3481691428571427,
+      "materialized_roofline_ms": 1.393152,
+      "measured_capability_estimate_ms": 2.014048755905512
+    },
+    {
+      "stage": "action_expert",
+      "name": "dit_ffn_down",
+      "count": 128,
+      "geometry": {
+        "kind": "linear",
+        "m": 41,
+        "k": 6144,
+        "n": 1536
+      },
+      "flops": 99052683264,
+      "streamed_weight_bytes": 2415919104,
+      "materialized_bytes": 2496528384,
+      "compute_only_ms": 0.47257959572519087,
+      "weight_stream_roofline_ms": 1.3481691428571427,
+      "materialized_roofline_ms": 1.393152,
+      "measured_capability_estimate_ms": 2.014048755905512
+    },
+    {
+      "stage": "action_expert",
+      "name": "output_modulation",
+      "count": 4,
+      "geometry": {
+        "kind": "linear",
+        "m": 1,
+        "k": 1536,
+        "n": 3072
+      },
+      "flops": 37748736,
+      "streamed_weight_bytes": 37748736,
+      "materialized_bytes": 37785600,
+      "compute_only_ms": 0.0001800989312977099,
+      "weight_stream_roofline_ms": 0.021065142857142855,
+      "materialized_roofline_ms": 0.021085714285714284,
+      "measured_capability_estimate_ms": 0.038169511811023626
+    },
+    {
+      "stage": "action_expert",
+      "name": "output_projection",
+      "count": 4,
+      "geometry": {
+        "kind": "linear",
+        "m": 41,
+        "k": 1536,
+        "n": 1024
+      },
+      "flops": 515899392,
+      "streamed_weight_bytes": 12582912,
+      "materialized_bytes": 13422592,
+      "compute_only_ms": 0.002461352061068702,
+      "weight_stream_roofline_ms": 0.0070217142857142865,
+      "materialized_roofline_ms": 0.007490285714285714,
+      "measured_capability_estimate_ms": 0.021656503937007878
+    },
+    {
+      "stage": "action_expert",
+      "name": "action_decoder_fc1",
+      "count": 4,
+      "geometry": {
+        "kind": "linear",
+        "m": 41,
+        "k": 1024,
+        "n": 1024
+      },
+      "flops": 343932928,
+      "streamed_weight_bytes": 8388608,
+      "materialized_bytes": 9060352,
+      "compute_only_ms": 0.0016409013740458014,
+      "weight_stream_roofline_ms": 0.004681142857142858,
+      "materialized_roofline_ms": 0.005056,
+      "measured_capability_estimate_ms": 0.01890433595800525
+    },
+    {
+      "stage": "action_expert",
+      "name": "action_decoder_fc2",
+      "count": 4,
+      "geometry": {
+        "kind": "linear",
+        "m": 41,
+        "k": 1024,
+        "n": 132
+      },
+      "flops": 44335104,
+      "streamed_weight_bytes": 1081344,
+      "materialized_bytes": 1460512,
+      "compute_only_ms": 0.00021152244274809162,
+      "weight_stream_roofline_ms": 0.0006034285714285714,
+      "materialized_roofline_ms": 0.0008150178571428571,
+      "measured_capability_estimate_ms": 0.014109543307086614
+    }
+  ]
+}

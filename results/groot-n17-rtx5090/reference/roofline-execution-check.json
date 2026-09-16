@@ -1,0 +1,32 @@
+{
+  "stages": {
+    "vision_encoder": {
+      "actual_flops": 349502963712,
+      "estimated_flops": 349502963712,
+      "matches": true,
+      "excluded_fp32_rope_flops": 0,
+      "matches_accounted_flops": true
+    },
+    "llm_backbone": {
+      "actual_flops": 254445414912,
+      "estimated_flops": 254445355008,
+      "matches": false,
+      "excluded_fp32_rope_flops": 59904,
+      "matches_accounted_flops": true
+    },
+    "action_expert": {
+      "actual_flops": 469315133440,
+      "estimated_flops": 469315133440,
+      "matches": true,
+      "excluded_fp32_rope_flops": 0,
+      "matches_accounted_flops": true
+    }
+  },
+  "output_shape": [
+    1,
+    40,
+    132
+  ],
+  "finite": true,
+  "note": "The extra 59,904 FP32 FLOPs are Qwen3VLTextRotaryEmbedding.forward: [3,1,64,1] @ [3,1,1,156]. They are excluded from the dense BF16 estimate."
+}
