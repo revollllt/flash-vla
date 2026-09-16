@@ -196,15 +196,51 @@ def _pi05_rtx5090(plan: Any = "shipped", **overrides):
     return _pi05(plan, target=TARGET, **overrides)
 
 
+def _groot_n17(plan: Any = "shipped", *, seed: int = 0, steps: int = 4, layers: int = 16,
+               sequence_length: int = 156, device: str = "cuda", declare: bool = False,
+               capture: bool = True, checkpoint: str | None = None, fixture: str | None = None,
+               checkpoint_id: str | None = None, fixture_id: str | None = None,
+               asset_config: str | None = None):
+    from flash_vla.hardware.nvidia.rtx5090.groot_n17 import TARGET
+    from flash_vla.models.groot_n17.weights import Checkpoint
+
+    explicit = {"checkpoint": checkpoint, "fixture": fixture}
+    ids = {"checkpoint": checkpoint_id, "fixture": fixture_id}
+    for role, path in explicit.items():
+        if path is not None and ids[role] is None:
+            raise ValueError(f"{role} override requires {role}_id")
+    identifiers = {role: ids[role] or value for role, value in TARGET.ASSETS.items()}
+    assets = {}
+    if not declare:
+        assets = resolve_assets({role: value for role, value in identifiers.items()
+                                 if explicit[role] is None}, asset_config) if any(
+                                     value is None for value in explicit.values()) else {}
+        assets.update({role: Path(path).expanduser().resolve()
+                       for role, path in explicit.items() if path is not None})
+    runner = ModelRunner(TARGET, None if declare else Checkpoint(assets["checkpoint"]),
+                         checkpoint_id=identifiers["checkpoint"],
+                         checkpoint_digest=identifiers["checkpoint"],
+                         plan=plan, device=device, capture=capture and not declare, assets=assets,
+                         sequence_length=sequence_length, steps=steps, layers=layers)
+    fixture_context = f"{identifiers['fixture']}/noise-seed-{seed}"
+    runner.measurement_context["fixture"] = {"id": fixture_context, "digest": fixture_context}
+    return runner
+
+
 #: Target name -> factory. Short aliases resolve through `resolve`.
 TARGETS: dict[str, Callable[..., Any]] = {
+    "hardware/nvidia/rtx5090/groot_n17": _groot_n17,
     "hardware/nvidia/h100/lingbot_vla": _lingbot,
     "hardware/nvidia/h100/pi05": _pi05,
     "hardware/nvidia/h100/pi0": _pi0,
     "hardware/nvidia/rtx5090/pi0": _pi0_rtx5090,
     "hardware/nvidia/rtx5090/pi05": _pi05_rtx5090,
 }
-_ALIASES = {"h100/pi05": "hardware/nvidia/h100/pi05", "pi05": "hardware/nvidia/h100/pi05",
+_ALIASES = {"rtx5090/groot_n17": "hardware/nvidia/rtx5090/groot_n17",
+            "5090/groot_n17": "hardware/nvidia/rtx5090/groot_n17",
+            "groot-n17": "hardware/nvidia/rtx5090/groot_n17",
+            "rtx5090_groot_n17": "hardware/nvidia/rtx5090/groot_n17",
+            "h100/pi05": "hardware/nvidia/h100/pi05", "pi05": "hardware/nvidia/h100/pi05",
             "h100/pi0": "hardware/nvidia/h100/pi0", "pi0": "hardware/nvidia/h100/pi0",
             "h100/lingbot_vla": "hardware/nvidia/h100/lingbot_vla",
             "lingbot_vla": "hardware/nvidia/h100/lingbot_vla",

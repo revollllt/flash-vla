@@ -28,6 +28,7 @@ Commands below run from the project root in the configured GPU environment.
 | `h100/lingbot_vla` | Real checkpoint and fixture, resolved through `FLASH_VLA_ASSETS` |
 | `rtx5090/pi0` | Seeded synthetic weights and inputs |
 | `rtx5090/pi05` | Synthetic weights, or a checkpoint OpenPI's converter wrote |
+| `rtx5090/groot_n17` | [GR00T N1.7 LIBERO PyTorch reference](src/flash_vla/models/groot_n17/README.md), real checkpoint and observations |
 
 ```bash
 python -m benchmarks latency --target h100/pi0 --plan shipped --out artifacts/current.json
@@ -79,3 +80,6 @@ those views from saved traces; [historical plans](docs/history/README.md) remain
 MIT — see [LICENSE](LICENSE). The initial pipeline was extracted from research
 commit `a53bcf9`, following the realtime-vla Pi0 implementation; current references
 and validation are maintained in `eval/` and beside the relevant kernels.
+
+The adapted GR00T N1.7 reference retains its Apache-2.0 license; see its
+[source notice](src/flash_vla/models/groot_n17/README.md#implementation-details-that-preserve-the-official-forward).

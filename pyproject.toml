@@ -25,6 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 pi05 = ["sentencepiece", "numpy", "safetensors"]
+groot-n17 = ["torch>=2.9", "transformers==4.57.3", "diffusers==0.35.1", "safetensors", "numpy>=1.26.4,<2", "einops==0.8.1"]
 optimize = ["matplotlib>=3.8"]
 
 [tool.setuptools.packages.find]
