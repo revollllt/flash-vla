@@ -16,6 +16,9 @@ Add new skills under `.agents/skills/` so both entries expose them. Four of them
 symlinks into the `third_party/agent-gpu-skills` submodule and need
 `git submodule update --init` before they resolve.
 
+- FlashRT is the comparison baseline for published results, not a reference.
+  Do not read, port or adapt its source in onboarding or optimization, including
+  a checkout that happens to be on the machine; use kernel-wiki and `third_party/`.
 - State one testable hypothesis and use the cheapest informative check first.
 - Control workload, environment and noise before attributing a performance change.
   Expose uncertainty rather than assuming missing evidence.
