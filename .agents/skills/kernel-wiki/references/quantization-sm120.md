@@ -19,8 +19,9 @@ comparison baseline and is not a reference ([AGENTS.md](../../../../AGENTS.md)).
 | SGLang | `v0.5.20` `94602c9c` | `third_party/quant-references/sglang/` | Apache-2.0; `kda_kernels/` files BSD-3-Clause (NVIDIA) |
 | FlashInfer | `v0.7.0` `4d75a33f` | `third_party/quant-references/flashinfer/` | Apache-2.0 |
 
-`bash third_party/quant-references/fetch.sh` creates the three sparse checkouts
-(about 23 MB); CUTLASS needs `git submodule update --init third_party/cutlass`.
+The three libraries are committed under `third_party/quant-references/` (about
+12 MB; `update.sh` there moves a pin); CUTLASS needs
+`git submodule update --init third_party/cutlass`.
 Below, `vllm:`, `sgl:`, `fi:` and `cutlass:` abbreviate those roots;
 `vllm:Q/` is `vllm:csrc/libtorch_stable/quantization/` and `sgl:K/` is
 `sgl:python/sglang/kernels/`.
@@ -63,8 +64,13 @@ Below, `vllm:`, `sgl:`, `fi:` and `cutlass:` abbreviate those roots;
 
 ### FP8 with block-128 / groupwise scales
 
-- CUTLASS: `examples/87_blackwell_geforce_gemm_blockwise/` — 87a blockwise, 87b
-  groupwise, 87c grouped; collective `sm120_mma_tma_blockwise_scaling.hpp`.
+- CUTLASS: `examples/87_blackwell_geforce_gemm_blockwise/` — 87b groupwise is the
+  [1,128] activation × [128,128] weight configuration,
+  `Sm120BlockwiseScaleConfig<1, 128, 128>`; 87a blockwise uses one scale per MMA
+  tile; 87c grouped. Collective `sm120_mma_tma_blockwise_scaling.hpp`, which
+  asserts that the scale's K granularity equals the tile's K: a finer K group
+  means a shallower K tile and a promotion per group. vLLM, SGLang and FlashInfer
+  below all wrap this collective.
   `examples/94_ada_fp8_blockwise` for SM89.
 - vLLM: `vllm:Q/w8a8/cutlass/c3x/scaled_mm_blockwise_sm120_fp8{.cu,_dispatch.cuh}`.
 - SGLang: `sgl:K/jit/csrc/gemm/fp8_blockwise/fp8_blockwise_scaled_mm_sm120.cuh`.
@@ -91,8 +97,14 @@ Below, `vllm:`, `sgl:`, `fi:` and `cutlass:` abbreviate those roots;
 
 ### FP8 with per-32 UE8M0 block scales (MXFP8)
 
-The block-scaled tensor-core path for FP8 (`kind::mxf8f6f4.block_scale`), an
-alternative to software-applied block-128 scales.
+The block-scaled tensor-core path for FP8, an alternative to software-applied
+block-128 scales: `mx_float8_t<float_e4m3_t>` operands with
+`OpClassBlockScaledTensorOp`, issuing
+`kind::mxf8f6f4.block_scale.scale_vec::1X.m16n8k32` with UE8M0 scales. One scale
+per 32 K elements for both operands — SFA is [M, K/32], SFB is [N, K/32] — applied
+by the MMA itself. A [1,32] group through the software blockwise path above would
+need a 32-deep K tile and FP32 scales (12.5% extra weight bytes), so 32-element
+groups belong to this path.
 
 
 - CUTLASS: 79c (MXFP8 × MXFP6 → BF16); `examples/80_blackwell_geforce_sparse_gemm/80a`.

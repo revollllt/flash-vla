@@ -1,6 +1,6 @@
 # Vendored CUDA dependencies and references
 
-Submodule checkouts, plus script-pinned sparse checkouts under
+Submodule checkouts, plus vendored copies of pinned sparse checkouts under
 `quant-references/`. The top-level `.gitmodules` records the official URLs;
 `git clone --recurse-submodules` (or `git submodule update --init`) restores
 the pinned revisions and their upstream LICENSE files.
@@ -28,24 +28,21 @@ this directory's `cutlass` to avoid fetching a third copy.
 
 ## Quantization references
 
-`quant-references/fetch.sh` fetches read-only sparse checkouts of vLLM, SGLang
-and FlashInfer into gitignored directories beside it. Scope is FP8 and NVFP4 on
-SM120's native low-bit tensor cores: only their FP8/NVFP4 GEMM, quantize,
-scale-layout and quantization-config paths are fetched, plus each LICENSE, about
-23 MB in total. Weight-only kernels (Marlin, Machete, GPTQ, AWQ, AllSpark) and
+`quant-references/` holds read-only, committed copies of parts of vLLM,
+SGLang and FlashInfer. Scope is FP8 and NVFP4 on SM120's native low-bit tensor
+cores: only their FP8/NVFP4 GEMM, quantize, scale-layout and quantization-config
+paths are kept, plus each LICENSE — 893 text files, about 12 MB (2.2 MB
+compressed). Weight-only kernels (Marlin, Machete, GPTQ, AWQ, AllSpark) and
 SM90-only W4A8 are left out; mixed precision is added when FP8 and NVFP4 are
-stable and faster. They are not submodules because the full
-repositories are 94–380 MB with history, of which only a few MB is relevant.
-The script is the pin: it checks out the recorded commit and refuses a tag that
-has moved. Like FlashMLA and DeepGEMM, these are reading material and are on no
+stable and faster. They are copies rather than submodules because the full
+repositories are 94–380 MB with history, of which this is the relevant part.
+`quant-references/update.sh` records each pin and regenerates the copies from a
+sparse checkout at that commit; run it only to move a pin, and it refuses a tag
+that has moved. Like FlashMLA and DeepGEMM, these are reading material and are on no
 include path. The SM120 quantization entries in CUTLASS (examples 79, 80, 87, 91;
 the `sm120_*` collectives) come from the existing submodule.
 [kernel-wiki's SM120 source map](../.agents/skills/kernel-wiki/references/quantization-sm120.md)
 says where each scheme lives and what does not run on SM120.
-
-```bash
-bash third_party/quant-references/fetch.sh
-```
 
 | component | upstream | pinned revision | fetched paths | license |
 | --- | --- | --- | --- | --- |
