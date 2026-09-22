@@ -1,6 +1,7 @@
 # Vendored CUDA dependencies and references
 
-Submodule checkouts. The top-level `.gitmodules` records the official URLs;
+Submodule checkouts, plus script-pinned sparse checkouts under
+`quant-references/`. The top-level `.gitmodules` records the official URLs;
 `git clone --recurse-submodules` (or `git submodule update --init`) restores
 the pinned revisions and their upstream LICENSE files.
 
@@ -24,6 +25,33 @@ this directory's `cutlass` to avoid fetching a third copy.
 | FlashMLA | https://github.com/deepseek-ai/FlashMLA | `15f13e5030374295491c5ce31b02d7e63a7772c6` | CUTLASS `147f5673d0c1c3dcf66f78d677fd647e4a020219` | `flashmla/LICENSE` |
 | DeepGEMM | https://github.com/deepseek-ai/DeepGEMM | `559d79fb6994a58b8a15b4b93bf13ccc16edf247` | CUTLASS `f3fde58372d33e9a5650ba7b80fc48b3b49d40c8`, fmt `553ec11ec06fbe0beebfbb45f9dc3c9eabd83d28` | `deepgemm/LICENSE` |
 | agent-gpu-skills | https://github.com/slowlyC/agent-gpu-skills | `ae02d076fd424f3c134a5738a0e5cc5f28e747c3` | none; its own `third_party/` is gitignored and rebuilt by `update-repos.sh` | `agent-gpu-skills/LICENSE` (MIT) |
+
+## Quantization references
+
+`quant-references/fetch.sh` fetches read-only sparse checkouts of vLLM, SGLang
+and FlashInfer into gitignored directories beside it. Scope is FP8 and NVFP4 on
+SM120's native low-bit tensor cores: only their FP8/NVFP4 GEMM, quantize,
+scale-layout and quantization-config paths are fetched, plus each LICENSE, about
+23 MB in total. Weight-only kernels (Marlin, Machete, GPTQ, AWQ, AllSpark) and
+SM90-only W4A8 are left out; mixed precision is added when FP8 and NVFP4 are
+stable and faster. They are not submodules because the full
+repositories are 94–380 MB with history, of which only a few MB is relevant.
+The script is the pin: it checks out the recorded commit and refuses a tag that
+has moved. Like FlashMLA and DeepGEMM, these are reading material and are on no
+include path. The SM120 quantization entries in CUTLASS (examples 79, 80, 87, 91;
+the `sm120_*` collectives) come from the existing submodule.
+[kernel-wiki's SM120 source map](../.agents/skills/kernel-wiki/references/quantization-sm120.md)
+says where each scheme lives and what does not run on SM120.
+
+```bash
+bash third_party/quant-references/fetch.sh
+```
+
+| component | upstream | pinned revision | fetched paths | license |
+| --- | --- | --- | --- | --- |
+| vLLM | https://github.com/vllm-project/vllm | `v0.30.0`, `ced6857afa0ea7b2e3f0846a62e1394e90f15607` | `csrc/libtorch_stable/quantization` without its weight-only and W4A8 kernels, `csrc/quantization`, `csrc/cutlass_extensions`, `csrc/core`, `vllm/model_executor/layers/quantization` | Apache-2.0 |
+| SGLang | https://github.com/sgl-project/sglang | `v0.5.20`, `94602c9c2b7cbdb8efd5c52802dac6a1c180089e` | under `python/sglang/kernels/`: `jit/csrc/gemm` without Marlin and AWQ, `jit/include`, `kda_kernels`, `aot/csrc/gemm`, `aot/csrc/cutlass_extensions`, `ops/gemm`, `ops/diffusion`; and `python/sglang/srt/layers/quantization` | Apache-2.0; `kda_kernels/` files carry BSD-3-Clause headers |
+| FlashInfer | https://github.com/flashinfer-ai/flashinfer | `v0.7.0`, `4d75a33f19aaf48b44d5b1c5dbca33bc1eca5c58` | `csrc/cute_sm12x_gemm`, `csrc/nv_internal`, `csrc/nvfp4_attention_sm120`, the quantized GEMM and quantize entry files directly in `csrc/`, `include/flashinfer/gemm`, `include/flashinfer/attention/sm120`, `flashinfer/gemm`, `flashinfer/quantization`, `flashinfer/jit/gemm` | Apache-2.0 |
 
 ## Reuse map for the SM90 CuTe kernels
 

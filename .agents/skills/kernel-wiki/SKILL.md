@@ -37,3 +37,6 @@ this knowledge base; ordinary lookup does not run corpus-wide checks.
 For concrete Hopper implementations, read [DeepGEMM](references/deepgemm-sm90.md)
 for producer/consumer GEMM or [FlashMLA](references/flashmla-sm90.md) for cooperating
 warp groups and split-KV decode. These are pinned-source readings, not current project requirements.
+For quantized GEMM, quantize and scale-layout code on RTX 5090, the
+[SM120 quantization source map](references/quantization-sm120.md) locates the pinned
+CUTLASS, vLLM, SGLang and FlashInfer sources and what does not run on SM120.
