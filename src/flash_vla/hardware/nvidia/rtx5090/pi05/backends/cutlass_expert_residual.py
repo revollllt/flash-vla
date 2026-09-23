@@ -13,23 +13,23 @@ NAMES = ("action_expert_ffn_down_residual", "action_expert_out_proj_residual")
 
 class _Plan:
     def __init__(self, library, scratch, role, x, weight, gate, out, stream):
-        k = x.shape[1]
-        size = library.expert_down_workspace(k)
+        m, k = x.shape
+        size = library.expert_down_workspace(m, k)
         self.workspace = scratch(role, (max(size, 1),), torch.uint8, x.device)
         self.tensors = (x, weight, gate, out)
         self.handle = ctypes.c_void_p()
         _check(library.expert_down_plan(
-            k, x.data_ptr(), weight.data_ptr(), gate.data_ptr(), out.data_ptr(),
+            m, k, x.data_ptr(), weight.data_ptr(), gate.data_ptr(), out.data_ptr(),
             self.workspace.data_ptr(), stream, ctypes.byref(self.handle)),
-            f"expert_down_plan M=50 K={k} N=1024")
+            f"expert_down_plan M={m} K={k} N=1024")
         self.destroy = weakref.finalize(self, library.expert_down_destroy, self.handle)
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
-    """Bind contiguous CUDA BF16 x(50,K), weight(K,1024), gate(1024,).
+    """Bind contiguous CUDA BF16 x(M,K), weight(K,1024), gate(1024,).
 
     K is 2048 for attention out-projection and 4096 for FFN down.
-    out(50,1024) is read and written in place, with a BF16-rounded GEMM result
+    out(M,1024) is read and written in place, with a BF16-rounded GEMM result
     before the separate FP32 multiply/add. Each closure owns native plans and
     source references. Warmup must visit all pointer sets before graph capture;
     its Stream-K scratch is shared serially and no projection buffer is needed.
@@ -45,8 +45,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
 
     def projection_residual(x, weight, gate, out):
         nonlocal library
-        k = x.shape[1]
-        key = (k, x.data_ptr(), weight.data_ptr(), gate.data_ptr(), out.data_ptr())
+        m, k = x.shape
+        key = (m, k, x.data_ptr(), weight.data_ptr(), gate.data_ptr(), out.data_ptr())
         plan = plans.get(key)
         stream = torch.cuda.current_stream().cuda_stream
         if plan is None:
@@ -57,7 +57,7 @@ def make_wrappers(scratch, selected_names=None) -> dict:
             plan = _Plan(library, scratch, role, x, weight, gate, out, stream)
             plans[key] = plan
         _check(library.expert_down_run(plan.handle, stream),
-               f"expert_down_run M=50 K={k} N=1024")
+               f"expert_down_run M={m} K={k} N=1024")
         return out
 
     return {name: projection_residual for name in names}

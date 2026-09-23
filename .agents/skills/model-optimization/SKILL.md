@@ -63,8 +63,10 @@ the alternative; an ambiguous result revises it rather than adding a candidate.
    which owns the search and the implementation choices. A delegated prompt
    carries the target and its evidence, the shapes and layout, what may change,
    the hypothesis, how to validate it and what to return -- not a copy of this
-   session. A [kernel-wiki](../kernel-wiki/SKILL.md) miss on a solved problem
-   makes writing that page part of this round's output.
+   session. Fan-out, the one GPU lock, rebasing on a moved base and replacing
+   a stalled agent follow [delegation](references/delegation.md). A
+   [kernel-wiki](../kernel-wiki/SKILL.md) miss on a solved problem makes
+   writing that page part of this round's output.
 
 6. **Validate the kernel: correctness, then local gain.** Existing references
    and tolerances, then [benchmark-kernel](../benchmark-kernel/SKILL.md) under
@@ -93,7 +95,11 @@ the alternative; an ambiguous result revises it rather than adding a candidate.
 
 Save each round's change, revision, command, environment, correctness result and
 raw benchmark JSON under `results/<target>/<run>/`, append the trial to
-`iterations.csv`, and redraw with `python -m lab.results curve
+`iterations.csv` with the `group` the [results
+tools](../../../lab/results/README.md#the-progress-figure) define -- the segment
+whose time the change cut, `multi-stage` when it cannot be assigned to one,
+`control` for a row that changes no module -- so the figure colours every
+milestone by module, and redraw with `python -m lab.results curve
 results/<target>/<run>`. Step 7's two denominators go in that run's
 `figure.json`, which is what draws the share-of-floor panel; without it the same
 renderer produces the same figure with a panel missing ([results

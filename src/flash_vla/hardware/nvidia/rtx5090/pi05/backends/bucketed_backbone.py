@@ -2,7 +2,8 @@
 
 The mask is an explicit op argument. Both static plans are warmed and captured;
 their native entries select the active bucket from mask[896] on every replay.
-The physical tensors remain BF16 M968. This module only loads native libraries
+The bucketed tensors remain BF16 M968. Other row counts use the existing
+full-row CUTLASS plan without bucket masking. This module only loads native libraries
 on the first real invocation, so declaration needs no CUDA context or compiler.
 """
 from __future__ import annotations
@@ -97,12 +98,17 @@ def make_wrappers(scratch, selected_names=None) -> dict:
                 raise RuntimeError("bucketed backbone pointer set was not warmed before capture")
             if library is None:
                 library = _library()
-            plan = _Plan(library, scratch, a, b, output, beta, stream)
+            plan_type = _Plan if a.shape[0] == 968 else cutlass_backbone._Plan
+            plan = plan_type(library, scratch, a, b, output, beta, stream)
             plans[key] = plan
-        for handle in plan.handles:
-            cutlass_backbone._check(
-                library.backbone_bucket_run(handle, mask.data_ptr(), stream),
-                "backbone_bucket_run")
+        if a.shape[0] == 968:
+            for handle in plan.handles:
+                cutlass_backbone._check(
+                    library.backbone_bucket_run(handle, mask.data_ptr(), stream),
+                    "backbone_bucket_run")
+        else:
+            cutlass_backbone._check(library.backbone_gemm_run(plan.handle, stream),
+                                    "backbone_gemm_run")
 
     def llm_backbone_norm_gated_ffn_masked(x, gate_w, up_w, out, x_norm, mask):
         nonlocal pointwise
@@ -122,9 +128,13 @@ def make_wrappers(scratch, selected_names=None) -> dict:
         run_gemm(normed, gate_w, gate, mask, beta=0.0, stream=stream)
         run_gemm(normed, up_w, result, mask, beta=0.0, stream=stream)
         # The short bucket zeroes the tail before any stale gate/up load.
-        cutlass_backbone._check(pointwise.backbone_masked_gelu_mul(
-            gate.data_ptr(), result.data_ptr(), result.numel(), mask.data_ptr(), stream),
-            "backbone_masked_gelu_mul")
+        if rows == 968:
+            status = pointwise.backbone_masked_gelu_mul(
+                gate.data_ptr(), result.data_ptr(), result.numel(), mask.data_ptr(), stream)
+        else:
+            status = pointwise.backbone_gelu_mul(
+                gate.data_ptr(), result.data_ptr(), result.numel(), stream)
+        cutlass_backbone._check(status, "backbone_gelu_mul")
         return out
 
     def llm_backbone_ffn_down_residual_masked(x, weight, out, mask):

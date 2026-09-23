@@ -78,7 +78,6 @@ def build(g: Graph, shape: Mapping[str, int]) -> None:
     """Write the Pi0.5 graph at `shape` (num_views, chunk, steps, layers, prompt_len)."""
     num_views, chunk, steps = shape["num_views"], shape["chunk"], shape["steps"]
     layers, prompt_len = shape["layers"], shape["prompt_len"]
-    assert num_views != 2, "the num_views==2 two-part vision branch is not implemented"
 
     image_tokens = num_views * VISION_TOKENS
     prefix_len = image_tokens + prompt_len

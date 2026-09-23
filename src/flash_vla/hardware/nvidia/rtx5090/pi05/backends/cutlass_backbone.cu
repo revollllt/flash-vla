@@ -161,10 +161,10 @@ using DownGemm = cutlass::gemm::device::GemmUniversalBase<
         DownDefaults::GemmKernel::Mma, DownEpilogue,
         cutlass::gemm::threadblock::ThreadblockSwizzleStreamK>>;
 
-DownGemm::Arguments down_arguments(int32_t k, const void* a, const void* b, const void* gate,
+DownGemm::Arguments down_arguments(int32_t m, int32_t k, const void* a, const void* b, const void* gate,
                                     void* output) {
   DownGemm::Arguments args;
-  args.problem_size = {50, 1024, k};
+  args.problem_size = {m, 1024, k};
   args.ptr_A = a;
   args.ptr_B = b;
   args.ptr_C = output;
@@ -263,15 +263,15 @@ extern "C" void backbone_bucket_destroy(void* handle) {
   delete static_cast<BucketGemm*>(handle);
 }
 
-extern "C" int64_t expert_down_workspace(int32_t k) {
+extern "C" int64_t expert_down_workspace(int32_t m, int32_t k) {
   return static_cast<int64_t>(
-      DownGemm::get_workspace_size(down_arguments(k, nullptr, nullptr, nullptr, nullptr)));
+      DownGemm::get_workspace_size(down_arguments(m, k, nullptr, nullptr, nullptr, nullptr)));
 }
 
 extern "C" int32_t expert_down_plan(
-    int32_t k, const void* a, const void* b, const void* gate, void* output,
+    int32_t m, int32_t k, const void* a, const void* b, const void* gate, void* output,
     void* workspace, void* stream, void** handle) {
-  const auto args = down_arguments(k, a, b, gate, output);
+  const auto args = down_arguments(m, k, a, b, gate, output);
   cutlass::Status status = DownGemm::can_implement(args);
   if (status != cutlass::Status::kSuccess)
     return kCutlassError + static_cast<int32_t>(status);
