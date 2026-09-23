@@ -1,0 +1,16 @@
+{
+ "vision_encoder_norm_qkv": "cutlass-vision",
+ "vision_encoder_out_proj_residual": "cutlass-vision",
+ "vision_encoder_norm_ffn_up": "cutlass-vision",
+ "vision_encoder_ffn_down_residual": "cutlass-vision",
+ "action_expert_norm_gated_ffn": "dual-ffn",
+ "action_expert_norm_qkv_rope": "triton-qkv-finish",
+ "llm_backbone_norm_qkv_rope": "fused-prefix-qkv",
+ "llm_backbone_out_proj_residual": "bucketed-backbone",
+ "llm_backbone_norm_gated_ffn": "fake-quant-mxfp8",
+ "llm_backbone_ffn_down_residual": "fake-quant-mxfp8",
+ "action_expert_attention": "triton-qk-attention",
+ "action_expert_out_proj_residual": "cutlass-expert-residual",
+ "action_expert_ffn_down_residual": "cutlass-expert-residual",
+ "action_expert_action_out_proj": "fused-qkv"
+}
