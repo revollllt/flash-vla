@@ -37,7 +37,7 @@ def check_target(target: str) -> list[dict[str, Any]]:
     runner = declare(target)
     graph = runner.graph
     _check(results, "identity.shape keys",
-           tuple(runner.identity.shape) == runner.target.shape_axes,
+           tuple(runner.identity.shape) == runner.target.model.shape_axes,
            tuple(runner.identity.shape))
     _check(results, "stages non-empty",
            all(graph.nodes_of(s) for s in graph.segment_names), graph.segment_names)

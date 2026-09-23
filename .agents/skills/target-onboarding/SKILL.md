@@ -13,9 +13,13 @@ loop begins after that model's semantics and correctness reference are understoo
    inputs/outputs and unresolved compatibility questions.
 2. Reuse runtime vocabulary and existing components to express the graph in
    plain PyTorch, preserving the upstream algorithm — this is the numerical
-   reference every later optimization is checked against. Model details stay in
-   the Target; a shared runtime change needs a model-independent reason. Use
-   existing operators before designing a new kernel.
+   reference every later optimization is checked against. Model details go in
+   `src/flash_vla/models/<model>/` -- `definition.py` (a `ModelDefinition`),
+   `graph.py`, and `ops.py` for call sites beyond the standard vocabulary --
+   and the Target in `hardware/<vendor>/<device>/<model>/target.py` only
+   composes that model with the device's layout, backends and plans. A shared
+   runtime change needs a model-independent reason. Use existing operators
+   before designing a new kernel.
 3. Load real assets and compare against the upstream reference with the existing
    numerical requirements, descending to intermediate activations only where the
    outputs already differ. Establish a working benchmark of this workload;
@@ -24,9 +28,10 @@ loop begins after that model's semantics and correctness reference are understoo
    with the commands that run and check it, then hand the identified bottlenecks
    to the [optimization workflow](../model-optimization/SKILL.md).
 
-Adding a GPU to a model that already has a Target reuses that reference: adapt
-the environment and device placement and verify it runs. Do not re-derive the
-model.
+Adding a GPU to a model that already has a Target reuses that reference: write
+a new `Target` value over the existing model definition, with that device's
+backends, and verify it runs. Do not re-derive the model, and do not import the
+other device's Target or kernels (`tests/test_layering.py`).
 
 ## Example
 

@@ -37,6 +37,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 
@@ -109,6 +110,18 @@ def _load_processor(tokenizer_path: str | Path | None):
         raise FileNotFoundError(tokenizer_path)
     with tokenizer_path.open("rb") as handle:
         return sentencepiece.SentencePieceProcessor(model_proto=handle.read())
+
+
+class PromptTokenizer(Protocol):
+    """What the prompt host slot needs of a tokenizer (`prompt.PrefixInputs`)."""
+
+    @property
+    def max_token_len(self) -> int: ...
+
+    def set_task(self, prompt: str) -> None: ...
+
+    def encode(self, state: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Prompt tokens padded to `max_token_len` and their validity mask."""
 
 
 class Pi05Tokenizer:
@@ -230,3 +243,38 @@ class Pi05Tokenizer:
         self._mask[:keep] = True
         self._mask[keep:] = False
         return self._tokens, self._mask
+
+
+class TaskTokenizer:
+    """Task-only prompts: OpenPI Pi0.5 with `discrete_state_input=False` (pi05_libero).
+
+    The prompt is the cleaned task string and a newline; the robot state is not
+    tokenized, so `encode` ignores it and returns the tokens `set_task` built.
+    """
+
+    def __init__(self, tokenizer_path: str | Path | None = None,
+                 max_token_len: int = MAX_TOKEN_LEN) -> None:
+        self.processor = _load_processor(tokenizer_path)
+        self.max_token_len = max_token_len
+        self.task: str | None = None
+        self.tokens = np.zeros(max_token_len, dtype=np.int32)
+        self.mask = np.zeros(max_token_len, dtype=bool)
+
+    def set_task(self, prompt: str) -> None:
+        """Install and encode the task string; call whenever it changes."""
+        self.task = clean_prompt(prompt)
+        ids = self.processor.encode(self.task, add_bos=True) + self.processor.encode("\n")
+        if len(ids) > self.max_token_len:
+            raise ValueError("the task exceeds the configured prompt capacity")
+        self.tokens[:] = 0
+        self.mask[:] = False
+        self.tokens[:len(ids)] = ids
+        self.mask[:len(ids)] = True
+
+    def encode(self, state: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """The installed task's tokens and validity mask; `state` is not part of the prompt."""
+        return self.tokens, self.mask
+
+
+__all__ = ["MAX_TOKEN_LEN", "Pi05Tokenizer", "PromptTokenizer", "TaskTokenizer", "clean_prompt",
+           "discretize"]

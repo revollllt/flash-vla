@@ -53,11 +53,10 @@ from functools import partial
 
 import torch
 
-from flash_vla.runtime.ops import OpSpec, gemm
+from flash_vla.models.pi0 import attention as attention_kernels
 from flash_vla.runtime.registry import Backend
 
 from .kernels import base as kernels
-from .kernels import attention as _attention
 
 _CACHE: dict = {}
 
@@ -339,7 +338,7 @@ def vision_encoder_ffn_down_residual(x, weight, bias, res, out):
 
 VISION_WRAPPERS = {
     "vision_encoder_patch_embed": vision_encoder_patch_embed,
-    "vision_encoder_attention": _attention.vision_encoder_attention,
+    "vision_encoder_attention": attention_kernels.vision_encoder_attention,
     "vision_encoder_norm_qkv": vision_encoder_norm_qkv,
     "vision_encoder_out_proj_residual": vision_encoder_out_proj_residual,
     "vision_encoder_norm_ffn_up": vision_encoder_norm_ffn_up,
@@ -431,7 +430,7 @@ def llm_backbone_attention(Q, K, V, scale, mask, out):
     head_dim), which the graph reads as (seq, heads*head_dim).
     """
     assert mask is None, "Pi0 has no key mask"
-    _attention.llm_backbone_attention(Q, K, V, scale, out)
+    attention_kernels.llm_backbone_attention(Q, K, V, scale, out)
     return out
 
 
@@ -463,14 +462,6 @@ NAMES = frozenset(ALL_WRAPPERS)
 _NEEDS_SCRATCH = ("action_expert_attention", "llm_backbone_norm_qkv_rope",
                   "vision_encoder_norm_qkv", "vision_encoder_norm_ffn_up")
 
-#: Pi0's two extension ops beyond the standard vocabulary: the state token's
-#: projection and the second action MLP, both plain bias GEMMs.
-OPS = (
-    OpSpec("action_expert_state_proj", ("x", "weight", "bias", "out"), outputs=("out",),
-           weights=("weight", "bias"), flops=gemm("x", "weight")),
-    OpSpec("action_expert_action_mlp", ("x", "weight", "bias", "out"), outputs=("out",),
-           weights=("weight", "bias"), flops=gemm("x", "weight")),
-)
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
@@ -485,4 +476,4 @@ def make_wrappers(scratch, selected_names=None) -> dict:
 
 
 #: What the Target's registry routes to (`flash_vla.runtime.registry`).
-BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers, ops=OPS)
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)

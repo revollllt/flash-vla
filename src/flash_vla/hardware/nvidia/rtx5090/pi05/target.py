@@ -1,42 +1,35 @@
-"""Pi0.5 on RTX 5090, with a torch reference and native pointwise fusions.
+"""Pi0.5 on one RTX 5090: native CUTLASS, Triton and CUDA fusions, and MXFP8.
 
-The graph and host slot are reused from the existing Pi0.5 model path;
-backend routing and CUDA kernels belong to this hardware Target.
+Identity is what makes this a separate Target rather than a flag. A
+measurement taken here must not be recorded against `h100-sxm5-80gb`: the two
+machines differ by 1.8x on streaming bandwidth, 3.4x on tensor-core throughput
+and 2.29x on shared memory per block, so a latency compared across them is not
+a comparison at all.
+
+The model is the same `flash_vla.models.pi05` as on H100. This Target lays it
+out with the backbone's dense call sites taking the prefix mask, which the
+bucketed backbone GEMMs use to skip the padded prompt rows; plans saved with
+the standard names still bind (`call_site_aliases`).
 """
 from __future__ import annotations
 
-from dataclasses import replace
-from typing import Any, Mapping
-
-from flash_vla.hardware.nvidia.h100.pi05.target import Pi05, forward_prefix, set_task
+from flash_vla.models.pi05.definition import Pi05Layout, Pi05Model
+from flash_vla.models.pi05.ops import MASKED_CALL_SITES
 from flash_vla.runtime.cost import Pricing
-from flash_vla.runtime.graph import Graph
-from flash_vla.runtime.vla import QuantizationRecipe
+from flash_vla.runtime.vla import QuantizationRecipe, Target
 
 from .backends import REGISTRY
-from .backends.bucketed_backbone import MASKED_CALL_SITES
 
 #: Bytes per MXFP8 element: one E4M3 value and a UE8M0 scale per 32.
 MXFP8_ITEMSIZE = 1 + 1 / 32
 
-
-class Pi05RTX5090(Pi05):
-    """Pi0.5 on one RTX 5090: three stages, one host slot, bf16.
-
-    Identity is what makes this a separate Target rather than a flag. A
-    measurement taken here must not be recorded against `h100-sxm5-80gb`: the
-    two machines differ by 1.8x on streaming bandwidth, 3.4x on tensor-core
-    throughput and 2.29x on shared memory per block, so a latency compared
-    across them is not a comparison at all.
-    """
-
-    name = "hardware/nvidia/rtx5090/pi05"
-    hardware = "rtx5090-32gb"
-
-    registry = REGISTRY
-
-    #: Native pointwise fusion around the existing bf16 GEMMs.
-    plan: Mapping[str, str] = {
+TARGET = Target(
+    name="hardware/nvidia/rtx5090/pi05",
+    hardware="rtx5090-32gb",
+    model=Pi05Model(Pi05Layout(row_pad=64, masked_backbone=True)),
+    registry=REGISTRY,
+    # Native pointwise fusion around the existing bf16 GEMMs.
+    plan={
         "vision_encoder_norm_qkv": "cutlass-vision",
         "vision_encoder_out_proj_residual": "cutlass-vision",
         "vision_encoder_norm_ffn_up": "cutlass-vision",
@@ -44,21 +37,20 @@ class Pi05RTX5090(Pi05):
         "action_expert_norm_gated_ffn": "dual-ffn",
         "action_expert_norm_qkv_rope": "triton-qkv-finish",
         "llm_backbone_norm_qkv_rope": "fused-prefix-qkv",
-        "llm_backbone_out_proj_residual": "bucketed-backbone",
-        "llm_backbone_norm_gated_ffn": "bucketed-backbone",
-        "llm_backbone_ffn_down_residual": "bucketed-backbone",
+        "llm_backbone_out_proj_residual_masked": "bucketed-backbone",
+        "llm_backbone_norm_gated_ffn_masked": "bucketed-backbone",
+        "llm_backbone_ffn_down_residual_masked": "bucketed-backbone",
         "action_expert_attention": "triton-qk-attention",
         "action_expert_out_proj_residual": "cutlass-expert-residual",
         "action_expert_ffn_down_residual": "cutlass-expert-residual",
         "action_expert_action_out_proj": "fused-qkv",
-    }
-    reference_plan: Mapping[str, str] = {}
-
-    #: The backbone FFN's three GEMMs in MXFP8 on every layer, approved on
-    #: LIBERO observations (results/quant-pi05-ffn-libero). The activation is
-    #: quantized from the BF16 value the BF16 route rounds to, and every other
-    #: rounding point is kept.
-    QUANTIZATION: Mapping[str, QuantizationRecipe] = {
+    },
+    reference_plan={},
+    quantization={
+        # The backbone FFN's three GEMMs in MXFP8 on every layer, approved on
+        # LIBERO observations (results/quant-pi05-ffn-libero). The activation is
+        # quantized from the BF16 value the BF16 route rounds to, and every other
+        # rounding point is kept.
         "mxfp8-llm-ffn": QuantizationRecipe(
             spec={"mode": "mxfp8", "recipe": "mxfp8-llm-ffn-v1",
                   "weight": "e4m3, ue8m0 scale per 32 along K, quantized once from bf16",
@@ -77,34 +69,13 @@ class Pi05RTX5090(Pi05):
                          "gate_w": MXFP8_ITEMSIZE, "up_w": MXFP8_ITEMSIZE, "out": MXFP8_ITEMSIZE}),
                      "llm_backbone_ffn_down_residual_masked": Pricing("mxfp8", {
                          "x": MXFP8_ITEMSIZE, "weight": MXFP8_ITEMSIZE})}),
-    }
+    },
+    # Plans saved against the standard backbone names still bind.
+    call_site_aliases=MASKED_CALL_SITES,
+    # H100's `action_expert_norm_gated_ffn` ceiling is a measured H100 number and
+    # says nothing about this part; the floor model falls back to this machine's
+    # own constants until a `tma_ring`-equivalent sweep has been run here.
+    ceilings={},
+)
 
-    def build(self, g: Graph, shape: Mapping[str, int]) -> None:
-        super().build(g, shape)
-        mask = g.buf("mask_bias")[:shape["prefix_len"]]
-        for index, node in enumerate(g.nodes):
-            if node.call_site in MASKED_CALL_SITES:
-                g.nodes[index] = replace(
-                    node, call_site=MASKED_CALL_SITES[node.call_site],
-                    args=(*node.args, mask))
-
-    def select_plan(self, plan: Any, quantization: str = "bf16") -> dict[str, str]:
-        routes = super().select_plan(plan, quantization)
-        # Saved dense plans use standard names; explicit masked routes override them.
-        for original, masked in MASKED_CALL_SITES.items():
-            if original in routes:
-                backend = routes.pop(original)
-                routes.setdefault(masked, backend)
-        return routes
-
-    #: H100's `action_expert_norm_gated_ffn` ceiling is a measured H100 number
-    #: (`tma.bw.dev.burst`, job 591174) and says nothing about this part. Cleared
-    #: rather than inherited; the floor model falls back to this machine's own
-    #: constants until a `tma_ring`-equivalent sweep has been run here.
-    CEILINGS: Mapping[str, Any] = {}
-
-
-#: The Target instance the factory in `flash_vla.inference` hands the runner.
-TARGET = Pi05RTX5090()
-
-__all__ = ["TARGET", "Pi05RTX5090", "forward_prefix", "set_task"]
+__all__ = ["MXFP8_ITEMSIZE", "TARGET"]

@@ -119,8 +119,8 @@ def test_target_owns_architecture_metadata(target, revision):
     from flash_vla.inference import declare
     runner = declare(target)
     assert runner.identity.model_revision == revision
-    assert runner.target.model_revision == revision
-    assert runner.identity.inference_signature == runner.target.inference_signature
+    assert runner.target.model.model_revision == revision
+    assert runner.identity.inference_signature == runner.target.model.inference_signature
 
 
 def test_signature_canonicalization_and_semantic_sensitivity():
@@ -201,9 +201,9 @@ def test_runner_legacy_revision_is_architecture_only():
     from flash_vla.runtime import ModelRunner
     target = declare("h100/pi05").target
     with pytest.warns(DeprecationWarning):
-        runner = ModelRunner(target, None, model_revision=target.model_revision,
+        runner = ModelRunner(target, None, model_revision=target.model.model_revision,
                              device="cpu", capture=False)
-    assert runner.identity.model_revision == target.model_revision
+    assert runner.identity.model_revision == target.model.model_revision
     with pytest.warns(DeprecationWarning):
         with pytest.raises(ValueError, match="checkpoint_id"):
             ModelRunner(target, None, model_revision="checkpoint-a",

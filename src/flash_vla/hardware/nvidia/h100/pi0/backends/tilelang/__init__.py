@@ -17,6 +17,6 @@ construction:
 from __future__ import annotations
 
 from . import fused, wrappers
-from .wrappers import BACKEND, NAMES, OPS, make_wrappers
+from .wrappers import BACKEND, NAMES, make_wrappers
 
-__all__ = ["BACKEND", "NAMES", "OPS", "fused", "make_wrappers", "wrappers"]
+__all__ = ["BACKEND", "NAMES", "fused", "make_wrappers", "wrappers"]

@@ -19,48 +19,35 @@ tuning, and the architecture asks for a route customised per hardware -- so the
 kernels get written fresh, against this machine's measured constants, in the
 optimization loop.
 
-ARCHITECTURE.md says a Target never imports another Target's kernels, and this
-one imports H100/Pi0's graph. That is a deliberate bring-up shortcut with a
-stated cost: the alternative is copying 342 lines of graph that is byte-for-byte
-the same model and would drift the first time either side is touched. The rule
-exists to stop two Targets sharing kernel ROUTING and TUNING, and this Target
-shares neither -- its registry holds one backend of its own. The two torch
-attention helpers it reuses were never kernels; they are `torch.compile`d SDPA
-and a matmul chain, already hardware-neutral.
+The graph is the model's (`flash_vla.models.pi0`), shared with H100 without
+importing anything of that Target; the two torch attention helpers its torch
+backend uses are the model's hardware-neutral references
+(`flash_vla.models.pi0.attention`).
 """
 from __future__ import annotations
 
-from typing import Mapping
-
-from flash_vla.hardware.nvidia.h100.pi0.target import Pi0
+from flash_vla.models.pi0.definition import Pi0Model
+from flash_vla.runtime.vla import Target
 
 from .backends import REGISTRY
 
-
-class Pi0RTX5090(Pi0):
-    """Pi0 on one RTX 5090: three stages, no host slot, bf16, TileLang only.
-
-    Identity is what makes this a separate Target rather than a flag. A
-    measurement taken here must not be recorded against `h100-sxm5-80gb`: the
-    two machines differ by 1.8x on streaming bandwidth, 3.4x on tensor-core
-    throughput and 2.29x on shared memory per block, so a latency compared
-    across them is not a comparison at all.
-    """
-
-    name = "hardware/nvidia/rtx5090/pi0"
-    hardware = "rtx5090-32gb"
-
-    registry = REGISTRY
-
-    #: The expert's two norm-fed call sites on hand-written pointwise kernels;
-    #: everything else on the torch backend, which is the registry default.
-    #: Each measured paired against the version before it, in one job:
-    #:   the two norm-fed sites   46.828 -> 40.240 ms   -6.588
-    #:   the attention glue       40.177 -> 37.040      -3.137
-    #:   the backbone's two norms  37.030 -> 34.423      -2.607
-    #:   vision LayerNorm + addmm  34.324 -> 32.753      -1.571
-    #:   packed expert gate+up     32.886 -> 31.396      -1.490
-    plan: Mapping[str, str] = {
+TARGET = Target(
+    name="hardware/nvidia/rtx5090/pi0",
+    hardware="rtx5090-32gb",
+    model=Pi0Model(),
+    registry=REGISTRY,
+    # Identity is what makes this a separate Target rather than a flag: a
+    # measurement taken here must not be recorded against `h100-sxm5-80gb`.
+    #
+    # The expert's two norm-fed call sites on hand-written pointwise kernels;
+    # everything else on the torch backend, which is the registry default.
+    # Each measured paired against the version before it, in one job:
+    #   the two norm-fed sites   46.828 -> 40.240 ms   -6.588
+    #   the attention glue       40.177 -> 37.040      -3.137
+    #   the backbone's two norms  37.030 -> 34.423      -2.607
+    #   vision LayerNorm + addmm  34.324 -> 32.753      -1.571
+    #   packed expert gate+up     32.886 -> 31.396      -1.490
+    plan={
         "action_expert_norm_qkv_rope": "cuda",
         "action_expert_norm_gated_ffn": "cuda",
         "action_expert_attention": "cuda",
@@ -76,15 +63,11 @@ class Pi0RTX5090(Pi0):
         "vision_encoder_norm_ffn_up": "cuda",
         "vision_encoder_out_proj_residual": "cuda",
         "vision_encoder_ffn_down_residual": "cuda",
-    }
+    },
+    # The numerical reference stays all-torch, so `eval.correctness` compares
+    # the hand-written kernels against the implementation they replaced rather
+    # than against themselves.
+    reference_plan={},
+)
 
-    #: The numerical reference stays all-torch, so `eval.correctness` compares
-    #: the hand-written kernels against the implementation they replaced rather
-    #: than against themselves.
-    reference_plan: Mapping[str, str] = {}
-
-
-#: The Target instance the factory in `flash_vla.inference` hands the runner.
-TARGET = Pi0RTX5090()
-
-__all__ = ["TARGET", "Pi0RTX5090"]
+__all__ = ["TARGET"]

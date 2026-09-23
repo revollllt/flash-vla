@@ -60,11 +60,11 @@ from functools import partial
 
 import torch
 
+from flash_vla.models.pi05 import attention as attention_kernels
 from flash_vla.runtime.registry import Backend
 
 from ....gemma_expert.backends.tilelang import producers as _producers
 from .kernels import adarms as ada_kernels
-from .kernels import attention as attention_kernels
 from .kernels import base as kernels
 from .kernels import fused_norm as fused_norm_kernels
 

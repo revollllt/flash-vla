@@ -5,7 +5,7 @@ either Target: 56.6 % of the Pi0.5 backbone's in-graph kernel time (job
 599808). It defines what the kernel must compute over the same tensors, in the
 same buffers, deliberately untiled.
 
-Named dims (`models/<model>/spec.py`, `h100/<target>/pipeline.py`):
+Named dims (`models/<model>/spec.py`, `models/<model>/graph.py`):
 
     ROWS    prefix tokens     968 (Pi0.5) | 768 (Pi0)
     D       backbone width    2048

@@ -11,14 +11,15 @@ A backend is a `Backend` value, declared once next to its implementation:
     route_constraints  `RouteConstraint`s over its call sites (`runtime/binding.py`)
     graph_contract     the kernel-name patterns the captured program must and
                        must not contain, given the call sites routed to it
-    ops                extension `OpSpec`s beyond the standard vocabulary
 
 A variant of a backend (the same wrappers with a launch attribute armed) is
 `dataclasses.replace(backend, make_wrappers=...)`: the registry never needs to
 know that two names share an implementation, and a backend never needs to know
 the name it is registered under.
 
-The registry resolves a plan over a graph's call sites, validates it against
+The call sites themselves, standard or a model's extension ops, belong to the
+model (`runtime/vla.py`); a backend only implements some of them. The
+registry resolves a plan over a graph's call sites, validates it against
 every backend's constraints, and builds the one op table an engine runs on. It
 has no model, device or kernel knowledge of its own.
 """
@@ -30,7 +31,6 @@ from typing import Callable, Iterable, Mapping
 
 from . import binding
 from .binding import RouteConstraint
-from .ops import OpSpec
 from .workspace import Scratch
 
 #: One call site's implementation: positional arguments in `OpSpec.params`
@@ -65,7 +65,6 @@ class Backend:
     make_wrappers: WrapperFactory
     route_constraints: tuple[RouteConstraint, ...] = ()
     graph_contract: Callable[[frozenset[str]], GraphContract] = no_graph_contract
-    ops: tuple[OpSpec, ...] = ()
 
 
 def call_sites_by_backend(routes: Mapping[str, str]) -> dict[str, frozenset[str]]:
@@ -91,16 +90,6 @@ class Registry:
 
     def constraints(self) -> dict[str, tuple[RouteConstraint, ...]]:
         return {name: backend.route_constraints for name, backend in self.backends.items()}
-
-    def ops(self) -> tuple[OpSpec, ...]:
-        """Extension op specs every backend declares, deduplicated by name."""
-        seen: dict[str, OpSpec] = {}
-        for backend in self.backends.values():
-            for spec in backend.ops:
-                if spec.name in seen and seen[spec.name] is not spec:
-                    raise ValueError(f"extension op {spec.name!r} declared twice")
-                seen[spec.name] = spec
-        return tuple(seen.values())
 
     def resolve(self, plan: Mapping[str, str] | None,
                 call_sites: Iterable[str]) -> dict[str, str]:

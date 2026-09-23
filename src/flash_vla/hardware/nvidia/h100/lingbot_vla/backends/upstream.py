@@ -4,7 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from functools import partial
 import gc
-from math import prod
 from pathlib import Path
 import sys
 from types import MethodType
@@ -12,137 +11,21 @@ from typing import Mapping
 
 import torch
 
+from flash_vla.models.lingbot.ops import CALL_SITES
 from flash_vla.models.lingbot.spec import (
     BACKBONE_DIM,
-    BACKBONE_FFN,
-    BACKBONE_WEIGHT_NAMES,
-    CHUNK,
-    EXPERT_DIM,
-    EXPERT_FFN,
-    EXPERT_WEIGHT_NAMES,
-    HEAD_DIM,
-    KV_HEADS,
-    LANGUAGE_SLOTS,
-    LAYERS,
     PATCH_ROWS_PER_VIEW,
-    PREFIX_LEN,
-    QUERY_HEADS,
     VIEWS,
     VISION_DIM,
-    VISION_FFN,
-    VISION_LAYERS,
-    VISION_WEIGHT_NAMES,
     VISUAL_TOKENS_PER_VIEW,
     WEIGHT_NAMES,
 )
 from flash_vla.runtime.binding import RouteConstraint
-from flash_vla.runtime.ops import OpSpec
-
 from flash_vla.runtime.registry import Backend, Wrapper
 from flash_vla.runtime.workspace import Scratch
 
-NAMES = ("lingbot_vision", "lingbot_prefix", "lingbot_action")
-WEIGHT_PARAMS = tuple(f"weight_{index:04d}" for index in range(len(WEIGHT_NAMES)))
-BACKBONE_WEIGHT_PARAMS = tuple(
-    f"backbone_weight_{index:04d}" for index in range(len(BACKBONE_WEIGHT_NAMES))
-)
-ACTION_WEIGHT_PARAMS = tuple(
-    f"action_weight_{index:04d}" for index in range(len(EXPERT_WEIGHT_NAMES))
-)
-
-_VISION_PARAMS = tuple(
-    param for param, name in zip(WEIGHT_PARAMS, WEIGHT_NAMES)
-    if name in set(VISION_WEIGHT_NAMES)
-)
-
-
-def _nbytes(shape, itemsize: int) -> int:
-    return prod(shape) * itemsize
-
-
-def _vision_bytes(shapes, itemsizes):
-    read = _nbytes(shapes["pixel_values"], itemsizes["pixel_values"])
-    read += sum(_nbytes(shapes[name], itemsizes[name]) for name in _VISION_PARAMS)
-    written = _nbytes(shapes["out"], itemsizes["out"])
-    return read, written
-
-
-def _vision_flops(_):
-    rows = VIEWS * 256
-    linear = 2 * rows * 1176 * VISION_DIM
-    per_layer = (
-        2 * rows * VISION_DIM * (3 * VISION_DIM)
-        + 2 * rows * VISION_DIM * VISION_DIM
-        + 6 * rows * VISION_DIM * VISION_FFN
-    )
-    full_attention = 4 * 4 * VIEWS * 256 * 256 * VISION_DIM
-    window_attention = 4 * (VISION_LAYERS - 4) * 12 * 64 * 64 * VISION_DIM
-    merger = 2 * 192 * (4 * VISION_DIM) * (4 * VISION_DIM + BACKBONE_DIM)
-    return linear + VISION_LAYERS * per_layer + full_attention + window_attention + merger
-
-
-def _prefix_flops(_):
-    rows = PREFIX_LEN
-    projections = 2 * rows * BACKBONE_DIM * (
-        QUERY_HEADS * HEAD_DIM + 2 * KV_HEADS * HEAD_DIM
-    )
-    attention = 4 * QUERY_HEADS * rows * rows * HEAD_DIM
-    output = 2 * rows * QUERY_HEADS * HEAD_DIM * BACKBONE_DIM
-    mlp = 6 * rows * BACKBONE_DIM * BACKBONE_FFN
-    return LAYERS * (projections + attention + output + mlp)
-
-
-def _action_flops(_):
-    rows = CHUNK + 1
-    projections = 2 * rows * EXPERT_DIM * (
-        QUERY_HEADS * HEAD_DIM + 2 * KV_HEADS * HEAD_DIM
-    )
-    attention = 4 * QUERY_HEADS * rows * (PREFIX_LEN + rows) * HEAD_DIM
-    output = 2 * rows * QUERY_HEADS * HEAD_DIM * EXPERT_DIM
-    mlp = 6 * rows * EXPERT_DIM * EXPERT_FFN
-    layer = projections + attention + output + mlp
-    outer = (
-        2 * EXPERT_DIM * 75
-        + 2 * CHUNK * 75 * EXPERT_DIM
-        + 2 * CHUNK * 2 * EXPERT_DIM * EXPERT_DIM
-        + 2 * CHUNK * EXPERT_DIM * 75
-    )
-    return 10 * (LAYERS * layer + outer)
-
-
-OPS = (
-    OpSpec(
-        "lingbot_vision",
-        ("pixel_values", "out", "layers") + WEIGHT_PARAMS,
-        outputs=("out",),
-        weights=WEIGHT_PARAMS,
-        flops=_vision_flops,
-        bytes_override=_vision_bytes,
-    ),
-    OpSpec(
-        "lingbot_prefix",
-        (
-            "vision", "image_masks", "language_tokens", "language_masks",
-            "prefix_masks", "prefix_k", "prefix_v", "layers",
-        ) + BACKBONE_WEIGHT_PARAMS,
-        outputs=("prefix_masks", "prefix_k", "prefix_v"),
-        weights=BACKBONE_WEIGHT_PARAMS,
-        flops=_prefix_flops,
-    ),
-    OpSpec(
-        "lingbot_action",
-        (
-            "state", "noise", "prefix_masks", "prefix_k", "prefix_v", "actions",
-            "velocity_step_0", "steps", "layers",
-        ) + ACTION_WEIGHT_PARAMS,
-        outputs=("actions", "velocity_step_0"),
-        weights=ACTION_WEIGHT_PARAMS,
-        flops=_action_flops,
-    ),
-)
-
 ROUTE_CONSTRAINTS = (
-    RouteConstraint.atomic(NAMES, "the initial monolithic stages share one loaded upstream model"),
+    RouteConstraint.atomic(CALL_SITES, "the initial monolithic stages share one loaded upstream model"),
 )
 
 
@@ -761,12 +644,12 @@ def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
         "lingbot_prefix": prefix,
         "lingbot_action": action,
     }
-    return {name: wrappers[name] for name in (selected_names or NAMES)}
+    return {name: wrappers[name] for name in (selected_names or CALL_SITES)}
 
 
 #: Upstream LingBot with no replacement: the reference route.
-BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers,
-                  route_constraints=ROUTE_CONSTRAINTS, ops=OPS)
+BACKEND = Backend(names=CALL_SITES, make_wrappers=make_wrappers,
+                  route_constraints=ROUTE_CONSTRAINTS)
 
 
 def route_backend(route: UpstreamRoute) -> Backend:
@@ -775,7 +658,6 @@ def route_backend(route: UpstreamRoute) -> Backend:
 
 
 __all__ = [
-    "ACTION_WEIGHT_PARAMS", "BACKBONE_WEIGHT_PARAMS", "BACKEND", "NAMES", "OPS",
-    "ROUTE_CONSTRAINTS", "UpstreamRoute", "WEIGHT_PARAMS", "make_wrappers",
+    "BACKEND", "ROUTE_CONSTRAINTS", "UpstreamRoute", "make_wrappers",
     "route_backend",
 ]

@@ -7,10 +7,15 @@ from pathlib import Path
 import torch
 from safetensors import safe_open
 
+from flash_vla.runtime.vla import CheckpointReader
+
 from .spec import WEIGHT_SHAPES
 
 
-class LingBotCheckpoint(Mapping[str, torch.Tensor]):
+class LingBotCheckpoint(CheckpointReader, Mapping[str, torch.Tensor]):
+    """The frozen safetensors checkpoint, validated against the schema on open and
+    streamed tensor by tensor into the runtime weights."""
+
     def __init__(self, path: str | Path) -> None:
         path = Path(path)
         self.path = path / "model.safetensors" if path.is_dir() else path

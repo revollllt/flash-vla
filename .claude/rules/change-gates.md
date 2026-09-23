@@ -21,8 +21,8 @@ references only when they answer the current question.
 - **Selected-kernel NCU capture settings, counters or diagnosis**
   -> [`ncu-report`](../skills/ncu-report/SKILL.md).
 - **Graph, backend, or buffer ownership changes** -> read
-  [`ARCHITECTURE.md`](../../ARCHITECTURE.md) and the Target's `target.py` and
-  `pipeline.py` before editing.
+  [`ARCHITECTURE.md`](../../ARCHITECTURE.md), the model's `definition.py` and
+  `graph.py`, and the Target's `target.py` before editing.
 
 During an edit:
 

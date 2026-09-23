@@ -48,7 +48,6 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
         from flash_vla.hardware.nvidia.h100.pi05 import TARGET as target
     from flash_vla.models.pi05 import openpi as openpi05
     from flash_vla.models.pi05.spec import MAX_TOKEN_LEN, random_checkpoint_revision
-    from flash_vla.models.pi05.tokenize import Pi05Tokenizer
     from flash_vla.models.pi05.weights import fold, random_checkpoint
 
     engine_revision = git_revision()
@@ -56,7 +55,7 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
     if checkpoint is not None and converted_checkpoint is not None:
         raise ValueError("pass checkpoint or converted_checkpoint, not both")
     # The chunk is the Target's own default unless an upstream config names one.
-    default_chunk = target.configure().chunk_size
+    default_chunk = target.model.configure().chunk_size
     if checkpoint is None and converted_checkpoint is None:
         if any(value is not None for value in (checkpoint_id, checkpoint_digest, openpi_config)):
             raise ValueError("checkpoint provenance/config requires a real checkpoint path")
@@ -99,7 +98,8 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
                              checkpoint_id=checkpoint_id,
                              checkpoint_digest=checkpoint_digest, plan=plan,
                              quantization=quantization, device=device,
-                             tokenizer=Pi05Tokenizer(tokenizer_path), **config)
+                             assets={"tokenizer": Path(tokenizer_path or os.environ["PALIGEMMA_TOKENIZER"])},
+                             **config)
     fixture = {"producer": "flash-vla/pi05-inputs-v1", "seed": seed, "prompt": prompt}
     runner.measurement_context["fixture"] = {
         "id": fixture["producer"] + "/seed-" + str(seed), "digest": canonical_digest(fixture),
@@ -165,18 +165,18 @@ def _lingbot(plan: Any = "shipped", *, seed: int = 42, steps: int = 10, layers: 
     if checkpoint_id is None:
         if checkpoint is not None or checkpoint_digest is not None:
             raise ValueError("checkpoint override needs checkpoint_id and checkpoint_digest")
-        checkpoint_id = checkpoint_digest = TARGET.ASSETS["checkpoint"]
+        checkpoint_id = checkpoint_digest = TARGET.assets["checkpoint"]
     if not checkpoint_digest:
         raise ValueError("checkpoint_digest must identify the immutable weights manifest")
     if fixture_id is None:
         if fixture is not None or fixture_digest is not None:
             raise ValueError("fixture override needs fixture_id and fixture_digest")
-        fixture_id = fixture_digest = TARGET.ASSETS["fixture"]
+        fixture_id = fixture_digest = TARGET.assets["fixture"]
     if not fixture_digest:
         raise ValueError("fixture_digest must identify the immutable fixture")
     assets = {}
     if not declare:
-        identifiers = dict(TARGET.ASSETS, checkpoint=checkpoint_id, fixture=fixture_id)
+        identifiers = dict(TARGET.assets, checkpoint=checkpoint_id, fixture=fixture_id)
         explicit = {role: Path(path).expanduser().resolve()
                     for role, path in (("checkpoint", checkpoint), ("fixture", fixture))
                     if path is not None}
@@ -219,7 +219,7 @@ def _groot_n17(plan: Any = "shipped", *, seed: int = 0, steps: int = 4, layers: 
     for role, path in explicit.items():
         if path is not None and ids[role] is None:
             raise ValueError(f"{role} override requires {role}_id")
-    identifiers = {role: ids[role] or value for role, value in TARGET.ASSETS.items()}
+    identifiers = {role: ids[role] or value for role, value in TARGET.assets.items()}
     assets = {}
     if not declare:
         assets = resolve_assets({role: value for role, value in identifiers.items()

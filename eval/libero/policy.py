@@ -8,31 +8,10 @@ from types import SimpleNamespace
 import json
 
 import numpy as np
-import sentencepiece
 import torch
 
-from flash_vla.models.pi05.tokenize import clean_prompt
-
-
-class LiberoTokenizer:
-    """OpenPI task-only tokenization; implements the Target's host interface."""
-
-    def __init__(self, path: str, max_token_len: int = 200):
-        self.processor = sentencepiece.SentencePieceProcessor(model_file=path)
-        self.max_token_len = max_token_len
-
-    def set_task(self, prompt: str) -> None:
-        self.task = clean_prompt(prompt)
-        ids = self.processor.encode(self.task, add_bos=True) + self.processor.encode("\n")
-        if len(ids) > self.max_token_len:
-            raise ValueError("LIBERO task exceeds the configured prompt capacity")
-        self.tokens = np.zeros(self.max_token_len, dtype=np.int32)
-        self.mask = np.zeros(self.max_token_len, dtype=bool)
-        self.tokens[:len(ids)] = ids
-        self.mask[:len(ids)] = True
-
-    def encode(self, state) -> tuple[np.ndarray, np.ndarray]:
-        return self.tokens, self.mask
+from flash_vla.models.pi05.session import set_task
+from flash_vla.models.pi05.tokenize import TaskTokenizer
 
 
 def unnormalize_actions(actions: np.ndarray, stats: dict) -> np.ndarray:
@@ -57,8 +36,6 @@ class Pi05LiberoPolicy:
         if config["discrete_state_input"] or config["action_horizon"] != 10 or not config["pi05"]:
             raise ValueError("This evaluation requires OpenPI pi05_libero: pi05=True, chunk=10, discrete_state_input=False")
         self.stats = json.loads((directory / "assets/physical-intelligence/libero/norm_stats.json").read_text())["norm_stats"]
-        self.tokenizer = LiberoTokenizer(tokenizer, config["max_token_len"])
-        self.tokenizer.set_task("pick up the object")
         self.engine = engine
         self.steps = steps
         self.metadata = dict(engine=engine, checkpoint=str(directory), config=config,
@@ -75,13 +52,16 @@ class Pi05LiberoPolicy:
             self.runner = ModelRunner(device_target, weights, engine_revision=git_revision(),
                                       checkpoint_id="openpi/pi05_libero",
                                       plan=plan, num_views=2, chunk_size=10, steps=steps,
-                                      prompt_len=config["max_token_len"], tokenizer=self.tokenizer,
-                                      prompt="pick up the object")
+                                      prompt_len=config["max_token_len"], discrete_state=False,
+                                      prompt="pick up the object",
+                                      assets={"tokenizer": Path(tokenizer)})
             self.metadata.update(target=target, plan=plan, views=2)
         else:
             from eval.pi05 import official
             from safetensors.torch import load_model
 
+            # The official model takes tokens; the Flash-VLA runner tokenizes itself.
+            self.tokenizer = TaskTokenizer(tokenizer, config["max_token_len"])
             model_config = official.official_attr("Pi0Config")(
                 pi05=True, action_horizon=10, discrete_state_input=False)
             self.model = official.official_attr("PI0Pytorch")(model_config).eval()
@@ -95,7 +75,7 @@ class Pi05LiberoPolicy:
     @torch.inference_mode()
     def infer(self, obs: dict, noise: np.ndarray) -> dict:
         """Inputs are already resized to 224x224 by the official LIBERO image transform."""
-        self.tokenizer.set_task(str(obs["prompt"]))
+        prompt = str(obs["prompt"])
         images = np.stack([obs["image"], obs["wrist_image"]]).astype(np.float32) / 127.5 - 1.0
         images_gpu = torch.from_numpy(images).to("cuda", torch.bfloat16)
         noise_gpu = torch.from_numpy(noise).to("cuda", torch.bfloat16)
@@ -104,8 +84,10 @@ class Pi05LiberoPolicy:
         low, high = np.asarray(stats["q01"]), np.asarray(stats["q99"])
         state = np.pad(2 * (state - low) / (high - low + 1e-6) - 1, (0, 32 - len(state)))
         if self.engine == "flashvla":
+            set_task(self.runner, prompt)
             normalized = self.runner.forward(images=images_gpu, state=state, noise=noise_gpu)
         else:
+            self.tokenizer.set_task(prompt)
             keys = ("base_0_rgb", "left_wrist_0_rgb", "right_wrist_0_rgb")
             views = [images_gpu[0], images_gpu[1], torch.full_like(images_gpu[0], -1)]
             tokens, mask = self.tokenizer.encode(state)

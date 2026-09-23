@@ -8,7 +8,7 @@ residual, that the accumulation is in place, and that the result is rounded
 once. Those are the parts a wrong wiring gets wrong, and a route swap between
 Targets is exactly a wiring change.
 
-Named dims (`models/<model>/spec.py`, `h100/<target>/pipeline.py`):
+Named dims (`models/<model>/spec.py`, `models/<model>/graph.py`):
 
     ROWS    prefix tokens        968 (Pi0.5) | 768 (Pi0)
     D       backbone width       2048

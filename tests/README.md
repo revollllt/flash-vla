@@ -5,6 +5,7 @@ Run the tests for the behavior being changed:
 | Behavior | Tests |
 | --- | --- |
 | Runtime and workload identity | `test_binding.py`, `test_cuda_stream_graph.py`, `test_identity.py` |
+| Layering: runtime, models and devices import only what ARCHITECTURE.md allows | `test_layering.py` |
 | Pi0.5 RTX 5090 chunk and attention dimensions | `test_pi05_expert_rows.py` (RTX 5090) |
 | MXFP8/NVFP4 producer ops and fake quantization: fusion contract, references, graph capture, Pi0.5 per-layer recipe | `test_quant_ops.py`, `test_pi05_fake_quant_ffn.py` (Blackwell, sm_100+) |
 | Quantization recipes: selection, identity, route enforcement; Pi0.5 MXFP8 backbone FFN against its fake-quant reference | `test_quantization_recipe.py`, `test_pi05_mxfp8_backbone.py` (sm_120) |

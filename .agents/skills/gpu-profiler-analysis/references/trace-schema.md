@@ -23,8 +23,8 @@ Optional fields used by the analyzer:
   "args": {
     "stream": 3,
     "stage": "decoder",
-    "python_scope": "pipeline.decoder",
-    "source_file": "pipeline.py",
+    "python_scope": "graph.action_expert",
+    "source_file": "graph.py",
     "source_line": 160
   }
 }

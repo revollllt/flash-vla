@@ -84,7 +84,7 @@ def compare(args):
 
     results = []
     for case in oracle["cases"]:
-        inputs = {inp.name: case["inputs"][inp.name].to("cuda") for inp in runner.target.INPUTS}
+        inputs = {inp.name: case["inputs"][inp.name].to("cuda") for inp in runner.target.model.inputs}
         got = runner.forward(**inputs).clone()
         repeat = runner.forward(**inputs).clone()
         torch.cuda.synchronize()

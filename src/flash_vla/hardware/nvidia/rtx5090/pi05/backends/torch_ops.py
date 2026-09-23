@@ -6,22 +6,15 @@ from functools import partial
 import torch
 import torch.nn.functional as F
 
-from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.kernels import attention as _attention
-from flash_vla.hardware.nvidia.h100.pi05.backends.tilelang.wrappers import (
-    NAMES,
-)
+from flash_vla.models.pi05 import attention as attention_kernels
+from flash_vla.models.pi05.ops import CALL_SITES, MASKED_CALL_SITES
+from flash_vla.models.pi05.spec import VISION_DIM, VISION_FFN, VISION_TOKENS
 from flash_vla.runtime.registry import Backend
 
-NAMES = NAMES | {
-    "llm_backbone_norm_gated_ffn_masked",
-    "llm_backbone_ffn_down_residual_masked",
-    "llm_backbone_out_proj_residual_masked",
-}
+#: Every Pi0.5 call site, standard and prefix-masked.
+NAMES = CALL_SITES | frozenset(MASKED_CALL_SITES.values())
 
-#: Mirrored from the TileLang wrappers so this module reads on its own.
-VISION_TOKENS = 256
-VISION_DIM = 1152
-VISION_FFN = 4304
+#: Features of one 14x14 RGB patch.
 PATCH_FEATURES = 14 * 14 * 3
 RMS_EPS = 1e-6
 LN_EPS = 1e-5
@@ -101,7 +94,7 @@ def vision_encoder_norm_qkv(x, norm_w, norm_b, qkv_w, qkv_b, out, *, scratch=Non
 
 def vision_encoder_attention(QKV, out):
     """Reused from the H100 route: it was already torch, and already SDPA."""
-    return _attention.vision_encoder_attention(QKV, out)
+    return attention_kernels.vision_encoder_attention(QKV, out)
 
 
 def vision_encoder_out_proj_residual(x, weight, bias, res, out):
@@ -164,7 +157,7 @@ def llm_backbone_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, x_norm):
 
 def llm_backbone_attention(Q, K, V, scale, mask, out):
     """Reused from the H100 route: a torch multi-query chain with the key mask."""
-    _attention.llm_backbone_attention(Q, K, V, scale, mask, out)
+    attention_kernels.llm_backbone_attention(Q, K, V, scale, mask, out)
     return out
 
 

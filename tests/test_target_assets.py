@@ -12,9 +12,9 @@ from flash_vla.runtime import ModelRunner
 
 
 def fixture(path, value):
-    shape = TARGET.shape(TARGET.configure())
+    shape = TARGET.model.shape(TARGET.model.configure(), None)
     tensors = {item.name: torch.full(item.dims(shape), value, dtype=item.dtype)
-               for item in TARGET.INPUTS}
+               for item in TARGET.model.inputs}
     save_file(tensors, str(path))
     return path
 
@@ -55,10 +55,10 @@ def test_factory_resolves_logical_assets_per_layout_without_mutating_environment
         directory.mkdir()
         fixture(directory / "fixture.safetensors", 1)
         mapping = {
-            TARGET.ASSETS["checkpoint"]: "weights",
-            TARGET.ASSETS["fixture"]: "fixture.safetensors",
-            TARGET.ASSETS["upstream"]: "upstream",
-            TARGET.ASSETS["qwen"]: "qwen",
+            TARGET.assets["checkpoint"]: "weights",
+            TARGET.assets["fixture"]: "fixture.safetensors",
+            TARGET.assets["upstream"]: "upstream",
+            TARGET.assets["qwen"]: "qwen",
         }
         path = directory / "assets.json"
         path.write_text(json.dumps(mapping))
@@ -213,7 +213,7 @@ def test_converted_pi05_checkpoint_states_the_provenance_it_cannot_resolve():
     from types import SimpleNamespace
 
     build = _pi05_factory()
-    stub = SimpleNamespace(configure=lambda: SimpleNamespace(chunk_size=50))
+    stub = SimpleNamespace(model=SimpleNamespace(configure=lambda: SimpleNamespace(chunk_size=50)))
     with pytest.raises(ValueError, match="not both"):
         build(checkpoint="a", converted_checkpoint="b", target=stub)
     with pytest.raises(ValueError, match="checkpoint_id and checkpoint_digest"):

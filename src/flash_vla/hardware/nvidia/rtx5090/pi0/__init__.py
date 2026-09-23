@@ -1,5 +1,5 @@
 """Pi0 on the RTX 5090 (consumer Blackwell, sm_120)."""
 
-from .target import TARGET, Pi0RTX5090
+from .target import TARGET
 
-__all__ = ["Pi0RTX5090", "TARGET"]
+__all__ = ["TARGET"]

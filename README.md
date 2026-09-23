@@ -1,8 +1,9 @@
 # flash-vla
 
-VLA inference specialized for a model, workload and GPU. Targets describe the
-forward graph and choose kernels through a plan; shared components provide
-reusable CUDA/TileLang implementations.
+VLA inference specialized for a model, workload and GPU. Models describe the
+forward graph; Targets compose a model with one GPU's kernels and choose among
+them through a plan; shared components provide reusable CUDA/TileLang
+implementations.
 
 ## Install
 

@@ -31,7 +31,6 @@ issues no kernel and is skipped rather than timed.
 from __future__ import annotations
 
 import argparse
-import statistics
 import sys
 from typing import Any, Callable
 

@@ -30,27 +30,29 @@ per-call arithmetic produced, bit for bit.
 from __future__ import annotations
 
 import math
+from typing import Mapping
 
 import numpy as np
 import torch
 
-from flash_vla.models.pi05.spec import (
+from .spec import (
     ENCODER_DIM,
     HEAD_DIM,
     MASK_NEG,
     ROPE_THETA,
     VISION_TOKENS,
 )
+from .tokenize import PromptTokenizer
 
 
 class PrefixInputs:
     """Pinned host staging for one inference's prompt-dependent inputs.
 
     `build(state)` fills the buffers and returns the number of valid prefix
-    rows. `copy_into(buffers, stream_ordered=True)` issues the four copies.
+    rows. `copy_into(buffers)` issues the four copies on the current stream.
     """
 
-    def __init__(self, tokenizer, num_views: int, chunk_size: int):
+    def __init__(self, tokenizer: PromptTokenizer, num_views: int, chunk_size: int) -> None:
         self.tokenizer = tokenizer
         self.prompt_len = tokenizer.max_token_len
         self.image_tokens = num_views * VISION_TOKENS
@@ -58,7 +60,7 @@ class PrefixInputs:
         self.cache_len = self.encoder_seq_len + chunk_size
         self.chunk_size = chunk_size
 
-        def pinned(*shape, dtype=torch.bfloat16):
+        def pinned(*shape: int, dtype: torch.dtype = torch.bfloat16) -> torch.Tensor:
             return torch.empty(shape, dtype=dtype, pin_memory=True)
 
         self.token_ids = pinned(self.prompt_len, dtype=torch.int32)
@@ -67,22 +69,22 @@ class PrefixInputs:
         self.decoder_rope = pinned(chunk_size, HEAD_DIM)
         #: A numpy view of the token buffer, so writing it is one numpy store
         #: rather than a tensor construction and a dispatched copy.
-        self._token_view = self.token_ids.numpy()
+        self.token_view = self.token_ids.numpy()
 
         # The embedder scales by sqrt(width) (`models/gemma.py:150`, and its
         # PyTorch mirror). Folding it into the same vector that zeroes padding
         # keeps the gather to one multiply.
-        self._embed_scale = math.sqrt(ENCODER_DIM)
-        self._inv_freq = 1.0 / (ROPE_THETA ** (
+        self.sqrt_width = math.sqrt(ENCODER_DIM)
+        self.inverse_frequencies = 1.0 / (ROPE_THETA ** (
             torch.arange(0, HEAD_DIM, 2, dtype=torch.float32) / HEAD_DIM))
-        self._offsets = torch.arange(chunk_size, dtype=torch.float32)
-        self._scale_table, self._mask_table, self._rope_table = self._tabulate()
+        self.suffix_offsets = torch.arange(chunk_size, dtype=torch.float32)
+        self.scale_table, self.mask_table, self.rope_table = self.tabulate()
 
         self.n_valid = 0
 
     # -- construction -------------------------------------------------------
 
-    def _tabulate(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def tabulate(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """The three token-count-dependent vectors, for every reachable count.
 
         `Pi05Tokenizer.encode` pads to `prompt_len` and returns a mask that is
@@ -91,7 +93,7 @@ class PrefixInputs:
         is produced by the expression the slot used to evaluate per call, so the
         tables are bit-identical to it by construction rather than by argument.
 
-        At this Target's shape the three together are about 5.6 MB.
+        At the reference shape the three together are about 5.6 MB.
         """
         counts = range(self.prompt_len + 1)
         scale = torch.empty(len(counts), self.prompt_len, 1, dtype=torch.bfloat16)
@@ -102,23 +104,23 @@ class PrefixInputs:
             valid_mask[:n_tokens] = True
             valid_mask[n_tokens:] = False
             scale[n_tokens].copy_(
-                torch.from_numpy(valid_mask.astype(np.float32) * self._embed_scale)[:, None])
+                torch.from_numpy(valid_mask.astype(np.float32) * self.sqrt_width)[:, None])
             n_valid = self.image_tokens + n_tokens
             # Suffix keys are never masked; only the prefix half is written.
             mask[n_tokens, n_valid:self.encoder_seq_len] = MASK_NEG
             # Suffix positions are n_valid + 0..chunk-1 (`models/pi0.py:259`).
-            phase = self._inv_freq[None, :] * (self._offsets + n_valid)[:, None]
+            phase = self.inverse_frequencies[None, :] * (self.suffix_offsets + n_valid)[:, None]
             rope[n_tokens].copy_(
                 torch.stack([torch.cos(phase), torch.sin(phase)], dim=2).view(-1, HEAD_DIM))
         return scale, mask, rope
 
     # -- per inference ------------------------------------------------------
 
-    def build(self, state) -> int:
+    def build(self, state: torch.Tensor | np.ndarray) -> int:
         """Tokenize `state` into the staging buffers; return the valid prefix length.
 
         Tokenization is host arithmetic over 32 table lookups; everything after
-        it is a selection from `_tabulate`'s rows and a contiguous copy, so the
+        it is a selection from `tabulate`'s rows and a contiguous copy, so the
         slot performs no elementwise work whose size could reach torch's
         intra-op thread pool.
         """
@@ -127,16 +129,16 @@ class PrefixInputs:
         tokens, valid = self.tokenizer.encode(np.asarray(state))
         n_tokens = int(valid.sum())
 
-        self._token_view[:] = tokens
-        self.embed_scale.copy_(self._scale_table[n_tokens])
-        self.mask_bias.copy_(self._mask_table[n_tokens])
-        self.decoder_rope.copy_(self._rope_table[n_tokens])
+        self.token_view[:] = tokens
+        self.embed_scale.copy_(self.scale_table[n_tokens])
+        self.mask_bias.copy_(self.mask_table[n_tokens])
+        self.decoder_rope.copy_(self.rope_table[n_tokens])
 
         self.n_valid = self.image_tokens + n_tokens
         return self.n_valid
 
     @torch.no_grad()
-    def copy_into(self, buffers: dict[str, torch.Tensor], non_blocking: bool = True) -> None:
+    def copy_into(self, buffers: Mapping[str, torch.Tensor], non_blocking: bool = True) -> None:
         """Issue the staged copies onto the current stream."""
         buffers["prompt_ids"].copy_(self.token_ids, non_blocking=non_blocking)
         buffers["prompt_scale"].copy_(self.embed_scale, non_blocking=non_blocking)

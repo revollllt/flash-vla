@@ -14,28 +14,11 @@ import weakref
 
 import torch
 
-from flash_vla.runtime.ops import OpSpec, dual_gemm, gemm
+from flash_vla.models.pi05.ops import MASKED_CALL_SITES
 from flash_vla.runtime.registry import Backend
 
 from . import cutlass_backbone, fused_backbone
 
-MASKED_CALL_SITES = {
-    "llm_backbone_norm_gated_ffn": "llm_backbone_norm_gated_ffn_masked",
-    "llm_backbone_ffn_down_residual": "llm_backbone_ffn_down_residual_masked",
-    "llm_backbone_out_proj_residual": "llm_backbone_out_proj_residual_masked",
-}
-OPS = (
-    OpSpec("llm_backbone_norm_gated_ffn_masked",
-           ("x", "gate_w", "up_w", "out", "x_norm", "mask"),
-           outputs=("out", "x_norm"), weights=("gate_w", "up_w"), aux=("x_norm",),
-           flops=dual_gemm("x", "gate_w")),
-    OpSpec("llm_backbone_ffn_down_residual_masked",
-           ("x", "weight", "out", "mask"), outputs=("out",), inout=("out",),
-           weights=("weight",), flops=gemm("x", "weight")),
-    OpSpec("llm_backbone_out_proj_residual_masked",
-           ("x", "weight", "out", "mask"), outputs=("out",), inout=("out",),
-           weights=("weight",), flops=gemm("x", "weight")),
-)
 NAMES = frozenset(MASKED_CALL_SITES.values())
 # Adjacent M128 tile boundaries for this Target's 968 physical prefix rows.
 _BUCKET_ROWS = (896, 968)
@@ -155,4 +138,4 @@ def make_wrappers(scratch, selected_names=None) -> dict:
 
 
 #: What the Target's registry routes to (`flash_vla.runtime.registry`).
-BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers, ops=OPS)
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)

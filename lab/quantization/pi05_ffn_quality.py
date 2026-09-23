@@ -30,7 +30,8 @@ import numpy as np
 import torch
 
 from eval.libero.__main__ import evaluate
-from eval.libero.policy import LiberoTokenizer, Pi05LiberoPolicy
+from eval.libero.policy import Pi05LiberoPolicy
+from flash_vla.models.pi05.session import set_task
 from eval.metrics import error_metrics
 from flash_vla.hardware.nvidia.rtx5090.pi05.target import TARGET
 from flash_vla.inference import declare
@@ -41,7 +42,6 @@ from flash_vla.provenance import git_revision
 from flash_vla.runtime import ModelRunner
 
 SUITES = ("libero_spatial", "libero_object", "libero_goal", "libero_10")
-FFN_CALL_SITES = ("llm_backbone_norm_gated_ffn", "llm_backbone_ffn_down_residual")
 Recipe = dict[str, list[str]]    # {"gate_up": [fmt per layer], "down": [fmt per layer]}
 QUANTIZATION = "mxfp8-llm-ffn"
 
@@ -75,7 +75,8 @@ class RecordingPolicy:
 
 def variants() -> dict[str, Variant]:
     """name -> variant; "bf16", the BF16 shipped plan, is what the others are compared with."""
-    fake_quant_plan = {**TARGET.plan, **{site: "fake-quant-mxfp8" for site in FFN_CALL_SITES}}
+    # The shipped plan with the recipe's fake-quant reference on its call sites.
+    fake_quant_plan = {**TARGET.plan, **TARGET.quantization[QUANTIZATION].reference_plan}
     fake_quant = lambda gate_up, down: Variant(fake_quant_plan, QUANTIZATION, {
         "gate_up": [gate_up] * ENCODER_LAYERS, "down": [down] * ENCODER_LAYERS})
     named = {
@@ -108,14 +109,14 @@ def collect(args: argparse.Namespace) -> None:
     print(f"kept {len(observations)} of {recorder.calls} observations -> {args.out}")
 
 
-def normalized_actions(runner: ModelRunner, tokenizer: LiberoTokenizer, stats: dict,
+def normalized_actions(runner: ModelRunner, stats: dict,
                        dataset: np.lib.npyio.NpzFile) -> torch.Tensor:
     """float32 [observations, 10, 32]: the runner's normalized action chunks,
     preprocessed as eval/libero/policy.py does."""
     low, high = np.asarray(stats["state"]["q01"]), np.asarray(stats["state"]["q99"])
     chunks = []
     for index in range(len(dataset["prompt"])):
-        tokenizer.set_task(str(dataset["prompt"][index]))
+        set_task(runner, str(dataset["prompt"][index]))
         images = np.stack([dataset["image"][index], dataset["wrist_image"][index]])
         images = torch.from_numpy(images.astype(np.float32) / 127.5 - 1.0).to("cuda", torch.bfloat16)
         state = np.pad(2 * (dataset["state"][index] - low) / (high - low + 1e-6) - 1,
@@ -132,7 +133,6 @@ def compare(args: argparse.Namespace) -> None:
                        .read_text())["norm_stats"]
     dataset = np.load(args.dataset)
     weights = fold(converted_checkpoint(directory), steps=10)
-    tokenizer = LiberoTokenizer(args.tokenizer, config["max_token_len"])
     args.out.mkdir(parents=True, exist_ok=True)
     selected = {name: variant for name, variant in variants().items()
                 if name == "bf16" or any(pattern in name for pattern in args.only.split(","))}
@@ -146,10 +146,10 @@ def compare(args: argparse.Namespace) -> None:
                              checkpoint_id="openpi/pi05_libero",
                              plan=variant.plan, quantization=variant.quantization,
                              num_views=2, chunk_size=10, steps=10, prompt_len=config["max_token_len"],
-                             tokenizer=tokenizer, prompt="pick up the object",
-                             assets={} if variant.recipe is None
-                             else {"quantization_recipe": recipe_path})
-        actions = normalized_actions(runner, tokenizer, stats, dataset)
+                             discrete_state=False, prompt="pick up the object",
+                             assets={"tokenizer": Path(args.tokenizer)} if variant.recipe is None
+                             else {"tokenizer": Path(args.tokenizer), "quantization_recipe": recipe_path})
+        actions = normalized_actions(runner, stats, dataset)
         del runner
         torch.cuda.empty_cache()
         reference = actions if name == "bf16" else reference

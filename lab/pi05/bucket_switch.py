@@ -11,7 +11,7 @@ import torch
 from eval.metrics import error_metrics
 from eval.pi05.reference import to_pair_layout
 from eval.tolerances import tolerances
-from flash_vla.hardware.nvidia.rtx5090.pi05.target import set_task
+from flash_vla.models.pi05.session import set_task
 from flash_vla.inference import build
 
 

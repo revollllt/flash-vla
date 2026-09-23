@@ -1,7 +1,6 @@
 """Load LingBot Python backends from a clean inference-source checkout."""
 from __future__ import annotations
 
-import copy
 from dataclasses import replace
 import importlib
 import importlib.util
@@ -11,7 +10,7 @@ import subprocess
 import sys
 import uuid
 
-from flash_vla.runtime import VLA
+from flash_vla.runtime.vla import Target
 from flash_vla.runtime.registry import Backend, Registry, Wrapper
 from flash_vla.runtime.workspace import Scratch
 
@@ -54,7 +53,7 @@ def isolate_rope(backend: Backend) -> Backend:
     return replace(backend, make_wrappers=make)
 
 
-def lingbot_target(checkout: str | Path) -> tuple[VLA, dict[str, str]]:
+def lingbot_target(checkout: str | Path) -> tuple[Target, dict[str, str]]:
     """The LingBot Target of `checkout`: its backend modules, isolated per engine.
 
     Shared inference code must be identical between `checkout` and this
@@ -93,10 +92,10 @@ def lingbot_target(checkout: str | Path) -> tuple[VLA, dict[str, str]]:
     sys.modules[name] = module
     spec.loader.exec_module(module)
     loaded = sys.modules[name + ".backends"]
-    target = copy.copy(module.TARGET)
-    target.registry = Registry({backend_name: isolate_rope(backend)
-                                for backend_name, backend in loaded.BACKENDS.items()},
-                               default=loaded.REGISTRY.default)
+    registry = Registry({backend_name: isolate_rope(backend)
+                         for backend_name, backend in loaded.BACKENDS.items()},
+                        default=loaded.REGISTRY.default)
+    target = replace(module.TARGET, registry=registry)
     provenance = dict(revision=revision, checkout=str(source),
                       controller_revision=controller_revision,
                       target_package=str(package), module=name,

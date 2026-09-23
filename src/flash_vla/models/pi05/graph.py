@@ -24,20 +24,26 @@ data-dependent (`n_valid + 0..chunk-1`), so `action_expert_rope` is filled per
 inference by `PrefixInputs`; the backbone table stays static because padding
 sits at the end of the language block.
 
-The action-expert buffers are allocated with rows padded to a multiple of 64
-and exposed as views: the hand-written CUDA kernels run on the padded
-allocation (64 query rows, 1024 cache keys), recovering it from the view's
-storage; TileLang sees the 50-row / 1018-key views. Pad rows are zero or
-masked (`MASK_NEG` on keys `[cache_len, cache_pad)`) so any kernel reading
-them computes finite garbage that nothing consumes.
+The action-expert buffers are allocated with rows padded to a multiple of
+`Pi05Layout.row_pad` and exposed as views: hand-written kernels run on the
+padded allocation (64 query rows, 1024 cache keys at `row_pad=64`), recovering
+it from the view's storage; generic kernels see the 50-row / 1018-key views.
+Pad rows are zero or masked (`MASK_NEG` on keys `[cache_len, cache_pad)`) so
+any kernel reading them computes finite garbage that nothing consumes.
+
+The layout is the Target's choice, not the model's: padding and whether the
+backbone's dense call sites receive the prefix mask (`Pi05Layout`) change the
+buffers and call sites a device's kernels see, never the math.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Mapping
 
 import torch
 
-from flash_vla.models.pi05.spec import (
+from .spec import (
+    ACTION_DIM,
     DECODER_DIM,
     DECODER_FFN,
     DECODER_HEADS,
@@ -45,6 +51,8 @@ from flash_vla.models.pi05.spec import (
     ENCODER_FFN,
     ENCODER_LAYERS,
     HEAD_DIM,
+    IMAGE_CHANNELS,
+    IMAGE_SIZE,
     MASK_NEG,
     ROPE_THETA,
     VISION_DIM,
@@ -54,12 +62,24 @@ from flash_vla.models.pi05.spec import (
 )
 from flash_vla.runtime.graph import Graph
 
-#: Leading extents of the action-expert buffers are padded to this multiple:
-#: one wgmma m64 tile of query rows, one 64-key attention stage.
-ROW_PAD = 64
+from .ops import MASKED_CALL_SITES
 
 
-def rope_table(seq_len: int, offset: int, head_dim: int, device) -> torch.Tensor:
+@dataclass(frozen=True)
+class Pi05Layout:
+    """How a Target lays the Pi0.5 graph out for its kernels.
+
+    `row_pad`: leading extents of the action-expert buffers and of the KV cache
+    are padded to this multiple (64 on H100: one wgmma m64 tile of query rows,
+    one 64-key attention stage). `masked_backbone`: the backbone's dense call
+    sites take the prefix mask as a last argument (`ops.MASKED_CALL_SITES`), so
+    kernels can skip the padded prompt rows.
+    """
+    row_pad: int
+    masked_backbone: bool
+
+
+def rope_table(seq_len: int, offset: int, head_dim: int, device: torch.device) -> torch.Tensor:
     """Interleaved (cos, sin) rotary table for positions [offset, offset + seq_len)."""
     positions = torch.arange(seq_len, device=device) + offset
     inv_freq = 1.0 / (ROPE_THETA ** (torch.arange(0, head_dim, 2, dtype=torch.float32,
@@ -70,11 +90,7 @@ def rope_table(seq_len: int, offset: int, head_dim: int, device) -> torch.Tensor
     return torch.cat([cos[:, :, None], sin[:, :, None]], 2).view(-1, head_dim)
 
 
-def _rows(n: int) -> tuple[slice, ...]:
-    return (slice(0, n),)
-
-
-def build(g: Graph, shape: Mapping[str, int]) -> None:
+def build(g: Graph, shape: Mapping[str, int], layout: Pi05Layout) -> None:
     """Write the Pi0.5 graph at `shape` (num_views, chunk, steps, layers, prompt_len)."""
     num_views, chunk, steps = shape["num_views"], shape["chunk"], shape["steps"]
     layers, prompt_len = shape["layers"], shape["prompt_len"]
@@ -82,18 +98,18 @@ def build(g: Graph, shape: Mapping[str, int]) -> None:
     image_tokens = num_views * VISION_TOKENS
     prefix_len = image_tokens + prompt_len
     cache_len = prefix_len + chunk
-    chunk_pad = -(-chunk // ROW_PAD) * ROW_PAD
-    cache_pad = -(-cache_len // ROW_PAD) * ROW_PAD
+    chunk_pad = -(-chunk // layout.row_pad) * layout.row_pad
+    cache_pad = -(-cache_len // layout.row_pad) * layout.row_pad
     g.derived.update(image_tokens=image_tokens, prefix_len=prefix_len, cache_len=cache_len)
 
-    def mask_init(device) -> torch.Tensor:
+    def mask_init(device: torch.device) -> torch.Tensor:
         bias = torch.zeros(cache_pad, dtype=torch.bfloat16, device=device)
         bias[cache_len:] = MASK_NEG
         return bias
 
     # -- inputs and the prompt buffers the host slot fills ------------------
-    images = g.buf("images", (num_views, 224, 224, 3))
-    actions = g.buf("actions", (chunk, 32))
+    images = g.buf("images", (num_views, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS))
+    actions = g.buf("actions", (chunk, ACTION_DIM))
     # `prompt_scale` carries sqrt(width) on valid rows and zero on padding, so
     # one multiply both scales the embedding and zeroes the padded rows. Both
     # start zeroed: warmup runs the graph before the first `forward`, and an
@@ -102,7 +118,7 @@ def build(g: Graph, shape: Mapping[str, int]) -> None:
     prompt_scale = g.buf("prompt_scale", (prompt_len, 1), init="zero")
     # One vector serves both attentions: the backbone reads [:prefix_len] and
     # the action expert the whole view, since the suffix is never masked.
-    mask_bias = g.buf("mask_bias", (cache_pad,), init=mask_init, view=_rows(cache_len))
+    mask_bias = g.buf("mask_bias", (cache_pad,), init=mask_init, view=(slice(0, cache_len),))
 
     # -- vision encoder -----------------------------------------------------
     g.stage("vision_encoder")
@@ -164,6 +180,10 @@ def build(g: Graph, shape: Mapping[str, int]) -> None:
          scale=prompt_scale, out=bx[image_tokens:prefix_len])
     scale = HEAD_DIM ** -0.5
     mask = mask_bias[:prefix_len]
+    # The dense backbone call sites, standard or taking the prefix mask as a
+    # last argument; the arguments are otherwise the same.
+    dense = {name: (MASKED_CALL_SITES[name], {"mask": mask}) if layout.masked_backbone
+             else (name, {}) for name in MASKED_CALL_SITES}
     for i in range(layers):
         g.op("llm_backbone_norm_qkv_rope", x=bx, weight_qkv=g.w("encoder_attn_qkv_w")[i],
              rope=brope, q=bq, k=kv_k[i, :prefix_len], v=kv_v[i, :prefix_len], x_norm=bnorm)
@@ -173,12 +193,14 @@ def build(g: Graph, shape: Mapping[str, int]) -> None:
             break
         g.op("llm_backbone_attention", q=bq, k=kv_k[i, :prefix_len], v=kv_v[i, :prefix_len],
              scale=scale, mask=mask, out=battn)
-        g.op("llm_backbone_out_proj_residual", x=battn.view(prefix_len, DECODER_HEADS * HEAD_DIM),
-             weight=g.w("encoder_attn_o_w")[i], out=bx)
-        g.op("llm_backbone_norm_gated_ffn", x=bx, gate_w=g.w("encoder_ffn_gate_w")[i],
-             up_w=g.w("encoder_ffn_up_w")[i], out=bhidden, x_norm=bnorm)
-        g.op("llm_backbone_ffn_down_residual", x=bhidden, weight=g.w("encoder_ffn_down_w")[i],
-             out=bx)
+        call_site, masked = dense["llm_backbone_out_proj_residual"]
+        g.op(call_site, x=battn.view(prefix_len, DECODER_HEADS * HEAD_DIM),
+             weight=g.w("encoder_attn_o_w")[i], out=bx, **masked)
+        call_site, masked = dense["llm_backbone_norm_gated_ffn"]
+        g.op(call_site, x=bx, gate_w=g.w("encoder_ffn_gate_w")[i],
+             up_w=g.w("encoder_ffn_up_w")[i], out=bhidden, x_norm=bnorm, **masked)
+        call_site, masked = dense["llm_backbone_ffn_down_residual"]
+        g.op(call_site, x=bhidden, weight=g.w("encoder_ffn_down_w")[i], out=bx, **masked)
 
     # -- action expert: denoise the chunk over the KV cache -----------------
     # No state token, so the sequence is the action chunk alone. AdaRMSNorm
@@ -186,14 +208,14 @@ def build(g: Graph, shape: Mapping[str, int]) -> None:
     # A operand, `_shift_bias` is an epilogue bias, `_ada_*_gate` multiplies
     # the residual branch; the Euler dt is folded into the output projection.
     g.stage("action_expert")
-    ex = g.buf("action_expert_x", (chunk_pad, DECODER_DIM), init="zero", view=_rows(chunk))
+    ex = g.buf("action_expert_x", (chunk_pad, DECODER_DIM), init="zero", view=(slice(0, chunk),))
     # Filled per inference by `PrefixInputs`; zeroed so a missed update fails
     # loudly in the reference check rather than reusing stale phase.
-    erope = g.buf("action_expert_rope", (chunk_pad, HEAD_DIM), init="zero", view=_rows(chunk))
-    nf = g.buf("action_expert_norm_factor", (chunk_pad,), init="zero", view=_rows(chunk))
+    erope = g.buf("action_expert_rope", (chunk_pad, HEAD_DIM), init="zero", view=(slice(0, chunk),))
+    nf = g.buf("action_expert_norm_factor", (chunk_pad,), init="zero", view=(slice(0, chunk),))
     eq = g.buf("action_expert_q", (chunk * DECODER_HEADS, HEAD_DIM))
     ehidden = g.buf("action_expert_hidden", (chunk_pad, DECODER_FFN), init="zero",
-                    view=_rows(chunk))
+                    view=(slice(0, chunk),))
 
     for step in range(steps):
         g.op("action_expert_action_in_proj", x=actions, weight=g.w("decoder_action_in_proj_w"),
@@ -222,4 +244,4 @@ def build(g: Graph, shape: Mapping[str, int]) -> None:
              bias=g.w("decoder_action_out_proj_b")[step], out=actions, norm_factor=nf)
 
 
-__all__ = ["ROW_PAD", "build", "rope_table"]
+__all__ = ["Pi05Layout", "build", "rope_table"]

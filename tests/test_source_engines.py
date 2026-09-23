@@ -9,14 +9,21 @@ import pytest
 from flash_vla import source
 from flash_vla.runtime.registry import Backend
 
-BACKENDS_PACKAGE = (
+#: A checkout's Target stand-in: a frozen value with a registry, like `runtime.vla.Target`.
+FAKE_TARGET = (
+    "from dataclasses import dataclass, field\n"
+    "@dataclass(frozen=True)\n"
+    "class FakeTarget:\n"
+    "    marker: str\n"
+    "    registry: object = None\n"
+    "    state: list = field(default_factory=list)\n")
+BACKENDS_PACKAGE = FAKE_TARGET + (
     "from flash_vla.runtime.registry import Backend, Registry\n"
-    "from types import SimpleNamespace\n"
     "from . import upstream\n"
     "BACKENDS = {{'upstream': Backend(names=frozenset({{'vision'}}), "
     "make_wrappers=upstream.make_wrappers)}}\n"
     "REGISTRY = Registry(BACKENDS, default='upstream')\n"
-    "TARGET = SimpleNamespace(marker={marker!r}, state=[])\n")
+    "TARGET = FakeTarget(marker={marker!r})\n")
 
 
 def git(root, *args):
@@ -170,14 +177,14 @@ def test_prebound_route_factory_is_isolated(checkouts):
         "from .upstream import make_wrappers as bound_factory\n"
         "def make_wrappers(*args, **kwargs): return bound_factory(*args, **kwargs)\n")
     (package / "backends/__init__.py").write_text(
+        FAKE_TARGET +
         "from flash_vla.runtime.registry import Backend, Registry\n"
-        "from types import SimpleNamespace\n"
         "from . import upstream, alias\n"
         "NAMES = frozenset({'vision', 'prefix'})\n"
         "BACKENDS = {'reference': Backend(names=NAMES, make_wrappers=upstream.make_wrappers),\n"
         "            'candidate': Backend(names=NAMES, make_wrappers=alias.make_wrappers)}\n"
         "REGISTRY = Registry(BACKENDS, default='reference')\n"
-        "TARGET = SimpleNamespace()\n")
+        "TARGET = FakeTarget(marker='prebound')\n")
     git(current, "add", ".")
     git(current, "commit", "-m", "prebound route")
     official = lambda: "official"

@@ -1,11 +1,14 @@
-"""Three-stage fixed-shape LingBot graph."""
+"""The fixed-shape LingBot graph: three stages, one monolithic call site each."""
 from __future__ import annotations
 
 from typing import Mapping
 
 import torch
 
-from flash_vla.models.lingbot.spec import (
+from flash_vla.runtime.graph import Graph
+
+from .ops import ACTION_WEIGHT_PARAMS, BACKBONE_WEIGHT_PARAMS, WEIGHT_PARAMS
+from .spec import (
     ACTION_DIM,
     BACKBONE_DIM,
     BACKBONE_WEIGHT_NAMES,
@@ -23,9 +26,6 @@ from flash_vla.models.lingbot.spec import (
     VISUAL_TOKENS_PER_VIEW,
     WEIGHT_NAMES,
 )
-from flash_vla.runtime.graph import Graph
-
-from .backends.upstream import ACTION_WEIGHT_PARAMS, BACKBONE_WEIGHT_PARAMS, WEIGHT_PARAMS
 
 
 def build(g: Graph, shape: Mapping[str, int]) -> None:

@@ -35,18 +35,13 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from flash_vla.hardware.nvidia.h100.pi0.backends.tilelang.kernels import attention as _attention
-from flash_vla.hardware.nvidia.h100.pi0.backends.tilelang.wrappers import NAMES, OPS
+from flash_vla.models.pi0 import attention as attention_kernels
+from flash_vla.models.pi0.ops import CALL_SITES as NAMES
+from flash_vla.models.pi0.spec import DECODER_HEADS, VISION_DIM, VISION_FFN, VISION_TOKENS
 from flash_vla.runtime.registry import Backend
 
-#: Pi0 shape constants, mirrored from the TileLang wrappers rather than imported
-#: so this module reads on its own.
-VISION_TOKENS = 256
-VISION_DIM = 1152
-VISION_FFN = 4304
+#: Features of one 14x14 RGB patch.
 PATCH_FEATURES = 14 * 14 * 3
-ENCODER_DIM = 2048
-DECODER_HEADS = 8
 RMS_EPS = 1e-6
 LN_EPS = 1e-5
 
@@ -115,7 +110,7 @@ def vision_encoder_norm_qkv(x, norm_w, norm_b, qkv_w, qkv_b, out, *, scratch=Non
 
 def vision_encoder_attention(QKV, out):
     """Reused from the H100 route: it was already torch, and already SDPA."""
-    return _attention.vision_encoder_attention(QKV, out)
+    return attention_kernels.vision_encoder_attention(QKV, out)
 
 
 def vision_encoder_out_proj_residual(x, weight, bias, res, out):
@@ -167,7 +162,7 @@ def llm_backbone_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, x_norm, *, scratch=
 
 def llm_backbone_attention(Q, K, V, scale, mask, out):
     assert mask is None, "Pi0 has no key mask"
-    _attention.llm_backbone_attention(Q, K, V, scale, out)
+    attention_kernels.llm_backbone_attention(Q, K, V, scale, out)
     return out
 
 
@@ -287,7 +282,7 @@ def make_wrappers(scratch, selected_names=None) -> dict:
 
 
 #: What the Target's registry routes to (`flash_vla.runtime.registry`).
-BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers, ops=OPS)
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
 
 
-__all__ = ["BACKEND", "NAMES", "OPS", "make_wrappers"]
+__all__ = ["BACKEND", "NAMES", "make_wrappers"]

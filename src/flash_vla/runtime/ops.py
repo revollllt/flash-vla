@@ -25,13 +25,14 @@ plain Python values in the argument list.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from math import prod
-from typing import Any, Callable, Mapping
+from typing import Callable, Mapping
 
 from .cost import Cost
 
-Shapes = Mapping[str, Any]
+#: Parameter name -> argument shape (`None` for an absent or scalar argument).
+Shapes = Mapping[str, tuple[int, ...] | None]
 
 
 def _rows(shape) -> int:

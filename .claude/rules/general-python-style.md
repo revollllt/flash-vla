@@ -56,8 +56,9 @@ there is a concrete reason not to; call out deviations in review.
 
 - **Pass what you need, not a god object.** Pass the specific read-only values a
   helper consumes instead of the whole pipeline or model object.
-- **Keep ownership boundaries explicit.** Model contracts stay hardware-free;
-  target-specific pipelines own buffers, fusion, and backend selection.
+- **Keep ownership boundaries explicit.** Model definitions (graph, buffers,
+  host work) stay hardware-free; a Target owns the device's layout choices,
+  fusion and backend selection.
 - **Typed public contracts.** Document tensor shape, dtype, device, mutation,
   and CUDA Graph capture constraints for public functions. Do not add per-call
   validation to a captured hot path when the invariant can be checked during

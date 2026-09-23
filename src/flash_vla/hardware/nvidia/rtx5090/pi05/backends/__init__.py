@@ -9,7 +9,6 @@ from . import fused_ffn as _fused_ffn
 from . import fused_qkv as _fused_qkv
 from . import triton_qkv as _triton_qkv
 from . import triton_qkv_finish as _triton_qkv_finish
-from . import fused_backbone as _fused_backbone
 from . import packed_ffn as _packed_ffn
 from . import dual_ffn as _dual_ffn
 from . import fused_attention as _fused_attention
@@ -30,7 +29,6 @@ BACKENDS = {
     "fused-qkv": _fused_qkv.BACKEND,
     "triton-qkv": _triton_qkv.BACKEND,
     "triton-qkv-finish": _triton_qkv_finish.BACKEND,
-    "fused-backbone": _fused_backbone.BACKEND,
     "packed-ffn": _packed_ffn.BACKEND,
     "dual-ffn": _dual_ffn.BACKEND,
     "fused-attention": _fused_attention.BACKEND,

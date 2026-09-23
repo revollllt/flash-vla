@@ -4,58 +4,8 @@ from __future__ import annotations
 import torch
 
 from flash_vla.models.groot_n17.reference import PREFIXES, bind_module, make_modules
-from flash_vla.models.groot_n17.weights import weight_shapes
-from flash_vla.runtime.ops import OpSpec
+from flash_vla.models.groot_n17.ops import CALL_SITES as NAMES, WEIGHTS
 from flash_vla.runtime.registry import Backend
-
-NAMES = ("groot_vision", "groot_backbone", "groot_action")
-WEIGHTS = {part: tuple(name for name in weight_shapes() if name.startswith(prefix))
-           for part, prefix in PREFIXES.items()}
-PARAMS = {part: tuple(f"w{i}" for i in range(len(names))) for part, names in WEIGHTS.items()}
-
-
-def _vision_flops(s):
-    rows, patch = s["pixels"]
-    dim, ffn = 1024, 4096
-    blocks = 24 * (8 * rows * dim * dim + 4 * rows * dim * ffn + 4 * 2 * 256**2 * dim)
-    mergers = 4 * 2 * 128 * (4096**2 + 4096 * 2048)
-    return 2 * rows * patch * dim + blocks + mergers
-
-
-def _backbone_flops(s):
-    rows = s["input_ids"][1]
-    return 16 * (2 * rows * 2048 * (2048 + 1024 + 1024 + 2048)
-                 + 6 * rows * 2048 * 6144 + 4 * rows * rows * 2048)
-
-
-def _action_flops(s):
-    """Dense matmul/attention FLOPs for this Target's four-step workload; excludes pointwise ops."""
-    prefix, rows, dim = s["backbone"][1], 41, 1536
-    refiner = 4 * (8 * prefix * 2048**2 + 16 * prefix * 2048**2 + 4 * prefix**2 * 2048)
-    cross = 4 * rows * dim**2 + 4 * prefix * 2048 * dim + 4 * rows * prefix * dim
-    self_attn = 8 * rows * dim**2 + 4 * rows**2 * dim
-    ffn = 4 * rows * dim * 6144
-    modulation = 2 * dim * (2 * dim)
-    dit = 16 * (cross + self_attn) + 32 * (ffn + modulation)
-    encoder = 2 * 40 * (132 * dim + 2 * dim**2 + dim**2)
-    decoder = 2 * rows * (1024**2 + 1024 * 132)
-    timestep = 2 * (256 * dim + dim**2)
-    output = 2 * (dim * 2 * dim + rows * dim * 1024)
-    state = 2 * (132 * 1024 + 1024 * dim)
-    return refiner + state + 4 * (dit + encoder + decoder + timestep + output)
-
-
-OPS = (
-    OpSpec("groot_vision", ("pixels", "out", "deepstack") + PARAMS["vision"],
-           outputs=("out", "deepstack"), weights=PARAMS["vision"], flops=_vision_flops),
-    OpSpec("groot_backbone", ("input_ids", "attention_mask", "position_ids", "image_indices",
-           "vision", "deepstack", "out") + PARAMS["backbone"], outputs=("out",),
-           weights=PARAMS["backbone"], flops=_backbone_flops),
-    OpSpec("groot_action", ("backbone", "state", "noise", "embodiment", "input_ids",
-           "attention_mask", "out", "velocity") + PARAMS["action"], outputs=("out", "velocity"),
-           weights=PARAMS["action"], flops=_action_flops),
-)
-
 
 def make_wrappers(scratch, selected_names=None):
     modules = {}
@@ -128,4 +78,4 @@ def make_wrappers(scratch, selected_names=None):
 
 
 #: What the Target's registry routes to (`flash_vla.runtime.registry`).
-BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers, ops=OPS)
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)

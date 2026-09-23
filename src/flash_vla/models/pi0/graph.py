@@ -22,22 +22,29 @@ from typing import Mapping
 
 import torch
 
-from flash_vla.models.pi0.spec import (
-    DECODER_HEADS,
-    ENCODER_LAYERS,
-    HEAD_DIM,
-    ROPE_THETA,
-    VISION_LAYERS,
-)
 from flash_vla.runtime.graph import Graph
 
-VISION_TOKENS, VISION_DIM, VISION_FFN = 256, 1152, 4304
-ENCODER_DIM, ENCODER_FFN = 2048, 16384
-DECODER_DIM, DECODER_FFN = 1024, 4096
-STATE_DIM = 32
+from .spec import (
+    ACTION_DIM,
+    DECODER_DIM,
+    DECODER_FFN,
+    DECODER_HEADS,
+    ENCODER_DIM,
+    ENCODER_FFN,
+    ENCODER_LAYERS,
+    HEAD_DIM,
+    IMAGE_CHANNELS,
+    IMAGE_SIZE,
+    ROPE_THETA,
+    STATE_DIM,
+    VISION_DIM,
+    VISION_FFN,
+    VISION_LAYERS,
+    VISION_TOKENS,
+)
 
 
-def rope_table(seq_len: int, offset: int, head_dim: int, device,
+def rope_table(seq_len: int, offset: int, head_dim: int, device: torch.device,
                theta: float = ROPE_THETA) -> torch.Tensor:
     """Interleaved (cos, sin) rotary table for positions [offset, offset + seq_len)."""
     positions = torch.arange(seq_len, device=device) + offset
@@ -63,9 +70,9 @@ def build(g: Graph, shape: Mapping[str, int]) -> None:
     g.derived.update(image_tokens=image_tokens, prefix_len=prefix_len, cache_len=cache_len)
 
     # -- inputs ---------------------------------------------------------------
-    images = g.buf("images", (num_views, 224, 224, 3))
+    images = g.buf("images", (num_views, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS))
     state = g.buf("state", (STATE_DIM,))
-    actions = g.buf("actions", (chunk, STATE_DIM))
+    actions = g.buf("actions", (chunk, ACTION_DIM))
 
     # -- vision encoder -------------------------------------------------------
     g.stage("vision_encoder")

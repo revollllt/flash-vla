@@ -7,13 +7,14 @@ Target   = hardware × inference-compatible architecture × shape profile
 Workload = Target × execution policy
 ```
 
-A Target owns its graph, shapes, buffers and kernel routing. Execution policy
+A model definition owns the graph, shapes, buffers and host work; a Target
+composes it with one device's layout choices, backends and kernel routing. Execution policy
 covers precision/quantization and cache behavior. Checkpoint values and input
 fixtures are measurement context; changing them does not redefine architecture.
 Plan and source revision identify the implementation being compared.
 
 Quantization is a build-time choice among the Target's approved recipes
-(`VLA.QUANTIZATION`, `quantization=<recipe>`). A recipe fixes the math and the
+(`Target.quantization`, `quantization=<recipe>`). A recipe fixes the math and the
 call sites it quantizes, routes those call sites to its kernels in the shipped
 plan and to its fake-quant reference in the reference plan, and is recorded in
 the identity's execution variant, so each recipe is its own workload. The
@@ -23,8 +24,10 @@ recipe's backends anywhere else.
 ## Components and dependencies
 
 ```text
-models/                       model semantics and checkpoint loading
-runtime/                      graph, buffers, execution and plan binding
+models/<model>/               model semantics: graph, call sites, shapes, host
+                              work, checkpoint loading
+runtime/                      graph API, Target composition, buffers, execution,
+                              plan binding
 hardware/<vendor>/<device>/   Targets and reusable component kernels
 eval/, benchmarks/           accuracy and latency consumers
 tools/, tests/                diagnostics and engineering checks
@@ -32,10 +35,14 @@ lab/                          experiments and saved-result rendering
 ```
 
 - Models have no hardware dependencies. Runtime imports no model, backend or Target.
-- A Target combines models, runtime and device component packages. It owns shapes,
-  plans and routing; components own reusable kernel implementations.
-- A Target never imports another Target's kernels. Shared expert builders live
-  in `gemma_expert`; each Target keeps its own JIT registry and compiler settings.
+- A Target combines one model, runtime and device component packages. It owns the
+  layout the device's kernels see, plans and routing; components own reusable
+  kernel implementations and may read a model's spec constants and reference math.
+- A Target never imports another Target, and one device never imports another
+  device's code: the same model on two devices is two Targets over one model
+  definition. Shared expert builders live in `gemma_expert`; each Target keeps
+  its own JIT registry and compiler settings.
+- `tests/test_layering.py` checks these rules on the source.
 - CUDA tile primitives and TileLang JIT conventions are vendor-level utilities, and so
   are components that serve a whole architecture family rather than one device: the
   Blackwell (sm_100+) block-scaled quantize ops live in `hardware/nvidia/quant_ops`.
@@ -50,8 +57,9 @@ images → vision_encoder → [host work] → llm_backbone → action_expert →
 
 The explicit graph names inputs, outputs, weights and call sites. `ModelRunner`
 materializes that graph and binds each call site to the selected plan. Model
-shape and control-flow differences belong to the Target rather than branches
-inside the runner. Shared kernels accept the arguments and layout of their
+shape and control-flow differences belong to the model definition rather than
+branches inside the runner; a device's layout needs (row padding, which call
+sites take the prefix mask) are parameters the Target passes to the model. Shared kernels accept the arguments and layout of their
 call-site interface.
 
 A host slot can overlap with the preceding GPU segment when dependencies allow.
@@ -75,8 +83,14 @@ deployed inference. Model loading and capture are setup work.
 
 ## Targets, plans and assets
 
-A Target supplies model configuration and checkpoint mapping, a graph-building
-pipeline, a backend registry and two plans: `shipped` and `reference`. Candidate
+A model is a `runtime.vla.ModelDefinition` subclass in
+`models/<model>/definition.py`: identity, configuration, shape numbers, weight
+schema, forward inputs and stage outputs, the extension ops its graph uses,
+host slots, and `build`, which writes the graph (`models/<model>/graph.py`)
+against the op vocabulary. A Target is a `runtime.vla.Target` value in
+`hardware/<vendor>/<device>/<model>/target.py`: the model object with its
+layout, a backend registry, two plans (`shipped` and `reference`), quantization
+recipes, measured ceilings and the logical IDs of its assets. Candidate
 plans stay under `lab/plans/`. Factories in `src/flash_vla/inference.py` handle model
 construction. OpenPI loading/conversion belongs to `models/pi0/openpi.py` and
 `models/pi05/openpi.py`; evaluation adds official forward adapters. Accuracy,

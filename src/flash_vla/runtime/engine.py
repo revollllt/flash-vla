@@ -48,6 +48,8 @@ class Engine(Protocol):
     stage_outputs: Mapping[str, tuple[tuple[str, int | None], ...]]
     #: Per stage, every call site with its minimal bytes and FLOPs, from the graph.
     costs: SegmentCosts
+    #: What the model's host slots keep across calls (`None` when it has none).
+    host_state: object
     #: The op table in force: call site -> wrapper.
     ops: Mapping[str, Wrapper]
     #: Kernel-name patterns the captured program must and must not contain.
