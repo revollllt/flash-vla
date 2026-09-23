@@ -188,28 +188,31 @@ using Config1 = Config<128, 64, Cooperative, Persistent>::Gemm;
 using Config2 = Config<128, 32, Cooperative, Persistent>::Gemm;
 using Config3 = Config<128, 128, Cooperative, StreamK>::Gemm;
 using Config4 = Config<128, 64, Cooperative, StreamK>::Gemm;
-// Configs 5, 6 and 7 are Config3 with K split in 2, 3 and 4.
 using Config8 = Config<128, 128, Pingpong, Persistent>::Gemm;
 // 256-wide tiles leave room for fewer than two pipeline stages in 99 KiB.
-constexpr int32_t kConfigs = 9;
+
+using WorkspaceOf = int64_t (*)(int32_t, int32_t, int32_t);
+using PlanOf = int32_t (*)(int32_t, int32_t, int32_t, float, const void*, const void*, const void*,
+                           const void*, void*, const void*, void*, cudaStream_t, void**);
+// Configs 5, 6 and 7 are Config3 with K split in 2, 3 and 4.
+constexpr WorkspaceOf kWorkspaces[] = {
+    workspace_of<Config0>, workspace_of<Config1>, workspace_of<Config2>,
+    workspace_of<Config3>, workspace_of<Config4>, workspace_of<Config3, 2>,
+    workspace_of<Config3, 3>, workspace_of<Config3, 4>, workspace_of<Config8>};
+constexpr PlanOf kPlans[] = {
+    plan_of<Config0, false>, plan_of<Config1, false>, plan_of<Config2, false>,
+    plan_of<Config3, true>, plan_of<Config4, true>, plan_of<Config3, true, 2>,
+    plan_of<Config3, true, 3>, plan_of<Config3, true, 4>, plan_of<Config8, false>};
+constexpr int32_t kConfigs = sizeof(kPlans) / sizeof(kPlans[0]);
+static_assert(sizeof(kWorkspaces) / sizeof(kWorkspaces[0]) == kConfigs);
 constexpr int32_t kUnknownConfig = kCutlassError + static_cast<int32_t>(cutlass::Status::kInvalid);
 }  // namespace
 
 extern "C" int32_t mxfp8_gemm_configs() { return kConfigs; }
 
 extern "C" int64_t mxfp8_gemm_workspace(int32_t config, int32_t m, int32_t n, int32_t k) {
-  switch (config) {
-    case 0: return workspace_of<Config0>(m, n, k);
-    case 1: return workspace_of<Config1>(m, n, k);
-    case 2: return workspace_of<Config2>(m, n, k);
-    case 3: return workspace_of<Config3>(m, n, k);
-    case 4: return workspace_of<Config4>(m, n, k);
-    case 5: return workspace_of<Config3, 2>(m, n, k);
-    case 6: return workspace_of<Config3, 3>(m, n, k);
-    case 7: return workspace_of<Config3, 4>(m, n, k);
-    case 8: return workspace_of<Config8>(m, n, k);
-    default: return -kUnknownConfig;
-  }
+  if (config < 0 || config >= kConfigs) return -kUnknownConfig;
+  return kWorkspaces[config](m, n, k);
 }
 
 // mask: the bf16 prefix mask for a row-bucket plan (M = 896 or 968), else null.
@@ -217,18 +220,8 @@ extern "C" int32_t mxfp8_gemm_plan(int32_t config, int32_t m, int32_t n, int32_t
                                    const void* a, const void* a_scale, const void* b,
                                    const void* b_scale, void* d, const void* mask,
                                    void* workspace, cudaStream_t stream, void** handle) {
-  switch (config) {
-    case 0: return plan_of<Config0, false>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
-    case 1: return plan_of<Config1, false>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
-    case 2: return plan_of<Config2, false>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
-    case 3: return plan_of<Config3, true>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
-    case 4: return plan_of<Config4, true>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
-    case 5: return plan_of<Config3, true, 2>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
-    case 6: return plan_of<Config3, true, 3>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
-    case 7: return plan_of<Config3, true, 4>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
-    case 8: return plan_of<Config8, false>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
-    default: return kUnknownConfig;
-  }
+  if (config < 0 || config >= kConfigs) return kUnknownConfig;
+  return kPlans[config](m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
 }
 
 extern "C" int32_t mxfp8_gemm_run(void* handle, cudaStream_t stream) {

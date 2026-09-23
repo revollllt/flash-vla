@@ -26,6 +26,13 @@ used, `compare` replays that fixture through the Target. `OPENPI_PI05_MODULE`
 names the module the official forward comes from, and the oracle records which
 one ran.
 
+A quantized workload names its recipe, `--option quantization=<recipe>` for
+`correctness.py` and `--quantization <recipe>` for `pi05/parity.py`. Its
+reference plan runs the recipe's fake-quant backend on the quantized call sites,
+so `correctness.py` holds the kernels to the recipe's own math, with the
+tolerance tier named by the recipe's mode; the official parity measures how far
+the recipe moves the model from BF16.
+
 LIBERO and other task-success evaluations will be added when integrated. There
 is no placeholder suite or claim of task-quality coverage today.
 

@@ -51,9 +51,10 @@ ROUTE_CONSTRAINTS = (RouteConstraint.atomic(
     NAMES, "the down GEMM reads the MXFP8 hidden the gated FFN leaves in scratch"),)
 SOURCE = Path(__file__).with_suffix(".cu")
 BUCKET_ROWS = (896, 968)   # the short and full prefix; mxfp8_backbone.cu: kShortRows
-# Tile configurations of mxfp8_backbone.cu (the index its extern "C" entries take).
-GATE_UP_CONFIG = 8   # 128x128x128, pingpong
-DOWN_CONFIG = 0      # 128x128x128, persistent
+# Tile configuration of mxfp8_backbone.cu (the index its extern "C" entries take)
+# per row bucket, from lab/pi05/mxfp8_gemm_screen.py.
+GATE_UP_CONFIG = {896: 8, 968: 8}   # 128x128x128 pingpong
+DOWN_CONFIG = {896: 6, 968: 0}      # split-K 3 on 112 tiles; persistent on 128
 CUTLASS_ERROR = 1000  # mxfp8_backbone.cu: status values at or above are CUTLASS's
 
 
@@ -188,8 +189,8 @@ def make_wrappers(scratch: Scratch, selected_names: set[str] | None = None
             gate_up_plans, gate_w,
             lambda: _quantized_weight(torch.cat((gate_w, up_w), dim=1),
                                       f"mxfp8_backbone_gate_up_{gate_w.data_ptr()}"),
-            lambda gate_up, rows: GemmPlan(GATE_UP_CONFIG, normed, gate_up, projected, 0.0,
-                                           scratch, rows=rows, mask=mask))
+            lambda gate_up, rows: GemmPlan(GATE_UP_CONFIG[rows], normed, gate_up, projected,
+                                           0.0, scratch, rows=rows, mask=mask))
         ops.rms_norm(x, normed, eps=RMS_EPS)
         for plan in buckets:
             plan.run()
@@ -204,7 +205,7 @@ def make_wrappers(scratch: Scratch, selected_names: set[str] | None = None
         for plan in _layer_buckets(
                 down_plans, weight,
                 lambda: _quantized_weight(weight, f"mxfp8_backbone_down_{weight.data_ptr()}"),
-                lambda down, rows: GemmPlan(DOWN_CONFIG, hidden, down, out, 1.0, scratch,
+                lambda down, rows: GemmPlan(DOWN_CONFIG[rows], hidden, down, out, 1.0, scratch,
                                             rows=rows, mask=mask)):
             plan.run()
         return out
