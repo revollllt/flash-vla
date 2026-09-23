@@ -4,3 +4,4 @@ iteration,change,latency_ms,decision,report,revision,label,group
 2,Skip the padding row tile: M896/M968 bucket plans selected on the device by the prefix mask,21.95685193873942,keep,measurements/002.json,82a3eaa,row buckets,llm backbone
 3,One launch per bucketed GEMM: both problems' parameters in the kernel and the CTA picks one; register spills,22.408793913200498,revert,measurements/003.json,83e88fe,single-launch bucket,llm backbone
 4,Gate/up GEMM on the 128x128x128 pingpong schedule; ABBA against 002 -0.18 ms,21.91582159139216,keep,measurements/004.json,1236629,pingpong gate/up,llm backbone
+5,Down GEMM split-K 3 in the 896-row bucket (112 tiles for 170 SMs); ABBA against 004 -0.18 ms,21.632227580994368,keep,measurements/005.json,4e2cd93,split-K down,llm backbone

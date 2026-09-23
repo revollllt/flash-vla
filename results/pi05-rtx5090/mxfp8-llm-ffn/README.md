@@ -17,6 +17,13 @@ recipe's fake-quant reference, and BF16 → MXFP8 is a latency/quality trade-off
 not an optimization gain. For scale, the BF16 shipped plan on the same revision
 measures **30.07 ms** ([`measurements/bf16-shipped.json`](measurements/bf16-shipped.json)).
 
+**Result.** Deployed version 005 (`4e2cd93`; records at `cb3706e`, same kernels):
+**21.63 ms**. Against BF16 shipped on the same revision, measured ABBA in
+separate processes: 30.15 → 21.76 ms, **−8.39 ms (−27.8%)**
+([`final-bf16-vs-mxfp8-*.json`](measurements/)). Kernel against recipe
+reference within the unchanged BF16 tolerances; official parity passes at both
+row buckets with about twice BF16's action error. LIBERO closed loop not run.
+
 ![Optimization progress](progress.svg)
 
 ## Workload and environment
@@ -62,6 +69,16 @@ BF16 tolerances unchanged (`eval/tolerances.py`, tier `mxfp8`).
 | Official OpenPI (BF16 oracle), MXFP8 ([`official-mxfp8-llm-ffn.json`](correctness/official-mxfp8-llm-ffn.json)) | passed; actions rel RMS 0.0090, deepest cosine 0.99830 |
 | Official OpenPI, BF16 shipped ([`official-bf16.json`](correctness/official-bf16.json)) | passed; actions rel RMS 0.0042, deepest cosine 0.99931 |
 
+Which row bucket a fixture exercises depends on its prompt and state tokens:
+the official oracle (seed 0) has 903 valid prefix rows and runs the full
+bucket, the timing fixture (seed 42) has 895 and runs the short one. The short
+bucket is checked against the official model with the 896-row oracle of the
+BF16 run's iteration 023 (`lab/pi05/bucket_switch.py`, see 005). At a
+short-bucket fixture, `eval.correctness` compares whole buffers including the
+padding rows, which the bucketed kernels leave out; BF16 shipped shows the same
+disagreement there (seed 42, 2 layers: prefix V cosine 0.767 for both), so its
+prefix numbers at seed 42 say nothing about the valid rows.
+
 With identical inputs the kernels reproduce the reference to 1e-4. Over 18
 layers the quantized comparison drifts about twice as far as the BF16 one,
 because a BF16-level difference upstream can move an E4M3 code. The action
@@ -97,7 +114,7 @@ weights in one graph, median per GEMM):
 
 For reference, the survey measured FlashInfer's tuned CUTLASS MXFP8 GEMM at
 240.95 / 121.48 µs and cuDNN at 238.9 / 118.9 µs on these shapes
-([`quant-kernel-survey-rtx5090`](../../quant-kernel-survey-rtx5090/README.md)).
+([`quant-kernel-survey-rtx5090`](../../quant-kernel-survey-rtx5090/summary.md)).
 
 Deployed median 45.43 → **22.48 ms**, revision `5961be0`. Against BF16 shipped
 on the same revision (30.07 ms), the recipe saves 7.59 ms (25.2%).
@@ -170,3 +187,84 @@ was a high draw of the ~0.1 ms process-to-process drift. Official parity and the
 2-layer isolated check are unchanged ([`004-official-mxfp8-llm-ffn.json`](correctness/004-official-mxfp8-llm-ffn.json),
 [`004-recipe-layers2-isolated.json`](correctness/004-recipe-layers2-isolated.json));
 raw legs in `measurements/004-abba-*.json`.
+
+## 005 — Split-K down GEMM in the short bucket, retained
+
+Hypothesis: at M = 896 the down GEMM has 7 × 16 = 112 tiles of 128 × 128 for
+170 SMs, so a third of the SMs idle through its whole K = 16384 loop; splitting
+K in three gives 336 work units, about two waves of a third of the work. The
+screen ([`gemm-screen-splitk.json`](gemm-screen-splitk.json)): 116.4 → 106.7 µs
+at M = 896 including the per-launch clear of the split-K counters; at M = 968
+(128 tiles) splitting is slower, so each bucket now has its own configuration
+and only the short one splits. Split-K reduces the FP32 partials in a fixed
+order; the in-engine check reports bit-identical replays.
+
+Deployed median **21.63 ms** (revision `4e2cd93`); ABBA against 004:
+
+| leg | version | median | min | p99 |
+|---|---|---:|---:|---:|
+| a1 | 004 | 21.826 | 21.756 | 22.000 |
+| b1 | 005 | 21.662 | 21.578 | 21.816 |
+| b2 | 005 | 21.644 | 21.590 | 21.784 |
+| a2 | 004 | 21.843 | 21.762 | 21.984 |
+
+−0.18 ms on both pairs. Correctness: the backend test covers both buckets;
+official parity at 903 rows is unchanged
+([`005-official-mxfp8-llm-ffn.json`](correctness/005-official-mxfp8-llm-ffn.json));
+the bucket-switch check runs the 896-row oracle, the 903-row one and the
+896-row one again through one captured engine and passes each
+([`005-bucket-switch-mxfp8-llm-ffn.json`](correctness/005-bucket-switch-mxfp8-llm-ffn.json),
+BF16 for scale in [`005-bucket-switch-bf16.json`](correctness/005-bucket-switch-bf16.json)):
+
+| official parity | MXFP8 actions rel RMS | MXFP8 deepest cosine | BF16 actions rel RMS | BF16 deepest cosine |
+|---|---:|---:|---:|---:|
+| 896 rows (short bucket) | 0.0086 | 0.99774 | 0.0033 | 0.99918 |
+| 903 rows (full bucket) | 0.0090 | 0.99830 | 0.0042 | 0.99931 |
+
+## Where it stands and what is left
+
+Profile of 005 ([`profile-005-overview.json`](profile-005-overview.json); GPU
+kernel time 21.62 ms). The MXFP8 FFN is 5.15 ms of it; the other 16.5 ms are the
+BF16 call sites this recipe does not cover. Floors use the measured block-scaled
+MMA rate, 2016 FLOP/cycle/SM
+([`mma_blockscale_clock.txt`](../../quant-kernel-survey-rtx5090/mma_blockscale_clock.txt)),
+at the 2.8 GHz observed under this load: 960 TFLOP/s.
+
+| FFN item, 17 layers | time | floor | share of floor rate | what would move it |
+|---|---:|---:|---:|---|
+| gate/up GEMM, M = 896 | 2.92 ms (171.6 µs) | 2.13 ms (125.3 µs) | 73% | a kernel beyond CUTLASS's SM120 schedules (see below) |
+| down GEMM, M = 896 | 1.71 ms (100.6 µs) | 1.07 ms (62.7 µs) | 62% | same; 112 tiles for 170 SMs is the limit split-K works around |
+| `gated_act` → MXFP8 | 0.37 ms | 0 when fused | — | GeGLU + MXFP8 quantization in the gate/up epilogue |
+| `rms_norm` → MXFP8 | 0.06 ms | 0 when fused | — | the previous projection's epilogue |
+| unselected-bucket launches | 0.09 ms | 0 | — | bucket choice inside the tile scheduler |
+
+Why no candidate remains in this round, each with its cost:
+
+- **Tile shapes are exhausted within CUTLASS's SM120 block-scaled collectives.**
+  M-tiles must be 128 rows (the scale-factor TMA box; a 64-row pingpong tile
+  fails to compile), 256-wide tiles leave fewer than two pipeline stages in
+  99 KiB, and of the remaining 128×{32,64,128} cooperative/pingpong,
+  persistent/Stream-K/split-K variants the screen picked the best per GEMM and
+  bucket. Going past 73% / 62% of the MMA rate needs a hand-written SM120
+  kernel (e.g. deeper pipelining with a smaller epilogue footprint, or 2-CTA
+  cooperation to cover the down GEMM's 112 tiles) — a multi-week kernel project.
+- **The GeGLU round trip (~0.43 ms with the norm) needs a custom epilogue.**
+  CUTLASS's epilogue fusion is element-wise over the output tile; GeGLU pairs
+  a gate and an up column and halves the width, and the MXFP8 output needs a
+  32-element amax across threads. With gate/up interleaved in the packed
+  weight, a custom collective epilogue could write the MXFP8 hidden and its
+  swizzled scales directly — about 0.4-0.5 ms, several days.
+- **Single-launch buckets failed at the kernel-parameter level (003).** Doing it
+  inside the tile scheduler is worth at most the 0.09 ms of empty launches.
+
+Outside this recipe, the largest remaining time is BF16: the backbone QKV and
+output projections (same M = 968 shape class) and the action expert. Moving
+them to MXFP8 is a new recipe and needs its own quality evaluation and approval.
+
+Conclusion checks: every compared number above is from this run (ABBA where
+the gain is within the ~0.1 ms process drift); ratios name the MMA-rate
+denominator and clock; the GEMMs are compute-bound with weights streamed from
+DRAM (64 / 32 MiB per layer at 1.8 TB/s, 36 / 18 µs, under the compute time)
+and the GeGLU intermediate (58 MB) L2-resident; the negative results carry
+their toolbox (CUTLASS `cb424739` SM120 collectives, CUDA 13.1); the
+unavailable tile shapes were probed by compiling them.

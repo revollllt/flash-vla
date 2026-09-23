@@ -9,6 +9,8 @@ Performance comparisons are local to the representative checkpoint/fixture segme
 - [lingbot-h100/run-01](lingbot-h100/run-01/README.md) — Deployed end-to-end latency of `h100/lingbot_vla` on its real post-training checkpoint and frozen seed-42 fixture, starting from the current `shipped` plan. The objective is the deployed `chunk_latency` median.
 - [lingbot-h100/run-02](lingbot-h100/run-02/README.md) — Continues run-01 from its final version, with an explicit target: reach Pi0.5's 15.864 ms, which a pure roofline comparison says LingBot should be capable of.
 - [pi0-rtx5090/run-01](pi0-rtx5090/run-01/README.md) — First optimization run of `rtx5090/pi0`, from the all-torch bring-up route to a hand-written CUDA route: **46.794 → 27.556 ms, 1.70×**.
+- [pi05-rtx5090/gpt6-run-01](pi05-rtx5090/gpt6-run-01/README.md) — Active optimization run on branch `gpt6-pi05-5090`, starting at `5ac75bc`.
+- [pi05-rtx5090/mxfp8-llm-ffn](pi05-rtx5090/mxfp8-llm-ffn/README.md) — Optimization run of the quantized workload `mxfp8-llm-ffn` on branch `exp/pi05-5090/mxfp8-llm-ffn`, starting at `29a29ea`. The recipe puts the three GEMMs of every LLM-backbone FFN layer (gate, up, down) in MXFP8: E4M3 values with one UE8M0 scale per 32 elements along K, weights quantized once from BF16, activations quantized on the device. Every other call site keeps its BF16 route. The forward runs 17 of the 18 FFN layers: the last one does not reach the prefix KV cache, so the graph omits it in every plan. The recipe was approved on its quality on 408 LIBERO observations (`quant-pi05-ffn-libero`); its math is fixed in `rtx5090/pi05/target.py` (`QUANTIZATION`) and recorded in every identity's `execution_variant.quantization`.
 
 ## Retired Campaign entries
 
