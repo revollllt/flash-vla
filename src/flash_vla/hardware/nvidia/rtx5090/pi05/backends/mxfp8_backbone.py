@@ -21,11 +21,13 @@ quantized once, on a layer's first call (warmup, before capture), into scratch
 as [N, K] with K contiguous; the runner's BF16 weights stay allocated but are
 not read.
 
-Each GEMM is planned for both prefix row buckets, M = 896 and M = 968, and
-both plans run on every call: the kernel the prefix mask does not select exits
-at once (mxfp8_backbone.cu, RowBucket). Under the short bucket, rows 896..967
-of the residual keep their values and those of the hidden are stale; they are
-padding either way. The two producers always cover all 968 rows.
+With the 968-row prefix of three views, each GEMM is planned for both row
+buckets, M = 896 and M = 968, and both plans run on every call: the kernel the
+prefix mask does not select exits at once (mxfp8_backbone.cu, RowBucket).
+Under the short bucket, rows 896..967 of the residual keep their values and
+those of the hidden are stale; they are padding either way. Any other prefix
+(712 rows with two views) runs one plan over all its rows. The two producers
+always cover every row.
 """
 from __future__ import annotations
 
@@ -51,10 +53,13 @@ ROUTE_CONSTRAINTS = (RouteConstraint.atomic(
     NAMES, "the down GEMM reads the MXFP8 hidden the gated FFN leaves in scratch"),)
 SOURCE = Path(__file__).with_suffix(".cu")
 BUCKET_ROWS = (896, 968)   # the short and full prefix; mxfp8_backbone.cu: kShortRows
+BUCKETED_PREFIX = 968      # three views of 256 tokens and 200 prompt slots
 # Tile configuration of mxfp8_backbone.cu (the index its extern "C" entries take)
 # per row bucket, from lab/pi05/mxfp8_gemm_screen.py.
-GATE_UP_CONFIG = {896: 8, 968: 8}   # 128x128x128 pingpong
-DOWN_CONFIG = {896: 6, 968: 0}      # split-K 3 on 112 tiles; persistent on 128
+GATE_UP_CONFIG = 8          # 128x128x128 pingpong, at every row count
+# Down: 128x128 persistent fills the SMs at 968 rows (128 tiles for 170 SMs);
+# fewer rows leave SMs idle and split K in three (896 rows: 112 tiles; 712: 96).
+DOWN_CONFIG_FULL, DOWN_CONFIG_SPLIT = 0, 6
 CUTLASS_ERROR = 1000  # mxfp8_backbone.cu: status values at or above are CUTLASS's
 
 
@@ -160,37 +165,40 @@ def make_wrappers(scratch: Scratch, selected_names: set[str] | None = None
         return ops.quantize(weight_kn.t().contiguous(), ops.empty(
             cols, depth, "mxfp8", weight_kn.device, allocate=_allocator(role, weight_kn.device)))
 
-    def _layer_buckets(plans: dict[int, list[GemmPlan]], weight: torch.Tensor,
+    def _layer_buckets(plans: dict[int, list[GemmPlan]], weight: torch.Tensor, prefix_rows: int,
                        quantize: Callable[[], ops.Activation],
                        build: Callable[[ops.Activation, int], GemmPlan]) -> list[GemmPlan]:
-        """The row-bucket plans of the layer `weight` belongs to; on the layer's
-        first call its weight is quantized and both plans are built."""
+        """The plans of the layer `weight` belongs to, one per row bucket (a single
+        full-row plan for an unbucketed prefix); on the layer's first call its
+        weight is quantized and the plans are built."""
         cached = plans.get(weight.data_ptr())
         if cached is not None:
             return cached
         if torch.cuda.is_current_stream_capturing():
             raise RuntimeError("an MXFP8 backbone layer was not warmed before capture")
         quantized = quantize()
-        return plans.setdefault(weight.data_ptr(),
-                                [build(quantized, rows) for rows in BUCKET_ROWS])
+        buckets = BUCKET_ROWS if prefix_rows == BUCKETED_PREFIX else (prefix_rows,)
+        return plans.setdefault(weight.data_ptr(), [build(quantized, rows) for rows in buckets])
 
     def llm_backbone_norm_gated_ffn_masked(x: torch.Tensor, gate_w: torch.Tensor,
                                            up_w: torch.Tensor, out: torch.Tensor,
                                            x_norm: torch.Tensor, mask: torch.Tensor
                                            ) -> torch.Tensor:
-        rows, width = x.shape                      # 968, 2048
+        rows, width = x.shape                      # prefix 968 (712 with two views), 2048
         hidden_width = gate_w.shape[1]             # 16384
+        bucket_mask = mask if rows == BUCKETED_PREFIX else None
         normed = _activation("mxfp8_backbone_normed", rows, width, x.device)
         hidden = _activation("mxfp8_backbone_hidden", rows, hidden_width, x.device)
         # bf16 [M, 2 * 16384]: gate | up.
         projected = scratch("mxfp8_backbone_gate_up", (rows, 2 * hidden_width), torch.bfloat16,
                             x.device)
         buckets = _layer_buckets(
-            gate_up_plans, gate_w,
+            gate_up_plans, gate_w, rows,
             lambda: _quantized_weight(torch.cat((gate_w, up_w), dim=1),
                                       f"mxfp8_backbone_gate_up_{gate_w.data_ptr()}"),
-            lambda gate_up, rows: GemmPlan(GATE_UP_CONFIG[rows], normed, gate_up, projected,
-                                           0.0, scratch, rows=rows, mask=mask))
+            lambda gate_up, bucket_rows: GemmPlan(GATE_UP_CONFIG, normed, gate_up, projected,
+                                                  0.0, scratch, rows=bucket_rows,
+                                                  mask=bucket_mask))
         ops.rms_norm(x, normed, eps=RMS_EPS)
         for plan in buckets:
             plan.run()
@@ -200,13 +208,15 @@ def make_wrappers(scratch: Scratch, selected_names: set[str] | None = None
     def llm_backbone_ffn_down_residual_masked(x: torch.Tensor, weight: torch.Tensor,
                                               out: torch.Tensor, mask: torch.Tensor
                                               ) -> torch.Tensor:
-        rows, hidden_width = x.shape               # 968, 16384; x itself is not read
+        rows, hidden_width = x.shape               # prefix rows, 16384; x itself is not read
         hidden = _activation("mxfp8_backbone_hidden", rows, hidden_width, x.device)
+        bucket_mask = mask if rows == BUCKETED_PREFIX else None
         for plan in _layer_buckets(
-                down_plans, weight,
+                down_plans, weight, rows,
                 lambda: _quantized_weight(weight, f"mxfp8_backbone_down_{weight.data_ptr()}"),
-                lambda down, rows: GemmPlan(DOWN_CONFIG[rows], hidden, down, out, 1.0, scratch,
-                                            rows=rows, mask=mask)):
+                lambda down, bucket_rows: GemmPlan(
+                    DOWN_CONFIG_FULL if bucket_rows == BUCKETED_PREFIX else DOWN_CONFIG_SPLIT,
+                    hidden, down, out, 1.0, scratch, rows=bucket_rows, mask=bucket_mask)):
             plan.run()
         return out
 
