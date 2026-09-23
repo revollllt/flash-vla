@@ -47,3 +47,18 @@ def test_split_mxfp8_ffn_is_rejected() -> None:
 def test_unknown_recipe_is_rejected() -> None:
     with pytest.raises(KeyError, match="no quantization"):
         declare("rtx5090/pi05", quantization="nvfp4-llm-ffn")
+
+
+def test_recipe_prices_its_call_sites_in_its_format() -> None:
+    dense, quantized = ({invocation.call_site: invocation
+                         for invocations in declare("rtx5090/pi05", quantization=q).costs.values()
+                         for invocation in invocations} for q in ("bf16", RECIPE))
+    rows, width, hidden = 968, 2048, 16384            # prefix rows, model width, FFN width
+    per_element = 2 - (1 + 1 / 32)                    # bf16 against MXFP8 with its scales
+    saved = {GATED: (2 * width * hidden + rows * hidden) * per_element,    # gate, up, hidden
+             DOWN: (hidden * width + rows * hidden) * per_element}         # down, hidden
+    for site, bytes_saved in saved.items():
+        assert quantized[site].tensor == "mxfp8" and dense[site].tensor == "bf16"
+        assert quantized[site].cost.flops == dense[site].cost.flops
+        assert abs(dense[site].cost.bytes - quantized[site].cost.bytes - bytes_saved) <= 2
+    assert all(quantized[site] == dense[site] for site in dense if site not in saved)

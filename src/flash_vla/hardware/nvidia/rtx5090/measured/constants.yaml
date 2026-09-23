@@ -361,3 +361,15 @@ constants:
     by. Use mma.rate.sm.bf16 instead wherever the clock is not fixed, because this figure carries an
     observed 2.89 GHz inside it and that is 20% above the marketed boost. Never divide by a datasheet
     419.4: that is the fp16-ACCUMULATE peak.'
+- tag: mma.tflops.dev.mxfp8
+  unit: mma
+  value: 990
+  units: TFLOP/s block-scaled MXFP8 (mma kind::mxf8f6f4.block_scale, e4m3 x e4m3, ue8m0 scale per 32)
+    with fp32 accumulate, sustained across the whole device from wall time, register-resident operands;
+    990.1 at 8 warps per SM and 985.0 at 16, 855.0 at 4. That is 2016 FLOP/cycle/SM at the 2.87-2.89
+    GHz observed, lab/quantization/mma_blockscale_clock.cu, 2026-09-23
+    (results/quant-kernel-survey-rtx5090/mma_blockscale_clock.txt)
+  short: 990 TFLOP/s observed
+  rule: 'The rate tools.profiling.floor divides an MXFP8 call site''s FLOPs by, as mma.tflops.dev.bf16
+    is for bf16. It carries the observed ~2.89 GHz, which a GEMM at the 600 W limit does not hold
+    (2.79-2.81 GHz measured under the Pi0.5 MXFP8 FFN).'

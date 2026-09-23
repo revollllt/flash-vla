@@ -4,8 +4,10 @@
 
 Per call site of every stage, at the Target's shapes:
 
-  roofline_us   datasheet: max(bytes / HBM peak, flops / dense bf16 peak), the
-                peaks read from the hardware axis's `spec.py`; plan-independent
+  roofline_us   datasheet: max(bytes / HBM peak, flops / dense tensor peak of the
+                call site's format -- bf16, or a quantization recipe's,
+                `Invocation.tensor`), the peaks read from the hardware axis's
+                `spec.py`; plan-independent within a workload
   ceiling_us    measured: what this machine has delivered for the geometry,
                 from the tagged rows of the hardware axis's measured table
                 (`measured/constants.yaml`): below the burst curve
@@ -36,7 +38,7 @@ class they came from.
 """
 from __future__ import annotations
 
-from flash_vla.environment import report_context
+from flash_vla.environment import record_path, report_context
 
 import argparse
 import hashlib
@@ -58,18 +60,20 @@ from .model import attribute
 from flash_vla.inference import PLAN_NAMES, build, resolve
 
 #: The model form; bump when a column or a term changes.
-FORM_VERSION = "3"
+FORM_VERSION = "4"
 REPO = Path(__file__).resolve().parents[2]
 #: What differs between hardware axes. The roles are the model's; which constant
 #: fills each role, and which `spec.py` field carries each datasheet peak, are
 #: the machine's. sm90 names its tensor rate after `wgmma`, an instruction that
 #: does not exist on sm_120, so the mapping cannot be one table.
 class Axis:
-    __slots__ = ("package", "tags", "dram_attr", "tensor_key")
+    """`tensors` maps a call site's tensor-core format (`Invocation.tensor`) to
+    the spec's dense-peak key and the constants role of its observed rate."""
+    __slots__ = ("package", "tags", "dram_attr", "tensors")
 
-    def __init__(self, package, tags, dram_attr, tensor_key):
+    def __init__(self, package, tags, dram_attr, tensors):
         self.package, self.tags = package, tags
-        self.dram_attr, self.tensor_key = dram_attr, tensor_key
+        self.dram_attr, self.tensors = dram_attr, tensors
 
 
 #: Roles the ceiling column consumes. `burst` is OPTIONAL: without a measured
@@ -90,6 +94,7 @@ SM90_TAGS = {
 SM120_TAGS = {
     "stream": "ld.bw.dev.dram",
     "tensor": "mma.tflops.dev.bf16",
+    "tensor_mxfp8": "mma.tflops.dev.mxfp8",
     "launch": "launch.lat.dev.ramp",
     "knee": "ld.ctas.dev.knee",
 }
@@ -97,9 +102,11 @@ SM120_TAGS = {
 #: hardware axis of the identity -> where its spec and measured table live.
 HARDWARE = {
     "h100-sxm5-80gb": Axis("flash_vla.hardware.nvidia.h100", SM90_TAGS,
-                           "HBM_BANDWIDTH_BYTES_PER_SECOND", "bf16"),
+                           "HBM_BANDWIDTH_BYTES_PER_SECOND", {"bf16": ("bf16", "tensor")}),
     "rtx5090-32gb": Axis("flash_vla.hardware.nvidia.rtx5090", SM120_TAGS,
-                         "DRAM_BANDWIDTH_BYTES_PER_SECOND", "bf16_acc_fp32"),
+                         "DRAM_BANDWIDTH_BYTES_PER_SECOND",
+                         {"bf16": ("bf16_acc_fp32", "tensor"),
+                          "mxfp8": ("mxfp8_block_scaled", "tensor_mxfp8")}),
 }
 #: Machine-readable fields a row may carry beside value/units/short/rule.
 ROW_FIELDS = ("fixed_us", "curve_mb_gbs", "derate_at_32")
@@ -137,14 +144,18 @@ def load_constants(path: Path, tags: dict[str, str]) -> tuple[dict[str, Any], st
 
 
 def datasheet(spec_cls: type, axis: Axis) -> dict[str, Any]:
-    """The two datasheet peaks the roofline divides by, with their source named.
+    """The datasheet peaks the roofline divides by, with their source named:
+    DRAM, and the dense tensor peak of every format the axis prices.
 
     Which field carries each peak is the axis's, not the model's: consumer
     Blackwell has no HBM, and its bf16 peak is qualified by accumulator width
     because fp32 accumulate runs at half the fp16-accumulate rate there.
     """
+    peaks = spec_cls.TENSOR_CORE_DENSE_PEAK_FLOPS
+    tensor_fps = {fmt: float(peaks[key]) for fmt, (key, _role) in axis.tensors.items()}
     return {"hbm_bps": float(getattr(spec_cls, axis.dram_attr)),
-            "bf16_fps": float(spec_cls.TENSOR_CORE_DENSE_PEAK_FLOPS[axis.tensor_key]),
+            "bf16_fps": tensor_fps["bf16"], "tensor_fps": tensor_fps,
+            "tensor_roles": {fmt: role for fmt, (_key, role) in axis.tensors.items()},
             "source": f"{spec_cls.__module__}.{spec_cls.__name__}"}
 
 
@@ -172,10 +183,11 @@ def delivered_us(nbytes: int, constants: dict[str, Any]) -> tuple[float, str]:
 def site_row(invocation: Invocation, peaks: dict[str, Any], constants: dict[str, Any]) -> dict[str, Any]:
     """One call site's roofline and ceiling columns, per call and times its count."""
     cost = invocation.cost
+    tensor = constants[peaks["tensor_roles"][invocation.tensor]]   # the format's observed rate
     roof_stream = cost.bytes / peaks["hbm_bps"] * 1e6
-    roof_tensor = cost.flops / peaks["bf16_fps"] * 1e6
+    roof_tensor = cost.flops / peaks["tensor_fps"][invocation.tensor] * 1e6
     roofline = max(roof_stream, roof_tensor)
-    tensor_fps = float(constants["tensor"]["value"]) * 1e12
+    tensor_fps = float(tensor["value"]) * 1e12
     tensor_us = cost.flops / tensor_fps * 1e6
     if invocation.ceiling is not None:
         ceiling = invocation.ceiling.us
@@ -184,9 +196,9 @@ def site_row(invocation: Invocation, peaks: dict[str, Any], constants: dict[str,
         memory_us, rule = delivered_us(cost.bytes, constants)
         ceiling = max(memory_us, tensor_us)
         source = {"declared": False,
-                  "rule": rule if memory_us >= tensor_us else f"FLOPs / {constants['tensor']['value']} TFLOP/s [{constants['tensor']['tag']}]"}
+                  "rule": rule if memory_us >= tensor_us else f"FLOPs / {tensor['value']} TFLOP/s [{tensor['tag']}]"}
     n = invocation.count
-    return {"call_site": invocation.call_site, "count": n,
+    return {"call_site": invocation.call_site, "count": n, "tensor": invocation.tensor,
             "bytes": cost.bytes, "flops": cost.flops,
             "bound": "compute" if roof_tensor > roof_stream else "memory",
             "roofline_us_each": roofline, "roofline_us": roofline * n,
@@ -287,7 +299,7 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
         "identity": identity.as_dict(),
         "measurement_context": report_context(engine, _env()),
         "env": _env(),
-        "floor_model": {"form": FORM_VERSION, "constants_file": str(constants_path),
+        "floor_model": {"form": FORM_VERSION, "constants_file": record_path(constants_path),
                         "constants_version": constants_version, "constants": constants,
                         "datasheet": peaks,
                         "version": f"{FORM_VERSION}+{constants_version}"},

@@ -45,13 +45,24 @@ class Ceiling:
 
 
 @dataclass(frozen=True)
+class Pricing:
+    """How a quantization recipe prices one call site: the tensor-core format
+    its FLOPs run in, and the bytes per element of the parameters it quantizes,
+    block scales included (MXFP8: 1 + 1/32), in place of their buffers' dtypes."""
+    tensor: str
+    itemsizes: Mapping[str, float]
+
+
+@dataclass(frozen=True)
 class Invocation:
-    """A call site in a segment: its cost per call, how often it is called, and
-    optionally the measured ceiling of one call."""
+    """A call site in a segment: its cost per call, how often it is called,
+    optionally the measured ceiling of one call, and the tensor-core format its
+    FLOPs run in."""
     call_site: str
     cost: Cost
     count: int
     ceiling: Ceiling | None = None
+    tensor: str = "bf16"
 
     @property
     def bytes(self) -> int:
@@ -97,5 +108,5 @@ def total(costs: SegmentCosts) -> dict[str, dict[str, int]]:
             for segment, invocations in costs.items()}
 
 
-__all__ = ["BF16", "Ceiling", "Cost", "Invocation", "SegmentCosts", "attention", "dual_gemm",
-           "gemm", "total"]
+__all__ = ["BF16", "Ceiling", "Cost", "Invocation", "Pricing", "SegmentCosts", "attention",
+           "dual_gemm", "gemm", "total"]

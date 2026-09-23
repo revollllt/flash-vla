@@ -9,11 +9,15 @@ from dataclasses import replace
 from typing import Any, Mapping
 
 from flash_vla.hardware.nvidia.h100.pi05.target import Pi05, forward_prefix, set_task
+from flash_vla.runtime.cost import Pricing
 from flash_vla.runtime.graph import Graph
 from flash_vla.runtime.vla import QuantizationRecipe
 
 from .backends import REGISTRY
 from .backends.bucketed_backbone import MASKED_CALL_SITES
+
+#: Bytes per MXFP8 element: one E4M3 value and a UE8M0 scale per 32.
+MXFP8_ITEMSIZE = 1 + 1 / 32
 
 
 class Pi05RTX5090(Pi05):
@@ -67,7 +71,12 @@ class Pi05RTX5090(Pi05):
                   "llm_backbone_ffn_down_residual_masked": "mxfp8-backbone"},
             reference_plan={"llm_backbone_norm_gated_ffn_masked": "fake-quant-mxfp8",
                             "llm_backbone_ffn_down_residual_masked": "fake-quant-mxfp8"},
-            backends=frozenset({"mxfp8-backbone", "fake-quant-mxfp8"})),
+            backends=frozenset({"mxfp8-backbone", "fake-quant-mxfp8"}),
+            # The hidden is the gated call site's output and the down GEMM's input.
+            pricing={"llm_backbone_norm_gated_ffn_masked": Pricing("mxfp8", {
+                         "gate_w": MXFP8_ITEMSIZE, "up_w": MXFP8_ITEMSIZE, "out": MXFP8_ITEMSIZE}),
+                     "llm_backbone_ffn_down_residual_masked": Pricing("mxfp8", {
+                         "x": MXFP8_ITEMSIZE, "weight": MXFP8_ITEMSIZE})}),
     }
 
     def build(self, g: Graph, shape: Mapping[str, int]) -> None:

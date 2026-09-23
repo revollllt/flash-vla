@@ -28,13 +28,13 @@ Graph rules a subclass must follow (the smoke check enforces what it can):
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 import torch
 
-from .cost import Ceiling
+from .cost import Ceiling, Pricing
 from .graph import Graph
 from .ops import Vocabulary
 from .registry import Registry
@@ -78,16 +78,21 @@ class QuantizationRecipe:
     defines the math (fake quantization) over the Target's reference plan.
     `backends` names every backend implementing the recipe: its call sites
     accept only these, and no other call site accepts any recipe's backends.
+    `pricing` is how the floor model prices those call sites: the tensor-core
+    format and the quantized operands' bytes (`runtime/cost.py`).
     Agents optimize the kernels; changing `spec` or the call sites needs approval.
     """
     spec: Mapping[str, str]
     plan: Mapping[str, str]
     reference_plan: Mapping[str, str]
     backends: frozenset[str]
+    pricing: Mapping[str, Pricing] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if set(self.plan) != set(self.reference_plan):
             raise ValueError("a recipe's plan and reference plan must name the same call sites")
+        if not set(self.pricing) <= set(self.plan):
+            raise ValueError("a recipe prices only its own call sites")
         if not {*self.plan.values(), *self.reference_plan.values()} <= self.backends:
             raise ValueError(f"a recipe routes only to its own backends {sorted(self.backends)}")
 

@@ -107,6 +107,10 @@ class RTX5090Spec:
             "fp16_acc_fp32": 512,   # measured 511.5
             "bf16_acc_fp32": 512,   # measured 511.5
             "fp8_acc_fp32": 1024,   # measured 1023.0
+            # kind::mxf8f6f4.block_scale, e4m3 x e4m3 with ue8m0 per 32, fp32
+            # accumulate: measured 2016.3 at 8 and 16 warps per SM
+            # (lab/quantization/mma_blockscale_clock.cu, 2026-09-23).
+            "mxfp8_block_scaled": 2048,
         }
     )
 
@@ -122,13 +126,16 @@ class RTX5090Spec:
             "fp16_acc_fp32": 209_600_000_000_000,
             "bf16_acc_fp32": 209_600_000_000_000,
             "fp8_acc_fp32": 419_200_000_000_000,
+            # 2048 FLOP/cycle/SM at the marketed boost; NVIDIA's 3352 sparse
+            # FP4 TOPS halved twice. The block-scaled instruction measures it.
+            "mxfp8_block_scaled": 838_000_000_000_000,
         }
     )
     #: The marketed "3352 AI TOPS" is FP4 with 2:4 sparsity. Halving twice gives
     #: 838 TFLOP/s dense fp8, which needs 2048 FLOP/cycle/SM -- twice what fp8
-    #: with fp32 accumulate measures. Consistent with the same half-rate rule
-    #: applying to fp8, but the narrower-accumulator fp8 form was not measured,
-    #: so the fp4 and sparse rows are left out rather than derived.
+    #: with fp32 accumulate measures. The block-scaled MXFP8 instruction measures
+    #: 2016 FLOP/cycle/SM, so that row is recorded above; the fp4 and sparse rows
+    #: are still left out rather than derived.
     MARKETED_FP4_SPARSE_OPS = 3_352_000_000_000_000
 
     TENSOR_CORE_SUPPORTED_INPUT_DTYPES = (

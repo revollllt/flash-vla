@@ -99,7 +99,7 @@ class OpSpec:
         if not self.outputs:
             raise ValueError(f"{self.name}: an op must write at least one output")
 
-    def cost(self, shapes: Shapes, itemsizes: Mapping[str, int]) -> Cost:
+    def cost(self, shapes: Shapes, itemsizes: Mapping[str, float]) -> Cost:
         """Minimal traffic and math of one invocation with these argument shapes.
 
         Reads are every tensor argument that is not an output, plus the

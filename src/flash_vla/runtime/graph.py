@@ -34,7 +34,7 @@ from typing import Any, Mapping, Sequence
 
 import torch
 
-from .cost import Cost, Invocation, SegmentCosts
+from .cost import Cost, Invocation, Pricing, SegmentCosts
 from .cuda.arena import Buffer, Init
 from .cuda.program import Step
 from .ops import OpSpec, Vocabulary
@@ -313,7 +313,9 @@ class Graph:
                        if isinstance(a, BufRef) and p in outputs)
         return reads, writes
 
-    def node_cost(self, node: Node) -> Cost:
+    def node_cost(self, node: Node, itemsizes: Mapping[str, float] | None = None) -> Cost:
+        """`itemsizes` replaces the bytes per element of the parameters it names
+        (a quantized operand, `Pricing.itemsizes`)."""
         if node.is_copy:
             dst, src = node.args
             return Cost(bytes_read=src.numel * src.dtype.itemsize,
@@ -323,26 +325,34 @@ class Graph:
                   for p, a in zip(spec.params, node.args)}
         sizes = {p: (a.dtype.itemsize if isinstance(a, (BufRef, WeightRef)) else 0)
                  for p, a in zip(spec.params, node.args)}
-        return spec.cost(shapes, sizes)
+        cost = spec.cost(shapes, {**sizes, **(itemsizes or {})})
+        return Cost(bytes_read=round(cost.bytes_read), bytes_written=round(cost.bytes_written),
+                    flops=cost.flops)
 
-    def costs(self) -> SegmentCosts:
+    def costs(self, pricing: Mapping[str, Pricing] | None = None) -> SegmentCosts:
         """Per stage, one `Invocation` per call site: its per-call cost and count.
 
         A call site whose calls differ in cost (a bisected leading row) reports
-        the mean per-call cost so that count times cost stays the total.
+        the mean per-call cost so that count times cost stays the total. A call
+        site in `pricing` (a quantization recipe's) is priced in its format.
         """
+        priced = pricing or {}
         out: dict[str, list[Invocation]] = {}
         for stage in self.segment_names:
             groups: dict[str, list[Cost]] = {}
             for node in self.nodes_of(stage):
-                groups.setdefault(node.call_site, []).append(self.node_cost(node))
+                site = priced.get(node.call_site)
+                groups.setdefault(node.call_site, []).append(
+                    self.node_cost(node, site.itemsizes if site is not None else None))
             rows = []
             for call_site, costs in groups.items():
                 n = len(costs)
                 mean = Cost(bytes_read=sum(c.bytes_read for c in costs) // n,
                             bytes_written=sum(c.bytes_written for c in costs) // n,
                             flops=sum(c.flops for c in costs) // n)
-                rows.append(Invocation(call_site, mean, n))
+                site = priced.get(call_site)
+                rows.append(Invocation(call_site, mean, n,
+                                       tensor=site.tensor if site is not None else "bf16"))
             out[stage] = rows
         return out
 
