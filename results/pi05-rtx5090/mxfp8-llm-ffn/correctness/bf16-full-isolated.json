@@ -1,0 +1,475 @@
+{
+ "identity": {
+  "reference": {
+   "schema_version": 3,
+   "target": "hardware/nvidia/rtx5090/pi05",
+   "hardware": "rtx5090-32gb",
+   "model": "pi05",
+   "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens50-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers18-num_views3-prefix_len968-prompt_len200-qkv_width2560-query_heads8-state_dim32-steps10-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+   "shape": {
+    "batch": 1,
+    "num_views": 3,
+    "image_height": 224,
+    "image_width": 224,
+    "image_channels": 3,
+    "visual_tokens_per_view": 256,
+    "visual_tokens": 768,
+    "vision_dim": 1152,
+    "vision_ffn_dim": 4304,
+    "vision_heads": 16,
+    "vision_head_dim": 72,
+    "vision_layers": 27,
+    "prompt_len": 200,
+    "prefix_len": 968,
+    "chunk": 50,
+    "expert_tokens": 50,
+    "state_dim": 32,
+    "action_dim": 32,
+    "steps": 10,
+    "layers": 18,
+    "encoder_dim": 2048,
+    "encoder_ffn_dim": 16384,
+    "query_heads": 8,
+    "kv_heads": 1,
+    "head_dim": 256,
+    "qkv_width": 2560,
+    "expert_dim": 1024,
+    "expert_ffn_dim": 4096
+   },
+   "plan": {
+    "vision_encoder_patch_embed": "torch",
+    "vision_encoder_norm_qkv": "torch",
+    "vision_encoder_attention": "torch",
+    "vision_encoder_out_proj_residual": "torch",
+    "vision_encoder_norm_ffn_up": "torch",
+    "vision_encoder_ffn_down_residual": "torch",
+    "llm_backbone_projector": "torch",
+    "llm_backbone_embed_prompt": "torch",
+    "llm_backbone_norm_qkv_rope": "torch",
+    "llm_backbone_attention": "torch",
+    "llm_backbone_out_proj_residual_masked": "torch",
+    "llm_backbone_norm_gated_ffn_masked": "torch",
+    "llm_backbone_ffn_down_residual_masked": "torch",
+    "action_expert_action_in_proj": "torch",
+    "action_expert_norm_qkv_rope": "torch",
+    "action_expert_attention": "torch",
+    "action_expert_out_proj_residual": "torch",
+    "action_expert_norm_gated_ffn": "torch",
+    "action_expert_ffn_down_residual": "torch",
+    "action_expert_action_out_proj": "torch"
+   },
+   "model_revision": "pi05-r1",
+   "engine_revision": "5961be01cec5041580ed5d7347f1c1a181cda1f0",
+   "inference_signature": "sha256:a79c1f62c3f14674ad87e88a89bb5f66ac650e1c497ccf5076e64017b55d9f6f",
+   "execution_variant": {
+    "quantization": {
+     "mode": "bf16"
+    },
+    "cache": {
+     "mode": "none"
+    }
+   }
+  },
+  "candidate": {
+   "schema_version": 3,
+   "target": "hardware/nvidia/rtx5090/pi05",
+   "hardware": "rtx5090-32gb",
+   "model": "pi05",
+   "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens50-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers18-num_views3-prefix_len968-prompt_len200-qkv_width2560-query_heads8-state_dim32-steps10-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+   "shape": {
+    "batch": 1,
+    "num_views": 3,
+    "image_height": 224,
+    "image_width": 224,
+    "image_channels": 3,
+    "visual_tokens_per_view": 256,
+    "visual_tokens": 768,
+    "vision_dim": 1152,
+    "vision_ffn_dim": 4304,
+    "vision_heads": 16,
+    "vision_head_dim": 72,
+    "vision_layers": 27,
+    "prompt_len": 200,
+    "prefix_len": 968,
+    "chunk": 50,
+    "expert_tokens": 50,
+    "state_dim": 32,
+    "action_dim": 32,
+    "steps": 10,
+    "layers": 18,
+    "encoder_dim": 2048,
+    "encoder_ffn_dim": 16384,
+    "query_heads": 8,
+    "kv_heads": 1,
+    "head_dim": 256,
+    "qkv_width": 2560,
+    "expert_dim": 1024,
+    "expert_ffn_dim": 4096
+   },
+   "plan": {
+    "vision_encoder_patch_embed": "torch",
+    "vision_encoder_norm_qkv": "cutlass-vision",
+    "vision_encoder_attention": "torch",
+    "vision_encoder_out_proj_residual": "cutlass-vision",
+    "vision_encoder_norm_ffn_up": "cutlass-vision",
+    "vision_encoder_ffn_down_residual": "cutlass-vision",
+    "llm_backbone_projector": "torch",
+    "llm_backbone_embed_prompt": "torch",
+    "llm_backbone_norm_qkv_rope": "fused-prefix-qkv",
+    "llm_backbone_attention": "torch",
+    "llm_backbone_out_proj_residual_masked": "bucketed-backbone",
+    "llm_backbone_norm_gated_ffn_masked": "bucketed-backbone",
+    "llm_backbone_ffn_down_residual_masked": "bucketed-backbone",
+    "action_expert_action_in_proj": "torch",
+    "action_expert_norm_qkv_rope": "triton-qkv-finish",
+    "action_expert_attention": "triton-qk-attention",
+    "action_expert_out_proj_residual": "cutlass-expert-residual",
+    "action_expert_norm_gated_ffn": "dual-ffn",
+    "action_expert_ffn_down_residual": "cutlass-expert-residual",
+    "action_expert_action_out_proj": "fused-qkv"
+   },
+   "model_revision": "pi05-r1",
+   "engine_revision": "5961be01cec5041580ed5d7347f1c1a181cda1f0",
+   "inference_signature": "sha256:a79c1f62c3f14674ad87e88a89bb5f66ac650e1c497ccf5076e64017b55d9f6f",
+   "execution_variant": {
+    "quantization": {
+     "mode": "bf16"
+    },
+    "cache": {
+     "mode": "none"
+    }
+   }
+  }
+ },
+ "measurement_context": {
+  "reference": {
+   "weights": {
+    "checkpoint_id": "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+    "checkpoint_digest": "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha"
+   },
+   "fixture": {
+    "id": "flash-vla/pi05-inputs-v1/seed-0",
+    "digest": "sha256:ec4dbe8210364b23744417248283f0ed759477c778b5a6a8b3d5b3f72caee692"
+   },
+   "environment": {
+    "gpu_sku": "NVIDIA GeForce RTX 5090",
+    "driver": "580.142",
+    "cuda_runtime": "13.0",
+    "pytorch": "2.13.0+cu130",
+    "tilelang": "0.1.11",
+    "clock_policy": {
+     "benchmark_control": "inherit",
+     "slurm_gpu_freq_request": null,
+     "effective_locked_clocks": "unobserved"
+    },
+    "power_policy": {
+     "requested_limit_w": 600.0,
+     "enforced_limit_w": 600.0
+    },
+    "capture_regime": "cuda_graph",
+    "clock_observation": {
+     "application_graphics_mhz": "[N/A]",
+     "application_memory_mhz": "[N/A]"
+    }
+   },
+   "hostname": "ubun",
+   "slurm_job_id": null,
+   "timestamp": 1790158059.2910485,
+   "reference_provenance": {}
+  },
+  "candidate": {
+   "weights": {
+    "checkpoint_id": "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+    "checkpoint_digest": "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha"
+   },
+   "fixture": {
+    "id": "flash-vla/pi05-inputs-v1/seed-0",
+    "digest": "sha256:ec4dbe8210364b23744417248283f0ed759477c778b5a6a8b3d5b3f72caee692"
+   },
+   "environment": {
+    "gpu_sku": "NVIDIA GeForce RTX 5090",
+    "driver": "580.142",
+    "cuda_runtime": "13.0",
+    "pytorch": "2.13.0+cu130",
+    "tilelang": "0.1.11",
+    "clock_policy": {
+     "benchmark_control": "inherit",
+     "slurm_gpu_freq_request": null,
+     "effective_locked_clocks": "unobserved"
+    },
+    "power_policy": {
+     "requested_limit_w": 600.0,
+     "enforced_limit_w": 600.0
+    },
+    "capture_regime": "cuda_graph",
+    "clock_observation": {
+     "application_graphics_mhz": "[N/A]",
+     "application_memory_mhz": "[N/A]"
+    }
+   },
+   "hostname": "ubun",
+   "slurm_job_id": null,
+   "timestamp": 1790158059.2910573,
+   "reference_provenance": {}
+  }
+ },
+ "numerical_oracle": {
+  "identity": {
+   "schema_version": 3,
+   "target": "hardware/nvidia/rtx5090/pi05",
+   "hardware": "rtx5090-32gb",
+   "model": "pi05",
+   "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens50-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers18-num_views3-prefix_len968-prompt_len200-qkv_width2560-query_heads8-state_dim32-steps10-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+   "shape": {
+    "batch": 1,
+    "num_views": 3,
+    "image_height": 224,
+    "image_width": 224,
+    "image_channels": 3,
+    "visual_tokens_per_view": 256,
+    "visual_tokens": 768,
+    "vision_dim": 1152,
+    "vision_ffn_dim": 4304,
+    "vision_heads": 16,
+    "vision_head_dim": 72,
+    "vision_layers": 27,
+    "prompt_len": 200,
+    "prefix_len": 968,
+    "chunk": 50,
+    "expert_tokens": 50,
+    "state_dim": 32,
+    "action_dim": 32,
+    "steps": 10,
+    "layers": 18,
+    "encoder_dim": 2048,
+    "encoder_ffn_dim": 16384,
+    "query_heads": 8,
+    "kv_heads": 1,
+    "head_dim": 256,
+    "qkv_width": 2560,
+    "expert_dim": 1024,
+    "expert_ffn_dim": 4096
+   },
+   "plan": {
+    "vision_encoder_patch_embed": "torch",
+    "vision_encoder_norm_qkv": "torch",
+    "vision_encoder_attention": "torch",
+    "vision_encoder_out_proj_residual": "torch",
+    "vision_encoder_norm_ffn_up": "torch",
+    "vision_encoder_ffn_down_residual": "torch",
+    "llm_backbone_projector": "torch",
+    "llm_backbone_embed_prompt": "torch",
+    "llm_backbone_norm_qkv_rope": "torch",
+    "llm_backbone_attention": "torch",
+    "llm_backbone_out_proj_residual_masked": "torch",
+    "llm_backbone_norm_gated_ffn_masked": "torch",
+    "llm_backbone_ffn_down_residual_masked": "torch",
+    "action_expert_action_in_proj": "torch",
+    "action_expert_norm_qkv_rope": "torch",
+    "action_expert_attention": "torch",
+    "action_expert_out_proj_residual": "torch",
+    "action_expert_norm_gated_ffn": "torch",
+    "action_expert_ffn_down_residual": "torch",
+    "action_expert_action_out_proj": "torch"
+   },
+   "model_revision": "pi05-r1",
+   "engine_revision": "5961be01cec5041580ed5d7347f1c1a181cda1f0",
+   "inference_signature": "sha256:a79c1f62c3f14674ad87e88a89bb5f66ac650e1c497ccf5076e64017b55d9f6f",
+   "execution_variant": {
+    "quantization": {
+     "mode": "bf16"
+    },
+    "cache": {
+     "mode": "none"
+    }
+   }
+  }
+ },
+ "config": {
+  "steps": 10,
+  "layers": 18,
+  "seed": 0,
+  "isolate": true,
+  "oracle": "in_engine_reference"
+ },
+ "stages": {
+  "vision_encoder": {
+   "vision_encoder_x": {
+    "metrics": {
+     "max_abs": 4.25,
+     "mean_abs": 0.08720030217362498,
+     "rms_error": 0.11798756523433931,
+     "rel_rms": 0.017075834261353905,
+     "p99_abs": 0.3125,
+     "cosine_similarity": 0.9998542093494687
+    },
+    "finite_allocation": true
+   }
+  },
+  "llm_backbone": {
+   "prefix_k": {
+    "metrics": {
+     "max_abs": 1.25,
+     "mean_abs": 0.01344292337836867,
+     "rms_error": 0.02556899083709456,
+     "rel_rms": 0.01583350750600191,
+     "p99_abs": 0.09375,
+     "cosine_similarity": 0.9998748808280495
+    },
+    "per_layer_cosine": [
+     1.0000000000000002,
+     0.9999909378617007,
+     0.9999839423450917,
+     0.9999738842049392,
+     0.9999591494527937,
+     0.9999421459828497,
+     0.999904350438763,
+     0.9999167360933503,
+     0.9998543339222312,
+     0.9998319503402191,
+     0.9998336948892675,
+     0.9998756272352379,
+     0.999831591291177,
+     0.9998730990475322,
+     0.9997969910588957,
+     0.9998528391489857,
+     0.9998829698147862,
+     0.9998397492136546
+    ],
+    "max_cosine_step": 7.610798863644241e-05,
+    "finite_allocation": true
+   },
+   "prefix_v": {
+    "metrics": {
+     "max_abs": 2.75,
+     "mean_abs": 0.023280975398839308,
+     "rms_error": 0.04885662518659816,
+     "rel_rms": 0.025958382790388385,
+     "p99_abs": 0.1875,
+     "cosine_similarity": 0.9996632742484988
+    },
+    "per_layer_cosine": [
+     0.9999999999999999,
+     0.9999899337963947,
+     0.9999738966843533,
+     0.9999492066431857,
+     0.9999056557752566,
+     0.9998615188267068,
+     0.999751210066201,
+     0.9997724299748495,
+     0.9996566815716699,
+     0.9994530700128803,
+     0.9996208864837252,
+     0.9994893152277939,
+     0.9995995526769218,
+     0.9995588889776357,
+     0.9995792071522855,
+     0.9996961401928071,
+     0.9996374858609737,
+     0.9997239897352861
+    ],
+    "max_cosine_step": 0.0002036115587895626,
+    "finite_allocation": true
+   }
+  },
+  "action_expert": {
+   "actions": {
+    "metrics": {
+     "max_abs": 0.0078125,
+     "mean_abs": 0.0007852637767791749,
+     "rms_error": 0.0016136214982468999,
+     "rel_rms": 0.002001400594632521,
+     "p99_abs": 0.00390625,
+     "cosine_similarity": 0.9999980162880289
+    },
+    "finite_allocation": true
+   },
+   "suffix_k": {
+    "metrics": {
+     "max_abs": 0.06640625,
+     "mean_abs": 0.004233927792196886,
+     "rms_error": 0.0066382874795113235,
+     "rel_rms": 0.00595216548124821,
+     "p99_abs": 0.0234375,
+     "cosine_similarity": 0.9999822877737826
+    },
+    "per_layer_cosine": [
+     0.9999989469903915,
+     0.9999910822861326,
+     0.9999911973206465,
+     0.9999897018112331,
+     0.9999926903481812,
+     0.9999856355754321,
+     0.9999792945204407,
+     0.9999811926170319,
+     0.9999842035564308,
+     0.9999819970269832,
+     0.9999819849131265,
+     0.9999863036512998,
+     0.9999858899647829,
+     0.9999742650939688,
+     0.9999845978022521,
+     0.9999797753778146,
+     0.9999748055281619,
+     0.9999729189282778
+    ],
+    "max_cosine_step": 1.1624870814075372e-05,
+    "finite_allocation": true
+   },
+   "suffix_v": {
+    "metrics": {
+     "max_abs": 0.140625,
+     "mean_abs": 0.008269221479487087,
+     "rms_error": 0.013150106172502788,
+     "rel_rms": 0.00965282560574963,
+     "p99_abs": 0.046875,
+     "cosine_similarity": 0.9999534137908872
+    },
+    "per_layer_cosine": [
+     0.9999991946814835,
+     0.9999892886148736,
+     0.9999799212626225,
+     0.9999699746573018,
+     0.9999415473318275,
+     0.999949971292035,
+     0.9999419820827952,
+     0.99995527279941,
+     0.9999195159856322,
+     0.9999537305943638,
+     0.9999108058924893,
+     0.9999101068515023,
+     0.9999755090744966,
+     0.9999331426833725,
+     0.99996246427562,
+     0.9999584089760316,
+     0.9999727035482172,
+     0.9999563628364636
+    ],
+    "max_cosine_step": 4.29247018745027e-05,
+    "finite_allocation": true
+   }
+  }
+ },
+ "output": {
+  "metrics": {
+   "max_abs": 0.02490234375,
+   "mean_abs": 0.0014359462261199951,
+   "rms_error": 0.002590103225980634,
+   "rel_rms": 0.003212546524862966,
+   "p99_abs": 0.0078125,
+   "cosine_similarity": 0.9999949467023728
+  }
+ },
+ "replay_identical": true,
+ "finite": true,
+ "min_cosine": 0.9996632742484988,
+ "max_rel_rms": 0.025958382790388385,
+ "tolerance": {
+  "rel_rms_max": 0.066,
+  "cosine_min": 0.99978
+ },
+ "threshold_key": "shallow",
+ "within_tolerance": false,
+ "mode": "report",
+ "passed": true
+}

@@ -1,0 +1,3 @@
+iteration,change,latency_ms,decision,report,revision,label,group
+0,Backbone FFN on the recipe's fake-quant reference: the quantized workload before kernels,45.426661148667336,start,measurements/000.json,5961be0,fake-quant FFN,llm backbone
+1,MXFP8 backbone FFN: quant_ops producers around CUTLASS SM120 block-scaled GEMMs,22.484339075163007,keep,measurements/001.json,5961be0,MXFP8 kernels,llm backbone
