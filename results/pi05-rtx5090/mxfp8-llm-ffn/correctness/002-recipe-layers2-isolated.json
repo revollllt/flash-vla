@@ -1,0 +1,438 @@
+{
+ "identity": {
+  "reference": {
+   "schema_version": 3,
+   "target": "hardware/nvidia/rtx5090/pi05",
+   "hardware": "rtx5090-32gb",
+   "model": "pi05",
+   "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens50-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers2-num_views3-prefix_len968-prompt_len200-qkv_width2560-query_heads8-state_dim32-steps1-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+   "shape": {
+    "batch": 1,
+    "num_views": 3,
+    "image_height": 224,
+    "image_width": 224,
+    "image_channels": 3,
+    "visual_tokens_per_view": 256,
+    "visual_tokens": 768,
+    "vision_dim": 1152,
+    "vision_ffn_dim": 4304,
+    "vision_heads": 16,
+    "vision_head_dim": 72,
+    "vision_layers": 27,
+    "prompt_len": 200,
+    "prefix_len": 968,
+    "chunk": 50,
+    "expert_tokens": 50,
+    "state_dim": 32,
+    "action_dim": 32,
+    "steps": 1,
+    "layers": 2,
+    "encoder_dim": 2048,
+    "encoder_ffn_dim": 16384,
+    "query_heads": 8,
+    "kv_heads": 1,
+    "head_dim": 256,
+    "qkv_width": 2560,
+    "expert_dim": 1024,
+    "expert_ffn_dim": 4096
+   },
+   "plan": {
+    "vision_encoder_patch_embed": "torch",
+    "vision_encoder_norm_qkv": "torch",
+    "vision_encoder_attention": "torch",
+    "vision_encoder_out_proj_residual": "torch",
+    "vision_encoder_norm_ffn_up": "torch",
+    "vision_encoder_ffn_down_residual": "torch",
+    "llm_backbone_projector": "torch",
+    "llm_backbone_embed_prompt": "torch",
+    "llm_backbone_norm_qkv_rope": "torch",
+    "llm_backbone_attention": "torch",
+    "llm_backbone_out_proj_residual_masked": "torch",
+    "llm_backbone_norm_gated_ffn_masked": "fake-quant-mxfp8",
+    "llm_backbone_ffn_down_residual_masked": "fake-quant-mxfp8",
+    "action_expert_action_in_proj": "torch",
+    "action_expert_norm_qkv_rope": "torch",
+    "action_expert_attention": "torch",
+    "action_expert_out_proj_residual": "torch",
+    "action_expert_norm_gated_ffn": "torch",
+    "action_expert_ffn_down_residual": "torch",
+    "action_expert_action_out_proj": "torch"
+   },
+   "model_revision": "pi05-r1",
+   "engine_revision": "82a3eaad6cd17d3254d4199004850a968d1e46ff",
+   "inference_signature": "sha256:a79c1f62c3f14674ad87e88a89bb5f66ac650e1c497ccf5076e64017b55d9f6f",
+   "execution_variant": {
+    "quantization": {
+     "mode": "mxfp8",
+     "recipe": "mxfp8-llm-ffn-v1",
+     "weight": "e4m3, ue8m0 scale per 32 along K, quantized once from bf16",
+     "activation": "e4m3, ue8m0 scale per 32 along K, dynamic, from the bf16 rms-norm output and the bf16-rounded gelu_tanh(gate)*up",
+     "rounding": "fp32 accumulation; gate and up round to bf16; down joins the residual in fp32 and rounds once",
+     "quantizer": "flashinfer 0.7.0 fast path (quant_ops)",
+     "call_sites": [
+      "llm_backbone_ffn_down_residual_masked",
+      "llm_backbone_norm_gated_ffn_masked"
+     ]
+    },
+    "cache": {
+     "mode": "none"
+    }
+   }
+  },
+  "candidate": {
+   "schema_version": 3,
+   "target": "hardware/nvidia/rtx5090/pi05",
+   "hardware": "rtx5090-32gb",
+   "model": "pi05",
+   "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens50-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers2-num_views3-prefix_len968-prompt_len200-qkv_width2560-query_heads8-state_dim32-steps1-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+   "shape": {
+    "batch": 1,
+    "num_views": 3,
+    "image_height": 224,
+    "image_width": 224,
+    "image_channels": 3,
+    "visual_tokens_per_view": 256,
+    "visual_tokens": 768,
+    "vision_dim": 1152,
+    "vision_ffn_dim": 4304,
+    "vision_heads": 16,
+    "vision_head_dim": 72,
+    "vision_layers": 27,
+    "prompt_len": 200,
+    "prefix_len": 968,
+    "chunk": 50,
+    "expert_tokens": 50,
+    "state_dim": 32,
+    "action_dim": 32,
+    "steps": 1,
+    "layers": 2,
+    "encoder_dim": 2048,
+    "encoder_ffn_dim": 16384,
+    "query_heads": 8,
+    "kv_heads": 1,
+    "head_dim": 256,
+    "qkv_width": 2560,
+    "expert_dim": 1024,
+    "expert_ffn_dim": 4096
+   },
+   "plan": {
+    "vision_encoder_patch_embed": "torch",
+    "vision_encoder_norm_qkv": "cutlass-vision",
+    "vision_encoder_attention": "torch",
+    "vision_encoder_out_proj_residual": "cutlass-vision",
+    "vision_encoder_norm_ffn_up": "cutlass-vision",
+    "vision_encoder_ffn_down_residual": "cutlass-vision",
+    "llm_backbone_projector": "torch",
+    "llm_backbone_embed_prompt": "torch",
+    "llm_backbone_norm_qkv_rope": "fused-prefix-qkv",
+    "llm_backbone_attention": "torch",
+    "llm_backbone_out_proj_residual_masked": "bucketed-backbone",
+    "llm_backbone_norm_gated_ffn_masked": "mxfp8-backbone",
+    "llm_backbone_ffn_down_residual_masked": "mxfp8-backbone",
+    "action_expert_action_in_proj": "torch",
+    "action_expert_norm_qkv_rope": "triton-qkv-finish",
+    "action_expert_attention": "triton-qk-attention",
+    "action_expert_out_proj_residual": "cutlass-expert-residual",
+    "action_expert_norm_gated_ffn": "dual-ffn",
+    "action_expert_ffn_down_residual": "cutlass-expert-residual",
+    "action_expert_action_out_proj": "fused-qkv"
+   },
+   "model_revision": "pi05-r1",
+   "engine_revision": "82a3eaad6cd17d3254d4199004850a968d1e46ff",
+   "inference_signature": "sha256:a79c1f62c3f14674ad87e88a89bb5f66ac650e1c497ccf5076e64017b55d9f6f",
+   "execution_variant": {
+    "quantization": {
+     "mode": "mxfp8",
+     "recipe": "mxfp8-llm-ffn-v1",
+     "weight": "e4m3, ue8m0 scale per 32 along K, quantized once from bf16",
+     "activation": "e4m3, ue8m0 scale per 32 along K, dynamic, from the bf16 rms-norm output and the bf16-rounded gelu_tanh(gate)*up",
+     "rounding": "fp32 accumulation; gate and up round to bf16; down joins the residual in fp32 and rounds once",
+     "quantizer": "flashinfer 0.7.0 fast path (quant_ops)",
+     "call_sites": [
+      "llm_backbone_ffn_down_residual_masked",
+      "llm_backbone_norm_gated_ffn_masked"
+     ]
+    },
+    "cache": {
+     "mode": "none"
+    }
+   }
+  }
+ },
+ "measurement_context": {
+  "reference": {
+   "weights": {
+    "checkpoint_id": "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+    "checkpoint_digest": "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha"
+   },
+   "fixture": {
+    "id": "flash-vla/pi05-inputs-v1/seed-0",
+    "digest": "sha256:ec4dbe8210364b23744417248283f0ed759477c778b5a6a8b3d5b3f72caee692"
+   },
+   "environment": {
+    "gpu_sku": "NVIDIA GeForce RTX 5090",
+    "driver": "580.142",
+    "cuda_runtime": "13.0",
+    "pytorch": "2.13.0+cu130",
+    "tilelang": "0.1.11",
+    "clock_policy": {
+     "benchmark_control": "inherit",
+     "slurm_gpu_freq_request": null,
+     "effective_locked_clocks": "unobserved"
+    },
+    "power_policy": {
+     "requested_limit_w": 600.0,
+     "enforced_limit_w": 600.0
+    },
+    "capture_regime": "cuda_graph",
+    "clock_observation": {
+     "application_graphics_mhz": "[N/A]",
+     "application_memory_mhz": "[N/A]"
+    }
+   },
+   "hostname": "ubun",
+   "slurm_job_id": null,
+   "timestamp": 1790159714.679646,
+   "reference_provenance": {}
+  },
+  "candidate": {
+   "weights": {
+    "checkpoint_id": "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha",
+    "checkpoint_digest": "kai0/pi05-belt-cup/orbax-39999+openpi-convert-pi05_aloha"
+   },
+   "fixture": {
+    "id": "flash-vla/pi05-inputs-v1/seed-0",
+    "digest": "sha256:ec4dbe8210364b23744417248283f0ed759477c778b5a6a8b3d5b3f72caee692"
+   },
+   "environment": {
+    "gpu_sku": "NVIDIA GeForce RTX 5090",
+    "driver": "580.142",
+    "cuda_runtime": "13.0",
+    "pytorch": "2.13.0+cu130",
+    "tilelang": "0.1.11",
+    "clock_policy": {
+     "benchmark_control": "inherit",
+     "slurm_gpu_freq_request": null,
+     "effective_locked_clocks": "unobserved"
+    },
+    "power_policy": {
+     "requested_limit_w": 600.0,
+     "enforced_limit_w": 600.0
+    },
+    "capture_regime": "cuda_graph",
+    "clock_observation": {
+     "application_graphics_mhz": "[N/A]",
+     "application_memory_mhz": "[N/A]"
+    }
+   },
+   "hostname": "ubun",
+   "slurm_job_id": null,
+   "timestamp": 1790159714.6796546,
+   "reference_provenance": {}
+  }
+ },
+ "numerical_oracle": {
+  "identity": {
+   "schema_version": 3,
+   "target": "hardware/nvidia/rtx5090/pi05",
+   "hardware": "rtx5090-32gb",
+   "model": "pi05",
+   "shape_profile": "action_dim32-batch1-chunk50-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens50-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers2-num_views3-prefix_len968-prompt_len200-qkv_width2560-query_heads8-state_dim32-steps1-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens768-visual_tokens_per_view256",
+   "shape": {
+    "batch": 1,
+    "num_views": 3,
+    "image_height": 224,
+    "image_width": 224,
+    "image_channels": 3,
+    "visual_tokens_per_view": 256,
+    "visual_tokens": 768,
+    "vision_dim": 1152,
+    "vision_ffn_dim": 4304,
+    "vision_heads": 16,
+    "vision_head_dim": 72,
+    "vision_layers": 27,
+    "prompt_len": 200,
+    "prefix_len": 968,
+    "chunk": 50,
+    "expert_tokens": 50,
+    "state_dim": 32,
+    "action_dim": 32,
+    "steps": 1,
+    "layers": 2,
+    "encoder_dim": 2048,
+    "encoder_ffn_dim": 16384,
+    "query_heads": 8,
+    "kv_heads": 1,
+    "head_dim": 256,
+    "qkv_width": 2560,
+    "expert_dim": 1024,
+    "expert_ffn_dim": 4096
+   },
+   "plan": {
+    "vision_encoder_patch_embed": "torch",
+    "vision_encoder_norm_qkv": "torch",
+    "vision_encoder_attention": "torch",
+    "vision_encoder_out_proj_residual": "torch",
+    "vision_encoder_norm_ffn_up": "torch",
+    "vision_encoder_ffn_down_residual": "torch",
+    "llm_backbone_projector": "torch",
+    "llm_backbone_embed_prompt": "torch",
+    "llm_backbone_norm_qkv_rope": "torch",
+    "llm_backbone_attention": "torch",
+    "llm_backbone_out_proj_residual_masked": "torch",
+    "llm_backbone_norm_gated_ffn_masked": "fake-quant-mxfp8",
+    "llm_backbone_ffn_down_residual_masked": "fake-quant-mxfp8",
+    "action_expert_action_in_proj": "torch",
+    "action_expert_norm_qkv_rope": "torch",
+    "action_expert_attention": "torch",
+    "action_expert_out_proj_residual": "torch",
+    "action_expert_norm_gated_ffn": "torch",
+    "action_expert_ffn_down_residual": "torch",
+    "action_expert_action_out_proj": "torch"
+   },
+   "model_revision": "pi05-r1",
+   "engine_revision": "82a3eaad6cd17d3254d4199004850a968d1e46ff",
+   "inference_signature": "sha256:a79c1f62c3f14674ad87e88a89bb5f66ac650e1c497ccf5076e64017b55d9f6f",
+   "execution_variant": {
+    "quantization": {
+     "mode": "mxfp8",
+     "recipe": "mxfp8-llm-ffn-v1",
+     "weight": "e4m3, ue8m0 scale per 32 along K, quantized once from bf16",
+     "activation": "e4m3, ue8m0 scale per 32 along K, dynamic, from the bf16 rms-norm output and the bf16-rounded gelu_tanh(gate)*up",
+     "rounding": "fp32 accumulation; gate and up round to bf16; down joins the residual in fp32 and rounds once",
+     "quantizer": "flashinfer 0.7.0 fast path (quant_ops)",
+     "call_sites": [
+      "llm_backbone_ffn_down_residual_masked",
+      "llm_backbone_norm_gated_ffn_masked"
+     ]
+    },
+    "cache": {
+     "mode": "none"
+    }
+   }
+  }
+ },
+ "config": {
+  "steps": 1,
+  "layers": 2,
+  "seed": 0,
+  "isolate": true,
+  "oracle": "in_engine_reference"
+ },
+ "stages": {
+  "vision_encoder": {
+   "vision_encoder_x": {
+    "metrics": {
+     "max_abs": 4.25,
+     "mean_abs": 0.08720030217362498,
+     "rms_error": 0.11798756523433931,
+     "rel_rms": 0.017075834261353905,
+     "p99_abs": 0.3125,
+     "cosine_similarity": 0.9998542093494687
+    },
+    "finite_allocation": true
+   }
+  },
+  "llm_backbone": {
+   "prefix_k": {
+    "metrics": {
+     "max_abs": 0.015625,
+     "mean_abs": 1.2175734193364451e-06,
+     "rms_error": 7.706905253474546e-05,
+     "rel_rms": 0.00018273718275800175,
+     "p99_abs": 0.0,
+     "cosine_similarity": 0.9999999833035926
+    },
+    "per_layer_cosine": [
+     1.0000000000000002,
+     0.9999999669210995
+    ],
+    "max_cosine_step": 3.307890072967723e-08,
+    "finite_allocation": true
+   },
+   "prefix_v": {
+    "metrics": {
+     "max_abs": 0.015625,
+     "mean_abs": 1.4172126543327576e-06,
+     "rms_error": 8.467696191532823e-05,
+     "rel_rms": 0.0002724291588060104,
+     "p99_abs": 0.0,
+     "cosine_similarity": 0.9999999629032312
+    },
+    "per_layer_cosine": [
+     0.9999999999999999,
+     0.9999998669415462
+    ],
+    "max_cosine_step": 1.3305845369959712e-07,
+    "finite_allocation": true
+   }
+  },
+  "action_expert": {
+   "actions": {
+    "metrics": {
+     "max_abs": 0.09375,
+     "mean_abs": 0.006136388778686524,
+     "rms_error": 0.012324525962537546,
+     "rel_rms": 0.004364367909669073,
+     "p99_abs": 0.046875,
+     "cosine_similarity": 0.9999904910193373
+    },
+    "finite_allocation": true
+   },
+   "suffix_k": {
+    "metrics": {
+     "max_abs": 0.009765625,
+     "mean_abs": 5.3084997149805226e-05,
+     "rms_error": 0.0004262348387082747,
+     "rel_rms": 0.0016657396940185241,
+     "p99_abs": 0.001953125,
+     "cosine_similarity": 0.9999986151248189
+    },
+    "per_layer_cosine": [
+     1.0,
+     0.9999947413930321
+    ],
+    "max_cosine_step": 5.2586069678728364e-06,
+    "finite_allocation": true
+   },
+   "suffix_v": {
+    "metrics": {
+     "max_abs": 0.0166015625,
+     "mean_abs": 5.8301231927341884e-05,
+     "rms_error": 0.0005487949920091918,
+     "rel_rms": 0.0011459727088807402,
+     "p99_abs": 0.001953125,
+     "cosine_similarity": 0.9999993444102457
+    },
+    "per_layer_cosine": [
+     1.0,
+     0.9999959639624322
+    ],
+    "max_cosine_step": 4.036037567822781e-06,
+    "finite_allocation": true
+   }
+  }
+ },
+ "output": {
+  "metrics": {
+   "max_abs": 0.09375,
+   "mean_abs": 0.005951995849609375,
+   "rms_error": 0.012041863553154643,
+   "rel_rms": 0.0042642713418554025,
+   "p99_abs": 0.046875,
+   "cosine_similarity": 0.9999909094709667
+  }
+ },
+ "replay_identical": true,
+ "finite": true,
+ "min_cosine": 0.9998542093494687,
+ "max_rel_rms": 0.017075834261353905,
+ "tolerance": {
+  "rel_rms_max": 0.066,
+  "cosine_min": 0.99978
+ },
+ "threshold_key": "shallow",
+ "within_tolerance": true,
+ "mode": "report",
+ "passed": true
+}

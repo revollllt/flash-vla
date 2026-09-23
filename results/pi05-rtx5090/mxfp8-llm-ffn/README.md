@@ -99,3 +99,23 @@ For reference, the survey measured FlashInfer's tuned CUTLASS MXFP8 GEMM at
 
 Deployed median 45.43 → **22.48 ms**, revision `5961be0`. Against BF16 shipped
 on the same revision (30.07 ms), the recipe saves 7.59 ms (25.2%).
+
+## 002 — Row buckets, retained
+
+Hypothesis: the timing prompt leaves rows 896..967 as padding, so the last of
+the eight 128-row tiles of every FFN GEMM is wasted work; skipping it should
+save up to 1/8 of the GEMM time, about 0.7 ms after two early-exit launches per
+GEMM. Each GEMM is planned at M = 896 and M = 968 and both plans launch; the
+one the prefix mask does not select exits at once, after `griddepcontrol.wait`
+so the PDL chain stays ordered through it (`RowBucket` in
+`mxfp8_backbone.cu`). The backend test replays one captured graph under both
+masks and checks the padding rows of the residual are untouched under the
+short bucket.
+
+Deployed median 22.48 → **21.96 ms** (−0.53 ms), revision `82a3eaa`; the two
+runs do not overlap (min 21.91 / p99 22.14 against min 22.41 / p99 22.75).
+Official parity and the 2-layer isolated check are unchanged
+([`002-official-mxfp8-llm-ffn.json`](correctness/002-official-mxfp8-llm-ffn.json),
+[`002-recipe-layers2-isolated.json`](correctness/002-recipe-layers2-isolated.json)).
+The gain is below the estimate: the down GEMM at M = 896 has 112 tiles for 170
+SMs, so dropping a tile row shortens no wave there.
