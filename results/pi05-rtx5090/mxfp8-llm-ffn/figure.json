@@ -2,5 +2,7 @@
   "title": "Pi0.5 on RTX 5090, MXFP8 backbone FFN: 45.43 -> 21.63 ms",
   "subtitle": "Belt-cup real weights; backbone FFN MXFP8, rest bf16; 18 layers; 10 denoise steps",
   "metric_label": "deployed end-to-end median (ms)",
-  "note": "No floor panel: tools.profiling.floor prices every GEMM as bf16, so it has no denominator for this workload yet. BF16 shipped measured 30.15 ms against this recipe's 21.76 ms in a final ABBA on one revision (measurements/final-bf16-vs-mxfp8-*.json); it is a separate workload and not a point of this curve."
+  "roofline_ms": 13.290274183327735,
+  "reachable_ms": 15.45398951370434,
+  "note": "Floor: floor-mxfp8.json, tools.profiling.floor with the FFN priced in MXFP8; guidance, not a target. BF16 shipped is 30.15 ms on the same revision (ABBA), a separate workload."
 }

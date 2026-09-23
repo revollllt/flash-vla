@@ -223,6 +223,16 @@ BF16 for scale in [`005-bucket-switch-bf16.json`](correctness/005-bucket-switch-
 
 ## Where it stands and what is left
 
+The whole-model floor of this workload ([`floor-mxfp8.json`](floor-mxfp8.json),
+`tools.profiling.floor` with the recipe's pricing: its two FFN call sites in
+MXFP8, operands with their scales, every other call site in BF16) is
+**13.29 ms** at datasheet peaks and **15.45 ms** at the rates this machine
+delivers; 005 is at 61% and 71% of them. These are the figure's share-of-floor
+denominators. For comparison, the BF16 workload's are 25.14 / 25.20 ms
+(`gpt6-run-01`). The report is marked invalid for the reasons the BF16 floor is:
+the vision encoder's datasheet BF16 peak sits below its observed rate, and an
+atomic call-site pair (here the MXFP8 FFN) has no joint ceiling model.
+
 Profile of 005 ([`profile-005-overview.json`](profile-005-overview.json); GPU
 kernel time 21.62 ms). The MXFP8 FFN is 5.15 ms of it; the other 16.5 ms are the
 BF16 call sites this recipe does not cover. Floors use the measured block-scaled
