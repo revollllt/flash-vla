@@ -10,11 +10,11 @@ corresponding measurement. Kernel-only trials belong in the notes.
 The following numbers are illustrative, not project measurements:
 
 ```csv
-iteration,change,latency_ms,decision,report,revision
-0,Current version,100.0,start,measurements/000.json,commit-a
-1,Fused projection,94.0,keep,measurements/001.json,commit-b
-2,Alternate tile,95.0,revert,measurements/002.json,commit-c
-3,Failed numerical check,,failed,,commit-d
+iteration,change,latency_ms,decision,report,revision,group
+0,Current version,100.0,start,measurements/000.json,commit-a,control
+1,Fused projection,94.0,keep,measurements/001.json,commit-b,action expert
+2,Alternate tile,95.0,revert,measurements/002.json,commit-c,llm backbone
+3,Failed numerical check,,failed,,commit-d,vision encoder
 ```
 
 ## The progress figure
@@ -28,10 +28,32 @@ python -m lab.results curve results/<target>/<run>          # writes progress.sv
 python -m lab.results rebuild                               # refreshes every run's figure and the index
 ```
 
-Three optional CSV columns: `label` is the short name under panel B's axis and
-falls back to the `change` text trimmed at a word boundary, `group` colours a
-series — the segment a change touched reads well — and `callout` annotates that
-point in panel A; leave it blank on the rows that do not need one.
+`group` is required on every row and says where the change's time came from,
+so every run's figure colours its milestones by module and its legend reads the
+same way across runs. The vocabulary is closed:
+
+- `vision encoder`, `llm backbone`, `action expert`, `host` — the segment whose
+  measured time the change cut; `benchmarks latency --breakdown` times each one.
+  A fusion inside one segment stays in that segment, including a persistent or
+  megakernel that covers that segment's whole loop.
+- `multi-stage` — the gain cannot be assigned to one segment: one implementation
+  spans a segment boundary (a kernel fusing the end of one segment with the
+  start of the next, a dependent launch or overlap across the boundary, a
+  megakernel over two or more segments), or one policy went to every segment in
+  one trial (a library switch, a tile re-pick, a grid cap). Name the segments
+  in `change`.
+- `control` — a row that changes no module: the start, a control
+  re-measurement, promoting an already measured route to `shipped`, an
+  environment check.
+
+A row is one candidate, so it has one group. Deploy one segment at a time so the
+figure stays attributable; a trial that bundled changes in several segments is
+`multi-stage`, not credited to one of them. A blank cell renders as `run`, which
+is the figure's way of showing the hole.
+
+Two optional columns: `label` is the short name under panel B's axis and falls
+back to the `change` text trimmed at a word boundary, and `callout` annotates
+that point in panel A; leave it blank on the rows that do not need one.
 
 Settings that are not per-row live in `figure.json` beside the table, so
 regenerating needs no remembered flags and the figure's parameters are reviewed

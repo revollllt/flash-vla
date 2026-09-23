@@ -32,7 +32,9 @@ owns hotspot selection, serial integration and deployed end-to-end measurements.
    Use [ncu-report](../ncu-report/SKILL.md) only when counters can resolve a question.
 5. Return a correct, faster candidate with its diff, command and result. Failed or
    uncertain candidates stay in this loop. Distinct kernels can use parallel
-   agents in separate worktrees; model integration remains serial.
+   agents in separate worktrees under the model workflow's
+   [delegation rules](../model-optimization/references/delegation.md); model
+   integration remains serial.
 
 ## Example
 
