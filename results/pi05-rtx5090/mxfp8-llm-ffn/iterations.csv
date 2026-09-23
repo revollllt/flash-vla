@@ -3,3 +3,4 @@ iteration,change,latency_ms,decision,report,revision,label,group
 1,MXFP8 backbone FFN: quant_ops producers around CUTLASS SM120 block-scaled GEMMs,22.484339075163007,keep,measurements/001.json,5961be0,MXFP8 kernels,llm backbone
 2,Skip the padding row tile: M896/M968 bucket plans selected on the device by the prefix mask,21.95685193873942,keep,measurements/002.json,82a3eaa,row buckets,llm backbone
 3,One launch per bucketed GEMM: both problems' parameters in the kernel and the CTA picks one; register spills,22.408793913200498,revert,measurements/003.json,83e88fe,single-launch bucket,llm backbone
+4,Gate/up GEMM on the 128x128x128 pingpong schedule; ABBA against 002 -0.18 ms,21.91582159139216,keep,measurements/004.json,1236629,pingpong gate/up,llm backbone

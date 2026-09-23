@@ -142,3 +142,31 @@ sites instead of a selected reference spill more (412 bytes), since the whole
 GEMM body is inlined twice. A single launch would need the choice made below
 the kernel's parameter block, in the tile scheduler, which CUTLASS does not
 expose; the two-launch design of 002 stays.
+
+## 004 — Pingpong gate/up GEMM, retained
+
+Hypothesis: the cooperative kernel's two warpgroups share one tile and stall
+their MMAs during its epilogue; with pingpong each warpgroup owns a tile and one
+stores while the other computes. The gate/up GEMM stores a 58-63 MB BF16 tile
+set per layer, so it should gain most. Screen
+([`gemm-screen-pingpong.json`](gemm-screen-pingpong.json)): gate/up 212.9 →
+185.4 µs at M = 896 and 239.3 → 212.2 µs at M = 968 (same run); down does not
+gain and stays persistent.
+
+The first measurement, **21.92 ms** (revision `1236629`), was within the spread
+of 002. The profile showed the gate/up kernels 182 → 171 µs per call in the
+model, 0.19 ms over 17 layers, so the two versions were measured ABBA in
+separate processes (002 from a detached worktree at `82a3eaa`):
+
+| leg | version | median | min | p99 |
+|---|---|---:|---:|---:|
+| a1 | 002 | 21.971 | 21.916 | 22.128 |
+| b1 | 004 | 21.790 | 21.737 | 21.985 |
+| b2 | 004 | 21.812 | 21.756 | 21.984 |
+| a2 | 002 | 21.993 | 21.927 | 22.149 |
+
+004 is 0.18 ms faster on both pairs, matching the profile; the first 004 sample
+was a high draw of the ~0.1 ms process-to-process drift. Official parity and the
+2-layer isolated check are unchanged ([`004-official-mxfp8-llm-ffn.json`](correctness/004-official-mxfp8-llm-ffn.json),
+[`004-recipe-layers2-isolated.json`](correctness/004-recipe-layers2-isolated.json));
+raw legs in `measurements/004-abba-*.json`.
