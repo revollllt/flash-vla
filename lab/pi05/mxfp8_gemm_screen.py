@@ -51,8 +51,8 @@ def main() -> None:
         output = torch.empty(ROWS, cols, dtype=torch.bfloat16, device=device)   # bf16 [M, N]
         first_layer: torch.Tensor | None = None                                # config 0's
         for config, tiles in CONFIGS.items():
-            plans = [GemmPlan(config, activation, weight, output, beta, scratch)
-                     for weight in weights]
+            plans = [GemmPlan(config, activation, weight, output, beta, scratch, rows=ROWS,
+                              mask=None) for weight in weights]
             output.copy_(residual)
             plans[0].run()
             layer_output = output.float()

@@ -8,6 +8,13 @@
 // and beta = 0 never reads it. Built with CUTLASS_ENABLE_GDC_FOR_SM100, which
 // also covers sm_120: the kernels wait on their predecessor before the first
 // global read and launch with programmatic dependent launch.
+//
+// Row buckets: the prefix has 968 rows, 3 x 256 image tokens and 200 prompt
+// slots. When the prompt leaves row 896 masked, the last 128-row tile is all
+// padding. A GEMM is then planned twice, M = 896 and M = 968, both plans are
+// launched, and the one the bf16 prefix mask (mask[896] < 0: short) does not
+// select exits at once. The scale layout is 128-row-block major, so the
+// 896-row operands are prefixes of the 968-row ones.
 #include <cstdint>
 #include <memory>
 
@@ -20,12 +27,54 @@
 #include "cutlass/gemm/kernel/tile_scheduler.hpp"
 #include "cutlass/util/packed_stride.hpp"
 
+// A kernel type must not have internal linkage: nvcc's host stub for
+// device_kernel<RowBucket<...>> cannot be generated inside an anonymous namespace.
+namespace flash_vla_mxfp8 {
+using Output = cutlass::bfloat16_t;
+constexpr int32_t kShortRows = 896;
+
+// Base, run only when the prefix mask selects its row bucket; without a mask
+// it always runs. An exiting kernel still waits on its predecessor, so the
+// programmatic dependency chain stays transitive for the kernel after it.
+template <class Base>
+struct RowBucket : Base {
+  using BaseArguments = typename Base::Arguments;
+  struct Arguments : BaseArguments {
+    Output const* mask = nullptr;   // bf16 [968] additive prefix mask, or null
+  };
+  struct Params : Base::Params {
+    Output const* mask = nullptr;
+    bool short_bucket = false;
+  };
+
+  static Params to_underlying_arguments(Arguments const& args, void* workspace) {
+    Params params;
+    static_cast<typename Base::Params&>(params) = Base::to_underlying_arguments(args, workspace);
+    params.mask = args.mask;
+    params.short_bucket = cute::get<0>(args.problem_shape) == kShortRows;
+    return params;
+  }
+
+  CUTLASS_DEVICE void operator()(Params const& params, char* smem) {
+    if (params.mask != nullptr &&
+        (float(params.mask[kShortRows]) < 0.f) != params.short_bucket) {
+      cutlass::arch::wait_on_dependent_grids();
+      cutlass::arch::launch_dependent_grids();
+      return;
+    }
+    Base::operator()(params, smem);
+  }
+};
+
+}  // namespace flash_vla_mxfp8
+
 namespace {
 using namespace cute;
+using flash_vla_mxfp8::Output;
+using flash_vla_mxfp8::RowBucket;
 
 using Element = cutlass::float_e4m3_t;
 using ScaleFactor = cutlass::float_ue8m0_t;
-using Output = cutlass::bfloat16_t;
 
 // One tile configuration: CTA tile TileM x TileN x 128, kernel schedule and
 // tile scheduler (persistent data-parallel or Stream-K). TileM is 128: the scale
@@ -46,8 +95,8 @@ struct Config {
       cutlass::gemm::collective::StageCountAutoCarveout<
           static_cast<int>(sizeof(typename Epilogue::SharedStorage))>,
       Schedule>::CollectiveOp;
-  using Kernel = cutlass::gemm::kernel::GemmUniversal<Shape<int, int, int, int>, Mainloop,
-                                                      Epilogue, Scheduler>;
+  using Kernel = RowBucket<cutlass::gemm::kernel::GemmUniversal<
+      Shape<int, int, int, int>, Mainloop, Epilogue, Scheduler>>;
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<Kernel>;
 };
 
@@ -61,12 +110,14 @@ constexpr int32_t kCutlassError = 1000;
 template <class Gemm>
 typename Gemm::Arguments arguments(int32_t m, int32_t n, int32_t k, float beta, const void* a,
                                    const void* a_scale, const void* b, const void* b_scale,
-                                   void* d) {
+                                   void* d, const void* mask) {
   using Kernel = typename Gemm::GemmKernel;
   using ScaleLayout = typename Kernel::CollectiveMainloop::Sm1xxBlkScaledConfig;
   auto problem = make_shape(m, n, k, 1);
   auto output_stride = cutlass::make_cute_packed_stride(typename Kernel::StrideC{}, {m, n, 1});
-  typename Gemm::Arguments args{
+  using BaseArguments = typename Kernel::BaseArguments;
+  typename Gemm::Arguments args;
+  static_cast<BaseArguments&>(args) = BaseArguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
       problem,
       {static_cast<Element const*>(a),
@@ -77,6 +128,7 @@ typename Gemm::Arguments arguments(int32_t m, int32_t n, int32_t k, float beta, 
        static_cast<ScaleFactor const*>(b_scale), ScaleLayout::tile_atom_to_shape_SFB(problem)},
       {{1.f, beta}, static_cast<Output const*>(d), output_stride, static_cast<Output*>(d),
        output_stride}};
+  args.mask = static_cast<Output const*>(mask);
   return args;
 }
 
@@ -104,7 +156,7 @@ struct BoundPlan final : Plan {
 
 template <class Gemm>
 int64_t workspace_of(int32_t m, int32_t n, int32_t k) {
-  auto args = arguments<Gemm>(m, n, k, 0.f, nullptr, nullptr, nullptr, nullptr, nullptr);
+  auto args = arguments<Gemm>(m, n, k, 0.f, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
   const cutlass::Status status = Gemm::can_implement(args);
   if (status != cutlass::Status::kSuccess) return -(kCutlassError + static_cast<int32_t>(status));
   return static_cast<int64_t>(Gemm::get_workspace_size(args));
@@ -112,10 +164,10 @@ int64_t workspace_of(int32_t m, int32_t n, int32_t k) {
 
 template <class Gemm, bool IsStreamK>
 int32_t plan_of(int32_t m, int32_t n, int32_t k, float beta, const void* a, const void* a_scale,
-                const void* b, const void* b_scale, void* d, void* workspace,
+                const void* b, const void* b_scale, void* d, const void* mask, void* workspace,
                 cudaStream_t stream, void** handle) {
   auto plan = std::make_unique<BoundPlan<Gemm>>();
-  auto args = arguments<Gemm>(m, n, k, beta, a, a_scale, b, b_scale, d);
+  auto args = arguments<Gemm>(m, n, k, beta, a, a_scale, b, b_scale, d, mask);
   plan->workspace = workspace;
   plan->workspace_bytes = Gemm::get_workspace_size(args);
   plan->clears_workspace = IsStreamK && plan->workspace_bytes > 0;
@@ -149,16 +201,17 @@ extern "C" int64_t mxfp8_gemm_workspace(int32_t config, int32_t m, int32_t n, in
   }
 }
 
+// mask: the bf16 prefix mask for a row-bucket plan (M = 896 or 968), else null.
 extern "C" int32_t mxfp8_gemm_plan(int32_t config, int32_t m, int32_t n, int32_t k, float beta,
                                    const void* a, const void* a_scale, const void* b,
-                                   const void* b_scale, void* d, void* workspace,
-                                   cudaStream_t stream, void** handle) {
+                                   const void* b_scale, void* d, const void* mask,
+                                   void* workspace, cudaStream_t stream, void** handle) {
   switch (config) {
-    case 0: return plan_of<Config0, false>(m, n, k, beta, a, a_scale, b, b_scale, d, workspace, stream, handle);
-    case 1: return plan_of<Config1, false>(m, n, k, beta, a, a_scale, b, b_scale, d, workspace, stream, handle);
-    case 2: return plan_of<Config2, false>(m, n, k, beta, a, a_scale, b, b_scale, d, workspace, stream, handle);
-    case 3: return plan_of<Config3, true>(m, n, k, beta, a, a_scale, b, b_scale, d, workspace, stream, handle);
-    case 4: return plan_of<Config4, true>(m, n, k, beta, a, a_scale, b, b_scale, d, workspace, stream, handle);
+    case 0: return plan_of<Config0, false>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
+    case 1: return plan_of<Config1, false>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
+    case 2: return plan_of<Config2, false>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
+    case 3: return plan_of<Config3, true>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
+    case 4: return plan_of<Config4, true>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
     default: return kUnknownConfig;
   }
 }

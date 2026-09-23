@@ -1,5 +1,6 @@
 """The MXFP8 backbone FFN computes its fake-quant reference at Pi0.5's shapes,
-per layer, when replayed from a CUDA graph as the runner replays it."""
+per layer, replayed from one CUDA graph as the runner replays it while the
+prefix mask switches between the two row buckets."""
 import pytest
 import torch
 
@@ -13,6 +14,7 @@ pytestmark = pytest.mark.skipif(
     reason="RTX 5090 class GPU (sm_120) required")
 
 ROWS, WIDTH, HIDDEN, LAYERS = 968, 2048, 16384, 2   # prefix rows, model width, FFN width
+SHORT = 896                                          # rows of the short bucket
 
 
 def random_bf16(*shape: int, scale: float, seed: int) -> torch.Tensor:
@@ -20,14 +22,14 @@ def random_bf16(*shape: int, scale: float, seed: int) -> torch.Tensor:
     return (torch.randn(*shape, device="cuda", generator=generator) * scale).to(torch.bfloat16)
 
 
-def test_mxfp8_backbone_matches_fake_quant_reference() -> None:
+def test_mxfp8_backbone_matches_fake_quant_reference_in_both_buckets() -> None:
     x = random_bf16(ROWS, WIDTH, scale=3.0, seed=1)
     residual = random_bf16(ROWS, WIDTH, scale=1.0, seed=2)
     gate_w, up_w = (random_bf16(LAYERS, WIDTH, HIDDEN, scale=0.03, seed=3),
                     random_bf16(LAYERS, WIDTH, HIDDEN, scale=0.03, seed=4))
     down_w = random_bf16(LAYERS, HIDDEN, WIDTH, scale=0.01, seed=5)
-    mask = torch.zeros(ROWS, device="cuda", dtype=torch.bfloat16)
-    outputs = {}
+    mask = torch.zeros(ROWS, device="cuda", dtype=torch.bfloat16)   # additive, 0 = valid
+    graphs, summed = {}, {}
     for name, wrappers in (("kernels", mxfp8_backbone.make_wrappers(Scratch(torch.device("cuda")))),
                            ("reference", FakeQuantFFN("mxfp8").make_wrappers(
                                Scratch(torch.device("cuda"))))):
@@ -35,27 +37,35 @@ def test_mxfp8_backbone_matches_fake_quant_reference() -> None:
                        wrappers["llm_backbone_ffn_down_residual_masked"])
         hidden = torch.zeros(ROWS, HIDDEN, device="cuda", dtype=torch.bfloat16)
         x_norm = torch.zeros_like(x)
-        summed = residual.expand(LAYERS, ROWS, WIDTH).clone()
+        summed[name] = residual.expand(LAYERS, ROWS, WIDTH).clone()
 
         def _forward() -> None:
             for layer in range(LAYERS):
                 gated(x, gate_w[layer], up_w[layer], hidden, x_norm, mask)
-                down(hidden, down_w[layer], summed[layer], mask)
+                down(hidden, down_w[layer], summed[name][layer], mask)
 
         # Eager warmup plans and quantizes the weights; the replay must use them.
         stream = torch.cuda.Stream()
         stream.wait_stream(torch.cuda.current_stream())
         with torch.cuda.stream(stream):
             _forward()
-            graph = torch.cuda.CUDAGraph()
-            with torch.cuda.graph(graph, stream=stream):
+            graphs[name] = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graphs[name], stream=stream):
                 _forward()
-        summed.copy_(residual.expand(LAYERS, ROWS, WIDTH))
-        graph.replay()
+    for valid_rows in (ROWS, SHORT):
+        mask.fill_(0.0)
+        mask[valid_rows:] = float("-inf")
+        for name, graph in graphs.items():
+            summed[name].copy_(residual.expand(LAYERS, ROWS, WIDTH))
+            graph.replay()
         torch.cuda.synchronize()
-        outputs[name] = summed.float() - residual.float()   # the FFN's contribution
-    for layer in range(LAYERS):
-        metrics = error_metrics(outputs["reference"][layer], outputs["kernels"][layer])
-        # Measured 1.7e-4: FP32 summation order, and a 1-ulp RMSNorm difference that
-        # can move an E4M3 code (quant_ops README). A layout or scale error is O(1).
-        assert metrics["rel_rms"] < 1e-3 and metrics["cosine_similarity"] > 0.999999, metrics
+        for layer in range(LAYERS):
+            # The FFN's contribution to the valid rows.
+            metrics = error_metrics(
+                summed["reference"][layer, :valid_rows].float() - residual[:valid_rows].float(),
+                summed["kernels"][layer, :valid_rows].float() - residual[:valid_rows].float())
+            # Measured 1.7e-4: FP32 summation order, and a 1-ulp RMSNorm difference that
+            # can move an E4M3 code (quant_ops README). A layout or scale error is O(1).
+            assert metrics["rel_rms"] < 1e-3 and metrics["cosine_similarity"] > 0.999999, (
+                valid_rows, layer, metrics)
+            assert torch.equal(summed["kernels"][layer, valid_rows:], residual[valid_rows:])
