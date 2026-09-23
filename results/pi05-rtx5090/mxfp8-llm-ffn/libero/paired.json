@@ -1,0 +1,57 @@
+[
+ {
+  "suite": "libero_spatial",
+  "episodes": 500,
+  "baseline": 496,
+  "candidate": 496,
+  "reference": 492,
+  "both": 493,
+  "baseline_only": 3,
+  "candidate_only": 3,
+  "mcnemar_p": 1.0
+ },
+ {
+  "suite": "libero_object",
+  "episodes": 500,
+  "baseline": 489,
+  "candidate": 493,
+  "reference": 493,
+  "both": 486,
+  "baseline_only": 3,
+  "candidate_only": 7,
+  "mcnemar_p": 0.34375
+ },
+ {
+  "suite": "libero_goal",
+  "episodes": 500,
+  "baseline": 491,
+  "candidate": 493,
+  "reference": 492,
+  "both": 486,
+  "baseline_only": 5,
+  "candidate_only": 7,
+  "mcnemar_p": 0.7744140625
+ },
+ {
+  "suite": "libero_10",
+  "episodes": 500,
+  "baseline": 460,
+  "candidate": 465,
+  "reference": 464,
+  "both": 445,
+  "baseline_only": 15,
+  "candidate_only": 20,
+  "mcnemar_p": 0.49955983320251107
+ },
+ {
+  "suite": "all",
+  "episodes": 2000,
+  "baseline": 1936,
+  "candidate": 1947,
+  "reference": 1941,
+  "both": 1910,
+  "baseline_only": 26,
+  "candidate_only": 37,
+  "mcnemar_p": 0.20736789985685422
+ }
+]

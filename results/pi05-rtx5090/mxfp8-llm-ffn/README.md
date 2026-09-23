@@ -22,7 +22,9 @@ measures **30.07 ms** ([`measurements/bf16-shipped.json`](measurements/bf16-ship
 separate processes: 30.15 → 21.76 ms, **−8.39 ms (−27.8%)**
 ([`final-bf16-vs-mxfp8-*.json`](measurements/)). Kernel against recipe
 reference within the unchanged BF16 tolerances; official parity passes at both
-row buckets with about twice BF16's action error. LIBERO closed loop not run.
+row buckets with about twice BF16's action error. **LIBERO task success does
+not drop**: 1947/2000 against BF16's 1936/2000 on the same code and episodes
+(paired difference +0.55 pp, 95% interval [−0.23, +1.33] pp; see LIBERO below).
 
 ![Optimization progress](progress.svg)
 
@@ -84,7 +86,50 @@ layers the quantized comparison drifts about twice as far as the BF16 one,
 because a BF16-level difference upstream can move an E4M3 code. The action
 chunk is unaffected. Against the official model, MXFP8 doubles BF16's action
 error, the same ratio as on the LIBERO observations. LIBERO closed-loop
-success has not been run for this recipe.
+success is in the next section.
+
+## LIBERO task success
+
+The deployed kernels (005 at `f2b37e2`, which adds the two-view prefix to the
+MXFP8 backend) against BF16 shipped on the same code, with the protocol of the
+earlier Flash-VLA and official runs: OpenPI's `pi05_libero` checkpoint, 4 suites
+× 10 tasks × 50 trials, seed 7, 10 denoising steps, replanning every 5 steps.
+An episode is fixed by suite, task and trial (initial state, simulator seed and
+policy noise), so the variants are compared episode by episode
+([`libero/paired.md`](libero/paired.md), `lab/quantization/libero_paired.py`).
+
+| suite | BF16 | MXFP8 | Δ | only BF16 | only MXFP8 | McNemar p | official (earlier run) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| libero_spatial | 496/500 (99.2%) | 496/500 (99.2%) | +0.0 pp | 3 | 3 | 1.00 | 492 (98.4%) |
+| libero_object | 489/500 (97.8%) | 493/500 (98.6%) | +0.8 pp | 3 | 7 | 0.34 | 493 (98.6%) |
+| libero_goal | 491/500 (98.2%) | 493/500 (98.6%) | +0.4 pp | 5 | 7 | 0.77 | 492 (98.4%) |
+| libero_10 | 460/500 (92.0%) | 465/500 (93.0%) | +1.0 pp | 15 | 20 | 0.50 | 464 (92.8%) |
+| **all** | **1936/2000 (96.8%)** | **1947/2000 (97.3%)** | **+0.55 pp** | 26 | 37 | 0.21 | 1941 (97.0%) |
+
+- No suite loses success; the paired difference over all 2000 episodes is
+  +0.55 pp with a 95% interval of [−0.23, +1.33] pp, so a drop of more than a
+  quarter point is excluded. The recipe's acceptance margin is still an open
+  item of the quantization design; this is the evidence for it.
+- The BF16 control reproduces the earlier BF16 run (`21d95c3` with the same
+  two-view changes) with no success flip in 2000 episodes and 24 episodes of
+  different length, so on fixed numerics the closed loop is nearly
+  deterministic. The 63 episodes where MXFP8 and BF16 disagree are MXFP8's
+  numerics moving trajectories, and they split 37 to 26 in MXFP8's favour; the
+  earlier BF16 and official runs disagree on 51 (23 only BF16, 28 only official).
+- Inference per chunk on this two-view, chunk-10 shape: 19.8 ms MXFP8 against
+  26.8 ms BF16, as the LIBERO harness times it (wall time per policy call).
+
+Two things this evaluation borrows, neither committed here:
+
+- The two-view graph and the shape generalizations of the expert and backbone
+  backends that LIBERO needs are another contributor's uncommitted work in the
+  main checkout (`pipeline.py`, `bucketed_backbone.py`, `cutlass_backbone.{cu,py}`,
+  `cutlass_expert_residual.py`, `triton_qk_attention.py`); they were applied to
+  this worktree unchanged, and both variants ran on them (every report's
+  `source_changes` lists them). The MXFP8 side of the two-view prefix is
+  committed (`f2b37e2`): a 712-row prefix runs one full-row plan per GEMM.
+- `eval/libero` is also that uncommitted work; its copy here only adds
+  `--quantization`, passed to the runner and recorded in the report.
 
 ## 000 — Fake-quant reference, start
 
