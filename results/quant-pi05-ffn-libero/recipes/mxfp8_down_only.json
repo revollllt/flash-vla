@@ -1,0 +1,1 @@
+{"gate_up": ["bf16", "bf16", "bf16", "bf16", "bf16", "bf16", "bf16", "bf16", "bf16", "bf16", "bf16", "bf16", "bf16", "bf16", "bf16", "bf16", "bf16", "bf16"], "down": ["mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8", "mxfp8"]}
