@@ -2,9 +2,11 @@
 
 Optimization run of the quantized workload `mxfp8-llm-ffn` on branch
 `exp/pi05-5090/mxfp8-llm-ffn`, starting at `29a29ea`. The recipe puts the three
-GEMMs of all 18 LLM-backbone FFN layers (gate, up, down) in MXFP8: E4M3 values
+GEMMs of every LLM-backbone FFN layer (gate, up, down) in MXFP8: E4M3 values
 with one UE8M0 scale per 32 elements along K, weights quantized once from BF16,
 activations quantized on the device. Every other call site keeps its BF16 route.
+The forward runs 17 of the 18 FFN layers: the last one does not reach the prefix
+KV cache, so the graph omits it in every plan.
 The recipe was approved on its quality on 408 LIBERO observations
 ([`quant-pi05-ffn-libero`](../../quant-pi05-ffn-libero/compare.md)); its math is
 fixed in `rtx5090/pi05/target.py` (`QUANTIZATION`) and recorded in every
@@ -117,5 +119,26 @@ runs do not overlap (min 21.91 / p99 22.14 against min 22.41 / p99 22.75).
 Official parity and the 2-layer isolated check are unchanged
 ([`002-official-mxfp8-llm-ffn.json`](correctness/002-official-mxfp8-llm-ffn.json),
 [`002-recipe-layers2-isolated.json`](correctness/002-recipe-layers2-isolated.json)).
-The gain is below the estimate: the down GEMM at M = 896 has 112 tiles for 170
-SMs, so dropping a tile row shortens no wave there.
+
+The screen at both row counts
+([`gemm-screen-splitk.json`](gemm-screen-splitk.json)) puts the saving at 30 µs
+(gate/up) and 14 µs (down) per layer, 0.74 ms over 17 layers. The shortfall of
+about 0.2 ms is the unselected plan: 34 extra launches, each a node that must
+wait for its predecessor before the next GEMM may start, which also removes the
+PDL overlap the GEMM had with its producer.
+
+## 003 — One launch per bucketed GEMM, reverted
+
+Hypothesis: the ~0.2 ms 002 left on the table is the unselected plan's launch,
+so carrying both problems' parameters in one kernel and letting every CTA pick
+one from the mask should recover it. Correct (the backend test, official parity
+and the 2-layer isolated check are unchanged), but slower: **22.41 ms** against
+002's 21.96 ms (revision `83e88fe`).
+
+The cause is in the compiled kernels: choosing the parameter object at run time
+turns every parameter load into a generic load, and ptxas spills (up to 202
+bytes of spill stores per kernel, against at most 60 before). Two fixed call
+sites instead of a selected reference spill more (412 bytes), since the whole
+GEMM body is inlined twice. A single launch would need the choice made below
+the kernel's parameter block, in the tile scheduler, which CUTLASS does not
+expose; the two-launch design of 002 stays.
