@@ -1,6 +1,7 @@
 """The Pi0.5 fake-quant FFN backend follows its per-layer recipe and keeps the
 BF16 route's rounding points: a BF16 layer equals the torch route exactly, and a
-quantized layer equals the fake-quant composition written out here."""
+quantized layer equals the fake-quant composition written out here, when
+replayed from a CUDA graph as the runner replays it."""
 import json
 from pathlib import Path
 
@@ -40,12 +41,27 @@ def test_fake_quant_ffn_follows_its_recipe_per_layer(tmp_path: Path) -> None:
     stacked_down = random_bf16(2, ffn, dim, scale=0.05, seed=4)
     hidden = random_bf16(rows, ffn, scale=1.0, seed=5)
     residual = random_bf16(rows, dim, scale=1.0, seed=6)
-    outputs = []
-    for layer in range(2):   # the forward's order numbers the layers
-        out, x_norm = torch.empty(rows, ffn, device="cuda", dtype=torch.bfloat16), torch.empty_like(x)
-        gated(x, stacked_gate[layer], stacked_up[layer], out, x_norm, None)
-        summed = down(hidden, stacked_down[layer], residual.clone(), None)
-        outputs.append((out, summed))
+    gated_out = torch.empty(2, rows, ffn, device="cuda", dtype=torch.bfloat16)
+    summed = residual.expand(2, rows, dim).clone()
+    x_norm = torch.empty_like(x)
+
+    def _forward() -> None:
+        for layer in range(2):   # the forward's order numbers the layers
+            gated(x, stacked_gate[layer], stacked_up[layer], gated_out[layer], x_norm, None)
+            down(hidden, stacked_down[layer], summed[layer], None)
+
+    # Eager warmup quantizes the weights; the captured replay must match it.
+    stream = torch.cuda.Stream()
+    stream.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(stream):
+        _forward()
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph, stream=stream):
+            _forward()
+    summed.copy_(residual.expand(2, rows, dim))
+    graph.replay()
+    torch.cuda.synchronize()
+    outputs = [(gated_out[layer], summed[layer]) for layer in range(2)]
 
     x_fp32 = x.float()
     normalized = (x_fp32 * torch.rsqrt(x_fp32.pow(2).mean(-1, keepdim=True) + torch_ops.RMS_EPS)

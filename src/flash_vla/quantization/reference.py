@@ -31,10 +31,11 @@ from .formats import MXFP8, NVFP4
 
 E4M3_MAX = 448.0
 E2M1_MAX = 6.0
-E2M1_VALUES = (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)  # magnitude of codes 0-7
-# The kernels multiply by float32 reciprocals of the format maxima.
-E4M3_MAX_RECIPROCAL = torch.tensor(1.0 / E4M3_MAX, dtype=torch.float32)
-E2M1_MAX_RECIPROCAL = torch.tensor(1.0 / E2M1_MAX, dtype=torch.float32)
+# The kernels multiply by float32 reciprocals of the format maxima. Python floats
+# holding those float32 values keep every function here free of host-to-device
+# copies, so they run inside CUDA graph capture.
+E4M3_MAX_RECIPROCAL = torch.tensor(1.0 / E4M3_MAX, dtype=torch.float32).item()
+E2M1_MAX_RECIPROCAL = torch.tensor(1.0 / E2M1_MAX, dtype=torch.float32).item()
 FLOAT32_MIN_NORMAL = torch.finfo(torch.float32).tiny
 
 
@@ -49,7 +50,7 @@ def quantize_mxfp8(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     blocks = x.float().view(rows, cols // MXFP8.block, MXFP8.block)
     block_amax = blocks.abs().amax(-1)                                  # fp32 [M, K/32]
     # cvt.rp.satfinite.ue8m0: the smallest 2**(code - 127) >= amax / 448, code in [0, 254].
-    scale_target = flush_subnormals(block_amax * E4M3_MAX_RECIPROCAL.to(x.device))
+    scale_target = flush_subnormals(block_amax * E4M3_MAX_RECIPROCAL)
     mantissa, exponent = torch.frexp(scale_target)
     ceil_log2 = torch.where(mantissa == 0.5, exponent - 1, exponent)
     scale_code = torch.where(scale_target > 0, (ceil_log2 + 127).clamp(0, 254), 0).to(torch.uint8)
@@ -69,7 +70,7 @@ def quantize_nvfp4(x: torch.Tensor, global_scale: float | torch.Tensor
     blocks = flush_subnormals(x.float().view(rows, cols // NVFP4.block, NVFP4.block))
     block_amax = blocks.abs().amax(-1)                                  # fp32 [M, K/16]
     scale_target = flush_subnormals(
-        encode_scale * flush_subnormals(block_amax * E2M1_MAX_RECIPROCAL.to(x.device)))
+        encode_scale * flush_subnormals(block_amax * E2M1_MAX_RECIPROCAL))
     scale_e4m3 = scale_target.clamp(max=E4M3_MAX).to(torch.float8_e4m3fn)
     inverse_scale = torch.where(
         block_amax != 0, 1.0 / flush_subnormals(scale_e4m3.float() * (1.0 / encode_scale)), 0.0)
@@ -97,11 +98,15 @@ def dequantize_nvfp4(packed: torch.Tensor, scale_e4m3: torch.Tensor,
                      global_scale: float | torch.Tensor) -> torch.Tensor:
     """(E2M1 pairs uint8 [M, K/2], UE4M3 uint8 [M, K/16], encode scale S) -> fp32 [M, K]."""
     rows = packed.shape[0]
-    code_values = torch.tensor(E2M1_VALUES + tuple(-v for v in E2M1_VALUES), device=packed.device)
-    code = torch.stack((packed & 0xF, packed >> 4), dim=-1).view(rows, -1).long()
-    encode_scale = torch.as_tensor(global_scale, dtype=torch.float32, device=packed.device)
-    block_scale = scale_e4m3.view(torch.float8_e4m3fn).float() / encode_scale
-    return (code_values[code].view(rows, -1, NVFP4.block) * block_scale[..., None]).view(rows, -1)
+    code = torch.stack((packed & 0xF, packed >> 4), dim=-1).view(rows, -1).int()
+    # E2M1 magnitude codes 0-7 are 0, 0.5, 1, 1.5, 2, 3, 4, 6: subnormal below
+    # code 2, else 2^(exponent - 1) * (1 + mantissa / 2); bit 3 is the sign.
+    exponent, mantissa = (code >> 1) & 3, (code & 1).float()
+    magnitude = torch.where(exponent == 0, 0.5 * mantissa,
+                            torch.exp2(exponent.float() - 1) * (1 + 0.5 * mantissa))
+    values = torch.where(code >= 8, -magnitude, magnitude)
+    block_scale = scale_e4m3.view(torch.float8_e4m3fn).float() / global_scale
+    return (values.view(rows, -1, NVFP4.block) * block_scale[..., None]).view(rows, -1)
 
 
 def rms_norm(x: torch.Tensor, weight: torch.Tensor | None = None, *,
