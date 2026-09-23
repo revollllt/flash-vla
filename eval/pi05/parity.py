@@ -169,9 +169,11 @@ def capture(checkpoint: str | None, out: str, *, prompt: str = DEFAULT_PROMPT, s
 
 def compare(oracle: str, checkpoint: str, *, target: str = "rtx5090/pi05",
             checkpoint_id: str, checkpoint_digest: str | None = None,
-            plan: str = "shipped", layers: int | None = None,
+            plan: str = "shipped", quantization: str | None = None, layers: int | None = None,
             device: str = "cuda", tokenizer_path: str | None = None) -> dict[str, object]:
-    """Replay the oracle's fixture through the Target and report the difference."""
+    """Replay the oracle's fixture through the Target and report the difference.
+    A `quantization` recipe is judged against the BF16 oracle with its own
+    tolerance tier."""
     directory = Path(oracle)
     metadata = json.loads((directory / "official-eager.json").read_text())
     expected = load_file(str(directory / "official-eager.safetensors"))
@@ -180,7 +182,7 @@ def compare(oracle: str, checkpoint: str, *, target: str = "rtx5090/pi05",
     n_valid = metadata["fixture"]["n_valid_prefix"]
     depth = layers if layers is not None else metadata["layers_captured"]
 
-    engine = build(target, plan, converted_checkpoint=checkpoint,
+    engine = build(target, plan, quantization=quantization, converted_checkpoint=checkpoint,
                    checkpoint_id=checkpoint_id,
                    checkpoint_digest=checkpoint_digest or checkpoint_id,
                    chunk_size=chunk, steps=steps, layers=depth, device=device,
@@ -282,6 +284,8 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--checkpoint-digest", default=None)
     check.add_argument("--target", default="rtx5090/pi05")
     check.add_argument("--plan", default="shipped")
+    check.add_argument("--quantization", default=None,
+                       help="one of the Target's quantization recipes; default its precision")
     check.add_argument("--layers", type=int, default=None)
     check.add_argument("--device", default="cuda")
     check.add_argument("--tokenizer", dest="tokenizer_path", default=None)

@@ -12,6 +12,14 @@ covers precision/quantization and cache behavior. Checkpoint values and input
 fixtures are measurement context; changing them does not redefine architecture.
 Plan and source revision identify the implementation being compared.
 
+Quantization is a build-time choice among the Target's approved recipes
+(`VLA.QUANTIZATION`, `quantization=<recipe>`). A recipe fixes the math and the
+call sites it quantizes, routes those call sites to its kernels in the shipped
+plan and to its fake-quant reference in the reference plan, and is recorded in
+the identity's execution variant, so each recipe is its own workload. The
+runner rejects a plan that runs a recipe's call sites on other backends or a
+recipe's backends anywhere else.
+
 ## Components and dependencies
 
 ```text

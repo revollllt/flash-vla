@@ -13,6 +13,10 @@ TOLERANCES = {
         "max_cosine_step": 0.005,
     },
 }
+# A quantization recipe's kernels against its fake-quant reference plan. They
+# reproduce the reference's arithmetic up to FP32 summation order and every other
+# call site keeps its BF16 route, so the BF16 requirements apply unchanged.
+TOLERANCES["mxfp8"] = TOLERANCES["bf16"]
 
 
 def tolerances(precision: str = "bf16"):

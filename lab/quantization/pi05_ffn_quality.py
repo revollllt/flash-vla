@@ -6,9 +6,12 @@ compare  replays those observations through runners whose backbone FFN is
          fake-quantized (rtx5090/pi05/backends/fake_quant_ffn.py) and reports
          the error of their normalized action chunks against the BF16 runner's.
          Recipes: all MXFP8, each group alone in MXFP8, all NVFP4, and the
-         sensitivity scan (all MXFP8 with one layer's gate/up or down in NVFP4).
-plan     writes a plan JSON (shipped routes, backbone FFN on fake-quant-<fmt>)
-         for `eval.libero --plan`, the closed-loop task-success check.
+         sensitivity scan (all MXFP8 with one layer's gate/up or down in NVFP4);
+         `mxfp8_kernels` is the shipped plan under the mxfp8-llm-ffn recipe,
+         the kernels themselves. Fake-quant runners are built under that recipe
+         so its reference backend may serve the FFN; the per-layer formats of
+         the runner asset `quantization_recipe` override it, which is what the
+         scan explores.
 
 For scale: BF16 Flash-VLA against the official OpenPI model on one observation
 differs by relative L2 0.0048 on normalized actions
@@ -18,6 +21,7 @@ Run in the LIBERO environment of artifacts/libero/run_libero.sh (its exports),
 from the repository root, under the GPU lock.
 """
 import argparse
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import statistics
@@ -38,6 +42,16 @@ from flash_vla.runtime import ModelRunner
 SUITES = ("libero_spatial", "libero_object", "libero_goal", "libero_10")
 FFN_CALL_SITES = ("llm_backbone_norm_gated_ffn", "llm_backbone_ffn_down_residual")
 Recipe = dict[str, list[str]]    # {"gate_up": [fmt per layer], "down": [fmt per layer]}
+QUANTIZATION = "mxfp8-llm-ffn"
+
+
+@dataclass(frozen=True)
+class Variant:
+    """A runner to compare: its plan and quantization, and the per-layer formats
+    the fake-quant backend runs (None: no fake quantization)."""
+    plan: str | dict[str, str]
+    quantization: str
+    recipe: Recipe | None
 
 
 class RecordingPolicy:
@@ -58,23 +72,21 @@ class RecordingPolicy:
         return self.policy.infer(obs, noise)
 
 
-def fake_quant_plan(fmt: str) -> dict[str, str]:
-    """The shipped routes with the backbone FFN on the fake-quant backend."""
-    return {**TARGET.plan, **{call_site: f"fake-quant-{fmt}" for call_site in FFN_CALL_SITES}}
-
-
-def recipes() -> dict[str, Recipe | None]:
-    """name -> recipe; None is the BF16 shipped plan every other recipe is compared with."""
-    uniform = lambda gate_up, down: {"gate_up": [gate_up] * ENCODER_LAYERS,
-                                     "down": [down] * ENCODER_LAYERS}
-    named: dict[str, Recipe | None] = {
-        "bf16": None, "mxfp8": uniform("mxfp8", "mxfp8"), "mxfp8_gate_up_only": uniform("mxfp8", "bf16"),
-        "mxfp8_down_only": uniform("bf16", "mxfp8"), "nvfp4": uniform("nvfp4", "nvfp4")}
+def variants() -> dict[str, Variant]:
+    """name -> variant; "bf16", the BF16 shipped plan, is what the others are compared with."""
+    fake_quant_plan = {**TARGET.plan, **{site: "fake-quant-mxfp8" for site in FFN_CALL_SITES}}
+    fake_quant = lambda gate_up, down: Variant(fake_quant_plan, QUANTIZATION, {
+        "gate_up": [gate_up] * ENCODER_LAYERS, "down": [down] * ENCODER_LAYERS})
+    named = {
+        "bf16": Variant("shipped", "bf16", None),
+        "mxfp8_kernels": Variant("shipped", QUANTIZATION, None),
+        "mxfp8": fake_quant("mxfp8", "mxfp8"), "mxfp8_gate_up_only": fake_quant("mxfp8", "bf16"),
+        "mxfp8_down_only": fake_quant("bf16", "mxfp8"), "nvfp4": fake_quant("nvfp4", "nvfp4")}
     for group in ("gate_up", "down"):
         for layer in range(ENCODER_LAYERS):
-            recipe = uniform("mxfp8", "mxfp8")
-            recipe[group][layer] = "nvfp4"
-            named[f"nvfp4_{group}_L{layer:02d}"] = recipe
+            variant = fake_quant("mxfp8", "mxfp8")
+            variant.recipe[group][layer] = "nvfp4"
+            named[f"nvfp4_{group}_L{layer:02d}"] = variant
     return named
 
 
@@ -121,23 +133,24 @@ def compare(args: argparse.Namespace) -> None:
     weights = fold(converted_checkpoint(directory), steps=10)
     tokenizer = LiberoTokenizer(args.tokenizer, config["max_token_len"])
     args.out.mkdir(parents=True, exist_ok=True)
-    selected = {name: recipe for name, recipe in recipes().items()
+    selected = {name: variant for name, variant in variants().items()
                 if name == "bf16" or any(pattern in name for pattern in args.only.split(","))}
     reference: torch.Tensor | None = None
     rows = []
-    for name, recipe in selected.items():
+    for name, variant in selected.items():
         recipe_path = args.out / "recipes" / f"{name}.json"
         recipe_path.parent.mkdir(exist_ok=True)
-        recipe_path.write_text(json.dumps(recipe) if recipe is not None else "null")
+        recipe_path.write_text(json.dumps(variant.recipe) + "\n")
         runner = ModelRunner(declare("rtx5090/pi05").target, weights, checkpoint_id="openpi/pi05_libero",
-                             plan=TARGET.plan if recipe is None else fake_quant_plan("mxfp8"),
+                             plan=variant.plan, quantization=variant.quantization,
                              num_views=2, chunk_size=10, steps=10, prompt_len=config["max_token_len"],
                              tokenizer=tokenizer, prompt="pick up the object",
-                             assets={} if recipe is None else {"quantization_recipe": recipe_path})
+                             assets={} if variant.recipe is None
+                             else {"quantization_recipe": recipe_path})
         actions = normalized_actions(runner, tokenizer, stats, dataset)
         del runner
         torch.cuda.empty_cache()
-        reference = actions if recipe is None else reference
+        reference = actions if name == "bf16" else reference
         per_observation = [error_metrics(reference[index, :, :7], actions[index, :, :7])
                            for index in range(len(actions))]
         row = dict(recipe=name, observations=len(actions),
@@ -174,11 +187,6 @@ def render_summary(rows: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def plan(args: argparse.Namespace) -> None:
-    args.out.write_text(json.dumps(fake_quant_plan(args.fmt), indent=1) + "\n")
-    print(args.out)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
@@ -197,11 +205,8 @@ def main() -> None:
     compare_parser.add_argument("--dataset", type=Path, required=True)
     compare_parser.add_argument("--only", default="", help="comma-separated substrings of recipe names")
     compare_parser.add_argument("--out", type=Path, required=True)
-    plan_parser = commands.add_parser("plan")
-    plan_parser.add_argument("--fmt", choices=["mxfp8", "nvfp4"], required=True)
-    plan_parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
-    {"collect": collect, "compare": compare, "plan": plan}[args.command](args)
+    {"collect": collect, "compare": compare}[args.command](args)
 
 
 if __name__ == "__main__":

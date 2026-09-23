@@ -34,7 +34,7 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
           declare: bool = False, checkpoint: str | None = None,
           converted_checkpoint: str | None = None,
           checkpoint_id: str | None = None, checkpoint_digest: str | None = None,
-          openpi_config: str | None = None, target=None):
+          openpi_config: str | None = None, quantization: str | None = None, target=None):
     """Build a Pi0.5 runner on synthetic or OpenPI weights.
 
     `target` defaults to H100; Pi0.5's checkpoint, tokenizer and fixture carry no
@@ -42,7 +42,7 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
     from `checkpoint` (loaded through OpenPI, which validates the named upstream
     config), or from `converted_checkpoint` (already converted, read without
     OpenPI -- it resolves no config, so the caller supplies the shape profile
-    and the immutable ID).
+    and the immutable ID). `quantization` names one of the Target's recipes.
     """
     if target is None:
         from flash_vla.hardware.nvidia.h100.pi05 import TARGET as target
@@ -82,7 +82,7 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
     if declare:
         runner = ModelRunner(target, None, checkpoint_id=checkpoint_id,
                              checkpoint_digest=checkpoint_digest, plan=plan,
-                             device=device, capture=False, **config)
+                             quantization=quantization, device=device, capture=False, **config)
     else:
         if converted_checkpoint is not None:
             source = openpi05.converted_checkpoint(converted_checkpoint)
@@ -93,7 +93,8 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
             source = openpi05.target_checkpoint(model)
             del model
         runner = ModelRunner(target, fold(source, steps=steps), checkpoint_id=checkpoint_id,
-                             checkpoint_digest=checkpoint_digest, plan=plan, device=device,
+                             checkpoint_digest=checkpoint_digest, plan=plan,
+                             quantization=quantization, device=device,
                              tokenizer=Pi05Tokenizer(tokenizer_path), **config)
     fixture = {"producer": "flash-vla/pi05-inputs-v1", "seed": seed, "prompt": prompt}
     runner.measurement_context["fixture"] = {

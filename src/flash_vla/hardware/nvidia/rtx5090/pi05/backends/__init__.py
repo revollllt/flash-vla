@@ -20,6 +20,7 @@ from . import cutlass_vision as _cutlass_vision
 from . import cutlass_expert_residual as _cutlass_expert_residual
 from . import fused_vision as _fused_vision
 from . import fused_prefix_qkv as _fused_prefix_qkv
+from . import mxfp8_backbone as _mxfp8_backbone
 from .fake_quant_ffn import FakeQuantFFN
 
 BACKENDS = {
@@ -40,9 +41,10 @@ BACKENDS = {
     "cutlass-expert-residual": _cutlass_expert_residual,
     "fused-vision": _fused_vision,
     "fused-prefix-qkv": _fused_prefix_qkv,
-    # Quality measurement of quantization recipes: backbone FFN under fake quantization.
+    # Backbone FFN of the mxfp8-llm-ffn recipe (target.py): its kernels and its
+    # fake-quant reference, which the recipe-quality tools also run per layer.
+    "mxfp8-backbone": _mxfp8_backbone,
     "fake-quant-mxfp8": FakeQuantFFN("mxfp8"),
-    "fake-quant-nvfp4": FakeQuantFFN("nvfp4"),
 }
 
 REGISTRY = Registry(BACKENDS, default="torch")

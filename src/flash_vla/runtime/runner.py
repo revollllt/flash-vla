@@ -34,7 +34,7 @@ from .cuda.arena import StaticArena
 from .cuda.program import Program, Segment, Step
 from .engine import wrap_ops
 from .graph import BufRef, Graph, Node, WeightRef
-from .identity import Identity, validate_weight_schema
+from .identity import ExecutionVariant, Identity, validate_weight_schema
 from .vla import DTYPES, VLA
 
 
@@ -85,6 +85,11 @@ class ModelRunner:
     for this runner's input sampler and backend factories. It is not part of
     configuration, shape, graph arguments or identity.
 
+    quantization names one of the Target's recipes (`VLA.QUANTIZATION`), or its
+    precision policy. It selects the named plans' routes for the recipe's call
+    sites, is checked against the resolved routes, and is recorded in the
+    identity's execution variant.
+
     Python's cyclic collector is disabled while the stages are captured (a
     collection inside a capture frees device memory and invalidates the
     capture) and run once afterwards. That is preparation, not a deployment
@@ -97,8 +102,9 @@ class ModelRunner:
     def __init__(self, target: VLA, checkpoint: Mapping[str, torch.Tensor] | None = None, *,
                  checkpoint_id: str | None = None, checkpoint_digest: str | None = None,
                  checkpoint_signature: str | None = None, model_revision: str | None = None,
-                 plan: Any = "shipped", device: str = "cuda", capture: bool = True,
-                 warmup: int = 3, assets: Mapping[str, Any] | None = None, **config: Any) -> None:
+                 plan: Any = "shipped", quantization: str | None = None, device: str = "cuda",
+                 capture: bool = True, warmup: int = 3, assets: Mapping[str, Any] | None = None,
+                 **config: Any) -> None:
         self.target = target
         if model_revision is not None:
             warnings.warn("model_revision is owned by Target; use checkpoint_id for weights",
@@ -116,13 +122,17 @@ class ModelRunner:
         self.graph: Graph = target.graph(self.shape)
         if checkpoint is not None:
             validate_weight_schema(target.checkpoint_shapes(checkpoint), self.graph.weight_shapes)
-        self.plan: dict[str, str] = target.select_plan(plan)
+        self.quantization: str = target.precision if quantization is None else quantization
+        self.plan: dict[str, str] = target.select_plan(plan, self.quantization)
         routes = target.registry.resolve(self.plan, self.graph.call_sites)
+        target.check_quantization(routes, self.quantization)
+        variant = ExecutionVariant(
+            quantization=target.quantization_recipe(self.quantization).identity())
         self.identity = Identity(target=target.name, hardware=target.hardware,
                                  model=target.model, model_revision=target.model_revision,
                                  inference_signature=target.inference_signature,
                                  shape=self.shape, plan=routes,
-                                 precision=target.precision)
+                                 precision=target.precision, execution_variant=variant)
         self.program: tuple[Step, ...] = tuple(self.graph.program)
         self.stage_outputs = {stage: tuple(outputs)
                               for stage, outputs in target.STAGE_OUTPUTS.items()}

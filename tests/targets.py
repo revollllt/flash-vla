@@ -125,10 +125,19 @@ def _pi05_routes(plan: Mapping[str, str]) -> bool:
     return pair_attn and pair_ffn and oproj_ok
 
 
+def pi05_rtx5090_routes(plan: Mapping[str, str]) -> bool:
+    """The MXFP8 backbone FFN's down GEMM reads the hidden its gated call site
+    leaves in scratch: the pair moves to mxfp8-backbone together or not at all.
+    Every other call site routes freely."""
+    return ((plan.get("llm_backbone_norm_gated_ffn_masked") == "mxfp8-backbone")
+            == (plan.get("llm_backbone_ffn_down_residual_masked") == "mxfp8-backbone"))
+
+
 _ROUTE_ORACLES: dict[str, Callable[[Mapping[str, str]], bool]] = {
     "hardware/nvidia/h100/lingbot_vla": lambda plan: len(set(plan.values())) <= 1,
     "hardware/nvidia/h100/pi05": _pi05_routes,
     "hardware/nvidia/h100/pi0": lambda plan: True,
+    "hardware/nvidia/rtx5090/pi05": pi05_rtx5090_routes,
 }
 
 

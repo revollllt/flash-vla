@@ -5,7 +5,8 @@
 
 A Target subclasses `VLA` and supplies the model contract -- its configuration,
 the shape numbers that make up its identity, the weight schema and loader, its
-backend registry, its shipped and reference plans -- and one method, `build`,
+backend registry, its shipped and reference plans, the quantization recipes it
+supports beyond its precision policy -- and one method, `build`,
 that writes the model's computation graph against the op vocabulary with the
 graph API (`runtime/graph.py`). Everything else (inputs, staging, the program,
 stage outputs, costs, plan selection) has a default here that reads the graph.
@@ -64,6 +65,40 @@ class Input:
     buffer: str | None
 
 
+@dataclass(frozen=True)
+class QuantizationRecipe:
+    """A human-approved quantization of some call sites, selected at build time.
+
+    `spec` fixes the math (formats, scale granularity, rounding points) and is
+    recorded, with the call sites, as the Identity's
+    `execution_variant.quantization`, so every recipe is its own workload;
+    `spec["mode"]` names the tolerance tier its kernels meet against its
+    reference. `plan` routes each quantized call site to its kernel backend over
+    the Target's shipped plan; `reference_plan` routes it to the backend that
+    defines the math (fake quantization) over the Target's reference plan.
+    `backends` names every backend implementing the recipe: its call sites
+    accept only these, and no other call site accepts any recipe's backends.
+    Agents optimize the kernels; changing `spec` or the call sites needs approval.
+    """
+    spec: Mapping[str, str]
+    plan: Mapping[str, str]
+    reference_plan: Mapping[str, str]
+    backends: frozenset[str]
+
+    def __post_init__(self) -> None:
+        if set(self.plan) != set(self.reference_plan):
+            raise ValueError("a recipe's plan and reference plan must name the same call sites")
+        if not {*self.plan.values(), *self.reference_plan.values()} <= self.backends:
+            raise ValueError(f"a recipe routes only to its own backends {sorted(self.backends)}")
+
+    def identity(self) -> dict[str, str | list[str]]:
+        """`Identity.execution_variant.quantization`: the spec, plus the call
+        sites of a recipe that quantizes any."""
+        if not self.plan:
+            return dict(self.spec)
+        return {**self.spec, "call_sites": sorted(self.plan)}
+
+
 class VLA:
     """Template base class of a Target. Subclasses declare; they do not run."""
 
@@ -89,6 +124,8 @@ class VLA:
     #: geometry on this hardware, call site -> `Ceiling`; the floor model's
     #: ceiling column uses them in place of the constants' rule.
     CEILINGS: Mapping[str, Ceiling] = {}
+    #: Quantization recipes beyond the `precision` policy, name -> recipe.
+    QUANTIZATION: Mapping[str, QuantizationRecipe] = {}
     #: The backends this Target routes to.
     registry: Registry
 
@@ -175,12 +212,36 @@ class VLA:
             if inp.buffer is not None:
                 buffers[inp.buffer].copy_(inputs[inp.name])
 
-    def select_plan(self, plan: Any) -> dict[str, str]:
-        """`"shipped"`, `"reference"`, a mapping, a JSON object, or a path to one."""
+    def quantization_recipe(self, quantization: str) -> QuantizationRecipe:
+        """The recipe named `quantization`; the `precision` policy is the empty recipe."""
+        if quantization == self.precision:
+            return QuantizationRecipe({"mode": self.precision}, {}, {}, frozenset())
+        if quantization not in self.QUANTIZATION:
+            raise KeyError(f"{self.name} has no quantization {quantization!r}; "
+                           f"it supports {[self.precision, *self.QUANTIZATION]}")
+        return self.QUANTIZATION[quantization]
+
+    def check_quantization(self, routes: Mapping[str, str], quantization: str) -> None:
+        """Raise `ValueError` unless `routes` runs exactly `quantization`: its
+        call sites on its backends and no other call site on a recipe's backend."""
+        recipe = self.quantization_recipe(quantization)
+        quantized = frozenset().union(*(other.backends for other in self.QUANTIZATION.values()))
+        misrouted = {site: backend for site, backend in routes.items()
+                     if (backend not in recipe.backends if site in recipe.plan
+                         else backend in quantized)}
+        if misrouted:
+            raise ValueError(f"quantization {quantization!r} runs {sorted(recipe.plan)} on "
+                             f"{sorted(recipe.backends)} and no other call site on a quantized "
+                             f"backend; misrouted: {misrouted}")
+
+    def select_plan(self, plan: Any, quantization: str = "bf16") -> dict[str, str]:
+        """`"shipped"`, `"reference"`, a mapping, a JSON object, or a path to one.
+        The named plans take `quantization`'s routes for its call sites."""
+        recipe = self.quantization_recipe(quantization)
         if plan is None or plan == "shipped":
-            return dict(self.plan)
+            return {**self.plan, **recipe.plan}
         if plan == "reference":
-            return dict(self.reference_plan)
+            return {**self.reference_plan, **recipe.reference_plan}
         if isinstance(plan, Mapping):
             return dict(plan)
         if isinstance(plan, str):
@@ -198,4 +259,4 @@ class VLA:
         raise TypeError(f"unsupported plan {plan!r}")
 
 
-__all__ = ["DTYPES", "Input", "STAGES", "STAGE_OUTPUTS", "VLA"]
+__all__ = ["DTYPES", "Input", "QuantizationRecipe", "STAGES", "STAGE_OUTPUTS", "VLA"]

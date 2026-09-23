@@ -10,6 +10,7 @@ from typing import Any, Mapping
 
 from flash_vla.hardware.nvidia.h100.pi05.target import Pi05, forward_prefix, set_task
 from flash_vla.runtime.graph import Graph
+from flash_vla.runtime.vla import QuantizationRecipe
 
 from .backends import REGISTRY
 from .backends.bucketed_backbone import MASKED_CALL_SITES
@@ -49,6 +50,26 @@ class Pi05RTX5090(Pi05):
     }
     reference_plan: Mapping[str, str] = {}
 
+    #: The backbone FFN's three GEMMs in MXFP8 on all 18 layers, approved on
+    #: LIBERO observations (results/quant-pi05-ffn-libero). The activation is
+    #: quantized from the BF16 value the BF16 route rounds to, and every other
+    #: rounding point is kept.
+    QUANTIZATION: Mapping[str, QuantizationRecipe] = {
+        "mxfp8-llm-ffn": QuantizationRecipe(
+            spec={"mode": "mxfp8", "recipe": "mxfp8-llm-ffn-v1",
+                  "weight": "e4m3, ue8m0 scale per 32 along K, quantized once from bf16",
+                  "activation": "e4m3, ue8m0 scale per 32 along K, dynamic, from the bf16 "
+                                "rms-norm output and the bf16-rounded gelu_tanh(gate)*up",
+                  "rounding": "fp32 accumulation; gate and up round to bf16; down joins "
+                              "the residual in fp32 and rounds once",
+                  "quantizer": "flashinfer 0.7.0 fast path (quant_ops)"},
+            plan={"llm_backbone_norm_gated_ffn_masked": "mxfp8-backbone",
+                  "llm_backbone_ffn_down_residual_masked": "mxfp8-backbone"},
+            reference_plan={"llm_backbone_norm_gated_ffn_masked": "fake-quant-mxfp8",
+                            "llm_backbone_ffn_down_residual_masked": "fake-quant-mxfp8"},
+            backends=frozenset({"mxfp8-backbone", "fake-quant-mxfp8"})),
+    }
+
     def build(self, g: Graph, shape: Mapping[str, int]) -> None:
         super().build(g, shape)
         mask = g.buf("mask_bias")[:shape["prefix_len"]]
@@ -58,8 +79,8 @@ class Pi05RTX5090(Pi05):
                     node, call_site=MASKED_CALL_SITES[node.call_site],
                     args=(*node.args, mask))
 
-    def select_plan(self, plan: Any) -> dict[str, str]:
-        routes = super().select_plan(plan)
+    def select_plan(self, plan: Any, quantization: str = "bf16") -> dict[str, str]:
+        routes = super().select_plan(plan, quantization)
         # Saved dense plans use standard names; explicit masked routes override them.
         for original, masked in MASKED_CALL_SITES.items():
             if original in routes:

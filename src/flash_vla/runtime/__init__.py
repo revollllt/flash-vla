@@ -14,8 +14,9 @@ from .identity import IDENTITY_SCHEMA_VERSION, PRECISION_POLICIES, Identity, git
 from .ops import OpSpec, Vocabulary
 from .registry import Registry
 from .runner import ModelRunner, Scratch
-from .vla import DTYPES, STAGES, STAGE_OUTPUTS, VLA, Input
+from .vla import DTYPES, STAGES, STAGE_OUTPUTS, VLA, Input, QuantizationRecipe
 
 __all__ = ["BufRef", "DTYPES", "Graph", "IDENTITY_SCHEMA_VERSION", "Identity", "Input",
-           "ModelRunner", "OpSpec", "PRECISION_POLICIES", "Registry", "STAGES",
-           "STAGE_OUTPUTS", "Scratch", "VLA", "Vocabulary", "WeightRef", "git_revision"]
+           "ModelRunner", "OpSpec", "PRECISION_POLICIES", "QuantizationRecipe", "Registry",
+           "STAGES", "STAGE_OUTPUTS", "Scratch", "VLA", "Vocabulary", "WeightRef",
+           "git_revision"]
