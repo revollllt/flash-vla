@@ -82,6 +82,19 @@ construction. OpenPI loading/conversion belongs to `models/pi0/openpi.py` and
 `models/pi05/openpi.py`; evaluation adds official forward adapters. Accuracy,
 latency and profiling tools all consume this same inference entrypoint.
 
+A backend is a `runtime.registry.Backend` value declared beside its
+implementation: the call sites it implements, the factory that builds their
+wrappers from the runner's workspace allocator (`runtime.workspace.Scratch`),
+the route constraints its buffer contracts need, and the kernel-name contract
+of its captured program given the call sites routed to it. A Target's registry
+maps its own backend names to these values; a variant -- the same wrappers with
+a launch attribute armed, one rung of LingBot's replacement ladder -- is a
+`dataclasses.replace` of another backend, so no backend knows the name it is
+registered under. Hand-written CUDA libraries are `hardware/nvidia/native`
+`NativeLibrary` declarations: one compiler lookup (`FLASH_VLA_NVCC`, then
+`CUDA_HOME`, then `PATH`) and one cache under `.cache/cuda_ext/`, keyed on the
+compiler, the command and every source and declared header.
+
 Machine configuration maps logical asset IDs to files. `FLASH_VLA_ASSETS` is a
 JSON mapping for file-backed construction; relative asset paths resolve beside
 that JSON. Explicit path overrides retain their separate checkpoint/fixture IDs.

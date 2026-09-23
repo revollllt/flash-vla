@@ -1,6 +1,7 @@
 """Pi0.5 RTX 5090 routes: torch reference and measured native CUDA fusions."""
 from __future__ import annotations
 
+
 from flash_vla.runtime.registry import Registry
 
 from . import torch_ops as _torch
@@ -21,30 +22,30 @@ from . import cutlass_expert_residual as _cutlass_expert_residual
 from . import fused_vision as _fused_vision
 from . import fused_prefix_qkv as _fused_prefix_qkv
 from . import mxfp8_backbone as _mxfp8_backbone
-from .fake_quant_ffn import FakeQuantFFN
+from . import fake_quant_ffn
 
 BACKENDS = {
-    "torch": _torch,
-    "fused-ffn": _fused_ffn,
-    "fused-qkv": _fused_qkv,
-    "triton-qkv": _triton_qkv,
-    "triton-qkv-finish": _triton_qkv_finish,
-    "fused-backbone": _fused_backbone,
-    "packed-ffn": _packed_ffn,
-    "dual-ffn": _dual_ffn,
-    "fused-attention": _fused_attention,
-    "triton-qk-attention": _triton_qk_attention,
-    "fused-residual": _fused_residual,
-    "cutlass-backbone": _cutlass_backbone,
-    "bucketed-backbone": _bucketed_backbone,
-    "cutlass-vision": _cutlass_vision,
-    "cutlass-expert-residual": _cutlass_expert_residual,
-    "fused-vision": _fused_vision,
-    "fused-prefix-qkv": _fused_prefix_qkv,
+    "torch": _torch.BACKEND,
+    "fused-ffn": _fused_ffn.BACKEND,
+    "fused-qkv": _fused_qkv.BACKEND,
+    "triton-qkv": _triton_qkv.BACKEND,
+    "triton-qkv-finish": _triton_qkv_finish.BACKEND,
+    "fused-backbone": _fused_backbone.BACKEND,
+    "packed-ffn": _packed_ffn.BACKEND,
+    "dual-ffn": _dual_ffn.BACKEND,
+    "fused-attention": _fused_attention.BACKEND,
+    "triton-qk-attention": _triton_qk_attention.BACKEND,
+    "fused-residual": _fused_residual.BACKEND,
+    "cutlass-backbone": _cutlass_backbone.BACKEND,
+    "bucketed-backbone": _bucketed_backbone.BACKEND,
+    "cutlass-vision": _cutlass_vision.BACKEND,
+    "cutlass-expert-residual": _cutlass_expert_residual.BACKEND,
+    "fused-vision": _fused_vision.BACKEND,
+    "fused-prefix-qkv": _fused_prefix_qkv.BACKEND,
     # Backbone FFN of the mxfp8-llm-ffn recipe (target.py): its kernels and its
     # fake-quant reference, which the recipe-quality tools also run per layer.
-    "mxfp8-backbone": _mxfp8_backbone,
-    "fake-quant-mxfp8": FakeQuantFFN("mxfp8"),
+    "mxfp8-backbone": _mxfp8_backbone.BACKEND,
+    "fake-quant-mxfp8": fake_quant_ffn.backend("mxfp8"),
 }
 
 REGISTRY = Registry(BACKENDS, default="torch")

@@ -22,8 +22,8 @@ import json
 import os
 from typing import Mapping
 
+from flash_vla.provenance import canonical_digest, git_revision
 from flash_vla.runtime import ModelRunner
-from flash_vla.runtime.identity import canonical_digest
 
 DEFAULT_PROMPT = "pick up the plate and put it in the sink"
 
@@ -50,6 +50,8 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
     from flash_vla.models.pi05.spec import MAX_TOKEN_LEN, random_checkpoint_revision
     from flash_vla.models.pi05.tokenize import Pi05Tokenizer
     from flash_vla.models.pi05.weights import fold, random_checkpoint
+
+    engine_revision = git_revision()
 
     if checkpoint is not None and converted_checkpoint is not None:
         raise ValueError("pass checkpoint or converted_checkpoint, not both")
@@ -80,7 +82,8 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
     config = dict(num_views=num_views, chunk_size=chunk_size, steps=steps, layers=layers,
                   prompt_len=prompt_len or MAX_TOKEN_LEN, prompt=prompt)
     if declare:
-        runner = ModelRunner(target, None, checkpoint_id=checkpoint_id,
+        runner = ModelRunner(target, None, engine_revision=engine_revision,
+                             checkpoint_id=checkpoint_id,
                              checkpoint_digest=checkpoint_digest, plan=plan,
                              quantization=quantization, device=device, capture=False, **config)
     else:
@@ -92,7 +95,8 @@ def _pi05(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_siz
             model = openpi05.build_model(checkpoint, device, seed=seed, config=reference_config)
             source = openpi05.target_checkpoint(model)
             del model
-        runner = ModelRunner(target, fold(source, steps=steps), checkpoint_id=checkpoint_id,
+        runner = ModelRunner(target, fold(source, steps=steps), engine_revision=engine_revision,
+                             checkpoint_id=checkpoint_id,
                              checkpoint_digest=checkpoint_digest, plan=plan,
                              quantization=quantization, device=device,
                              tokenizer=Pi05Tokenizer(tokenizer_path), **config)
@@ -119,15 +123,18 @@ def _pi0(plan: Any = "shipped", *, seed: int = 0, num_views: int = 3, chunk_size
 
     config = dict(num_views=num_views, chunk_size=chunk_size, steps=steps, layers=layers)
     checkpoint_id = random_checkpoint_revision(seed)
+    engine_revision = git_revision()
     if declare:
-        runner = ModelRunner(target, None, checkpoint_id=checkpoint_id,
+        runner = ModelRunner(target, None, engine_revision=engine_revision,
+                             checkpoint_id=checkpoint_id,
                              checkpoint_digest=checkpoint_id, plan=plan,
                            device=device, capture=False,
                            prompt_len=prompt_len, **config)
     else:
         checkpoint = random_checkpoint(num_views=num_views, chunk_size=chunk_size,
                                        prompt_len=prompt_len, seed=seed, device=device)
-        runner = ModelRunner(target, checkpoint, checkpoint_id=checkpoint_id,
+        runner = ModelRunner(target, checkpoint, engine_revision=engine_revision,
+                             checkpoint_id=checkpoint_id,
                              checkpoint_digest=checkpoint_id, plan=plan,
                            device=device, **config)
     fixture = {"producer": "flash-vla/pi0-inputs-v1", "seed": seed}
@@ -147,10 +154,13 @@ def _lingbot(plan: Any = "shipped", *, seed: int = 42, steps: int = 10, layers: 
     from flash_vla.hardware.nvidia.h100.lingbot_vla import TARGET
     from flash_vla.models.lingbot import load_checkpoint
 
-    source = None
-    if source_checkout is not None:
+    if source_checkout is None:
+        source = None
+        engine_revision = git_revision()
+    else:
         from flash_vla.source import lingbot_target
         TARGET, source = lingbot_target(source_checkout)
+        engine_revision = source["revision"]
 
     if checkpoint_id is None:
         if checkpoint is not None or checkpoint_digest is not None:
@@ -174,13 +184,11 @@ def _lingbot(plan: Any = "shipped", *, seed: int = 42, steps: int = 10, layers: 
                                  if role not in explicit}, asset_config)
         assets.update(explicit)
     runner = ModelRunner(TARGET, None if declare else load_checkpoint(assets["checkpoint"]),
-                         checkpoint_id=checkpoint_id, checkpoint_digest=checkpoint_digest,
+                         engine_revision=engine_revision, checkpoint_id=checkpoint_id, checkpoint_digest=checkpoint_digest,
                          plan=plan, device="cpu" if declare else device,
                          capture=not declare, assets=assets, steps=steps, layers=layers)
     runner.measurement_context["fixture"] = {"id": fixture_id, "digest": fixture_digest}
     if source is not None:
-        from dataclasses import replace
-        runner.identity = replace(runner.identity, engine_revision=source["revision"])
         runner.implementation_source = source
     return runner
 
@@ -207,6 +215,7 @@ def _groot_n17(plan: Any = "shipped", *, seed: int = 0, steps: int = 4, layers: 
 
     explicit = {"checkpoint": checkpoint, "fixture": fixture}
     ids = {"checkpoint": checkpoint_id, "fixture": fixture_id}
+    engine_revision = git_revision()
     for role, path in explicit.items():
         if path is not None and ids[role] is None:
             raise ValueError(f"{role} override requires {role}_id")
@@ -219,7 +228,7 @@ def _groot_n17(plan: Any = "shipped", *, seed: int = 0, steps: int = 4, layers: 
         assets.update({role: Path(path).expanduser().resolve()
                        for role, path in explicit.items() if path is not None})
     runner = ModelRunner(TARGET, None if declare else Checkpoint(assets["checkpoint"]),
-                         checkpoint_id=identifiers["checkpoint"],
+                         engine_revision=engine_revision, checkpoint_id=identifiers["checkpoint"],
                          checkpoint_digest=identifiers["checkpoint"],
                          plan=plan, device=device, capture=capture and not declare, assets=assets,
                          sequence_length=sequence_length, steps=steps, layers=layers)

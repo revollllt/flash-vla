@@ -31,7 +31,8 @@ from flash_vla.models.pi05.spec import ENCODER_LAYERS
 from flash_vla.quantization import formats
 from flash_vla.quantization.fake_quant import (FakeQuantized, dequantized_operand,
                                                dynamic_encode_scale, fake_quant_matmul)
-from flash_vla.runtime.runner import Scratch
+from flash_vla.runtime.registry import Backend
+from flash_vla.runtime.workspace import Scratch
 
 from .torch_ops import RMS_EPS
 
@@ -52,14 +53,12 @@ def kernel_fake_quantize(rows: torch.Tensor, fmt: Literal["mxfp8", "nvfp4"]) -> 
 
 
 class FakeQuantFFN:
-    """A registry entry: every layer in `fmt` unless the runner supplies a recipe."""
-
-    NAMES = NAMES
+    """The fake-quantized FFN: every layer in `fmt` unless the runner supplies a recipe."""
 
     def __init__(self, fmt: LayerFormat) -> None:
         self.fmt = fmt
 
-    def make_wrappers(self, scratch: Scratch, selected_names: set[str] | None = None
+    def make_wrappers(self, scratch: Scratch, selected_names: frozenset[str] | None = None
                       ) -> dict[str, Callable[..., torch.Tensor]]:
         recipe_path = scratch.assets.get("quantization_recipe")
         recipe = (json.loads(Path(recipe_path).read_text()) if recipe_path is not None
@@ -124,3 +123,8 @@ class FakeQuantFFN:
                     "llm_backbone_ffn_down_residual_masked": llm_backbone_ffn_down_residual_masked}
         return {name: wrapper for name, wrapper in wrappers.items()
                 if selected_names is None or name in selected_names}
+
+
+def backend(fmt: LayerFormat) -> Backend:
+    """The registry entry of the FFN fake-quantized to `fmt`."""
+    return Backend(names=NAMES, make_wrappers=FakeQuantFFN(fmt).make_wrappers)

@@ -11,7 +11,10 @@ import triton
 import triton.language as tl
 from triton.language.extra.cuda import libdevice
 
-from .fused_ffn import NAMES, _check, _library
+from flash_vla.runtime.registry import Backend
+
+from . import fused_ffn
+from .fused_ffn import NAMES, check
 
 
 @triton.jit
@@ -70,9 +73,9 @@ def make_wrappers(scratch, selected_names=None) -> dict:
         if key not in workspaces:
             workspaces[key] = scratch(role + "_a", (rows, 1024), x.dtype, x.device)
         a = workspaces[key]
-        lib = _library()
+        lib = fused_ffn.library()
         stream = torch.cuda.current_stream().cuda_stream
-        _check(lib.ada_rms_launch(x.data_ptr(), scale.data_ptr(), a.data_ptr(),
+        check(lib.ada_rms_launch(x.data_ptr(), scale.data_ptr(), a.data_ptr(),
                                  norm_factor.data_ptr(), rows, stream), "ada_rms", rows)
         _dual_dot[(triton.cdiv(rows, 16), 64)](
             a, packed, gate_b, up_b, out, rows, num_warps=4, num_stages=3,
@@ -82,4 +85,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: action_expert_norm_gated_ffn for name in names}
 
 
-__all__ = ["NAMES", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
+
+
+__all__ = ["BACKEND", "NAMES", "make_wrappers"]

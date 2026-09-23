@@ -16,13 +16,12 @@ family rather than one die [isa.target.a_required].
 from __future__ import annotations
 
 import ctypes
-import hashlib
 import os
-import shutil
-import subprocess
 from pathlib import Path
 
 import torch
+
+from flash_vla.hardware.nvidia.native import NativeLibrary
 
 _HERE = Path(__file__).resolve().parent
 _SRC = _HERE / "kernels" / "expert_pointwise.cu"
@@ -30,25 +29,10 @@ _ATTN_SRC = _HERE / "kernels" / "expert_attention.cu"
 _MMA_SRC = _HERE / "kernels" / "expert_attention_mma.cu"
 _QKV_SRC = _HERE / "kernels" / "expert_qkv.cu"
 _HEADERS = sorted((_HERE / "kernels").glob("*.cuh"))
-_REPO = _HERE.parents[7]
-_ARCH = "sm_120f"
+#: A family target: the kernels run on every sm_12x part.
+ARCH = "sm_120f"
 
 _LIB = None
-
-
-def _nvcc() -> str:
-    explicit = os.environ.get("FLASH_VLA_NVCC")
-    if explicit:
-        return explicit
-    home = os.environ.get("CUDA_HOME")
-    if home and (Path(home) / "bin" / "nvcc").is_file():
-        return str(Path(home) / "bin" / "nvcc")
-    found = shutil.which("nvcc")
-    if found:
-        return found
-    raise RuntimeError(
-        "no nvcc: set CUDA_HOME to a CUDA toolkit, put nvcc on PATH, or set "
-        "FLASH_VLA_NVCC")
 
 
 #: Which phase boundary the kernels release their dependent grid at. The PDL
@@ -81,35 +65,25 @@ def _trigger() -> int:
     return _TRIGGERS[name]
 
 
+def native_library() -> NativeLibrary:
+    """The expert kernels, built for the PDL trigger point `FLASH_VLA_PDL_TRIGGER` selects."""
+    return NativeLibrary(
+        name="rtx5090_pi0_pointwise",
+        sources=(_SRC, _ATTN_SRC, _MMA_SRC, _QKV_SRC),
+        arch=("-gencode", f"arch=compute_{ARCH[3:]},code={ARCH}"),
+        flags=(f"-DFLASH_VLA_PDL_TRIGGER={_trigger()}",),
+        headers=tuple(_HEADERS))
+
+
 def build(verbose: bool = False) -> Path:
-    """Compile the shared library if this source and toolchain have not been built."""
-    nvcc = _nvcc()
-    headers = b"".join(h.read_bytes() for h in _HEADERS)
-    tag = hashlib.sha256(_SRC.read_bytes() + _ATTN_SRC.read_bytes()
-                         + _MMA_SRC.read_bytes() + _QKV_SRC.read_bytes()
-                         + headers + nvcc.encode() + _ARCH.encode()
-                         + str(_trigger()).encode()).hexdigest()[:16]
-    directory = _REPO / ".cache" / "cuda_ext" / f"rtx5090_pi0_pointwise_{tag}"
-    directory.mkdir(parents=True, exist_ok=True)
-    out = directory / "libexpert_pointwise.so"
-    if out.exists():
-        return out
-    command = [nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
-               f"-DFLASH_VLA_PDL_TRIGGER={_trigger()}",
-               "-gencode", f"arch=compute_{_ARCH[3:]},code={_ARCH}",
-               "-o", str(out), str(_SRC), str(_ATTN_SRC), str(_MMA_SRC), str(_QKV_SRC)]
-    if verbose:
-        print("[rtx5090 pi0 pointwise build]", " ".join(command), flush=True)
-    result = subprocess.run(command, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"nvcc failed:\n{result.stdout}\n{result.stderr}")
-    return out
+    """Compile the library unless this exact build exists; return its path."""
+    return native_library().build(verbose=verbose)
 
 
 def library(verbose: bool = False):
     global _LIB
     if _LIB is None:
-        lib = ctypes.CDLL(str(build(verbose=verbose)))
+        lib = native_library().load(verbose=verbose)
         lib.flash_vla_pdl_set.argtypes = [ctypes.c_int]
         lib.flash_vla_pdl_set.restype = ctypes.c_int
         lib.rms_norm_launch.argtypes = [ctypes.c_void_p] * 2 + [ctypes.c_int] * 2 + [

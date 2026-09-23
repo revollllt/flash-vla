@@ -60,6 +60,8 @@ from functools import partial
 
 import torch
 
+from flash_vla.runtime.registry import Backend
+
 from ....gemma_expert.backends.tilelang import producers as _producers
 from .kernels import adarms as ada_kernels
 from .kernels import attention as attention_kernels
@@ -579,8 +581,6 @@ _NEEDS_SCRATCH = ("action_expert_attention", "vision_encoder_norm_qkv",
                   "vision_encoder_norm_ffn_up")
 
 #: No route constraints and no extension ops: every call site here is standalone.
-ROUTE_CONSTRAINTS: tuple = ()
-OPS: tuple = ()
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
@@ -592,3 +592,7 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: (partial(ALL_WRAPPERS[name], scratch=scratch) if name in _NEEDS_SCRATCH
                    else ALL_WRAPPERS[name])
             for name in names}
+
+
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)

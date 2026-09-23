@@ -10,7 +10,7 @@ stage outputs and the identity's shape numbers, never by importing a Target.
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from types import SimpleNamespace
+from types import MappingProxyType
 from typing import Any, Callable, Mapping, Protocol, Sequence, runtime_checkable
 
 import torch
@@ -19,6 +19,10 @@ from .cost import SegmentCosts
 from .cuda.program import Step
 from .graph import Graph
 from .identity import Identity
+from .registry import GraphContract, Wrapper
+
+#: Replaces op-table entry `call_site` while `Engine.instrument` is active.
+WrapOp = Callable[[str, Wrapper], Wrapper]
 
 
 @runtime_checkable
@@ -45,9 +49,9 @@ class Engine(Protocol):
     #: Per stage, every call site with its minimal bytes and FLOPs, from the graph.
     costs: SegmentCosts
     #: The op table in force: call site -> wrapper.
-    ops: SimpleNamespace
+    ops: Mapping[str, Wrapper]
     #: Kernel-name patterns the captured program must and must not contain.
-    graph_contract: Mapping[str, Sequence[str]]
+    graph_contract: GraphContract
     #: Call sites the resolved plan must invoke together.
     atomic_groups: Sequence[frozenset[str]]
 
@@ -75,13 +79,13 @@ class Engine(Protocol):
     def run_eager(self, segment: str) -> None:
         """Issue one stage's nodes outside its graph, on the current stream."""
 
-    def instrument(self, wrap: Callable[[str, Callable], Callable]) -> AbstractContextManager:
+    def instrument(self, wrap: WrapOp) -> AbstractContextManager[None]:
         """While active, every op-table entry `name` is replaced by `wrap(name, fn)`."""
 
 
-def wrap_ops(ops: SimpleNamespace, wrap: Callable[[str, Callable], Callable]) -> SimpleNamespace:
-    """A copy of an op table with every callable passed through `wrap`."""
-    return SimpleNamespace(**{name: wrap(name, fn) for name, fn in vars(ops).items()})
+def wrap_ops(ops: Mapping[str, Wrapper], wrap: WrapOp) -> Mapping[str, Wrapper]:
+    """A copy of an op table with every wrapper passed through `wrap`."""
+    return MappingProxyType({name: wrap(name, function) for name, function in ops.items()})
 
 
 def segments(engine: Engine) -> tuple[str, ...]:

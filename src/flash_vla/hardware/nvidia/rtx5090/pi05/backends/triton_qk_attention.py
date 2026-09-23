@@ -13,7 +13,10 @@ import torch
 import triton
 import triton.language as tl
 
-from .fused_attention import NAMES, _library
+from flash_vla.runtime.registry import Backend
+
+from . import fused_attention
+from .fused_attention import NAMES
 
 
 @triton.jit
@@ -37,7 +40,7 @@ def action_expert_attention(Q, K, V, mask, out, prefix_len=None, *, scratch):
     keys = K.shape[0]
     logits = scratch("pi05_attention_logits", (queries, keys), torch.float32, Q.device)
     probabilities = scratch("pi05_attention_probabilities", (queries, keys), Q.dtype, Q.device)
-    lib = _library()
+    lib = fused_attention.library()
     _qk[(triton.cdiv(queries, 32), triton.cdiv(keys, 32))](
         Q, K, logits, queries, keys, num_warps=4, num_stages=3,
         enable_fp_fusion=False, enable_reflect_ftz=False)
@@ -57,4 +60,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: partial(wrappers[name], scratch=scratch) for name in names}
 
 
-__all__ = ["NAMES", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
+
+
+__all__ = ["BACKEND", "NAMES", "make_wrappers"]

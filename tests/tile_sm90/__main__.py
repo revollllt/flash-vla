@@ -16,10 +16,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
-import hashlib
 import json
-import os
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,51 +24,26 @@ from pathlib import Path
 import torch
 
 from eval.metrics import error_metrics
+from flash_vla.hardware.nvidia.native import (
+    CUTLASS_DIR,
+    CUTLASS_VERSION_HEADER,
+    SM90_TILE_HEADERS,
+    TILE_INCLUDE_DIR,
+    NativeLibrary,
+)
 
 _HERE = Path(__file__).resolve().parent
-_REPO = _HERE.parents[1]
 _SRC = _HERE / "primitives.cu"
-_TILE_ROOT = _REPO / "src" / "flash_vla" / "hardware" / "nvidia" / "cuda"
-_CUTLASS = Path(os.environ.get("CUTLASS_DIR", _REPO / "third_party" / "cutlass"))
 
-
-def _build_dir() -> Path:
-    hasher = hashlib.sha256(_SRC.read_bytes())
-    for header in sorted((_TILE_ROOT / "tile" / "sm90").glob("*.cuh")):
-        hasher.update(header.read_bytes())
-    tag = hasher.hexdigest()[:16]
-    d = _REPO / ".cache" / "cuda_ext" / f"tile_sm90_primitives_{tag}"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def build(verbose: bool = False) -> Path:
-    """Compile primitives.cu into a shared object keyed by source + header hash."""
-    out = _build_dir() / "libtile_sm90_primitives.so"
-    if out.exists():
-        return out
-    from torch.utils.cpp_extension import CUDA_HOME
-
-    if CUDA_HOME is None:
-        raise RuntimeError("CUDA toolkit not found; set CUDA_HOME for the build")
-    cuda_home = CUDA_HOME
-    nvcc = os.environ.get("NVCC", "nvcc")
-    cmd = [
-        nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
-        "-arch=sm_90a", "--expt-relaxed-constexpr",
-        f"-I{_CUTLASS}/include", f"-I{_TILE_ROOT}",
-        "-o", str(out), str(_SRC),
-        f"-L{cuda_home}/lib64/stubs", "-lcuda",
-    ]
-    if verbose:
-        print("[tile_sm90 build]", " ".join(cmd), flush=True)
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    # ptxas C7518 (serialized wgmma) is a warning; keep the full log visible.
-    if r.stdout.strip() or r.stderr.strip():
-        print(r.stdout, r.stderr, flush=True)
-    if r.returncode != 0:
-        raise RuntimeError(f"nvcc failed with {r.returncode}")
-    return out
+#: The primitives under test, built like the H100 kernels that use them.
+PRIMITIVES = NativeLibrary(
+    name="tile_sm90_primitives",
+    sources=(_SRC,),
+    arch=("-arch=sm_90a",),
+    flags=("--expt-relaxed-constexpr",),
+    include_dirs=(CUTLASS_DIR / "include", TILE_INCLUDE_DIR),
+    headers=(*SM90_TILE_HEADERS, CUTLASS_VERSION_HEADER),
+    link_driver=True)
 
 
 @dataclass(frozen=True)
@@ -153,7 +125,8 @@ def main() -> int:
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
-    lib = ctypes.CDLL(str(build(verbose=True)))
+    # verbose keeps ptxas's C7518 (serialized wgmma) warnings visible.
+    lib = PRIMITIVES.load(verbose=True)
     lib.tile_sm90_run.restype = ctypes.c_int
     lib.tile_sm90_run.argtypes = [ctypes.c_char_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
 

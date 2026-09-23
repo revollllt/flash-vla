@@ -2,38 +2,36 @@
 from __future__ import annotations
 
 import ctypes
-import os
+from functools import lru_cache
 from pathlib import Path
-import shutil
-import subprocess
 
 import torch
+
+from flash_vla.hardware.nvidia.native import NativeLibrary
+from flash_vla.runtime.registry import Backend
 
 from . import fused_backbone
 
 NAMES = ("llm_backbone_norm_qkv_rope",)
-_SOURCE = Path(__file__).with_suffix(".cu")
+SOURCE = Path(__file__).with_suffix(".cu")
 
 
-def _library():
-    cuda_home = os.environ.get("CUDA_HOME")
-    nvcc = os.environ.get("FLASH_VLA_NVCC") or (
-        str(Path(cuda_home) / "bin/nvcc") if cuda_home else shutil.which("nvcc"))
-    if nvcc is None:
-        raise RuntimeError("set CUDA_HOME or FLASH_VLA_NVCC, or put nvcc on PATH")
-    directory = _SOURCE.parents[7] / ".cache/cuda_ext/rtx5090_pi05_prefix_qkv"
-    directory.mkdir(parents=True, exist_ok=True)
-    output = directory / "libfused_prefix_qkv.so"
-    if not output.exists() or output.stat().st_mtime_ns < max(
-            _SOURCE.stat().st_mtime_ns, Path(__file__).stat().st_mtime_ns):
-        subprocess.run([nvcc, "-O3", "-std=c++17", "--fmad=false", "--shared",
-                        "-Xcompiler", "-fPIC", "-arch=sm_120", str(_SOURCE),
-                        "-o", str(output)], check=True)
-    library = ctypes.CDLL(str(output))
-    library.prefix_rope_scatter.argtypes = [ctypes.c_void_p] * 5 + [
+#: The backbone's RoPE scatter into the prefix KV cache.
+LIBRARY = NativeLibrary(
+    name="rtx5090_pi05_fused_prefix_qkv",
+    sources=(SOURCE,),
+    arch=("-arch=sm_120",),
+    flags=("--fmad=false",))
+
+
+@lru_cache(maxsize=1)
+def library() -> ctypes.CDLL:
+    """The loaded library with its C ABI declared; build it before graph capture."""
+    kernels = LIBRARY.load()
+    kernels.prefix_rope_scatter.argtypes = [ctypes.c_void_p] * 5 + [
         ctypes.c_int32, ctypes.c_void_p]
-    library.prefix_rope_scatter.restype = ctypes.c_int32
-    return library
+    kernels.prefix_rope_scatter.restype = ctypes.c_int32
+    return kernels
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
@@ -55,7 +53,7 @@ def make_wrappers(scratch, selected_names=None) -> dict:
 
     def llm_backbone_norm_qkv_rope(x, weight_qkv, rope, Q, K, V, x_norm):
         if not libraries:
-            libraries.extend((fused_backbone._library(), _library()))
+            libraries.extend((fused_backbone.library(), library()))
         norm_library, rope_library = libraries
         rows = x.shape[0]
         normed = x_norm[:rows]
@@ -74,4 +72,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: llm_backbone_norm_qkv_rope for name in names}
 
 
-__all__ = ["NAMES", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
+
+
+__all__ = ["BACKEND", "NAMES", "make_wrappers"]

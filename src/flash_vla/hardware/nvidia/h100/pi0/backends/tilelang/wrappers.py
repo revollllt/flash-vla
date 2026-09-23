@@ -54,6 +54,7 @@ from functools import partial
 import torch
 
 from flash_vla.runtime.ops import OpSpec, gemm
+from flash_vla.runtime.registry import Backend
 
 from .kernels import base as kernels
 from .kernels import attention as _attention
@@ -470,7 +471,6 @@ OPS = (
     OpSpec("action_expert_action_mlp", ("x", "weight", "bias", "out"), outputs=("out",),
            weights=("weight", "bias"), flops=gemm("x", "weight")),
 )
-ROUTE_CONSTRAINTS: tuple = ()
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
@@ -482,3 +482,7 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: (partial(ALL_WRAPPERS[name], scratch=scratch) if name in _NEEDS_SCRATCH
                    else ALL_WRAPPERS[name])
             for name in names}
+
+
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers, ops=OPS)

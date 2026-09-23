@@ -32,7 +32,7 @@ class _Plan:
         self.workspace = scratch(role, (size,), torch.uint8, x.device)
         self.tensors = (x, weight, gate, out)
         self.handle = ctypes.c_void_p()
-        cutlass_backbone._check(library.expert_split8_down_plan(
+        cutlass_backbone.check(library.expert_split8_down_plan(
             x.data_ptr(), weight.data_ptr(), gate.data_ptr(), out.data_ptr(),
             self.workspace.data_ptr(), torch.cuda.current_stream().cuda_stream,
             ctypes.byref(self.handle)), "expert_split8_down_plan")
@@ -58,7 +58,7 @@ def make_candidate(library, scratch):
         if plan is None:
             plan = _Plan(library, scratch, role, x, weight, gate, out)
             plans[key] = plan
-        cutlass_backbone._check(library.expert_down_run(
+        cutlass_backbone.check(library.expert_down_run(
             plan.handle, torch.cuda.current_stream().cuda_stream), "expert_down_run")
         return out
     return invoke
@@ -116,7 +116,7 @@ def main():
 
     save()
     try:
-        library = cutlass_backbone._library()
+        library = cutlass_backbone.library()
         scratch = Scratch(torch.device("cuda"))
         candidate = make_candidate(library, scratch)
         report.update(native_library=library._name,
@@ -193,7 +193,7 @@ def main():
                       residual_stride=list(calls[0]["residual"].stride()),
                       timer="reset-inclusive CUDA graph, one ABBA with 15 samples per leg",
                       is_deployment_sequence=False)
-        control = getattr(engine.ops, SITE)
+        control = engine.ops[SITE]
         out = torch.empty_like(calls[0]["residual"])
 
         def run(call, function):
@@ -217,7 +217,7 @@ def main():
             if not valid:
                 raise RuntimeError(f"split8 down shallow check failed at call {index}")
 
-        native = fused_ffn._library()
+        native = fused_ffn.library()
         ones = torch.ones_like(calls[0]["gate"])
         projection = torch.empty_like(out)
         report["phase"] = "decomposition"
@@ -226,7 +226,7 @@ def main():
             projection.zero_()
             candidate(call["x"], call["weight"], ones, projection)
             out.copy_(call["residual"])
-            fused_ffn._check(native.gated_residual_launch(
+            fused_ffn.check(native.gated_residual_launch(
                 projection.data_ptr(), call["gate"].data_ptr(), out.data_ptr(), 50,
                 torch.cuda.current_stream().cuda_stream), "gated_residual", 50)
             expected = out.clone()

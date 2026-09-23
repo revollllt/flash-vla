@@ -46,7 +46,7 @@ def main(argv=None) -> int:
     if args.site not in calls:
         raise SystemExit(f"{args.site!r} was not invoked in segment {args.segment!r}; "
                          f"recorded: {sorted(calls)}")
-    fn = getattr(engine.ops, args.site)
+    fn = engine.ops[args.site]
     recorded = calls[args.site]
     print(f"[driver] {args.site}: {len(recorded)} recorded invocations, "
           f"warmup {args.warmup}, capturing {args.calls}", flush=True)

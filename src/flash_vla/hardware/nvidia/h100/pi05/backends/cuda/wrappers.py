@@ -24,13 +24,11 @@ M = _expert.wrappers.M
 ATTENTION_NAMES = _expert.ATTENTION_NAMES
 
 NAMES = frozenset({"llm_backbone_attention"}) | _expert.NAMES
-#: No extension ops: every call site here is one of the standard vocabulary.
-OPS: tuple = ()
 
 
 def make_wrappers(
         scratch,
-        selected_names: set[str] | None = None,
+        selected_names: frozenset[str] | None = None,
         pdl_chain: bool = False) -> dict[str, object]:
     """Build this Target's CUDA op table: the prefix attention and the expert.
 
@@ -53,11 +51,11 @@ def make_wrappers(
 
     table: dict[str, object] = {}
     if "llm_backbone_attention" in selected:
-        table.update(_backbone.make_wrappers(scratch, selected_names={"llm_backbone_attention"}))
+        table.update(_backbone.make_wrappers(scratch, selected_names=frozenset({"llm_backbone_attention"})))
     expert = selected & _expert.NAMES
     if expert:
         table.update(_expert.make_wrappers(
-            scratch, selected_names=expert, pdl_chain=pdl_chain))
+            scratch, selected_names=frozenset(expert), pdl_chain=pdl_chain))
     return table
 
 

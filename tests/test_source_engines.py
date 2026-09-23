@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
@@ -6,6 +7,16 @@ from unittest.mock import patch
 import pytest
 
 from flash_vla import source
+from flash_vla.runtime.registry import Backend
+
+BACKENDS_PACKAGE = (
+    "from flash_vla.runtime.registry import Backend, Registry\n"
+    "from types import SimpleNamespace\n"
+    "from . import upstream\n"
+    "BACKENDS = {{'upstream': Backend(names=frozenset({{'vision'}}), "
+    "make_wrappers=upstream.make_wrappers)}}\n"
+    "REGISTRY = Registry(BACKENDS, default='upstream')\n"
+    "TARGET = SimpleNamespace(marker={marker!r}, state=[])\n")
 
 
 def git(root, *args):
@@ -27,15 +38,13 @@ def checkouts(tmp_path):
     (package / "backends").mkdir(parents=True)
     (package / "backends/upstream.py").write_text("def make_wrappers(*args, **kwargs): return {}\n")
     (package / "__init__.py").write_text("from .backends import TARGET\n")
-    (package / "backends/__init__.py").write_text(
-        "from . import upstream\nBACKENDS={'upstream': upstream}\nfrom types import SimpleNamespace\nTARGET=SimpleNamespace(marker='old', state=[])\n")
+    (package / "backends/__init__.py").write_text(BACKENDS_PACKAGE.format(marker="old"))
     git(current, "add", ".")
     git(current, "commit", "-m", "old")
     old_revision = git(current, "rev-parse", "HEAD")
     old = tmp_path / "old"
     git(current, "worktree", "add", "--detach", str(old), old_revision)
-    (package / "backends/__init__.py").write_text(
-        "from . import upstream\nBACKENDS={'upstream': upstream}\nfrom types import SimpleNamespace\nTARGET=SimpleNamespace(marker='new', state=[])\n")
+    (package / "backends/__init__.py").write_text(BACKENDS_PACKAGE.format(marker="new"))
     git(current, "add", ".")
     git(current, "commit", "-m", "candidate")
     return current, old
@@ -92,11 +101,12 @@ def test_recovery_records_and_notes_do_not_invalidate_committed_execution(checko
 def test_source_wrappers_restore_rope_between_engines_and_after_error():
     official = lambda: "official"
     external = SimpleNamespace(apply_rope=official)
+    names = frozenset({"vision", "prefix"})
 
-    def backend():
+    def backend(enabled):
         original = None
 
-        def make(scratch, selected_names=None, *, enabled=False):
+        def make(scratch, selected_names, *, enabled):
             initialized = False
 
             def vision():
@@ -114,14 +124,11 @@ def test_source_wrappers_restore_rope_between_engines_and_after_error():
                 return external.apply_rope()
 
             return {"vision": vision, "prefix": prefix}
-        return SimpleNamespace(make_wrappers=make)
+        return source.isolate_rope(Backend(names=names, make_wrappers=partial(make, enabled=enabled)))
 
-    first, second = backend(), backend()
-    source.isolate_rope(first)
-    source.isolate_rope(second)
     scratch = SimpleNamespace(assets={"upstream": "/test/upstream"})
-    cached = first.make_wrappers(scratch, enabled=True)
-    reference = second.make_wrappers(scratch, enabled=False)
+    cached = backend(True).make_wrappers(scratch, names)
+    reference = backend(False).make_wrappers(scratch, names)
     with patch.object(source.importlib, "import_module", return_value=external), \
          patch.object(source.sys, "path", list(source.sys.path)):
         assert cached["vision"]() == "cached"
@@ -147,6 +154,8 @@ def test_official_adapter_forwards_source_without_replacing_oracle(tmp_path):
 
 
 def test_prebound_route_factory_is_isolated(checkouts):
+    """A route whose factory was bound at import still runs isolated: isolation
+    wraps the registered backends, not the module attribute a route may bypass."""
     current, _ = checkouts
     package = current / source.BACKENDS.parent
     (package / "backends/upstream.py").write_text(
@@ -161,21 +170,26 @@ def test_prebound_route_factory_is_isolated(checkouts):
         "from .upstream import make_wrappers as bound_factory\n"
         "def make_wrappers(*args, **kwargs): return bound_factory(*args, **kwargs)\n")
     (package / "backends/__init__.py").write_text(
+        "from flash_vla.runtime.registry import Backend, Registry\n"
+        "from types import SimpleNamespace\n"
         "from . import upstream, alias\n"
-        "BACKENDS={'reference': upstream, 'candidate': alias}\n"
-        "TARGET=object()\n")
+        "NAMES = frozenset({'vision', 'prefix'})\n"
+        "BACKENDS = {'reference': Backend(names=NAMES, make_wrappers=upstream.make_wrappers),\n"
+        "            'candidate': Backend(names=NAMES, make_wrappers=alias.make_wrappers)}\n"
+        "REGISTRY = Registry(BACKENDS, default='reference')\n"
+        "TARGET = SimpleNamespace()\n")
     git(current, "add", ".")
     git(current, "commit", "-m", "prebound route")
     official = lambda: "official"
     external = SimpleNamespace(apply_rope=official)
     with patch.object(source, "ROOT", current):
-        _, provenance = source.lingbot_target(current)
-    backend = source.sys.modules[provenance["module"] + ".backends.alias"]
+        target, _ = source.lingbot_target(current)
+    backend = target.registry.backends["candidate"]
     scratch = SimpleNamespace(assets={"upstream": "/test/upstream"})
     with patch.dict(source.sys.modules, probe_rope_external=external), \
          patch.object(source.importlib, "import_module", return_value=external), \
          patch.object(source.sys, "path", list(source.sys.path)):
-        engine = backend.make_wrappers(scratch)
+        engine = backend.make_wrappers(scratch, backend.names)
         assert engine["vision"]() == "cached"
         assert external.apply_rope is official
         assert engine["prefix"]() == "cached"

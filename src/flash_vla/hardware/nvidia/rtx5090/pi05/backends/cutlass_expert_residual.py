@@ -6,23 +6,26 @@ import weakref
 
 import torch
 
-from .cutlass_backbone import _check, _library
+from flash_vla.runtime.registry import Backend
+
+from . import cutlass_backbone
+from .cutlass_backbone import check
 
 NAMES = ("action_expert_ffn_down_residual", "action_expert_out_proj_residual")
 
 
 class _Plan:
-    def __init__(self, library, scratch, role, x, weight, gate, out, stream):
+    def __init__(self, native, scratch, role, x, weight, gate, out, stream):
         m, k = x.shape
-        size = library.expert_down_workspace(m, k)
+        size = native.expert_down_workspace(m, k)
         self.workspace = scratch(role, (max(size, 1),), torch.uint8, x.device)
         self.tensors = (x, weight, gate, out)
         self.handle = ctypes.c_void_p()
-        _check(library.expert_down_plan(
+        check(native.expert_down_plan(
             m, k, x.data_ptr(), weight.data_ptr(), gate.data_ptr(), out.data_ptr(),
             self.workspace.data_ptr(), stream, ctypes.byref(self.handle)),
             f"expert_down_plan M={m} K={k} N=1024")
-        self.destroy = weakref.finalize(self, library.expert_down_destroy, self.handle)
+        self.destroy = weakref.finalize(self, native.expert_down_destroy, self.handle)
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
@@ -39,12 +42,12 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     unknown = names - set(NAMES)
     if unknown:
         raise KeyError(f"expert residual backend does not implement {sorted(unknown)}")
-    library = None
+    native = None
     plans = {}
     role = f"pi05_expert_residual_streamk_{id(plans)}"
 
     def projection_residual(x, weight, gate, out):
-        nonlocal library
+        nonlocal native
         m, k = x.shape
         key = (m, k, x.data_ptr(), weight.data_ptr(), gate.data_ptr(), out.data_ptr())
         plan = plans.get(key)
@@ -52,15 +55,19 @@ def make_wrappers(scratch, selected_names=None) -> dict:
         if plan is None:
             if torch.cuda.is_current_stream_capturing():
                 raise RuntimeError("expert residual pointer set was not warmed before capture")
-            if library is None:
-                library = _library()
-            plan = _Plan(library, scratch, role, x, weight, gate, out, stream)
+            if native is None:
+                native = cutlass_backbone.library()
+            plan = _Plan(native, scratch, role, x, weight, gate, out, stream)
             plans[key] = plan
-        _check(library.expert_down_run(plan.handle, stream),
+        check(native.expert_down_run(plan.handle, stream),
                f"expert_down_run M={m} K={k} N=1024")
         return out
 
     return {name: projection_residual for name in names}
 
 
-__all__ = ["NAMES", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
+
+
+__all__ = ["BACKEND", "NAMES", "make_wrappers"]

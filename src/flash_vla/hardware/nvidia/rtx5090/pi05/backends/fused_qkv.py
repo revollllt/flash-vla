@@ -11,39 +11,42 @@ BF16 RMS factor and leaves its norm_factor argument unchanged.
 from __future__ import annotations
 
 import ctypes
-import os
-import subprocess
 from functools import lru_cache, partial
 from pathlib import Path
 
 import torch
 
+from flash_vla.hardware.nvidia.native import NativeLibrary
+from flash_vla.runtime.registry import Backend
+
 NAMES = frozenset({"action_expert_norm_qkv_rope", "action_expert_action_out_proj"})
 
 
+SOURCE = Path(__file__).with_suffix(".cu")
+
+#: The expert QKV preparation and action-output kernels.
+LIBRARY = NativeLibrary(
+    name="rtx5090_pi05_fused_qkv",
+    sources=(SOURCE,),
+    arch=("-arch=sm_120a",),
+    flags=("--fmad=false",))
+
+
 @lru_cache(maxsize=1)
-def _library():
-    source = Path(__file__).with_suffix(".cu")
-    directory = source.parents[7] / ".cache" / "cuda_ext" / "rtx5090_pi05_fused_qkv"
-    directory.mkdir(parents=True, exist_ok=True)
-    output = directory / "fused_qkv.so"
-    if not output.exists() or output.stat().st_mtime < source.stat().st_mtime:
-        nvcc = str(Path(os.environ["CUDA_HOME"]) / "bin" / "nvcc")
-        subprocess.run(
-            [nvcc, "-O3", "-std=c++17", "--fmad=false", "--shared", "-Xcompiler",
-             "-fPIC", "-arch=sm_120a", str(source), "-o", str(output)], check=True)
-    lib = ctypes.CDLL(str(output))
-    lib.pi05_qkv_prepare.argtypes = [ctypes.c_void_p] * 4 + [ctypes.c_int32, ctypes.c_void_p]
-    lib.pi05_qkv_prepare.restype = ctypes.c_int32
-    lib.pi05_qkv_finish.argtypes = [ctypes.c_void_p] * 7 + [ctypes.c_int32, ctypes.c_void_p]
-    lib.pi05_qkv_finish.restype = ctypes.c_int32
-    lib.pi05_action_out_factor_launch.argtypes = (
+def library() -> ctypes.CDLL:
+    """The loaded library with its C ABI declared; build it before graph capture."""
+    kernels = LIBRARY.load()
+    kernels.pi05_qkv_prepare.argtypes = [ctypes.c_void_p] * 4 + [ctypes.c_int32, ctypes.c_void_p]
+    kernels.pi05_qkv_prepare.restype = ctypes.c_int32
+    kernels.pi05_qkv_finish.argtypes = [ctypes.c_void_p] * 7 + [ctypes.c_int32, ctypes.c_void_p]
+    kernels.pi05_qkv_finish.restype = ctypes.c_int32
+    kernels.pi05_action_out_factor_launch.argtypes = (
         [ctypes.c_void_p] * 2 + [ctypes.c_int32, ctypes.c_void_p])
-    lib.pi05_action_out_factor_launch.restype = ctypes.c_int32
-    lib.pi05_action_out_update_launch.argtypes = (
+    kernels.pi05_action_out_factor_launch.restype = ctypes.c_int32
+    kernels.pi05_action_out_update_launch.argtypes = (
         [ctypes.c_void_p] * 4 + [ctypes.c_int32, ctypes.c_void_p])
-    lib.pi05_action_out_update_launch.restype = ctypes.c_int32
-    return lib
+    kernels.pi05_action_out_update_launch.restype = ctypes.c_int32
+    return kernels
 
 
 def action_expert_norm_qkv_rope(
@@ -53,7 +56,7 @@ def action_expert_norm_qkv_rope(
     m = x.shape[0]
     scaled = scratch("pi05_qkv_scaled", (m, 1024), x.dtype, x.device)
     projected = scratch("pi05_qkv_projected", (m, 2560), x.dtype, x.device)
-    lib = _library()
+    lib = library()
     stream = torch.cuda.current_stream(x.device).cuda_stream
     rc = lib.pi05_qkv_prepare(
         x.data_ptr(), scale.data_ptr(), scaled.data_ptr(), norm_factor.data_ptr(), m, stream)
@@ -72,7 +75,7 @@ def action_expert_action_out_proj(x, weight, bias, out, norm_factor, *, scratch)
     rows = x.shape[0]
     factor = scratch("pi05_action_out_factor", (rows,), x.dtype, x.device)
     projected = scratch("pi05_action_out_projected", (rows, 32), x.dtype, x.device)
-    lib = _library()
+    lib = library()
     stream = torch.cuda.current_stream(x.device).cuda_stream
     rc = lib.pi05_action_out_factor_launch(x.data_ptr(), factor.data_ptr(), rows, stream)
     if rc:
@@ -93,4 +96,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: partial(wrappers[name], scratch=scratch) for name in names}
 
 
-__all__ = ["NAMES", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
+
+
+__all__ = ["BACKEND", "NAMES", "make_wrappers"]

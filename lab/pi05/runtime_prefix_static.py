@@ -101,7 +101,7 @@ def main():
         assert report["device_mask_896"] < 0
         assert all(c["a"].shape[0] == 968 for c in calls)
 
-        library = cutlass_backbone._library()
+        library = cutlass_backbone.library()
         scratch = {route: Scratch(calls[0]["a"].device) for route in ("A", "B")}
         plans = {"A": [], "B": []}
         stream = torch.cuda.current_stream().cuda_stream
@@ -123,7 +123,7 @@ def main():
         save()
 
         def run(plan):
-            cutlass_backbone._check(library.backbone_gemm_run(
+            cutlass_backbone.check(library.backbone_gemm_run(
                 plan.handle, torch.cuda.current_stream().cuda_stream), "backbone_gemm_run")
 
         def reset_call(call):

@@ -37,6 +37,7 @@ from flash_vla.inference import declare
 from flash_vla.models.pi05.openpi import converted_checkpoint
 from flash_vla.models.pi05.spec import ENCODER_LAYERS
 from flash_vla.models.pi05.weights import fold
+from flash_vla.provenance import git_revision
 from flash_vla.runtime import ModelRunner
 
 SUITES = ("libero_spatial", "libero_object", "libero_goal", "libero_10")
@@ -141,7 +142,8 @@ def compare(args: argparse.Namespace) -> None:
         recipe_path = args.out / "recipes" / f"{name}.json"
         recipe_path.parent.mkdir(exist_ok=True)
         recipe_path.write_text(json.dumps(variant.recipe) + "\n")
-        runner = ModelRunner(declare("rtx5090/pi05").target, weights, checkpoint_id="openpi/pi05_libero",
+        runner = ModelRunner(declare("rtx5090/pi05").target, weights, engine_revision=git_revision(),
+                             checkpoint_id="openpi/pi05_libero",
                              plan=variant.plan, quantization=variant.quantization,
                              num_views=2, chunk_size=10, steps=10, prompt_len=config["max_token_len"],
                              tokenizer=tokenizer, prompt="pick up the object",

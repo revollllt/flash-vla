@@ -9,40 +9,43 @@ before CUDA Graph capture. Rows and affine parameters are contiguous.
 from __future__ import annotations
 
 import ctypes
-import os
-import subprocess
 from functools import lru_cache, partial
 from pathlib import Path
 
 import torch
 
+from flash_vla.hardware.nvidia.native import NativeLibrary
+from flash_vla.runtime.registry import Backend
+
 NAMES = frozenset({"vision_encoder_norm_qkv", "vision_encoder_norm_ffn_up"})
 
 
+SOURCE = Path(__file__).with_suffix(".cu")
+
+#: The vision encoder's LayerNorm and GELU kernels.
+LIBRARY = NativeLibrary(
+    name="rtx5090_pi05_fused_vision",
+    sources=(SOURCE,),
+    arch=("-arch=sm_120a",),
+    flags=("--fmad=false",))
+
+
 @lru_cache(maxsize=1)
-def _library():
-    source = Path(__file__).with_suffix(".cu")
-    directory = source.parents[7] / ".cache" / "cuda_ext" / "rtx5090_pi05_fused_vision"
-    directory.mkdir(parents=True, exist_ok=True)
-    output = directory / "fused_vision.so"
-    if not output.exists() or output.stat().st_mtime < source.stat().st_mtime:
-        nvcc = str(Path(os.environ["CUDA_HOME"]) / "bin" / "nvcc")
-        subprocess.run(
-            [nvcc, "-O3", "-std=c++17", "--fmad=false", "--shared", "-Xcompiler",
-             "-fPIC", "-arch=sm_120a", str(source), "-o", str(output)], check=True)
-    lib = ctypes.CDLL(str(output))
-    lib.pi05_vision_layer_norm_launch.argtypes = (
+def library() -> ctypes.CDLL:
+    """The loaded library with its C ABI declared; build it before graph capture."""
+    kernels = LIBRARY.load()
+    kernels.pi05_vision_layer_norm_launch.argtypes = (
         [ctypes.c_void_p] * 4 + [ctypes.c_int32, ctypes.c_void_p])
-    lib.pi05_vision_layer_norm_launch.restype = ctypes.c_int32
-    lib.pi05_vision_gelu_launch.argtypes = [ctypes.c_void_p, ctypes.c_int64, ctypes.c_void_p]
-    lib.pi05_vision_gelu_launch.restype = ctypes.c_int32
-    return lib
+    kernels.pi05_vision_layer_norm_launch.restype = ctypes.c_int32
+    kernels.pi05_vision_gelu_launch.argtypes = [ctypes.c_void_p, ctypes.c_int64, ctypes.c_void_p]
+    kernels.pi05_vision_gelu_launch.restype = ctypes.c_int32
+    return kernels
 
 
 def _norm(x, weight, bias, scratch):
     rows = x.numel() // 1152
     normalized = scratch("pi05_vision_normalized", (rows, 1152), x.dtype, x.device)
-    rc = _library().pi05_vision_layer_norm_launch(
+    rc = library().pi05_vision_layer_norm_launch(
         x.data_ptr(), weight.data_ptr(), bias.data_ptr(), normalized.data_ptr(),
         rows, torch.cuda.current_stream(x.device).cuda_stream)
     if rc:
@@ -61,7 +64,7 @@ def vision_encoder_norm_ffn_up(x, norm_w, norm_b, weight, bias, out, *, scratch)
     """Normalize and project before in-place GELU of the BF16-rounded projection."""
     normalized = _norm(x, norm_w, norm_b, scratch)
     torch.addmm(bias, normalized, weight, out=out.view(-1, 4304))
-    rc = _library().pi05_vision_gelu_launch(
+    rc = library().pi05_vision_gelu_launch(
         out.data_ptr(), out.numel(), torch.cuda.current_stream(out.device).cuda_stream)
     if rc:
         raise RuntimeError(f"pi05_vision_gelu elements={out.numel()}, threads=256: CUDA error {rc}")
@@ -76,4 +79,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: partial(wrappers[name], scratch=scratch) for name in names}
 
 
-__all__ = ["NAMES", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
+
+
+__all__ = ["BACKEND", "NAMES", "make_wrappers"]

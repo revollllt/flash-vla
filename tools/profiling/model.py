@@ -55,6 +55,7 @@ from torch.profiler import ProfilerActivity, profile, record_function
 
 from flash_vla.runtime.identity import Identity, MeasurementContext
 from flash_vla.runtime.engine import segments
+from flash_vla.runtime.registry import GraphContract
 
 from flash_vla.environment import collect as _env
 from flash_vla.inference import parse_options
@@ -330,17 +331,18 @@ def _replay_wall_us(engine, segment: str, reps: int = 5) -> float:
     return (best or 0.0) * 1e3
 
 
-def check_contract(contract: dict[str, list[str]], names: set[str]) -> dict[str, Any]:
+def check_contract(contract: GraphContract, names: set[str]) -> dict[str, Any]:
     violations = []
-    for pattern in contract.get("forbid", ()):
+    for pattern in contract.forbid:
         hits = sorted(n for n in names if pattern in n)
         if hits:
             violations.append({"forbid": pattern, "found": hits})
-    for pattern in contract.get("require_one", ()):
+    for pattern in contract.require_one:
         hits = sorted(n for n in names if pattern in n)
         if len(hits) != 1:
             violations.append({"require_one": pattern, "found": hits})
-    return {"passed": not violations, "violations": violations, "contract": contract}
+    return {"passed": not violations, "violations": violations,
+            "contract": {"forbid": list(contract.forbid), "require_one": list(contract.require_one)}}
 
 
 def overview(target: str, plan: str | None = None, *, seed: int = 0,

@@ -28,6 +28,8 @@ from functools import partial
 
 import torch
 
+from flash_vla.runtime.registry import Backend
+
 from ... import geometry
 from . import siglip_attn, siglip_norm
 
@@ -111,8 +113,6 @@ _NEEDS_SCRATCH = frozenset({"vision_encoder_norm_qkv", "vision_encoder_norm_ffn_
 #: buffer as the graph declares it, so it composes with any routing of the
 #: projection that produces it. No route constraint, no extension op, no graph
 #: contract, and no `tests.targets` route oracle to maintain.
-ROUTE_CONSTRAINTS: tuple = ()
-OPS: tuple = ()
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
@@ -124,3 +124,7 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: (partial(ALL_WRAPPERS[name], scratch=scratch)
                    if name in _NEEDS_SCRATCH else ALL_WRAPPERS[name])
             for name in names}
+
+
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)

@@ -36,7 +36,8 @@ import torch
 import torch.nn.functional as F
 
 from flash_vla.hardware.nvidia.h100.pi0.backends.tilelang.kernels import attention as _attention
-from flash_vla.hardware.nvidia.h100.pi0.backends.tilelang.wrappers import NAMES, OPS, ROUTE_CONSTRAINTS
+from flash_vla.hardware.nvidia.h100.pi0.backends.tilelang.wrappers import NAMES, OPS
+from flash_vla.runtime.registry import Backend
 
 #: Pi0 shape constants, mirrored from the TileLang wrappers rather than imported
 #: so this module reads on its own.
@@ -285,4 +286,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
             for name in names}
 
 
-__all__ = ["NAMES", "OPS", "ROUTE_CONSTRAINTS", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers, ops=OPS)
+
+
+__all__ = ["BACKEND", "NAMES", "OPS", "make_wrappers"]

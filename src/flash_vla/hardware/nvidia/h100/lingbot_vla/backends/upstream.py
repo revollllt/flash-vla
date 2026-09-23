@@ -1,11 +1,14 @@
 """Capture-safe composition of the frozen upstream LingBot modules."""
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
+from functools import partial
 import gc
 from math import prod
 from pathlib import Path
 import sys
 from types import MethodType
+from typing import Mapping
 
 import torch
 
@@ -34,6 +37,9 @@ from flash_vla.models.lingbot.spec import (
 )
 from flash_vla.runtime.binding import RouteConstraint
 from flash_vla.runtime.ops import OpSpec
+
+from flash_vla.runtime.registry import Backend, Wrapper
+from flash_vla.runtime.workspace import Scratch
 
 NAMES = ("lingbot_vision", "lingbot_prefix", "lingbot_action")
 WEIGHT_PARAMS = tuple(f"weight_{index:04d}" for index in range(len(WEIGHT_NAMES)))
@@ -512,6 +518,19 @@ def _pack_expert_projections(core, depth: int) -> None:
         layer.forward = MethodType(_expert_layer_forward, layer)
 
 
+@torch.compile(fullgraph=True)
+def ada_rms(hidden_states: torch.Tensor, weight: torch.Tensor, gamma: torch.Tensor,
+            beta: torch.Tensor, epsilon: float) -> torch.Tensor:
+    """LingBot AdaRMS with FP32 intermediates, returned in the input dtype (BF16).
+
+    Compilation happens during eager warmup, before any capture.
+    """
+    values = hidden_states.float()
+    variance = values.pow(2).mean(-1, keepdim=True)
+    normalized = weight * (values * torch.rsqrt(variance + epsilon))
+    return ((1 + gamma.float()) * normalized + beta.float()).to(hidden_states.dtype)
+
+
 def _prepare_time_modulation(core, steps, dtype, device, *, fuse_norm=False):
     # Pi0.5 precomputes fixed-timestep AdaRMS conditions too. Preserve LingBot's
     # own BF16 schedule, embedding, and linear arithmetic rather than its fold.
@@ -544,8 +563,6 @@ def _prepare_time_modulation(core, steps, dtype, device, *, fuse_norm=False):
 
                 projection.forward = cached_forward
             if fuse_norm:
-                from .fused_norm import ada_rms
-
                 def normalized(hidden_states, condition, norm=norm):
                     return ada_rms(hidden_states, norm.weight,
                                    norm.gamma(condition).unsqueeze(1),
@@ -556,83 +573,72 @@ def _prepare_time_modulation(core, steps, dtype, device, *, fuse_norm=False):
     return modulation
 
 
-class _State:
-    def __init__(self, cache_rope_frequency: bool, assets, linear_patch_embedding: bool,
-                 cache_rope_tables: bool, precompute_time_modulation: bool, fuse_norm: bool,
-                 pack_expert_projections: bool = False, grouped_attention: bool = False,
-                 specialized_loop: bool = False, fused_rope: bool = False,
-                 fused_attention: bool = False, specialized_prefix: bool = False,
-                 pad_vision_ffn: bool = False, fused_vision_norm: bool = False,
-                 fused_vision_attention: bool = False,
-                 fused_mlp: bool = False, fused_prefix_pointwise: bool = False,
-                 attention_kernel: bool = False, skinny_gemm: bool = False,
-                 split_attention: bool = False, fused_gate: bool = False,
-                 scratch=None) -> None:
+@dataclass(frozen=True)
+class UpstreamRoute:
+    """Which of the Target's replacements an upstream-backed route switches on.
+
+    Every field is one step of the optimization ladder the registry's presets
+    climb (`backends/__init__.py`); all off is upstream LingBot itself.
+    """
+    cache_rope_frequency: bool = False
+    linear_patch_embedding: bool = False
+    cache_rope_tables: bool = False
+    precompute_time_modulation: bool = False
+    fuse_norm: bool = False
+    pack_expert_projections: bool = False
+    grouped_attention: bool = False
+    specialized_loop: bool = False
+    fused_rope: bool = False
+    fused_attention: bool = False
+    specialized_prefix: bool = False
+    pad_vision_ffn: bool = False
+    fused_vision_norm: bool = False
+    fused_mlp: bool = False
+    fused_prefix_pointwise: bool = False
+    attention_kernel: bool = False
+    skinny_gemm: bool = False
+    split_attention: bool = False
+    fused_vision_attention: bool = False
+    fused_gate: bool = False
+
+
+class EngineState:
+    """What one op table's three wrappers share: its route, the upstream policy
+    built on the first vision call, and the caches its replacements fill on
+    first use (all during warmup, before capture)."""
+
+    def __init__(self, route: UpstreamRoute, assets: Mapping[str, Path], scratch: Scratch) -> None:
+        self.route = route
+        self.assets = assets
+        self.scratch = scratch
         self.core = None
         self.loop = None
-        self.specialized_loop = specialized_loop
-        self.fused_rope = fused_rope
-        self.fused_attention = fused_attention
-        self.specialized_prefix = specialized_prefix
-        self.pad_vision_ffn = pad_vision_ffn
-        self.fused_vision_norm = fused_vision_norm
-        self.fused_vision_attention = fused_vision_attention
-        self.fused_mlp = fused_mlp
-        self.fused_prefix_pointwise = fused_prefix_pointwise
-        self.attention_kernel = attention_kernel
-        self.skinny_gemm = skinny_gemm
-        self.split_attention = split_attention
-        self.fused_gate = fused_gate
-        self.scratch = scratch
         self.prefix_pass = None
         self.vision_metadata = None
         self.action_constants = None
-        self.precompute_time_modulation = precompute_time_modulation
-        self.fuse_norm = fuse_norm
         self.time_modulation_step = None
-        self.cache_rope_frequency = cache_rope_frequency
-        self.linear_patch_embedding = linear_patch_embedding
-        self.cache_rope_tables = cache_rope_tables
-        self.pack_expert_projections = pack_expert_projections
-        self.grouped_attention = grouped_attention
-        self.assets = assets
 
     def ensure(self, weights, layers: int):
-        if self.core is None:
-            self.core = _build_policy(weights, layers, self.cache_rope_frequency, self.assets,
-                                      linear_patch_embedding=self.linear_patch_embedding,
-                                      cache_rope_tables=self.cache_rope_tables,
-                                      pack_expert_projections=self.pack_expert_projections,
-                                      grouped_attention=self.grouped_attention,
-                                      pad_vision_ffn=self.pad_vision_ffn,
-                                      fused_vision_norm=self.fused_vision_norm,
-                                      fused_vision_attention=self.fused_vision_attention,
-                                      scratch=self.scratch)
+        if self.core is not None:
+            return self.core
+        route = self.route
+        self.core = _build_policy(weights, layers, route.cache_rope_frequency, self.assets,
+                                  linear_patch_embedding=route.linear_patch_embedding,
+                                  cache_rope_tables=route.cache_rope_tables,
+                                  pack_expert_projections=route.pack_expert_projections,
+                                  grouped_attention=route.grouped_attention,
+                                  pad_vision_ffn=route.pad_vision_ffn,
+                                  fused_vision_norm=route.fused_vision_norm,
+                                  fused_vision_attention=route.fused_vision_attention,
+                                  scratch=self.scratch)
         return self.core
 
 
-def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
-                  linear_patch_embedding=False, cache_rope_tables=False,
-                  precompute_time_modulation=False, fuse_norm=False,
-                  pack_expert_projections=False, grouped_attention=False,
-                  specialized_loop=False, fused_rope=False, fused_attention=False,
-                  specialized_prefix=False, pad_vision_ffn=False, fused_vision_norm=False,
-                  fused_mlp=False, fused_prefix_pointwise=False, attention_kernel=False,
-                  skinny_gemm=False, split_attention=False, fused_vision_attention=False,
-                  fused_gate=False):
-    state = _State(cache_rope_frequency, scratch.assets, linear_patch_embedding,
-                   cache_rope_tables, precompute_time_modulation, fuse_norm,
-                   pack_expert_projections=pack_expert_projections,
-                   grouped_attention=grouped_attention,
-                   specialized_loop=specialized_loop, fused_rope=fused_rope,
-                   fused_attention=fused_attention,
-                   specialized_prefix=specialized_prefix, pad_vision_ffn=pad_vision_ffn,
-                   fused_vision_norm=fused_vision_norm,
-                   fused_vision_attention=fused_vision_attention, fused_mlp=fused_mlp,
-                   fused_prefix_pointwise=fused_prefix_pointwise,
-                   attention_kernel=attention_kernel, skinny_gemm=skinny_gemm,
-                   split_attention=split_attention, fused_gate=fused_gate,
-                   scratch=scratch)
+def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None, *,
+                  route: UpstreamRoute = UpstreamRoute()) -> dict[str, Wrapper]:
+    """The three monolithic stages on the frozen upstream modules, with `route`'s
+    replacements; the upstream policy loads on the first vision call."""
+    state = EngineState(route, scratch.assets, scratch)
 
     @torch.no_grad()
     def vision(pixel_values, out, layers, *weights):
@@ -662,14 +668,14 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
         from lingbotvla.models.vla.pi0.utils import make_att_2d_masks
 
         core = state.core
-        if state.specialized_prefix:
+        if state.route.specialized_prefix:
             if state.prefix_pass is None:
                 from .prefix_pass import PrefixPass
 
                 state.prefix_pass = PrefixPass(core, layers=layers, scratch=scratch,
                                                device=vision.device,
-                                               fused_pointwise=state.fused_prefix_pointwise,
-                                               attention_kernel=state.attention_kernel)
+                                               fused_pointwise=state.route.fused_prefix_pointwise,
+                                               attention_kernel=state.route.attention_kernel)
             state.prefix_pass.run(vision, image_masks, language_tokens, language_masks,
                                   prefix_masks, prefix_k, prefix_v)
             return
@@ -712,24 +718,24 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
                 torch.tensor(-1.0 / steps, dtype=noise.dtype, device=noise.device),
                 torch.tensor(1.0, dtype=noise.dtype, device=noise.device),
             )
-        if state.precompute_time_modulation and state.time_modulation_step is None:
+        if state.route.precompute_time_modulation and state.time_modulation_step is None:
             state.time_modulation_step, conditions = _prepare_time_modulation(
-                core, steps, noise.dtype, noise.device, fuse_norm=state.fuse_norm,
+                core, steps, noise.dtype, noise.device, fuse_norm=state.route.fuse_norm,
             )
-            if state.specialized_loop:
+            if state.route.specialized_loop:
                 from .expert_loop import ExpertLoop
 
                 state.loop = ExpertLoop(
                     core, layers=layers, steps=steps, conditions=conditions,
                     time_step=state.time_modulation_step, scratch=scratch,
                     device=noise.device, dtype=noise.dtype,
-                    fused_rope=state.fused_rope,
-                    fused_attention=state.fused_attention,
-                    fused_mlp=state.fused_mlp,
-                    attention_kernel=state.attention_kernel,
-                    skinny_gemm=state.skinny_gemm,
-                    split_attention=state.split_attention,
-                    fused_gate=state.fused_gate,
+                    fused_rope=state.route.fused_rope,
+                    fused_attention=state.route.fused_attention,
+                    fused_mlp=state.route.fused_mlp,
+                    attention_kernel=state.route.attention_kernel,
+                    skinny_gemm=state.route.skinny_gemm,
+                    split_attention=state.route.split_attention,
+                    fused_gate=state.route.fused_gate,
                 )
         if state.loop is not None:
             state.loop.run(state_tensor, noise, prefix_masks, prefix_k, prefix_v,
@@ -758,7 +764,18 @@ def make_wrappers(scratch, selected_names=None, *, cache_rope_frequency=False,
     return {name: wrappers[name] for name in (selected_names or NAMES)}
 
 
+#: Upstream LingBot with no replacement: the reference route.
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers,
+                  route_constraints=ROUTE_CONSTRAINTS, ops=OPS)
+
+
+def route_backend(route: UpstreamRoute) -> Backend:
+    """The upstream backend with `route`'s replacements switched on."""
+    return replace(BACKEND, make_wrappers=partial(make_wrappers, route=route))
+
+
 __all__ = [
-    "ACTION_WEIGHT_PARAMS", "BACKBONE_WEIGHT_PARAMS", "NAMES", "OPS",
-    "ROUTE_CONSTRAINTS", "WEIGHT_PARAMS", "make_wrappers",
+    "ACTION_WEIGHT_PARAMS", "BACKBONE_WEIGHT_PARAMS", "BACKEND", "NAMES", "OPS",
+    "ROUTE_CONSTRAINTS", "UpstreamRoute", "WEIGHT_PARAMS", "make_wrappers",
+    "route_backend",
 ]

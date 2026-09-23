@@ -33,18 +33,17 @@ from __future__ import annotations
 
 import ctypes
 from functools import lru_cache
-import os
 from pathlib import Path
-import shutil
-import subprocess
 from typing import Callable
 import weakref
 
 import torch
 
+from flash_vla.hardware.nvidia.native import CUTLASS_DIR, CUTLASS_VERSION_HEADER, NativeLibrary
 from flash_vla.hardware.nvidia.quant_ops import ops
 from flash_vla.runtime.binding import RouteConstraint
-from flash_vla.runtime.runner import Scratch
+from flash_vla.runtime.registry import Backend
+from flash_vla.runtime.workspace import Scratch
 
 from .torch_ops import RMS_EPS
 
@@ -70,27 +69,20 @@ def check_status(status: int, operation: str) -> None:
         raise RuntimeError(f"{operation}: cudaError {status}")
 
 
-@lru_cache(maxsize=None)
+#: The MXFP8 block-scaled GEMMs, built against CUTLASS for sm_120a.
+LIBRARY = NativeLibrary(
+    name="rtx5090_pi05_mxfp8_backbone",
+    sources=(SOURCE,),
+    arch=("-gencode", "arch=compute_120a,code=sm_120a"),
+    flags=("--expt-relaxed-constexpr", "-DCUTLASS_ENABLE_GDC_FOR_SM100", "-diag-suppress", "20012"),
+    include_dirs=(CUTLASS_DIR / "include", CUTLASS_DIR / "tools" / "util" / "include"),
+    headers=(CUTLASS_VERSION_HEADER,))
+
+
+@lru_cache(maxsize=1)
 def library() -> ctypes.CDLL:
-    """Build mxfp8_backbone.cu for sm_120a unless the cached build is current; load it."""
-    repo = SOURCE.parents[7]
-    output = repo / ".cache/cuda_ext/rtx5090_pi05_mxfp8_backbone/libmxfp8_backbone.so"
-    if not output.exists() or output.stat().st_mtime_ns < SOURCE.stat().st_mtime_ns:
-        cuda_home = os.environ.get("CUDA_HOME")
-        nvcc = os.environ.get("FLASH_VLA_NVCC") or (
-            str(Path(cuda_home) / "bin/nvcc") if cuda_home else shutil.which("nvcc"))
-        if nvcc is None:
-            raise RuntimeError("set CUDA_HOME or FLASH_VLA_NVCC, or put nvcc on PATH")
-        cutlass = Path(os.environ.get("CUTLASS_DIR", repo / "third_party/cutlass"))
-        output.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            [nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
-             "--expt-relaxed-constexpr", "-DCUTLASS_ENABLE_GDC_FOR_SM100",
-             "-diag-suppress", "20012", "-gencode", "arch=compute_120a,code=sm_120a",
-             f"-I{cutlass}/include", f"-I{cutlass}/tools/util/include",
-             str(SOURCE), "-o", str(output)],
-            check=True)
-    kernels = ctypes.CDLL(str(output))
+    """The loaded GEMM library with its C ABI declared; build it before graph capture."""
+    kernels = LIBRARY.load()
     pointer, int32 = ctypes.c_void_p, ctypes.c_int32
     kernels.mxfp8_gemm_workspace.argtypes = [int32] * 4
     kernels.mxfp8_gemm_workspace.restype = ctypes.c_int64
@@ -145,7 +137,7 @@ class GemmPlan:
                      "mxfp8_gemm_run")
 
 
-def make_wrappers(scratch: Scratch, selected_names: set[str] | None = None
+def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
                   ) -> dict[str, Callable[..., torch.Tensor]]:
     """Wrappers for both FFN call sites; a layer's plans and quantized weights are
     built on its first call, which the runner's warmup makes before capture."""
@@ -224,3 +216,7 @@ def make_wrappers(scratch: Scratch, selected_names: set[str] | None = None
                 "llm_backbone_ffn_down_residual_masked": llm_backbone_ffn_down_residual_masked}
     return {name: wrapper for name, wrapper in wrappers.items()
             if selected_names is None or name in selected_names}
+
+
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers, route_constraints=ROUTE_CONSTRAINTS)

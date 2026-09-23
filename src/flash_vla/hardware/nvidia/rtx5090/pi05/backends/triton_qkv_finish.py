@@ -14,6 +14,8 @@ import torch
 import triton
 import triton.language as tl
 
+from flash_vla.runtime.registry import Backend
+
 from . import fused_qkv
 
 NAMES = frozenset({"action_expert_norm_qkv_rope"})
@@ -65,7 +67,7 @@ def action_expert_norm_qkv_rope(
 ):
     rows = x.shape[0]
     scaled = scratch("pi05_qkv_scaled", (rows, 1024), x.dtype, x.device)
-    lib = fused_qkv._library()
+    lib = fused_qkv.library()
     stream = torch.cuda.current_stream(x.device).cuda_stream
     rc = lib.pi05_qkv_prepare(
         x.data_ptr(), scale.data_ptr(), scaled.data_ptr(), norm_factor.data_ptr(), rows, stream)
@@ -82,4 +84,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: partial(action_expert_norm_qkv_rope, scratch=scratch) for name in names}
 
 
-__all__ = ["NAMES", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
+
+
+__all__ = ["BACKEND", "NAMES", "make_wrappers"]

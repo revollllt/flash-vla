@@ -73,9 +73,9 @@ def main():
         return projected
 
     control = fused_prefix_qkv.make_wrappers(projection_scratch)[SITE]
-    gemm_library = cutlass_backbone._library()
-    norm_library = fused_backbone._library()
-    rope_library = fused_prefix_qkv._library()
+    gemm_library = cutlass_backbone.library()
+    norm_library = fused_backbone.library()
+    rope_library = fused_prefix_qkv.library()
     stream = torch.cuda.current_stream().cuda_stream
     plans = [cutlass_backbone._Plan(
         gemm_library, scratch, normed, call["weight"], projected, 0.0, stream)
@@ -83,11 +83,11 @@ def main():
 
     def candidate(call, plan):
         stream = torch.cuda.current_stream().cuda_stream
-        cutlass_backbone._check(norm_library.backbone_rms_norm(
+        cutlass_backbone.check(norm_library.backbone_rms_norm(
             call["x"].data_ptr(), normed.data_ptr(), rows, stream), "backbone_rms_norm")
-        cutlass_backbone._check(
+        cutlass_backbone.check(
             gemm_library.backbone_gemm_run(plan.handle, stream), "backbone_gemm_run")
-        cutlass_backbone._check(rope_library.prefix_rope_scatter(
+        cutlass_backbone.check(rope_library.prefix_rope_scatter(
             projected.data_ptr(), call["rope"].data_ptr(), q.data_ptr(), k.data_ptr(),
             v.data_ptr(), rows, stream), "prefix_rope_scatter")
 

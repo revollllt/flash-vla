@@ -1,7 +1,6 @@
 """Backend registry for Pi0 call sites.
 
-Five backends, each satisfying the contract of
-`flash_vla.runtime.registry`:
+Five backends, each a `flash_vla.runtime.registry.Backend`:
 
     tilelang        every call site; the reference route
     siglip-cublas   the two pre-norm vision projections as LayerNorm + a fused
@@ -24,14 +23,15 @@ from flash_vla.hardware.nvidia.h100.siglip.backends import cublas as _siglip_cub
 from flash_vla.hardware.nvidia.h100.siglip.backends import cuda as _siglip_cuda
 from flash_vla.runtime.registry import Registry
 
+
 from . import tilelang as _tilelang
 
 BACKENDS = {
-    "tilelang": _tilelang,
-    "siglip-cublas": _siglip_cublas,
-    "siglip-cuda": _siglip_cuda,
-    "tilelang-fused": _tilelang.fused,
-    "gemma-cuda": _gemma_cuda,
+    "tilelang": _tilelang.BACKEND,
+    "siglip-cublas": _siglip_cublas.BACKEND,
+    "siglip-cuda": _siglip_cuda.BACKEND,
+    "tilelang-fused": _tilelang.fused.BACKEND,
+    "gemma-cuda": _gemma_cuda.BACKEND,
 }
 
 REGISTRY = Registry(BACKENDS, default="tilelang")

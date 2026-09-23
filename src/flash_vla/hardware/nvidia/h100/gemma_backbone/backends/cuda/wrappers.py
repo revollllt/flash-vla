@@ -35,6 +35,8 @@ import os
 
 import torch
 
+from flash_vla.runtime.registry import Backend
+
 from . import enc_attn as _enc
 from . import gated_ffn as _gu
 
@@ -153,7 +155,6 @@ NAMES = frozenset({
 })
 
 #: No extension ops: every call site is in the standard vocabulary.
-OPS: tuple = ()
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
@@ -181,4 +182,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return table
 
 
-__all__ = ["NAMES", "OPS", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
+
+
+__all__ = ["BACKEND", "NAMES", "OPS", "make_wrappers"]

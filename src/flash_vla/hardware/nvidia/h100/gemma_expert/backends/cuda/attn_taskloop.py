@@ -19,22 +19,25 @@ Tensor arguments are documented beside the launch function and ABI header.
 from __future__ import annotations
 
 import ctypes
-import hashlib
 import os
 import re
-import subprocess
 from pathlib import Path
 
 import torch
+
+from flash_vla.hardware.nvidia.native import (
+    CUTLASS_DIR,
+    CUTLASS_VERSION_HEADER,
+    SM90_TILE_HEADERS,
+    TILE_INCLUDE_DIR,
+    NativeLibrary,
+)
 
 from . import attn_reference as ref
 
 _HERE = Path(__file__).resolve().parent
 _SRC = _HERE / "kernels" / "attn_taskloop.cu"
 _HEADER = _HERE / "kernels" / "sm90_attn_task_desc.cuh"
-_REPO = _HERE.parents[7]
-_CUTLASS = Path(os.environ.get("CUTLASS_DIR", _REPO / "third_party" / "cutlass"))
-_TILE_ROOT = _REPO / "src" / "flash_vla" / "hardware" / "nvidia" / "cuda"
 
 G = ref.geometry()
 N_CTAS, TASK_SLOTS = G["N_CTAS"], G["TASK_SLOTS"]
@@ -229,61 +232,21 @@ def prefill_counters(mode: str, counters: torch.Tensor) -> None:
     counters.copy_(prefill_values(mode).to(counters.device))
 
 
-# ---------------------------------------------------------------------------
-# build + launch
-# ---------------------------------------------------------------------------
-def _extra_flags() -> list[str]:
-    """ATTN_NVCC_DEFINES: space-separated extra nvcc flags (ablation switches)."""
-    return os.environ.get("ATTN_NVCC_DEFINES", "").split()
-
-
-def _cutlass_identity() -> bytes:
-    """What CUTLASS this build compiles against, for the cache key.
-
-    `CUTLASS_DIR` is a supported knob (`third_party/README.md`), so the path
-    alone is not enough: pointing it at another tree, or unsetting it after a
-    custom build, must not reuse the previous `.so`. The version header is
-    read rather than the whole tree because it is what changes when the pin
-    moves and it costs one small read.
-    """
-    version = _CUTLASS / "include" / "cutlass" / "version.h"
-    payload = version.read_bytes() if version.is_file() else b"missing"
-    return str(_CUTLASS.resolve()).encode() + payload
-
-
-def _build_dir() -> Path:
-    # The tile primitive headers are part of the kernel; hash them so an
-    # edit there never reuses a stale .so.
-    tile_headers = b"".join(h.read_bytes() for h in
-                            sorted((_TILE_ROOT / "tile" / "sm90").glob("*.cuh")))
-    tag = hashlib.sha256(_SRC.read_bytes() + _HEADER.read_bytes() + tile_headers
-                        + _cutlass_identity()
-                        + " ".join(_extra_flags()).encode()).hexdigest()[:16]
-    d = _REPO / ".cache" / "cuda_ext" / f"attn_taskloop_{tag}"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+#: The kernel library: its sources, the sm_90a target and the headers it depends on.
+LIBRARY = NativeLibrary(
+    name="attn_taskloop",
+    sources=(_SRC,),
+    arch=("-arch=sm_90a",),
+    flags=("--expt-relaxed-constexpr",),
+    include_dirs=(CUTLASS_DIR / "include", TILE_INCLUDE_DIR),
+    headers=(_HEADER, *SM90_TILE_HEADERS, CUTLASS_VERSION_HEADER),
+    link_driver=True,
+    flags_env="ATTN_NVCC_DEFINES")
 
 
 def build(verbose: bool = False) -> Path:
-    """Compile the .so if this source hash has not been built yet."""
-    out = _build_dir() / "libattn_taskloop.so"
-    if out.exists():
-        return out
-    cuda_home = os.environ.get("CUDA_HOME", "/data/apps/cuda/13.1")
-    nvcc = os.environ.get("NVCC", "nvcc")
-    cmd = [
-        nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
-        "-arch=sm_90a", "--expt-relaxed-constexpr", *_extra_flags(),
-        f"-I{_CUTLASS}/include", f"-I{_TILE_ROOT}",
-        "-o", str(out), str(_SRC),
-        f"-L{cuda_home}/lib64/stubs", "-lcuda",
-    ]
-    if verbose:
-        print("[attn_taskloop build]", " ".join(cmd), flush=True)
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError(f"nvcc failed:\n{r.stdout}\n{r.stderr}")
-    return out
+    """Compile the library unless this exact build exists; return its path."""
+    return LIBRARY.build(verbose=verbose)
 
 
 class Workspace:
@@ -302,7 +265,7 @@ class Workspace:
 
 class AttnTaskloop:
     def __init__(self, verbose: bool = False):
-        self._lib = ctypes.CDLL(str(build(verbose)))
+        self._lib = LIBRARY.load(verbose)
         self._lib.attn_taskloop_launch.restype = ctypes.c_int
         self._lib.attn_taskloop_launch.argtypes = (
             [ctypes.c_void_p, ctypes.c_int, ctypes.c_int] + [ctypes.c_void_p] * 22)

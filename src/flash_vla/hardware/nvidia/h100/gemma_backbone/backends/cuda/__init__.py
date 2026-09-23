@@ -1,10 +1,10 @@
 """Raw-CUDA backend for the Gemma backbone, registrable by any H100 Target.
 
 `wrappers` provides the call sites a plan can route here as a stateful
-backend, so each op table owns its own library handle and workspace. The
-module satisfies the registry contract of `flash_vla.runtime.registry`.
+backend, so each op table owns its own library handle and workspace; `BACKEND`
+is what a Target registers.
 
-`ROUTE_CONSTRAINTS` is deliberately empty and there is no `graph_contract`.
+`BACKEND` deliberately declares no route constraint and no graph contract.
 Every wrapper reads and writes the graph's own buffers in the layout the
 TileLang route uses, and none owns scratch that crosses a call-site boundary,
 so each call site may be routed here on its own and `tests.targets`'s route check
@@ -16,11 +16,8 @@ does.
 
 from . import wrappers
 
+BACKEND = wrappers.BACKEND
 NAMES = wrappers.NAMES
-OPS = wrappers.OPS
 make_wrappers = wrappers.make_wrappers
 
-#: No call site here shares a buffer contract with another.
-ROUTE_CONSTRAINTS: tuple = ()
-
-__all__ = ["NAMES", "OPS", "ROUTE_CONSTRAINTS", "make_wrappers", "wrappers"]
+__all__ = ["BACKEND", "NAMES", "make_wrappers", "wrappers"]

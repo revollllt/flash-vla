@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import unittest
+from flash_vla.runtime.registry import GraphContract
 from tools.profiling.timeline import intervals, occurrences, region_occurrences
 from tools.profiling import model as profile
 from tests.test_latency import _Identity
@@ -15,7 +16,7 @@ def engine(monkeypatch):
     calls = []
     engine = SimpleNamespace(identity=_Identity(), device="cuda:0",
                              measurement_context={"weights": {"checkpoint_id": "a"},
-                                                  "fixture": {"id": "inputs"}}, graph_contract={},
+                                                  "fixture": {"id": "inputs"}}, graph_contract=GraphContract(),
                              sample_inputs=lambda seed: {},
                              replay=lambda name: calls.append(name),
                              host=lambda name, **kw: calls.append(name), calls=calls)

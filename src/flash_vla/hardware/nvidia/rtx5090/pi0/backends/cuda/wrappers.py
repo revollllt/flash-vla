@@ -24,7 +24,8 @@ from functools import partial
 import torch
 
 from flash_vla.hardware.nvidia.h100.pi0.backends.tilelang.wrappers import (
-    OPS, ROUTE_CONSTRAINTS)
+    OPS)
+from flash_vla.runtime.registry import Backend
 
 from . import cutlass_gemm as cg
 from . import pointwise as cu
@@ -482,4 +483,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
             for name in names}
 
 
-__all__ = ["NAMES", "OPS", "ROUTE_CONSTRAINTS", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers, ops=OPS)
+
+
+__all__ = ["BACKEND", "NAMES", "OPS", "make_wrappers"]

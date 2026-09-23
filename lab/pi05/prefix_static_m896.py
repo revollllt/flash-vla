@@ -69,8 +69,8 @@ def qkv_chain(calls, library):
         return projected
 
     control = fused_prefix_qkv.make_wrappers(projection_scratch)[QKV]
-    norm_library = fused_backbone._library()
-    rope_library = fused_prefix_qkv._library()
+    norm_library = fused_backbone.library()
+    rope_library = fused_prefix_qkv.library()
     stream = torch.cuda.current_stream().cuda_stream
     plans = [cutlass_backbone._Plan(
         library, scratch, normed[:SHORT_ROWS], call["weight"],
@@ -78,11 +78,11 @@ def qkv_chain(calls, library):
 
     def candidate(call, plan):
         stream = torch.cuda.current_stream().cuda_stream
-        cutlass_backbone._check(norm_library.backbone_rms_norm(
+        cutlass_backbone.check(norm_library.backbone_rms_norm(
             call["x"].data_ptr(), normed.data_ptr(), ROWS, stream), "backbone_rms_norm")
-        cutlass_backbone._check(
+        cutlass_backbone.check(
             library.backbone_gemm_run(plan.handle, stream), "backbone_gemm_run")
-        cutlass_backbone._check(rope_library.prefix_rope_scatter(
+        cutlass_backbone.check(rope_library.prefix_rope_scatter(
             projected.data_ptr(), call["rope"].data_ptr(), q.data_ptr(), k.data_ptr(),
             v.data_ptr(), ROWS, stream), "prefix_rope_scatter")
 
@@ -122,7 +122,7 @@ def outproj_chain(calls, library, control):
 
     def candidate(call, plan):
         out.copy_(call["residual"])
-        cutlass_backbone._check(library.backbone_gemm_run(
+        cutlass_backbone.check(library.backbone_gemm_run(
             plan.handle, torch.cuda.current_stream().cuda_stream), "backbone_gemm_run")
 
     functions = {
@@ -257,12 +257,12 @@ def main():
         assert report["device_mask896"] < 0
         assert dict(engine.identity.plan)[QKV] == "fused-prefix-qkv"
         assert dict(engine.identity.plan)[OUT] == "torch"
-        library = cutlass_backbone._library()
+        library = cutlass_backbone.library()
         report["candidate_library"] = library._name
         chain = qkv_chain(calls[QKV], library)
         measure_site(QKV, calls[QKV], chain, report, save)
         del chain
-        chain = outproj_chain(calls[OUT], library, getattr(engine.ops, OUT))
+        chain = outproj_chain(calls[OUT], library, engine.ops[OUT])
         measure_site(OUT, calls[OUT], chain, report, save)
         report["phase"] = "complete"
         save()

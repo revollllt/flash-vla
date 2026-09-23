@@ -28,7 +28,7 @@ def measure(args):
     logits = torch.empty((400, 1018), dtype=torch.float32, device="cuda")
     probabilities = torch.empty((400, 1018), dtype=torch.bfloat16, device="cuda")
     working_q = torch.empty((400, 256), dtype=torch.bfloat16, device="cuda")
-    library = fused_attention._library()
+    library = fused_attention.library()
     control = library.pi05_attention_softmax_launch
     candidate = library.pi05_attention_softmax_128_launch
     candidate.argtypes = control.argtypes

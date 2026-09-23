@@ -7,44 +7,39 @@ its gate workspace. Native launch state belongs to each wrapper factory.
 from __future__ import annotations
 
 import ctypes
-import os
-import shutil
-import subprocess
+from functools import lru_cache
 from pathlib import Path
 
 import torch
 
+from flash_vla.hardware.nvidia.native import NativeLibrary
+from flash_vla.runtime.registry import Backend
+
 NAMES = frozenset({"llm_backbone_norm_gated_ffn"})
-_SOURCE = Path(__file__).with_suffix(".cu")
+SOURCE = Path(__file__).with_suffix(".cu")
 
 
-def _library():
-    nvcc = os.environ.get("FLASH_VLA_NVCC")
-    if nvcc is None:
-        cuda_home = os.environ.get("CUDA_HOME")
-        nvcc = str(Path(cuda_home) / "bin/nvcc") if cuda_home else shutil.which("nvcc")
-    if nvcc is None:
-        raise RuntimeError("set CUDA_HOME or FLASH_VLA_NVCC, or put nvcc on PATH")
-    directory = _SOURCE.parents[7] / ".cache/cuda_ext/rtx5090_pi05_backbone"
-    directory.mkdir(parents=True, exist_ok=True)
-    output = directory / "libfused_backbone.so"
-    if not output.exists() or output.stat().st_mtime < _SOURCE.stat().st_mtime:
-        subprocess.run(
-            [nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
-             "-gencode", "arch=compute_120,code=sm_120",
-             str(_SOURCE), "-o", str(output)],
-            check=True,
-        )
-    library = ctypes.CDLL(str(output))
-    library.backbone_rms_norm.argtypes = [
+#: The backbone's RMSNorm and gated-activation kernels.
+LIBRARY = NativeLibrary(
+    name="rtx5090_pi05_fused_backbone",
+    sources=(SOURCE,),
+    arch=("-gencode", "arch=compute_120,code=sm_120"),
+    flags=())
+
+
+@lru_cache(maxsize=1)
+def library() -> ctypes.CDLL:
+    """The loaded library with its C ABI declared; build it before graph capture."""
+    kernels = LIBRARY.load()
+    kernels.backbone_rms_norm.argtypes = [
         ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int32, ctypes.c_void_p,
     ]
-    library.backbone_rms_norm.restype = ctypes.c_int32
-    library.backbone_gelu_mul.argtypes = [
+    kernels.backbone_rms_norm.restype = ctypes.c_int32
+    kernels.backbone_gelu_mul.argtypes = [
         ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64, ctypes.c_void_p,
     ]
-    library.backbone_gelu_mul.restype = ctypes.c_int32
-    return library
+    kernels.backbone_gelu_mul.restype = ctypes.c_int32
+    return kernels
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
@@ -54,22 +49,22 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     x_norm and out are distinct writable buffers; out temporarily holds up.
     The runner must warm each shape before freezing the supplied allocator.
     """
-    library = None
+    native = None
 
     def llm_backbone_norm_gated_ffn(x, gate_w, up_w, out, x_norm):
-        nonlocal library
-        if library is None:
-            library = _library()
+        nonlocal native
+        if native is None:
+            native = library()
         rows = x.shape[0]
         normed, result = x_norm[:rows], out[:rows]
         gate = scratch("backbone_ffn_gate", result.shape, x.dtype, x.device)
         stream = torch.cuda.current_stream().cuda_stream
-        status = library.backbone_rms_norm(x.data_ptr(), normed.data_ptr(), rows, stream)
+        status = native.backbone_rms_norm(x.data_ptr(), normed.data_ptr(), rows, stream)
         if status:
             raise RuntimeError(f"backbone_rms_norm M={rows} K=2048: cudaError {status}")
         torch.mm(normed, gate_w, out=gate)
         torch.mm(normed, up_w, out=result)
-        status = library.backbone_gelu_mul(
+        status = native.backbone_gelu_mul(
             gate.data_ptr(), result.data_ptr(), result.numel(), stream)
         if status:
             raise RuntimeError(
@@ -77,3 +72,7 @@ def make_wrappers(scratch, selected_names=None) -> dict:
         return out
 
     return {"llm_backbone_norm_gated_ffn": llm_backbone_norm_gated_ffn}
+
+
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)

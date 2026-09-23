@@ -6,25 +6,24 @@ its own libraries, scratch, and packed weights. `FFNTaskloop` is the persistent
 FFN kernel's host side.
 
 `ROUTE_CONSTRAINTS` declares which call sites share a buffer contract that
-holds only when they resolve here together; a Target re-declares them under its
-own backend names and the runtime validates a plan against them at engine
-construction (`flash_vla.runtime.binding`). `graph_contract_for` is the same
-statement about the captured program, expressed over the call sites a Target
-has routed here, because only the Target knows which of its backend names mean
-this package.
+holds only when they resolve here together; the runtime validates a plan
+against them at engine construction (`flash_vla.runtime.binding`).
+`graph_contract` is the same statement about the captured program, over the
+call sites the registry has routed to the backend that wraps this package.
 
 This module imports `runtime/`, the shared tile library and this package's
 TileLang producers, and no Target.
 """
 
 from flash_vla.runtime.binding import RouteConstraint
+from flash_vla.runtime.registry import GraphContract
+
 
 from . import wrappers
 from .taskloop import FFNTaskloop, build_table
 
 ATTENTION_NAMES = wrappers.ATTENTION_NAMES
 NAMES = wrappers.NAMES
-OPS = wrappers.OPS
 make_wrappers = wrappers.make_wrappers
 
 #: Call sites of the FFN half: the producer and the persistent consumer.
@@ -52,9 +51,9 @@ ROUTE_CONSTRAINTS = (
 )
 
 
-def graph_contract_for(mine) -> dict[str, list[str]]:
+def graph_contract(routed: frozenset[str]) -> GraphContract:
     """Kernel names the captured program must and must not contain, given the
-    call sites `mine` that a Target has routed to this package.
+    call sites `routed` to this package.
 
     The XFS producer resets the FFN readiness counters itself, so a standalone
     reset kernel in the graph means the pair is wired wrong. On the fused
@@ -62,26 +61,17 @@ def graph_contract_for(mine) -> dict[str, list[str]]:
     residual GEMM and the split producer pair, and exactly one cooperative
     producer kernel must be present.
     """
-    mine = set(mine)
-    forbid: list[str] = []
-    require_one: list[str] = []
-    if set(FFN_NAMES) <= mine:
-        forbid.append("reset_ffn_counters_kernel")
-    if OUT_PROJ_NAME in mine:
-        forbid += ["_matmul_gated_res", "tl_rms_xfs_kmajor",
-                   "tl_out_proj_residual_partials", "tl_rms_xfs_from_partials"]
-        require_one.append("tl_out_proj_residual_rms_xfs")
-    return {"forbid": forbid, "require_one": require_one}
-
-
-def graph_contract_from_routes(routes, backends) -> dict[str, list[str]]:
-    """`graph_contract_for` over the call sites `routes` sends to `backends`."""
-    return graph_contract_for(
-        {name for name, backend in routes.items() if backend in backends})
+    reset_forbidden = ("reset_ffn_counters_kernel",) if set(FFN_NAMES) <= routed else ()
+    if OUT_PROJ_NAME not in routed:
+        return GraphContract(forbid=reset_forbidden)
+    return GraphContract(
+        forbid=reset_forbidden + ("_matmul_gated_res", "tl_rms_xfs_kmajor",
+                           "tl_out_proj_residual_partials", "tl_rms_xfs_from_partials"),
+        require_one=("tl_out_proj_residual_rms_xfs",))
 
 
 __all__ = [
-    "ATTENTION_NAMES", "FFN_NAMES", "NAMES", "OPS", "OUT_PROJ_NAME",
-    "ROUTE_CONSTRAINTS", "build_table", "graph_contract_for",
-    "graph_contract_from_routes", "make_wrappers", "wrappers", "FFNTaskloop",
+    "ATTENTION_NAMES", "FFN_NAMES", "NAMES", "OUT_PROJ_NAME",
+    "ROUTE_CONSTRAINTS", "build_table", "graph_contract", "make_wrappers", "wrappers",
+    "FFNTaskloop",
 ]

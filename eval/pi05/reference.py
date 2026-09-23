@@ -155,6 +155,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
 
     from flash_vla.hardware.nvidia.h100.pi05 import TARGET, forward_prefix
+    from flash_vla.provenance import git_revision
     from flash_vla.runtime import ModelRunner
 
     torch_device = torch.device(device)
@@ -183,7 +184,8 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
     del baseline, past_key_values
     torch.cuda.empty_cache()
 
-    engine = ModelRunner(TARGET, target_weights, checkpoint_id=revision, checkpoint_digest=digest,
+    engine = ModelRunner(TARGET, target_weights, engine_revision=git_revision(),
+                         checkpoint_id=revision, checkpoint_digest=digest,
                          plan=plan or "reference", device=device,
                          num_views=3, chunk_size=config.action_horizon, layers=layers, tokenizer=tokenizer,
                          prompt=prompt)
@@ -287,6 +289,7 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
 
     from flash_vla.hardware.nvidia.h100.pi05 import TARGET, forward_prefix
+    from flash_vla.provenance import git_revision
     from flash_vla.runtime import ModelRunner
 
     torch_device = torch.device(device)
@@ -319,7 +322,8 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
     del baseline, past_key_values
     torch.cuda.empty_cache()
 
-    engine = ModelRunner(TARGET, target_weights, checkpoint_id=revision, checkpoint_digest=digest,
+    engine = ModelRunner(TARGET, target_weights, engine_revision=git_revision(),
+                         checkpoint_id=revision, checkpoint_digest=digest,
                          plan="reference", device=device, num_views=3,
                          chunk_size=config.action_horizon, steps=steps, layers=layers, tokenizer=tokenizer,
                          prompt=prompt)

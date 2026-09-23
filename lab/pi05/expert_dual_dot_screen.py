@@ -116,11 +116,11 @@ def main():
     a0, packed0, _, _, expected0 = calls[0]
     both = torch.empty((a0.shape[0], 8192), dtype=a0.dtype, device=a0.device)
     output = torch.empty_like(expected0)
-    native = fused_ffn._library()
+    native = fused_ffn.library()
 
     def control(a, packed, gate_b, up_b):
         torch.mm(a, packed, out=both)
-        fused_ffn._check(native.packed_gated_activation_launch(
+        fused_ffn.check(native.packed_gated_activation_launch(
             both.data_ptr(), both.data_ptr() + 4096 * both.element_size(),
             gate_b.data_ptr(), up_b.data_ptr(), output.data_ptr(), a.shape[0],
             torch.cuda.current_stream().cuda_stream), "packed_gated_activation", a.shape[0])

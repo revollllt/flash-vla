@@ -47,6 +47,7 @@ def run(checkpoint: str, *, checkpoint_id: str, seed: int = 0, device: str = "cu
         raise RuntimeError("CUDA is required; run this command on an H100 GPU node")
 
     from flash_vla.hardware.nvidia.h100.pi0 import TARGET
+    from flash_vla.provenance import git_revision
     from flash_vla.runtime import ModelRunner
 
     torch_device = torch.device(device)
@@ -63,7 +64,8 @@ def run(checkpoint: str, *, checkpoint_id: str, seed: int = 0, device: str = "cu
     del baseline
     torch.cuda.empty_cache()
 
-    engine = ModelRunner(TARGET, target_weights, checkpoint_id=checkpoint_id, checkpoint_digest=checkpoint_id,
+    engine = ModelRunner(TARGET, target_weights, engine_revision=git_revision(),
+                         checkpoint_id=checkpoint_id, checkpoint_digest=checkpoint_id,
                          plan=plan, device=device, num_views=3, chunk_size=50,
                          steps=10, layers=18)
     del target_weights

@@ -19,14 +19,15 @@ H100's -- see `../../measured/README.md`.
 """
 from __future__ import annotations
 
+
 from flash_vla.runtime.registry import Registry
 
 from . import cuda as _cuda
 from . import torch_ops as _torch
 
 BACKENDS = {
-    "torch": _torch,
-    "cuda": _cuda,
+    "torch": _torch.BACKEND,
+    "cuda": _cuda.BACKEND,
 }
 
 REGISTRY = Registry(BACKENDS, default="torch")

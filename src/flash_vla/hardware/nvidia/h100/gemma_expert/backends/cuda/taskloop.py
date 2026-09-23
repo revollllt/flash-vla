@@ -29,18 +29,20 @@ element before writing it.
 from __future__ import annotations
 
 import ctypes
-import hashlib
-import os
-import subprocess
 from pathlib import Path
 
 import torch
 
+from flash_vla.hardware.nvidia.native import (
+    CUTLASS_DIR,
+    CUTLASS_VERSION_HEADER,
+    SM90_TILE_HEADERS,
+    TILE_INCLUDE_DIR,
+    NativeLibrary,
+)
+
 _HERE = Path(__file__).resolve().parent
 _SRC = _HERE / "kernels" / "ffn_taskloop.cu"
-_REPO = _HERE.parents[7]  # .../backends/cuda -> src/flash_vla/... -> repo root
-_CUTLASS = Path(os.environ.get("CUTLASS_DIR", _REPO / "third_party" / "cutlass"))
-_TILE_ROOT = _REPO / "src" / "flash_vla" / "hardware" / "nvidia" / "cuda"
 
 N_CTAS_FULL = 132
 FF = 4096
@@ -191,63 +193,21 @@ def validate_splitk_plan(queue: torch.Tensor,
             raise ValueError(f"bad reduction dependency for output tile {d}")
 
 
-def _extra_flags() -> list[str]:
-    """Extra nvcc flags from FFN_NVCC_DEFINES (e.g. -lineinfo). Part of the
-    build hash, so an instrumented build caches separately and never
-    displaces the production .so (mirrors ATTN_NVCC_DEFINES)."""
-    return [f for f in os.environ.get("FFN_NVCC_DEFINES", "").split() if f]
-
-
-def _cutlass_identity() -> bytes:
-    """What CUTLASS this build compiles against, for the cache key.
-
-    `CUTLASS_DIR` is a supported knob (`third_party/README.md`), so the path
-    alone is not enough: pointing it at another tree, or unsetting it after a
-    custom build, must not reuse the previous `.so`. The version header is
-    read rather than the whole tree because it is what changes when the pin
-    moves and it costs one small read.
-    """
-    version = _CUTLASS / "include" / "cutlass" / "version.h"
-    payload = version.read_bytes() if version.is_file() else b"missing"
-    return str(_CUTLASS.resolve()).encode() + payload
-
-
-def _build_dir() -> Path:
-    hasher = hashlib.sha256(_SRC.read_bytes())
-    # The headers carry the geometry and barrier structure; without them in
-    # the hash a .cuh edit would silently reuse a stale .so.
-    for header in sorted(_SRC.parent.glob("sm90_ffn_*.cuh")):
-        hasher.update(header.read_bytes())
-    for header in sorted((_TILE_ROOT / "tile" / "sm90").glob("*.cuh")):
-        hasher.update(header.read_bytes())
-    hasher.update(_cutlass_identity())
-    hasher.update(" ".join(_extra_flags()).encode())
-    tag = hasher.hexdigest()[:16]
-    d = _REPO / ".cache" / "cuda_ext" / f"ffn_taskloop_{tag}"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+#: The kernel library: its sources, the sm_90a target and the headers it depends on.
+LIBRARY = NativeLibrary(
+    name="ffn_taskloop",
+    sources=(_SRC,),
+    arch=("-arch=sm_90a",),
+    flags=("--expt-relaxed-constexpr",),
+    include_dirs=(CUTLASS_DIR / "include", TILE_INCLUDE_DIR),
+    headers=(*sorted(_SRC.parent.glob("sm90_ffn_*.cuh")), *SM90_TILE_HEADERS, CUTLASS_VERSION_HEADER),
+    link_driver=True,
+    flags_env="FFN_NVCC_DEFINES")
 
 
 def build(verbose: bool = False) -> Path:
-    """Compile the .so if this source hash has not been built yet."""
-    out = _build_dir() / "libffn_taskloop.so"
-    if out.exists():
-        return out
-    cuda_home = os.environ.get("CUDA_HOME", "/data/apps/cuda/13.1")
-    cmd = [
-        "nvcc", "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
-        "-arch=sm_90a", "--expt-relaxed-constexpr", *_extra_flags(),
-        f"-I{_CUTLASS}/include",
-        f"-I{_TILE_ROOT}",
-        "-o", str(out), str(_SRC),
-        f"-L{cuda_home}/lib64/stubs", "-lcuda",
-    ]
-    if verbose:
-        print("[taskloop build]", " ".join(cmd), flush=True)
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError(f"nvcc failed:\n{r.stdout}\n{r.stderr}")
-    return out
+    """Compile the library unless this exact build exists; return its path."""
+    return LIBRARY.build(verbose=verbose)
 
 
 def build_table(mode: str = "full") -> torch.Tensor:
@@ -328,7 +288,7 @@ def validate_table(table: torch.Tensor, mode: str = "full") -> None:
 
 class FFNTaskloop:
     def __init__(self, verbose: bool = False):
-        self._lib = ctypes.CDLL(str(build(verbose)))
+        self._lib = LIBRARY.load(verbose)
         self._lib.ffn_taskloop_launch.restype = ctypes.c_int
         self._lib.ffn_taskloop_launch.argtypes = [ctypes.c_void_p, ctypes.c_int,
                                                   ctypes.c_int] + \

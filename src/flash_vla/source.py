@@ -1,4 +1,8 @@
 """Load LingBot Python backends from a clean inference-source checkout."""
+from __future__ import annotations
+
+import copy
+from dataclasses import replace
 import importlib
 import importlib.util
 from functools import wraps
@@ -7,22 +11,30 @@ import subprocess
 import sys
 import uuid
 
+from flash_vla.runtime import VLA
+from flash_vla.runtime.registry import Backend, Registry, Wrapper
+from flash_vla.runtime.workspace import Scratch
+
 ROOT = Path(__file__).resolve().parents[2]
 BACKENDS = Path("src/flash_vla/hardware/nvidia/h100/lingbot_vla/backends")
 
 
+def isolate_rope(backend: Backend) -> Backend:
+    """`backend` with the upstream `apply_rope` global scoped to each of its engines.
 
-def isolate_rope(upstream):
-    """Scope the upstream apply_rope global to each sequential engine call."""
-    make_wrappers = upstream.make_wrappers
+    Upstream LingBot keeps `apply_rope` as a module global that a cached route
+    replaces; every wrapper call installs its engine's own value and restores
+    the previous one afterwards, errors included.
+    """
+    make_wrappers = backend.make_wrappers
 
-    def make(scratch, *args, **kwargs):
-        wrappers = make_wrappers(scratch, *args, **kwargs)
-        active_rope = None
+    def make(scratch: Scratch, selected_names: frozenset[str]) -> dict[str, Wrapper]:
+        wrappers = make_wrappers(scratch, selected_names)
+        active_rope: Wrapper | None = None
 
-        def bind(function):
+        def bind(function: Wrapper) -> Wrapper:
             @wraps(function)
-            def call(*args, **kwargs):
+            def call(*args: object, **kwargs: object) -> object:
                 nonlocal active_rope
                 path = str(scratch.assets["upstream"])
                 if path not in sys.path:
@@ -39,11 +51,17 @@ def isolate_rope(upstream):
             return call
         return {name: bind(function) for name, function in wrappers.items()}
 
-    upstream.make_wrappers = make
+    return replace(backend, make_wrappers=make)
 
 
-def lingbot_target(checkout):
-    """Keep shared inference code identical and isolate backend modules and their shared RoPE function."""
+def lingbot_target(checkout: str | Path) -> tuple[VLA, dict[str, str]]:
+    """The LingBot Target of `checkout`: its backend modules, isolated per engine.
+
+    Shared inference code must be identical between `checkout` and this
+    controller checkout; only the LingBot backends may differ. Every backend of
+    the loaded package is wrapped by `isolate_rope`, and the returned Target
+    routes to the isolated copies.
+    """
     source = Path(checkout).resolve()
     revisions = {}
     for checkout_root in dict.fromkeys((source, ROOT)):
@@ -74,11 +92,13 @@ def lingbot_target(checkout):
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
-    backends = sys.modules[name + ".backends"].BACKENDS
-    for backend in dict.fromkeys(backends.values()):
-        isolate_rope(backend)
+    loaded = sys.modules[name + ".backends"]
+    target = copy.copy(module.TARGET)
+    target.registry = Registry({backend_name: isolate_rope(backend)
+                                for backend_name, backend in loaded.BACKENDS.items()},
+                               default=loaded.REGISTRY.default)
     provenance = dict(revision=revision, checkout=str(source),
                       controller_revision=controller_revision,
                       target_package=str(package), module=name,
                       scope="isolated LingBot backends with per-call upstream RoPE; remaining src/flash_vla matches the source revision")
-    return module.TARGET, provenance
+    return target, provenance

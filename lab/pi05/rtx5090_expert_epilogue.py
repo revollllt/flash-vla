@@ -57,14 +57,14 @@ def _check(calls, reference, candidate):
     # the existing separate native residual stage to isolate epilogue rounding.
     projection = torch.empty_like(calls[0][-1])
     ones = torch.ones_like(calls[0][2])
-    native = fused_ffn._library()
+    native = fused_ffn.library()
     decomposition = []
     for index in (0, len(calls) // 2, len(calls) - 1):
         x, weight, gate, residual, out = calls[index]
         projection.zero_()
         candidate(x, weight, ones, projection)
         out.copy_(residual)
-        fused_ffn._check(native.gated_residual_launch(
+        fused_ffn.check(native.gated_residual_launch(
             projection.data_ptr(), gate.data_ptr(), out.data_ptr(), 50,
             torch.cuda.current_stream().cuda_stream), "gated_residual", 50)
         expected = out.clone()
@@ -89,7 +89,7 @@ def main() -> None:
                    **parse_options(args.option))
     engine.forward(**engine.sample_inputs(args.seed))
     calls = _record(engine, args.site)
-    reference = getattr(engine.ops, args.site)
+    reference = engine.ops[args.site]
     scratch = Scratch(torch.device("cuda"))
     candidate = cutlass_expert_residual.make_wrappers(scratch, [args.site])[args.site]
     correctness, decomposition = _check(calls, reference, candidate)

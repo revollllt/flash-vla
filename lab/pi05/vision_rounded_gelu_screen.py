@@ -32,7 +32,7 @@ class _Plan:
                                  torch.uint8, a.device)
         self.tensors = (a, weight, bias, output)
         self.handle = ctypes.c_void_p()
-        cutlass_backbone._check(library.vision_gelu_gemm_plan(
+        cutlass_backbone.check(library.vision_gelu_gemm_plan(
             m, k, n, a.data_ptr(), weight.data_ptr(), bias.data_ptr(), output.data_ptr(),
             self.workspace.data_ptr(), stream, ctypes.byref(self.handle)),
             f"vision_gelu_gemm_plan M={m} K={k} N={n}")
@@ -52,7 +52,7 @@ def main():
               "site": SITE, "tile": [64, 128, 32], "warp_tile": [32, 64, 32],
               "stages": 5, "epilogue_k_is_heavy": True, "phase": "native_build",
               "scope": "one complete LayerNorm/bias-GEMM/GELU chain across 27 actual layers",
-              "native_source": str(cutlass_backbone._SOURCE),
+              "native_source": str(cutlass_backbone.SOURCE),
               "cutlass_dir": os.environ.get("CUTLASS_DIR", str(root / "third_party/cutlass")),
               "is_deployment_sequence": False, "reps_per_leg": 15, "legs": []}
 
@@ -63,7 +63,7 @@ def main():
     print(json.dumps(report), flush=True)
     try:
         # Load once from this checkout: the old and new cfg10 types share this .so.
-        library = cutlass_vision._library()
+        library = cutlass_vision.library()
         report["native_library"] = library._name
         library.vision_gelu_gemm_workspace.argtypes = [ctypes.c_int32] * 3
         library.vision_gelu_gemm_workspace.restype = ctypes.c_int64
@@ -107,7 +107,7 @@ def main():
             key = (normalized.data_ptr(), weight.data_ptr(), bias.data_ptr(), projected.data_ptr())
             if key not in plans:
                 plans[key] = _Plan(library, scratch, normalized, weight, bias, projected, stream)
-            cutlass_backbone._check(library.vision_gelu_gemm_run(plans[key].handle, stream),
+            cutlass_backbone.check(library.vision_gelu_gemm_run(plans[key].handle, stream),
                                    "vision_gelu_gemm_run")
             return out
 

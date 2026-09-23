@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import torch
 
+from flash_vla.runtime.registry import Backend
+
 from ... import geometry
 
 
@@ -88,8 +90,6 @@ NAMES = frozenset(ALL_WRAPPERS)
 
 #: Each call site here is standalone: no route constraint, no extension op, and
 #: so no graph contract and no `tests.targets` route oracle to maintain.
-ROUTE_CONSTRAINTS: tuple = ()
-OPS: tuple = ()
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
@@ -105,3 +105,7 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     if unknown:
         raise KeyError(f"siglip cublas backend does not implement {sorted(unknown)}")
     return {name: ALL_WRAPPERS[name] for name in names}
+
+
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)

@@ -31,11 +31,12 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
+from flash_vla.hardware.nvidia.native import find_nvcc
+
 _REPO = Path(__file__).resolve().parents[1]
 _MODULE = (_REPO / "src" / "flash_vla" / "hardware" / "nvidia" / "h100"
            / "lingbot_vla" / "backends" / "cuda" / "skinny_gemm.py")
 _REFERENCE = _REPO / "lab" / "reference_pointwise.cu"
-_NVCC = "/data/apps/cuda/12.6/bin/nvcc"
 
 _RAMP_US = 1.85
 _MARGINAL_TB_S = 2.77
@@ -67,7 +68,7 @@ def reference_library():
     directory.mkdir(parents=True, exist_ok=True)
     out = directory / "libreference.so"
     if not out.exists():
-        command = [_NVCC, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
+        command = [str(find_nvcc("LINGBOT_NVCC")), "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
                    "-arch=sm_90a", "-o", str(out), str(_REFERENCE)]
         result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode != 0:

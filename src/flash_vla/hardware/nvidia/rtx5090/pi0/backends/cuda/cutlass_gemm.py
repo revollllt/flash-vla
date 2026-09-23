@@ -19,86 +19,39 @@ rather than silently writing to the wrong place.
 from __future__ import annotations
 
 import ctypes
-import hashlib
-import os
-import subprocess
 from pathlib import Path
 
 import torch
 
+from flash_vla.hardware.nvidia.native import CUTLASS_DIR, CUTLASS_VERSION_HEADER, NativeLibrary
+
 _HERE = Path(__file__).resolve().parent
 _SRC = _HERE / "kernels" / "cutlass_gemm.cu"
-_REPO = _HERE.parents[7]
-_ARCH = "sm_120a"
+#: One arch-specific target: the kernels use sm_120a instructions.
+ARCH = "sm_120a"
 
 _LIB = None
 
 
-def _nvcc() -> str:
-    """Same resolution order as the pointwise build: CUDA_HOME, PATH, override."""
-    explicit = os.environ.get("FLASH_VLA_NVCC")
-    if explicit:
-        return explicit
-    home = os.environ.get("CUDA_HOME")
-    if home and (Path(home) / "bin" / "nvcc").is_file():
-        return str(Path(home) / "bin" / "nvcc")
-    import shutil
-    found = shutil.which("nvcc")
-    if found:
-        return found
-    raise RuntimeError(
-        "no nvcc: set CUDA_HOME to a CUDA toolkit, put nvcc on PATH, or set "
-        "FLASH_VLA_NVCC")
-
-
-def _cutlass() -> Path:
-    """The CUTLASS tree to compile against.
-
-    `CUTLASS_DIR` first, matching the H100 target's skinny GEMM, then the
-    repo's own submodule, then the skills checkout this machine carries.
-    """
-    explicit = os.environ.get("CUTLASS_DIR")
-    if explicit:
-        return Path(explicit)
-    for candidate in (_REPO / "third_party" / "cutlass",
-                      Path("/home/ubuntu/agent-gpu-skills/third_party/cutlass")):
-        if (candidate / "include" / "cutlass" / "version.h").is_file():
-            return candidate
-    raise RuntimeError("no CUTLASS tree: set CUTLASS_DIR")
-
-
-def _identity() -> bytes:
-    """What this build depends on, so an edit never reuses a stale .so."""
-    version = _cutlass() / "include" / "cutlass" / "version.h"
-    return (_SRC.read_bytes() + version.read_bytes() + _nvcc().encode()
-            + _ARCH.encode())
+#: The CUTLASS GEMM configurations of this Target.
+LIBRARY = NativeLibrary(
+    name="rtx5090_pi0_cutlass",
+    sources=(_SRC,),
+    arch=("-gencode", f"arch=compute_{ARCH[3:]},code={ARCH}"),
+    flags=("--expt-relaxed-constexpr",),
+    include_dirs=(CUTLASS_DIR / "include",),
+    headers=(CUTLASS_VERSION_HEADER,))
 
 
 def build(verbose: bool = False) -> Path:
-    """Compile the shared library if this source and toolchain have not been built."""
-    tag = hashlib.sha256(_identity()).hexdigest()[:16]
-    directory = _REPO / ".cache" / "cuda_ext" / f"rtx5090_pi0_cutlass_{tag}"
-    directory.mkdir(parents=True, exist_ok=True)
-    out = directory / "libcutlass_gemm.so"
-    if out.exists():
-        return out
-    command = [_nvcc(), "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
-               "--expt-relaxed-constexpr",
-               "-gencode", f"arch=compute_{_ARCH[3:]},code={_ARCH}",
-               f"-I{_cutlass()}/include",
-               "-o", str(out), str(_SRC)]
-    if verbose or os.environ.get("FLASH_VLA_BUILD_VERBOSE"):
-        print("[rtx5090 pi0 cutlass build]", " ".join(command), flush=True)
-    result = subprocess.run(command, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"nvcc failed:\n{result.stdout}\n{result.stderr}")
-    return out
+    """Compile the library unless this exact build exists; return its path."""
+    return LIBRARY.build(verbose=verbose)
 
 
 def library(verbose: bool = False):
     global _LIB
     if _LIB is None:
-        lib = ctypes.CDLL(str(build(verbose=verbose)))
+        lib = LIBRARY.load(verbose=verbose)
         lib.cutlass_gemm_config_count.argtypes = []
         lib.cutlass_gemm_config_count.restype = ctypes.c_int
         lib.cutlass_gemm_workspace.argtypes = [ctypes.c_int] * 4 + [

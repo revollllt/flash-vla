@@ -9,32 +9,35 @@ Scratch belongs to the runner; warmup compiles/allocates before graph capture.
 from __future__ import annotations
 
 import ctypes
-import os
-import subprocess
 from functools import lru_cache, partial
 from pathlib import Path
 
 import torch
 
+from flash_vla.hardware.nvidia.native import NativeLibrary
+from flash_vla.runtime.registry import Backend
+
 NAMES = frozenset({"action_expert_attention"})
 
 
+SOURCE = Path(__file__).with_suffix(".cu")
+
+#: The expert attention's softmax and PV kernels.
+LIBRARY = NativeLibrary(
+    name="rtx5090_pi05_fused_attention",
+    sources=(SOURCE,),
+    arch=("-arch=sm_120a",),
+    flags=("--fmad=false",))
+
+
 @lru_cache(maxsize=1)
-def _library():
-    source = Path(__file__).with_suffix(".cu")
-    directory = source.parents[7] / ".cache" / "cuda_ext" / "rtx5090_pi05_fused_attention"
-    directory.mkdir(parents=True, exist_ok=True)
-    output = directory / "fused_attention.so"
-    if not output.exists() or output.stat().st_mtime < source.stat().st_mtime:
-        nvcc = str(Path(os.environ["CUDA_HOME"]) / "bin" / "nvcc")
-        subprocess.run(
-            [nvcc, "-O3", "-std=c++17", "--fmad=false", "--shared", "-Xcompiler",
-             "-fPIC", "-arch=sm_120a", str(source), "-o", str(output)], check=True)
-    lib = ctypes.CDLL(str(output))
-    lib.pi05_attention_softmax_launch.argtypes = (
+def library() -> ctypes.CDLL:
+    """The loaded library with its C ABI declared; build it before graph capture."""
+    kernels = LIBRARY.load()
+    kernels.pi05_attention_softmax_launch.argtypes = (
         [ctypes.c_void_p] * 3 + [ctypes.c_int32] * 2 + [ctypes.c_float, ctypes.c_void_p])
-    lib.pi05_attention_softmax_launch.restype = ctypes.c_int32
-    return lib
+    kernels.pi05_attention_softmax_launch.restype = ctypes.c_int32
+    return kernels
 
 
 def action_expert_attention(Q, K, V, mask, out, prefix_len=None, *, scratch):
@@ -43,7 +46,7 @@ def action_expert_attention(Q, K, V, mask, out, prefix_len=None, *, scratch):
     keys = K.shape[0]
     logits = scratch("pi05_attention_logits", (queries, keys), torch.float32, Q.device)
     probabilities = scratch("pi05_attention_probabilities", (queries, keys), Q.dtype, Q.device)
-    lib = _library()
+    lib = library()
     torch.mm(Q, K.T, out_dtype=torch.float32, out=logits)
     rc = lib.pi05_attention_softmax_launch(
         logits.data_ptr(), mask.data_ptr(), probabilities.data_ptr(), queries, keys,
@@ -62,4 +65,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: partial(wrappers[name], scratch=scratch) for name in names}
 
 
-__all__ = ["NAMES", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
+
+
+__all__ = ["BACKEND", "NAMES", "make_wrappers"]

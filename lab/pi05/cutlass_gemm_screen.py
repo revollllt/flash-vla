@@ -191,7 +191,7 @@ def main():
         results.append(screen(cg, engine, inputs, site, configs))
         args.output.write_text(json.dumps({
             "seed": args.seed, "options": args.option, "native_source": str(source),
-            "native_library": cg.library()._name, "native_arch": cg._ARCH,
+            "native_library": cg.library()._name, "native_arch": cg.ARCH,
             "pdl": False, "results": results,
         }, indent=2) + "\n")
 

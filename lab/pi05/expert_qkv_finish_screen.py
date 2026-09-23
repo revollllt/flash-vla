@@ -142,7 +142,7 @@ def main():
         projected = torch.empty((first["x"].shape[0], 2560), dtype=scaled.dtype, device=scaled.device)
         factor = torch.empty_like(first["factor"])
         q = torch.empty_like(first["q"])
-        native = fused_qkv._library()
+        native = fused_qkv.library()
         for call in calls:
             # Copies and view construction occur only in setup, outside every timed graph.
             call["k_cache"] = torch.cat((call["prefix_k"], torch.empty_like(call["k"])))

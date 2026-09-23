@@ -7,9 +7,12 @@ Plans and device workspaces belong to the wrapper instance and runner scratch.
 from __future__ import annotations
 
 import ctypes
+from functools import lru_cache
 import weakref
 
 import torch
+
+from flash_vla.runtime.registry import Backend
 
 from . import cutlass_backbone, fused_vision
 
@@ -17,34 +20,36 @@ NAMES = frozenset({"vision_encoder_norm_qkv", "vision_encoder_norm_ffn_up",
                    "vision_encoder_ffn_down_residual", "vision_encoder_out_proj_residual"})
 
 
-def _library():
-    library = cutlass_backbone._library()
-    library.vision_bias_gemm_workspace.argtypes = [ctypes.c_int32] * 3
-    library.vision_bias_gemm_workspace.restype = ctypes.c_int64
-    library.vision_bias_gemm_plan.argtypes = (
+@lru_cache(maxsize=1)
+def library() -> ctypes.CDLL:
+    """The CUTLASS library with this module's entry points declared."""
+    kernels = cutlass_backbone.library()
+    kernels.vision_bias_gemm_workspace.argtypes = [ctypes.c_int32] * 3
+    kernels.vision_bias_gemm_workspace.restype = ctypes.c_int64
+    kernels.vision_bias_gemm_plan.argtypes = (
         [ctypes.c_int32] * 3 + [ctypes.c_void_p] * 6
         + [ctypes.POINTER(ctypes.c_void_p)])
-    library.vision_bias_gemm_plan.restype = ctypes.c_int32
-    library.vision_bias_gemm_run.argtypes = [ctypes.c_void_p] * 2
-    library.vision_bias_gemm_run.restype = ctypes.c_int32
-    library.vision_bias_gemm_destroy.argtypes = [ctypes.c_void_p]
-    library.vision_bias_gemm_destroy.restype = None
-    return library
+    kernels.vision_bias_gemm_plan.restype = ctypes.c_int32
+    kernels.vision_bias_gemm_run.argtypes = [ctypes.c_void_p] * 2
+    kernels.vision_bias_gemm_run.restype = ctypes.c_int32
+    kernels.vision_bias_gemm_destroy.argtypes = [ctypes.c_void_p]
+    kernels.vision_bias_gemm_destroy.restype = None
+    return kernels
 
 
 class _Plan:
-    def __init__(self, library, scratch, role, a, weight, bias, output, stream):
+    def __init__(self, native, scratch, role, a, weight, bias, output, stream):
         m, k = a.shape
         n = weight.shape[1]
-        size = library.vision_bias_gemm_workspace(m, k, n)
+        size = native.vision_bias_gemm_workspace(m, k, n)
         self.workspace = scratch(role, (max(size, 1),), torch.uint8, a.device)
         self.tensors = (a, weight, bias, output)
         self.handle = ctypes.c_void_p()
-        cutlass_backbone._check(library.vision_bias_gemm_plan(
+        cutlass_backbone.check(native.vision_bias_gemm_plan(
             m, k, n, a.data_ptr(), weight.data_ptr(), bias.data_ptr(), output.data_ptr(),
             self.workspace.data_ptr(), stream, ctypes.byref(self.handle)),
             f"vision_bias_gemm_plan M={m} K={k} N={n}")
-        self.destroy = weakref.finalize(self, library.vision_bias_gemm_destroy, self.handle)
+        self.destroy = weakref.finalize(self, native.vision_bias_gemm_destroy, self.handle)
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
@@ -58,22 +63,22 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     plans all pointer sets and scratch before capture; replay allocates nothing.
     """
     names = NAMES if selected_names is None else set(selected_names)
-    library = pointwise = None
+    native = pointwise = None
     plans = {}
     role = f"pi05_vision_streamk_{id(plans)}"
 
     def gemm(a, weight, bias, output, stream):
-        nonlocal library
+        nonlocal native
         key = (a.data_ptr(), weight.data_ptr(), bias.data_ptr(), output.data_ptr())
         plan = plans.get(key)
         if plan is None:
             if torch.cuda.is_current_stream_capturing():
                 raise RuntimeError("vision GEMM pointer set was not warmed before capture")
-            if library is None:
-                library = _library()
-            plan = _Plan(library, scratch, role, a, weight, bias, output, stream)
+            if native is None:
+                native = library()
+            plan = _Plan(native, scratch, role, a, weight, bias, output, stream)
             plans[key] = plan
-        cutlass_backbone._check(library.vision_bias_gemm_run(plan.handle, stream),
+        cutlass_backbone.check(native.vision_bias_gemm_run(plan.handle, stream),
                                f"vision_bias_gemm_run M={a.shape[0]} K={a.shape[1]}")
 
     def vision_encoder_norm_qkv(x, norm_w, norm_b, qkv_w, qkv_b, out):
@@ -88,8 +93,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
         stream = torch.cuda.current_stream().cuda_stream
         gemm(normalized, weight, bias, out.view(-1, 4304), stream)
         if pointwise is None:
-            pointwise = fused_vision._library()
-        cutlass_backbone._check(pointwise.pi05_vision_gelu_launch(
+            pointwise = fused_vision.library()
+        cutlass_backbone.check(pointwise.pi05_vision_gelu_launch(
             out.data_ptr(), out.numel(), stream), "pi05_vision_gelu")
         return out
 
@@ -111,4 +116,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: wrappers[name] for name in names}
 
 
-__all__ = ["NAMES", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
+
+
+__all__ = ["BACKEND", "NAMES", "make_wrappers"]

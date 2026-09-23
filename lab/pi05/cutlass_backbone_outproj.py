@@ -63,7 +63,7 @@ def main():
     # is required to reproduce the rejected cfg0 reuse candidate.
     candidate = cutlass_backbone.make_wrappers(
         scratch, {"llm_backbone_ffn_down_residual"})["llm_backbone_ffn_down_residual"]
-    control = getattr(engine.ops, SITE)
+    control = engine.ops[SITE]
 
     def reset():
         for _, _, residual, out, _ in calls:

@@ -32,6 +32,8 @@ from functools import partial
 
 import torch
 
+from flash_vla.runtime.registry import Backend
+
 from .kernels import base as kernels
 from .kernels import fused_norm as fused_norm_kernels
 from .wrappers import _compiled, fresh_scratch
@@ -132,8 +134,6 @@ FUSED_WRAPPERS = {
 #: The registry contract of the `tilelang-fused` backend: these three call
 #: sites, no constraints, no extension ops.
 NAMES = frozenset(FUSED_WRAPPERS)
-ROUTE_CONSTRAINTS: tuple = ()
-OPS: tuple = ()
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
@@ -144,3 +144,7 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: (partial(FUSED_WRAPPERS[name], scratch=scratch)
                    if name == "action_expert_attention" else FUSED_WRAPPERS[name])
             for name in names}
+
+
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)

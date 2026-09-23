@@ -9,7 +9,9 @@ from unittest.mock import patch
 import pytest
 
 from flash_vla.runtime import identity as identity_module
-from flash_vla.runtime.identity import Identity, MeasurementContext, git_revision
+from flash_vla.provenance import git_revision
+from flash_vla.runtime.identity import Identity, MeasurementContext
+from flash_vla.runtime.registry import GraphContract
 from flash_vla.bench import KernelResult, write_csv
 
 
@@ -241,7 +243,7 @@ def test_profile_rejects_cross_context_delta(field):
         return SimpleNamespace(
             identity=Identity.from_dict(payload()), measurement_context=provenance,
             sample_inputs=lambda seed: {}, forward=lambda **kwargs: observed.append(plan),
-            graph_contract={},
+            graph_contract=GraphContract(),
         )
     with patch.object(profile, "require_cuda"), \
          patch.object(profile.torch.cuda, "init"), \

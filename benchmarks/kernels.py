@@ -122,7 +122,7 @@ def run(target: str, plan: str | None = None, seed: int = 0, only_segments: list
             if any(len(calls[s]) != len(calls[members[0]]) for s in members):
                 raise RuntimeError(f"atomic group {members} recorded unequal invocation "
                                    f"counts: { {s: len(calls[s]) for s in members} }")
-            fns = [getattr(engine.ops, s) for s in members]
+            fns = [engine.ops[s] for s in members]
             invocations = [calls[s] for s in members]
             count = len(invocations[0])
 

@@ -101,7 +101,7 @@ def profile(args):
     for _ in range(50):
         if residual is not None:
             output.copy_(residual)
-        cutlass_backbone._check(
+        cutlass_backbone.check(
             library.backbone_gemm_run(plan.handle, stream), f"{args.site} warmup")
     if residual is not None:
         output.copy_(residual)
@@ -114,7 +114,7 @@ def profile(args):
         "dtype": str(a.dtype), "warmup_calls": 50, "alpha": 1.0, "beta": beta,
         "nvtx_range": nvtx_range}), flush=True)
     with torch.cuda.nvtx.range(nvtx_range):
-        cutlass_backbone._check(
+        cutlass_backbone.check(
             library.backbone_gemm_run(plan.handle, stream), f"{args.site} measured launch")
     torch.cuda.synchronize()
 

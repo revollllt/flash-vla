@@ -6,6 +6,7 @@ import torch
 from flash_vla.models.groot_n17.reference import PREFIXES, bind_module, make_modules
 from flash_vla.models.groot_n17.weights import weight_shapes
 from flash_vla.runtime.ops import OpSpec
+from flash_vla.runtime.registry import Backend
 
 NAMES = ("groot_vision", "groot_backbone", "groot_action")
 WEIGHTS = {part: tuple(name for name in weight_shapes() if name.startswith(prefix))
@@ -124,3 +125,7 @@ def make_wrappers(scratch, selected_names=None):
 
     wrappers = dict(zip(NAMES, (vision, backbone, action)))
     return {name: wrappers[name] for name in (selected_names or NAMES)}
+
+
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers, ops=OPS)

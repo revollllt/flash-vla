@@ -135,7 +135,7 @@ def main():
                       weight_stride=list(calls[0]["weight"].stride()),
                       gate_shape=list(calls[0]["gate"].shape),
                       residual_stride=list(calls[0]["residual"].stride()))
-        control = getattr(engine.ops, SITE)
+        control = engine.ops[SITE]
         out = torch.empty_like(calls[0]["residual"])
 
         def candidate(x, weight, gate, output):
@@ -165,7 +165,7 @@ def main():
 
         # Gate=1/C=0 extracts this kernel's rounded projection without changing
         # its mainloop. The deployed separate residual stage checks the epilogue.
-        native = fused_ffn._library()
+        native = fused_ffn.library()
         ones = torch.ones_like(calls[0]["gate"])
         projection = torch.empty_like(out)
         report["phase"] = "decomposition"
@@ -174,7 +174,7 @@ def main():
             projection.zero_()
             candidate(call["x"], call["weight"], ones, projection)
             out.copy_(call["residual"])
-            fused_ffn._check(native.gated_residual_launch(
+            fused_ffn.check(native.gated_residual_launch(
                 projection.data_ptr(), call["gate"].data_ptr(), out.data_ptr(), 50,
                 torch.cuda.current_stream().cuda_stream), "gated_residual", 50)
             expected = out.clone()

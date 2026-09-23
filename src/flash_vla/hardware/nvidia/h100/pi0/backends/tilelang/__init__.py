@@ -1,8 +1,8 @@
 """TileLang backends for Pi0 call sites.
 
-Two backends satisfy the registry contract of `flash_vla.runtime.registry`:
-`wrappers` (every call site; the reference route) and `fused` (the three
-action-expert fusions the shipped plan routes to). Both stay importable on
+Two backends, each a `flash_vla.runtime.registry.Backend`: `BACKEND` (every
+call site; the reference route) and `fused.BACKEND` (the three action-expert
+fusions the shipped plan routes to). Both stay importable on
 their own for scripts that call their functions directly.
 
 `autotune` is deliberately not imported here. It is this backend's tuning
@@ -17,6 +17,6 @@ construction:
 from __future__ import annotations
 
 from . import fused, wrappers
-from .wrappers import NAMES, OPS, ROUTE_CONSTRAINTS, make_wrappers
+from .wrappers import BACKEND, NAMES, OPS, make_wrappers
 
-__all__ = ["NAMES", "OPS", "ROUTE_CONSTRAINTS", "fused", "make_wrappers", "wrappers"]
+__all__ = ["BACKEND", "NAMES", "OPS", "fused", "make_wrappers", "wrappers"]

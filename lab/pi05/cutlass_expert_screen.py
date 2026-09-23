@@ -91,11 +91,11 @@ def screen(cg, label, calls, configs, samples_ms, l2_bytes):
                 # cached device ordinal belong to the same kernel entry.
                 from flash_vla.hardware.nvidia.rtx5090.pi05.backends import cutlass_backbone as cb
                 from flash_vla.runtime.runner import Scratch
-                native = cb._library()
+                native = cb.library()
                 plans = [cb._Plan(native, Scratch(a.device), a, b, output, 0.0, cg._stream())
                          for (a, b), output in zip(calls, outputs)]
                 functions = [
-                    lambda plan=plan: cb._check(
+                    lambda plan=plan: cb.check(
                         native.backbone_gemm_run(plan.handle, cg._stream()), "cfg0 run")
                     for plan in plans]
                 native_path = native._name
@@ -180,7 +180,7 @@ def main():
             "seed": args.seed, "options": args.option, "deployment_revision_before_import": revision,
             "deployment_plan": dict(engine.identity.plan),
             "native_source": str(source), "native_library": cg.library()._name,
-            "native_arch": cg._ARCH, "pdl": False, "results": results,
+            "native_arch": cg.ARCH, "pdl": False, "results": results,
         }, indent=2) + "\n")
 
 

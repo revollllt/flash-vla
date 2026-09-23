@@ -166,12 +166,11 @@ NAMES = frozenset({
     "action_expert_ffn_down_residual",
 })
 #: No extension ops: every call site here is one of the standard vocabulary.
-OPS: tuple = ()
 
 
 def make_wrappers(
         scratch,
-        selected_names: set[str] | None = None,
+        selected_names: frozenset[str] | None = None,
         pdl_chain: bool = False) -> dict[str, object]:
     """Create one CUDA runtime whose lifetime follows its owning op table.
 

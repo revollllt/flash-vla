@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import torch
 
-from .fused_ffn import _check, _library
+from flash_vla.runtime.registry import Backend
+
+from . import fused_ffn
+from .fused_ffn import check
 
 NAMES = ("action_expert_out_proj_residual", "action_expert_ffn_down_residual")
 
@@ -30,7 +33,7 @@ def make_wrappers(scratch, selected_names=None) -> dict:
             workspaces[key] = scratch(role, (rows, 1024), x.dtype, x.device)
         projected = workspaces[key]
         torch.mm(x, weight, out=projected)
-        _check(_library().gated_residual_launch(
+        check(fused_ffn.library().gated_residual_launch(
             projected.data_ptr(), gate.data_ptr(), out.data_ptr(), rows,
             torch.cuda.current_stream().cuda_stream), "gated_residual", rows)
         return out
@@ -38,4 +41,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: projection_residual for name in names}
 
 
-__all__ = ["NAMES", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
+
+
+__all__ = ["BACKEND", "NAMES", "make_wrappers"]

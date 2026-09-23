@@ -87,7 +87,7 @@ def _check_gated_ffn(call_args) -> dict:
 def _run_site(engine, call_site: str, invocation) -> dict:
     """Invoke one recorded call, with the residual sites re-run from a clean copy."""
     args, kwargs = invocation
-    fn = getattr(engine.ops, call_site)
+    fn = engine.ops[call_site]
     if call_site == "llm_backbone_attention":
         fn(*args, **kwargs)
         torch.cuda.synchronize()

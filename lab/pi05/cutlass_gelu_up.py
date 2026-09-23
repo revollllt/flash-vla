@@ -64,14 +64,14 @@ class _FusedUpPlan:
         self.tensors = (a, weight, gate, out)
         self.library = library
         self.handle = ctypes.c_void_p()
-        cutlass_backbone._check(library.backbone_gelu_up_plan(
+        cutlass_backbone.check(library.backbone_gelu_up_plan(
             m, k, n, a.data_ptr(), weight.data_ptr(), gate.data_ptr(), out.data_ptr(),
             self.workspace.data_ptr(), torch.cuda.current_stream().cuda_stream,
             ctypes.byref(self.handle)), "backbone_gelu_up_plan")
         self.destroy = weakref.finalize(self, library.backbone_gelu_up_destroy, self.handle)
 
     def run(self):
-        cutlass_backbone._check(self.library.backbone_gelu_up_run(
+        cutlass_backbone.check(self.library.backbone_gelu_up_run(
             self.handle, torch.cuda.current_stream().cuda_stream), "backbone_gelu_up_run")
 
 
@@ -87,19 +87,19 @@ def main():
     calls = record_calls(engine, engine.sample_inputs(args.seed))
     # Both GEMM variants live in this one updated library. The other library
     # contains only the already deployed pointwise control kernels.
-    library = cutlass_backbone._library()
-    pointwise = fused_backbone._library()
+    library = cutlass_backbone.library()
+    pointwise = fused_backbone.library()
     scratch = Scratch(calls[0][0].device)
     out = scratch("gelu_up_result", calls[0][-1].shape, calls[0][0].dtype, calls[0][0].device)
     gate_plans, up_plans, fused_plans, gates = [], [], [], []
 
     def linear(plan):
-        cutlass_backbone._check(library.backbone_gemm_run(
+        cutlass_backbone.check(library.backbone_gemm_run(
             plan.handle, torch.cuda.current_stream().cuda_stream), "backbone_gemm_run")
 
     def control(plan, gate):
         linear(plan)
-        cutlass_backbone._check(pointwise.backbone_gelu_mul(
+        cutlass_backbone.check(pointwise.backbone_gelu_mul(
             gate.data_ptr(), out.data_ptr(), out.numel(),
             torch.cuda.current_stream().cuda_stream), "backbone_gelu_mul")
 

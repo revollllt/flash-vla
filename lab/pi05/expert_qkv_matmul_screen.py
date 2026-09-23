@@ -126,7 +126,7 @@ def main():
         projected = torch.empty_like(first["projected"])
         factor = torch.empty_like(first["factor"])
         q, k, v = (torch.empty_like(first[name]) for name in ("q", "k", "v"))
-        native = fused_qkv._library()
+        native = fused_qkv.library()
         report.update(actual_layers=len(calls),
                       shape_mkn=[first["x"].shape[0], 1024, 2560],
                       dtype=str(first["x"].dtype),

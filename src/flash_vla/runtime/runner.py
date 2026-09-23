@@ -20,62 +20,24 @@ the CPU smoke check uses.
 from __future__ import annotations
 
 import gc
+from pathlib import Path
 import warnings
 from contextlib import contextmanager
 from dataclasses import replace
 from functools import partial
-from types import MappingProxyType, SimpleNamespace
-from typing import Any, Callable, Iterator, Mapping
+from typing import Any, Iterator, Mapping
 
 import torch
 
 from .cost import SegmentCosts
 from .cuda.arena import StaticArena
 from .cuda.program import Program, Segment, Step
-from .engine import wrap_ops
+from .engine import WrapOp, wrap_ops
 from .graph import BufRef, Graph, Node, WeightRef
 from .identity import ExecutionVariant, Identity, validate_weight_schema
+from .registry import GraphContract, Wrapper
 from .vla import DTYPES, VLA
-
-
-class Scratch:
-    """The workspace allocator the runner injects into every backend.
-
-    Keyed by role, shape, dtype and device; each key is allocated once, on
-    first request, and reused. The runner records which node asked. After
-    warmup the allocator is frozen: a request warmup did not cover raises
-    instead of allocating during graph capture.
-    """
-
-    def __init__(self, device: torch.device, *, assets: Mapping[str, Any] | None = None) -> None:
-        self.device = device
-        self.assets = MappingProxyType(dict(assets or {}))
-        self._buffers: dict[tuple, torch.Tensor] = {}
-        self.owners: dict[tuple, int | None] = {}
-        self.current: int | None = None
-        self.frozen = False
-
-    def __call__(self, role: str, shape, dtype, device) -> torch.Tensor:
-        key = (role, tuple(shape), dtype, str(device))
-        buffer = self._buffers.get(key)
-        if buffer is None:
-            if self.frozen:
-                raise RuntimeError(f"workspace is frozen but {key} was requested: warmup did "
-                                   "not cover it, so it would allocate mid-capture")
-            buffer = torch.zeros(shape, dtype=dtype, device=device)
-            self._buffers[key] = buffer
-            self.owners[key] = self.current
-        return buffer
-
-    def freeze(self) -> None:
-        self.frozen = True
-
-    @property
-    def nbytes(self) -> int:
-        return sum(t.numel() * t.element_size() for t in self._buffers.values())
-
-    def __len__(self) -> int:
-        return len(self._buffers)
+from .workspace import Scratch
 
 
 class ModelRunner:
@@ -84,6 +46,10 @@ class ModelRunner:
     assets is a construction-time role-to-local-path mapping, copied read-only
     for this runner's input sampler and backend factories. It is not part of
     configuration, shape, graph arguments or identity.
+
+    engine_revision is the source revision the identity records
+    (`flash_vla.provenance.git_revision` at the entry point); the runner never
+    inspects a checkout itself, so `None` means the caller named none.
 
     quantization names one of the Target's recipes (`VLA.QUANTIZATION`), or its
     precision policy. It selects the named plans' routes for the recipe's call
@@ -102,8 +68,9 @@ class ModelRunner:
     def __init__(self, target: VLA, checkpoint: Mapping[str, torch.Tensor] | None = None, *,
                  checkpoint_id: str | None = None, checkpoint_digest: str | None = None,
                  checkpoint_signature: str | None = None, model_revision: str | None = None,
-                 plan: Any = "shipped", quantization: str | None = None, device: str = "cuda",
-                 capture: bool = True, warmup: int = 3, assets: Mapping[str, Any] | None = None,
+                 engine_revision: str | None = None, plan: Any = "shipped",
+                 quantization: str | None = None, device: str = "cuda", capture: bool = True,
+                 warmup: int = 3, assets: Mapping[str, Path] | None = None,
                  **config: Any) -> None:
         self.target = target
         if model_revision is not None:
@@ -131,7 +98,7 @@ class ModelRunner:
         self.identity = Identity(target=target.name, hardware=target.hardware,
                                  model=target.model, model_revision=target.model_revision,
                                  inference_signature=target.inference_signature,
-                                 shape=self.shape, plan=routes,
+                                 shape=self.shape, plan=routes, engine_revision=engine_revision,
                                  precision=target.precision, execution_variant=variant)
         self.program: tuple[Step, ...] = tuple(self.graph.program)
         self.stage_outputs = {stage: tuple(outputs)
@@ -196,7 +163,7 @@ class ModelRunner:
                                   for node in self.graph.nodes_of(stage)]
 
     @property
-    def ops(self) -> SimpleNamespace:
+    def ops(self) -> Mapping[str, Wrapper]:
         """The op table in force: the routed wrappers, wrapped while `instrument` is active."""
         return self._ops
 
@@ -211,11 +178,11 @@ class ModelRunner:
             if node.is_copy:
                 args[0].copy_(args[1])
             else:
-                getattr(ops, node.call_site)(*args)
+                ops[node.call_site](*args)
         scratch.current = None
 
     @contextmanager
-    def instrument(self, wrap: Callable[[str, Callable], Callable]) -> Iterator[None]:
+    def instrument(self, wrap: WrapOp) -> Iterator[None]:
         """While active, every op-table entry `name` is replaced by `wrap(name, fn)`."""
         original = self._ops
         self._ops = wrap_ops(original, wrap)
@@ -243,7 +210,7 @@ class ModelRunner:
                 for stage, rows in self.graph.costs(pricing).items()}
 
     @property
-    def graph_contract(self) -> dict[str, list[str]]:
+    def graph_contract(self) -> GraphContract:
         return self.target.registry.graph_contract(dict(self.identity.plan))
 
     @property

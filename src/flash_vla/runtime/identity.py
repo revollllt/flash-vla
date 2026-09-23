@@ -4,21 +4,13 @@ No GPU imports: report readers and Campaign discovery use these types offline.
 """
 from __future__ import annotations
 
-import hashlib
-import json
-import subprocess
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Mapping
+
+from flash_vla.provenance import canonical_digest
 
 PRECISION_POLICIES = ("bf16",)
 IDENTITY_SCHEMA_VERSION = 3
-
-
-def canonical_digest(value: Any) -> str:
-    """Digest of small semantic metadata, never source files or weight values."""
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    return "sha256:" + hashlib.sha256(encoded.encode()).hexdigest()
 
 
 def inference_signature(*, architecture: Mapping, parameter_shapes: Mapping,
@@ -41,21 +33,6 @@ def validate_weight_schema(actual: Mapping, expected: Mapping) -> None:
         raise ValueError("inference signature mismatch: weight ABI differs; "
                          f"missing={missing}, extra={extra}, shapes={mismatched}; "
                          "resolve a compatible Target/model revision")
-
-
-def git_revision(start: Path | str | None = None) -> str | None:
-    """The full HEAD revision of a clean checkout containing start, if any."""
-    root = Path(start or __file__).resolve()
-    try:
-        status = subprocess.run(["git", "-C", str(root.parent), "status", "--porcelain"],
-                                capture_output=True, text=True, timeout=5)
-        if status.returncode != 0 or status.stdout:
-            return None
-        out = subprocess.run(["git", "-C", str(root.parent), "rev-parse", "HEAD"],
-                             capture_output=True, text=True, timeout=5)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else None
 
 
 @dataclass(frozen=True)
@@ -131,7 +108,8 @@ class Identity:
     shape: Mapping[str, int]
     plan: Mapping[str, str]
     precision: str = "bf16"
-    engine_revision: str | None = field(default_factory=git_revision)
+    #: The source revision the engine was built from; entry points supply it.
+    engine_revision: str | None = None
     inference_signature: str | None = None
     execution_variant: ExecutionVariant | Mapping | None = None
     schema_version: int = IDENTITY_SCHEMA_VERSION

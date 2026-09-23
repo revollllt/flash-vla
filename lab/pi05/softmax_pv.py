@@ -68,7 +68,7 @@ def main():
         library = ctypes.CDLL(str(args.library.resolve()))
         library.softmax_pv_launch.argtypes = [ctypes.c_void_p] * 6
         library.softmax_pv_launch.restype = ctypes.c_int32
-        native = fused_attention._library()
+        native = fused_attention.library()
         cases, metadata = load_cases(args.snapshot)
         report["snapshot_metadata"] = metadata
         report["case_count"] = len(cases)

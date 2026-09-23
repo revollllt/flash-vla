@@ -28,12 +28,11 @@ from dataclasses import dataclass
 from functools import lru_cache
 import os
 from pathlib import Path
-import shutil
-import subprocess
 from typing import Callable, Literal
 
 import torch
 
+from flash_vla.hardware.nvidia.native import NativeLibrary
 from flash_vla.quantization import formats
 
 Format = Literal["bf16", "mxfp8", "nvfp4"]
@@ -42,7 +41,6 @@ Allocator = Callable[[str, tuple[int, ...], torch.dtype], torch.Tensor]
 PACKAGE_DIR = Path(__file__).resolve().parent
 CUDA_INCLUDE_DIR = PACKAGE_DIR.parent / "cuda"
 SOURCE = PACKAGE_DIR / "fused_quant.cu"
-BUILD_INPUTS = (SOURCE, CUDA_INCLUDE_DIR / "quant" / "block_quant.cuh", Path(__file__))
 # Blackwell families by compute capability major. A family target (sm_100f
 # runs on 10.0 and 10.3, sm_120f on 12.0 and 12.1) has the E2M1/UE8M0
 # conversions; Hopper and earlier lack cvt.e2m1x2 and block-scaled MMA alike.
@@ -58,29 +56,6 @@ MAX_ELEMENTWISE_ROWS = 65535  # elementwise kernels: one grid row per matrix row
 PDL_TRIGGER_OVERRIDE = os.environ.get("FLASH_VLA_QUANT_PDL_TRIGGER")
 
 
-def build_library(family: str) -> Path:
-    """Compile fused_quant.cu for one Blackwell family unless the cached build is current."""
-    variant = "" if PDL_TRIGGER_OVERRIDE is None else f"_trigger{PDL_TRIGGER_OVERRIDE}"
-    library_path = (PACKAGE_DIR.parents[4] / ".cache" / "cuda_ext" / "nvidia_quant_ops"
-                    / f"sm_{family}" / f"libfused_quant{variant}.so")
-    newest_input_ns = max(path.stat().st_mtime_ns for path in BUILD_INPUTS)
-    if library_path.exists() and library_path.stat().st_mtime_ns >= newest_input_ns:
-        return library_path
-    cuda_home = os.environ.get("CUDA_HOME")
-    nvcc = os.environ.get("FLASH_VLA_NVCC") or (
-        str(Path(cuda_home) / "bin" / "nvcc") if cuda_home else shutil.which("nvcc"))
-    if nvcc is None:
-        raise RuntimeError("quant_ops requires nvcc on PATH or CUDA_HOME")
-    library_path.parent.mkdir(parents=True, exist_ok=True)
-    trigger_define = ([] if PDL_TRIGGER_OVERRIDE is None
-                      else [f"-DFVQ_PDL_TRIGGER={int(PDL_TRIGGER_OVERRIDE)}"])
-    subprocess.run([nvcc, "-O3", "-std=c++17", "--fmad=false", "--shared", "-Xcompiler", "-fPIC",
-                    "-I", str(CUDA_INCLUDE_DIR),
-                    "-gencode", f"arch=compute_{family},code=sm_{family}",
-                    *trigger_define, str(SOURCE), "-o", str(library_path)], check=True)
-    return library_path
-
-
 @lru_cache(maxsize=None)
 def library(device: torch.device) -> ctypes.CDLL:
     """The kernels for this device's Blackwell family; call before graph capture."""
@@ -88,7 +63,15 @@ def library(device: torch.device) -> ctypes.CDLL:
     if major not in BLACKWELL_FAMILIES:
         raise RuntimeError(f"quant_ops needs a Blackwell GPU (sm_100 or later); "
                            f"{torch.cuda.get_device_name(device)} is sm_{major}{minor}")
-    kernels = ctypes.CDLL(str(build_library(BLACKWELL_FAMILIES[major])))
+    family = BLACKWELL_FAMILIES[major]
+    trigger = () if PDL_TRIGGER_OVERRIDE is None else (f"-DFVQ_PDL_TRIGGER={int(PDL_TRIGGER_OVERRIDE)}",)
+    kernels = NativeLibrary(
+        name=f"fused_quant_sm_{family}",
+        sources=(SOURCE,),
+        arch=("-gencode", f"arch=compute_{family},code=sm_{family}"),
+        flags=("--fmad=false", *trigger),
+        include_dirs=(CUDA_INCLUDE_DIR,),
+        headers=(CUDA_INCLUDE_DIR / "quant" / "block_quant.cuh",)).load()
     pointer, int32, int64 = ctypes.c_void_p, ctypes.c_int32, ctypes.c_int64
     kernels.fvq_row_norm.argtypes = (
         [pointer] * 11   # x, residual, residual_out, weight, bias, mod_scale, mod_shift,

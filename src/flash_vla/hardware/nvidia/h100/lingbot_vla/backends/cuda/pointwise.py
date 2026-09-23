@@ -10,58 +10,42 @@ The toolkit must match the environment's torch build, not the newest module on
 the machine: this Target runs torch 2.9.1+cu126 on a partition that mixes a
 570 (CUDA 12.8) and a 610 (CUDA 13.x) driver, and a cubin from CUDA 13 will not
 load on the 570 driver once the forward-compat directory has been dropped.
-`LINGBOT_NVCC` overrides the default when a job needs another toolkit.
+Set `LINGBOT_NVCC` to that toolkit's nvcc (a CUDA 12.6 one for this torch);
+without it the build uses the default lookup of `hardware/nvidia/native.py`.
 """
 from __future__ import annotations
 
 import ctypes
-import hashlib
-import os
-import subprocess
 from pathlib import Path
 
 import torch
 
+from flash_vla.hardware.nvidia.native import NativeLibrary
+
 _HERE = Path(__file__).resolve().parent
 _SRC = _HERE / "kernels" / "pointwise.cu"
 _ATTENTION_SRC = _HERE / "kernels" / "attention.cu"
-_REPO = _HERE.parents[7]
-_DEFAULT_NVCC = "/data/apps/cuda/12.6/bin/nvcc"
 
 _LIB = None
 
 
-def _nvcc() -> str:
-    explicit = os.environ.get("LINGBOT_NVCC")
-    if explicit:
-        return explicit
-    return _DEFAULT_NVCC if Path(_DEFAULT_NVCC).is_file() else "nvcc"
+#: The kernel library; `LINGBOT_NVCC` names its compiler (module docstring).
+LIBRARY = NativeLibrary(
+    name="lingbot_pointwise",
+    sources=(_SRC, _ATTENTION_SRC),
+    arch=("-arch=sm_90a",),
+    nvcc_env="LINGBOT_NVCC")
 
 
 def build(verbose: bool = False) -> Path:
-    """Compile the shared library if this source and toolchain have not been built."""
-    nvcc = _nvcc()
-    tag = hashlib.sha256(_SRC.read_bytes() + _ATTENTION_SRC.read_bytes()
-                         + nvcc.encode()).hexdigest()[:16]
-    directory = _REPO / ".cache" / "cuda_ext" / f"lingbot_pointwise_{tag}"
-    directory.mkdir(parents=True, exist_ok=True)
-    out = directory / "libpointwise.so"
-    if out.exists():
-        return out
-    command = [nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
-               "-arch=sm_90a", "-o", str(out), str(_SRC), str(_ATTENTION_SRC)]
-    if verbose:
-        print("[lingbot pointwise build]", " ".join(command), flush=True)
-    result = subprocess.run(command, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"nvcc failed:\n{result.stdout}\n{result.stderr}")
-    return out
+    """Compile the library unless this exact build exists; return its path."""
+    return LIBRARY.build(verbose=verbose)
 
 
 def library(verbose: bool = False):
     global _LIB
     if _LIB is None:
-        lib = ctypes.CDLL(str(build(verbose=verbose)))
+        lib = LIBRARY.load(verbose=verbose)
         lib.expert_rope_launch.argtypes = [ctypes.c_void_p] * 6 + [ctypes.c_int] * 8 + [
             ctypes.c_void_p]
         lib.expert_rope_launch.restype = ctypes.c_int

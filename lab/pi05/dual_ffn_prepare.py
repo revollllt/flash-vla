@@ -172,7 +172,7 @@ def main():
                     calls[0]["x"].dtype, calls[0]["x"].device)
         out = torch.empty_like(calls[0]["expected"])
         factor = torch.empty_like(calls[0]["factor"])
-        library = fused_ffn._library()
+        library = fused_ffn.library()
         report.update(phase="correctness", calls=len(calls), weight_pairs=len(packed),
                       packed_bytes=sum(t.numel() * t.element_size() for t in packed.values()),
                       base_plan=dict(engine.identity.plan), native_library=library._name,
@@ -180,7 +180,7 @@ def main():
         save()
 
         def control(call):
-            fused_ffn._check(library.ada_rms_launch(
+            fused_ffn.check(library.ada_rms_launch(
                 call["x"].data_ptr(), call["scale"].data_ptr(), a.data_ptr(),
                 factor.data_ptr(), 50, torch.cuda.current_stream().cuda_stream),
                 "ada_rms", 50)

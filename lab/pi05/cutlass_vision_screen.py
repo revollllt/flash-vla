@@ -95,7 +95,7 @@ def screen(cg, label, calls, configs, samples_ms, l2_bytes):
                 # cached device ordinal belong to the same kernel entry.
                 from flash_vla.hardware.nvidia.rtx5090.pi05.backends import cutlass_backbone as cb
                 from flash_vla.runtime.runner import Scratch
-                native = cb._library()
+                native = cb.library()
                 plans = [cb._Plan(native, Scratch(a.device), a, b, output, 1.0, cg._stream())
                          for (a, b, _), output in zip(calls, outputs)]
                 functions = []
@@ -103,7 +103,7 @@ def screen(cg, label, calls, configs, samples_ms, l2_bytes):
                     def invoke(plan=plan, bias=bias, output=output):
                         # C=D requires this reset inside every timed invocation.
                         output.copy_(bias)
-                        cb._check(native.backbone_gemm_run(plan.handle, cg._stream()),
+                        cb.check(native.backbone_gemm_run(plan.handle, cg._stream()),
                                   "cfg0 run")
                     functions.append(invoke)
                 native_path = native._name
@@ -207,7 +207,7 @@ def main():
             "seed": args.seed, "options": args.option, "deployment_revision_before_import": revision,
             "deployment_plan": dict(engine.identity.plan),
             "native_source": str(source), "native_library": cg.library()._name,
-            "native_arch": cg._ARCH, "cutlass_vendor_revision": vendor_revision,
+            "native_arch": cg.ARCH, "cutlass_vendor_revision": vendor_revision,
             "pdl": False, "results": results,
         }, indent=2) + "\n")
 

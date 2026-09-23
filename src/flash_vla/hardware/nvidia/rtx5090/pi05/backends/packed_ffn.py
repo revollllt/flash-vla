@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import torch
 
-from .fused_ffn import NAMES, _check, _library
+from flash_vla.runtime.registry import Backend
+
+from . import fused_ffn
+from .fused_ffn import NAMES, check
 
 
 def make_wrappers(scratch, selected_names=None) -> dict:
@@ -40,12 +43,12 @@ def make_wrappers(scratch, selected_names=None) -> dict:
                 scratch(role + "_both", (rows, 8192), x.dtype, x.device),
             )
         a, both = workspaces[key]
-        lib = _library()
+        lib = fused_ffn.library()
         stream = torch.cuda.current_stream().cuda_stream
-        _check(lib.ada_rms_launch(x.data_ptr(), scale.data_ptr(), a.data_ptr(),
+        check(lib.ada_rms_launch(x.data_ptr(), scale.data_ptr(), a.data_ptr(),
                                  norm_factor.data_ptr(), rows, stream), "ada_rms", rows)
         torch.mm(a, packed, out=both)
-        _check(lib.packed_gated_activation_launch(
+        check(lib.packed_gated_activation_launch(
             both.data_ptr(), both.data_ptr() + 4096 * both.element_size(),
             gate_b.data_ptr(), up_b.data_ptr(), out.data_ptr(), rows, stream),
             "packed_gated_activation", rows)
@@ -54,4 +57,8 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     return {name: action_expert_norm_gated_ffn for name in names}
 
 
-__all__ = ["NAMES", "make_wrappers"]
+#: What the Target's registry routes to (`flash_vla.runtime.registry`).
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
+
+
+__all__ = ["BACKEND", "NAMES", "make_wrappers"]

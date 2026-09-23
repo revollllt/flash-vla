@@ -22,76 +22,47 @@ Targets: Pi0.5 runs 968 prefix rows and Pi0 768, at the same K=2048, F=16384.
 from __future__ import annotations
 
 import ctypes
-import hashlib
-import os
-import subprocess
 from pathlib import Path
 
 import torch
 
+from flash_vla.hardware.nvidia.native import (
+    CUTLASS_DIR,
+    CUTLASS_VERSION_HEADER,
+    SM90_TILE_HEADERS,
+    TILE_INCLUDE_DIR,
+    NativeLibrary,
+)
+
 _HERE = Path(__file__).resolve().parent
 _SRC = _HERE / "kernels" / "gated_ffn.cu"
-_REPO = _HERE.parents[7]
-_CUTLASS = Path(os.environ.get("CUTLASS_DIR", _REPO / "third_party" / "cutlass"))
-_TILE_ROOT = _REPO / "src" / "flash_vla" / "hardware" / "nvidia" / "cuda"
 
 _LIB = None
 _MAPS: dict = {}
 
 
-def _extra_flags() -> list[str]:
-    """GATED_FFN_NVCC_DEFINES: space-separated extra nvcc flags (the ablation switches)."""
-    return os.environ.get("GATED_FFN_NVCC_DEFINES", "").split()
-
-
-def _cutlass_identity() -> bytes:
-    """What CUTLASS this build compiles against, for the cache key."""
-    version = _CUTLASS / "include" / "cutlass" / "version.h"
-    payload = version.read_bytes() if version.is_file() else b"missing"
-    return str(_CUTLASS.resolve()).encode() + payload
-
-
-def _build_dir() -> Path:
-    """The tile primitive headers are part of the kernel; hash them and the flags."""
-    tile_headers = b"".join(h.read_bytes() for h in
-                            sorted((_TILE_ROOT / "tile" / "sm90").glob("*.cuh")))
-    tag = hashlib.sha256(_SRC.read_bytes() + tile_headers + _cutlass_identity()
-                         + " ".join(_extra_flags()).encode()).hexdigest()[:16]
-    d = _REPO / ".cache" / "cuda_ext" / f"gated_ffn_{tag}"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+#: The kernel library: its sources, the sm_90a target and the headers it depends on.
+LIBRARY = NativeLibrary(
+    name="gated_ffn",
+    sources=(_SRC,),
+    arch=("-arch=sm_90a",),
+    flags=("--expt-relaxed-constexpr", "-Xptxas", "-v"),
+    include_dirs=(CUTLASS_DIR / "include", TILE_INCLUDE_DIR),
+    headers=(*SM90_TILE_HEADERS, CUTLASS_VERSION_HEADER),
+    link_driver=True,
+    flags_env="GATED_FFN_NVCC_DEFINES")
 
 
 def build(verbose: bool = False) -> Path:
-    """Compile the .so if this source hash has not been built yet."""
-    out = _build_dir() / "libgated_ffn.so"
-    if out.exists():
-        return out
-    cuda_home = os.environ.get("CUDA_HOME", "/data/apps/cuda/13.1")
-    nvcc = os.environ.get("NVCC", "nvcc")
-    cmd = [
-        nvcc, "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
-        "-arch=sm_90a", "--expt-relaxed-constexpr", "-Xptxas", "-v",
-        *_extra_flags(),
-        f"-I{_CUTLASS}/include", f"-I{_TILE_ROOT}",
-        "-o", str(out), str(_SRC),
-        f"-L{cuda_home}/lib64/stubs", "-lcuda",
-    ]
-    if verbose:
-        print("[gated_ffn build]", " ".join(cmd), flush=True)
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError(f"nvcc failed:\n{r.stdout}\n{r.stderr}")
-    if verbose and r.stderr:
-        print(r.stderr, flush=True)
-    return out
+    """Compile the library unless this exact build exists; return its path."""
+    return LIBRARY.build(verbose=verbose)
 
 
 def library(verbose: bool = False):
     """The loaded shared library, with its C ABI declared."""
     global _LIB
     if _LIB is None:
-        lib = ctypes.CDLL(str(build(verbose=verbose)))
+        lib = LIBRARY.load(verbose=verbose)
         lib.gated_ffn_geometry.argtypes = [ctypes.POINTER(ctypes.c_int)] * 7
         lib.gated_ffn_geometry.restype = ctypes.c_int
         lib.gated_ffn_make_maps.argtypes = [ctypes.c_void_p] * 4 + [ctypes.c_int] * 3 + [

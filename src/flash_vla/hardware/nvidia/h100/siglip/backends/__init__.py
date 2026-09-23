@@ -1,8 +1,7 @@
 """Backend factories for the SigLIP vision encoder on H100.
 
-Each subpackage satisfies the registry contract of `flash_vla.runtime.registry`
-(`NAMES`, `make_wrappers(scratch, selected_names)`, `ROUTE_CONSTRAINTS`, `OPS`)
-and is registered by a Target under a name of the Target's choosing. Nothing
+Each subpackage exposes a `BACKEND` (`flash_vla.runtime.registry.Backend`)
+that a Target registers under a name of its choosing. Nothing
 here imports a Target.
 
     cublas   the two pre-norm projections as torch's LayerNorm + a fused

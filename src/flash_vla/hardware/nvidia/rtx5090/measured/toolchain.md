@@ -99,8 +99,12 @@ are the real rewrite.
 
 ## Machine paths
 
-`lingbot_vla/backends/cuda/split_attention.py:26` and its peers bake
-`/data/apps/cuda/12.6/bin/nvcc` with a bare `nvcc` fallback; neither resolves on
-this host. New rtx5090 backends resolve the toolkit from the environment
-(`CUDA_HOME`, else `PATH`) instead. The H100 backends are left alone — they are
-that Target's compiler settings, and nothing here runs them.
+Every native library resolves its compiler the same way
+(`hardware/nvidia/native.py`): `FLASH_VLA_NVCC`, else `CUDA_HOME/bin/nvcc`, else
+`nvcc` on `PATH`; LingBot's libraries honour `LINGBOT_NVCC` ahead of that. No
+machine path is baked in any more -- the H100 LingBot build used to default to
+`/data/apps/cuda/12.6/bin/nvcc`, so a machine that relied on that default now
+sets `LINGBOT_NVCC`. The H100 loaders' old per-call `NVCC` variable is gone too;
+`FLASH_VLA_NVCC` replaces it. Build the CUTLASS 4.7.1 kernels with a CUDA 13.1 toolkit:
+nvcc 13.4 rejects `cutlass_backbone.cu` (2026-09-24, the same source as before
+the loader change).

@@ -79,7 +79,7 @@ def cases(args):
     reference = fused_attention.make_wrappers(scratch)["action_expert_attention"]
     logits = torch.empty_like(ref_buffers["pi05_attention_logits"])
     probabilities = torch.empty_like(ref_buffers["pi05_attention_probabilities"])
-    lib = fused_attention._library()
+    lib = fused_attention.library()
 
     def candidate(q, k, v, mask, out):
         compiled = _qk[(13, 32)](

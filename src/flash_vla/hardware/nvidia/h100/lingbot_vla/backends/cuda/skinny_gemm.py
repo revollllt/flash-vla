@@ -9,93 +9,52 @@ The toolkit must match the environment's torch build, not the newest module on
 the machine: this Target runs torch 2.9.1+cu126 on a partition that mixes a
 570 (CUDA 12.8) and a 610 (CUDA 13.x) driver, and a cubin from CUDA 13 will not
 load on the 570 driver once the forward-compat directory has been dropped.
-`LINGBOT_NVCC` overrides the default when a job needs another toolkit.
+Set `LINGBOT_NVCC` to that toolkit's nvcc (a CUDA 12.6 one for this torch);
+without it the build uses the default lookup of `hardware/nvidia/native.py`.
 """
 from __future__ import annotations
 
 import ctypes
-import hashlib
-import os
-import subprocess
 from pathlib import Path
 
 import torch
 
+from flash_vla.hardware.nvidia.native import (
+    CUTLASS_DIR,
+    CUTLASS_VERSION_HEADER,
+    SM90_TILE_HEADERS,
+    TILE_INCLUDE_DIR,
+    NativeLibrary,
+)
+
 _HERE = Path(__file__).resolve().parent
 _SRC = _HERE / "kernels" / "skinny_gemm.cu"
-_REPO = _HERE.parents[7]
-_TILE_ROOT = _REPO / "src" / "flash_vla" / "hardware" / "nvidia" / "cuda"
-_DEFAULT_NVCC = "/data/apps/cuda/12.6/bin/nvcc"
 
 _LIB = None
 
 
-def _nvcc() -> str:
-    explicit = os.environ.get("LINGBOT_NVCC")
-    if explicit:
-        return explicit
-    return _DEFAULT_NVCC if Path(_DEFAULT_NVCC).is_file() else "nvcc"
-
-
-def _defines() -> list[str]:
-    """LINGBOT_SKINNY_DEFINES: extra nvcc flags, for the probe variants."""
-    return os.environ.get("LINGBOT_SKINNY_DEFINES", "").split()
-
-
-def _cutlass() -> Path:
-    """The CUTLASS tree to compile against.
-
-    A git worktree does not check out submodules, so fall back to the primary
-    checkout's tree rather than failing the build in an experiment worktree.
-    """
-    explicit = os.environ.get("CUTLASS_DIR")
-    if explicit:
-        return Path(explicit)
-    local = _REPO / "third_party" / "cutlass"
-    if (local / "include" / "cutlass" / "version.h").is_file():
-        return local
-    return Path("/data/user/jzou521/codes/cuda/flash-vla/third_party/cutlass")
-
-
-def _identity() -> bytes:
-    """What this build depends on, so an edit never reuses a stale .so."""
-    headers = b"".join(h.read_bytes()
-                       for h in sorted((_TILE_ROOT / "tile" / "sm90").glob("*.cuh")))
-    version = _cutlass() / "include" / "cutlass" / "version.h"
-    cutlass = version.read_bytes() if version.is_file() else b"missing"
-    return (_SRC.read_bytes() + headers + cutlass + _nvcc().encode()
-            + " ".join(_defines()).encode())
+#: The kernel library; `LINGBOT_NVCC` names its compiler (module docstring).
+LIBRARY = NativeLibrary(
+    name="lingbot_skinny",
+    sources=(_SRC,),
+    arch=("-arch=sm_90a",),
+    flags=("--expt-relaxed-constexpr", "-Xptxas", "-v"),
+    include_dirs=(CUTLASS_DIR / "include", TILE_INCLUDE_DIR),
+    headers=(*SM90_TILE_HEADERS, CUTLASS_VERSION_HEADER),
+    link_driver=True,
+    flags_env="LINGBOT_SKINNY_DEFINES",
+    nvcc_env="LINGBOT_NVCC")
 
 
 def build(verbose: bool = False) -> Path:
-    """Compile the shared library if this source and toolchain have not been built."""
-    tag = hashlib.sha256(_identity()).hexdigest()[:16]
-    directory = _REPO / ".cache" / "cuda_ext" / f"lingbot_skinny_{tag}"
-    directory.mkdir(parents=True, exist_ok=True)
-    out = directory / "libskinny.so"
-    if out.exists():
-        return out
-    cuda_home = str(Path(_nvcc()).parents[1])
-    command = [_nvcc(), "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
-               "-arch=sm_90a", "--expt-relaxed-constexpr", "-Xptxas", "-v",
-               *_defines(),
-               f"-I{_cutlass()}/include", f"-I{_TILE_ROOT}",
-               "-o", str(out), str(_SRC),
-               f"-L{cuda_home}/lib64/stubs", "-lcuda"]
-    if verbose:
-        print("[skinny build]", " ".join(command), flush=True)
-    result = subprocess.run(command, capture_output=True, text=True)
-    if verbose or result.returncode != 0:
-        print(result.stderr, flush=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"nvcc failed ({result.returncode}) building {_SRC}")
-    return out
+    """Compile the library unless this exact build exists; return its path."""
+    return LIBRARY.build(verbose=verbose)
 
 
 def library(verbose: bool = False):
     global _LIB
     if _LIB is None:
-        lib = ctypes.CDLL(str(build(verbose=verbose)))
+        lib = LIBRARY.load(verbose=verbose)
         lib.skinny_gemm_launch.argtypes = [ctypes.c_void_p] * 6 + [ctypes.c_int] * 7 + [
             ctypes.c_void_p]
         lib.skinny_gemm_launch.restype = ctypes.c_int
