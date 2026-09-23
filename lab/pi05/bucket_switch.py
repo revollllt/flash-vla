@@ -69,7 +69,8 @@ def run(args):
         }
     short = cases["short896"]["metadata"]
     engine = build(
-        "rtx5090/pi05", args.plan, converted_checkpoint=str(args.checkpoint),
+        "rtx5090/pi05", args.plan, quantization=args.quantization,
+        converted_checkpoint=str(args.checkpoint),
         checkpoint_id=args.checkpoint_id,
         checkpoint_digest=args.checkpoint_digest or args.checkpoint_id,
         chunk_size=short["fixture"]["chunk"], steps=short["fixture"]["steps"],
@@ -152,6 +153,8 @@ def main():
     parser.add_argument("--checkpoint-id", required=True)
     parser.add_argument("--checkpoint-digest")
     parser.add_argument("--plan", default="shipped")
+    parser.add_argument("--quantization", default=None,
+                        help="one of the Target's quantization recipes; default its precision")
     parser.add_argument("--tokenizer-path")
     parser.add_argument("--output", type=Path, required=True)
     return run(parser.parse_args())
