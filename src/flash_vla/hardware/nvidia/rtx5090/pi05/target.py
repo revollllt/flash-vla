@@ -50,7 +50,7 @@ class Pi05RTX5090(Pi05):
     }
     reference_plan: Mapping[str, str] = {}
 
-    #: The backbone FFN's three GEMMs in MXFP8 on all 18 layers, approved on
+    #: The backbone FFN's three GEMMs in MXFP8 on every layer, approved on
     #: LIBERO observations (results/quant-pi05-ffn-libero). The activation is
     #: quantized from the BF16 value the BF16 route rounds to, and every other
     #: rounding point is kept.

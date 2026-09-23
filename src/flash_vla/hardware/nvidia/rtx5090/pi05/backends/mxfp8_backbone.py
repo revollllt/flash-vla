@@ -21,11 +21,11 @@ quantized once, on a layer's first call (warmup, before capture), into scratch
 as [N, K] with K contiguous; the runner's BF16 weights stay allocated but are
 not read.
 
-Each GEMM is planned for both prefix row buckets, M = 896 and M = 968, and
-both plans run on every call: the kernel the prefix mask does not select exits
-at once (mxfp8_backbone.cu, RowBucket). Under the short bucket, rows 896..967
-of the residual keep their values and those of the hidden are stale; they are
-padding either way. The two producers always cover all 968 rows.
+Each GEMM carries both prefix row buckets, M = 968 and M = 896, and picks one
+on the device from the prefix mask in a single launch (mxfp8_backbone.cu,
+RowBucket). Under the short bucket, rows 896..967 of the residual keep their
+values and those of the hidden are stale; they are padding either way. The two
+producers always cover all 968 rows.
 """
 from __future__ import annotations
 
@@ -50,7 +50,6 @@ NAMES = frozenset({"llm_backbone_norm_gated_ffn_masked", "llm_backbone_ffn_down_
 ROUTE_CONSTRAINTS = (RouteConstraint.atomic(
     NAMES, "the down GEMM reads the MXFP8 hidden the gated FFN leaves in scratch"),)
 SOURCE = Path(__file__).with_suffix(".cu")
-BUCKET_ROWS = (896, 968)   # the short and full prefix; mxfp8_backbone.cu: kShortRows
 # Tile configurations of mxfp8_backbone.cu (the index its extern "C" entries take).
 GATE_UP_CONFIG = 0   # 128x128x128, persistent
 DOWN_CONFIG = 0
@@ -101,8 +100,8 @@ def library() -> ctypes.CDLL:
 class GemmPlan:
     """output[:rows] bf16 = activation[:rows] * weight^T + beta * output[:rows], with
     activation [M, K] and weight [N, K] in MXFP8, bound to fixed addresses and one
-    tile configuration. With a prefix `mask`, `rows` is a bucket of BUCKET_ROWS and
-    the kernel runs only when the mask selects it; without one it always runs."""
+    tile configuration. With a prefix `mask`, rows is all 968 and the kernel computes
+    only the first 896 when the mask leaves row 896 masked."""
 
     def __init__(self, config: int, activation: ops.Activation, weight: ops.Activation,
                  output: torch.Tensor, beta: float, scratch: Scratch, *, rows: int,
@@ -110,7 +109,7 @@ class GemmPlan:
         depth, cols = activation.cols, weight.rows
         if (weight.cols != depth or tuple(output.shape) != (activation.rows, cols)
                 or output.stride() != (cols, 1) or output.dtype != torch.bfloat16
-                or rows > activation.rows or (mask is not None and rows not in BUCKET_ROWS)):
+                or rows > activation.rows or (mask is not None and rows != 968)):
             raise ValueError(f"GEMM [{rows} of {activation.rows}, {depth}] x [{weight.rows}, "
                              f"{weight.cols}]^T cannot write {output.dtype} "
                              f"{tuple(output.shape)} {output.stride()}")
@@ -143,8 +142,8 @@ def make_wrappers(scratch: Scratch, selected_names: set[str] | None = None
                   ) -> dict[str, Callable[..., torch.Tensor]]:
     """Wrappers for both FFN call sites; a layer's plans and quantized weights are
     built on its first call, which the runner's warmup makes before capture."""
-    gate_up_plans: dict[int, list[GemmPlan]] = {}   # gate weight address -> bucket plans
-    down_plans: dict[int, list[GemmPlan]] = {}      # down weight address -> bucket plans
+    gate_up_plans: dict[int, GemmPlan] = {}   # gate weight address -> plan
+    down_plans: dict[int, GemmPlan] = {}      # down weight address -> plan
 
     def _allocator(role: str, device: torch.device) -> ops.Allocator:
         return lambda name, shape, dtype: scratch(role + name, shape, dtype, device)
@@ -159,19 +158,15 @@ def make_wrappers(scratch: Scratch, selected_names: set[str] | None = None
         return ops.quantize(weight_kn.t().contiguous(), ops.empty(
             cols, depth, "mxfp8", weight_kn.device, allocate=_allocator(role, weight_kn.device)))
 
-    def _layer_buckets(plans: dict[int, list[GemmPlan]], weight: torch.Tensor,
-                       quantize: Callable[[], ops.Activation],
-                       build: Callable[[ops.Activation, int], GemmPlan]) -> list[GemmPlan]:
-        """The row-bucket plans of the layer `weight` belongs to; on the layer's
-        first call its weight is quantized and both plans are built."""
+    def _layer_plan(plans: dict[int, GemmPlan], weight: torch.Tensor,
+                    build: Callable[[], GemmPlan]) -> GemmPlan:
+        """The plan of the layer `weight` belongs to, built on its first call."""
         cached = plans.get(weight.data_ptr())
         if cached is not None:
             return cached
         if torch.cuda.is_current_stream_capturing():
             raise RuntimeError("an MXFP8 backbone layer was not warmed before capture")
-        quantized = quantize()
-        return plans.setdefault(weight.data_ptr(),
-                                [build(quantized, rows) for rows in BUCKET_ROWS])
+        return plans.setdefault(weight.data_ptr(), build())
 
     def llm_backbone_norm_gated_ffn_masked(x: torch.Tensor, gate_w: torch.Tensor,
                                            up_w: torch.Tensor, out: torch.Tensor,
@@ -184,15 +179,13 @@ def make_wrappers(scratch: Scratch, selected_names: set[str] | None = None
         # bf16 [M, 2 * 16384]: gate | up.
         projected = scratch("mxfp8_backbone_gate_up", (rows, 2 * hidden_width), torch.bfloat16,
                             x.device)
-        buckets = _layer_buckets(
-            gate_up_plans, gate_w,
-            lambda: _quantized_weight(torch.cat((gate_w, up_w), dim=1),
-                                      f"mxfp8_backbone_gate_up_{gate_w.data_ptr()}"),
-            lambda gate_up, rows: GemmPlan(GATE_UP_CONFIG, normed, gate_up, projected, 0.0,
-                                           scratch, rows=rows, mask=mask))
+        plan = _layer_plan(gate_up_plans, gate_w, lambda: GemmPlan(
+            GATE_UP_CONFIG, normed,
+            _quantized_weight(torch.cat((gate_w, up_w), dim=1),
+                              f"mxfp8_backbone_gate_up_{gate_w.data_ptr()}"),
+            projected, 0.0, scratch, rows=rows, mask=mask))
         ops.rms_norm(x, normed, eps=RMS_EPS)
-        for plan in buckets:
-            plan.run()
+        plan.run()
         ops.gated_act(projected[:, :hidden_width], projected[:, hidden_width:], hidden)
         return out
 
@@ -201,12 +194,10 @@ def make_wrappers(scratch: Scratch, selected_names: set[str] | None = None
                                               ) -> torch.Tensor:
         rows, hidden_width = x.shape               # 968, 16384; x itself is not read
         hidden = _activation("mxfp8_backbone_hidden", rows, hidden_width, x.device)
-        for plan in _layer_buckets(
-                down_plans, weight,
-                lambda: _quantized_weight(weight, f"mxfp8_backbone_down_{weight.data_ptr()}"),
-                lambda down, rows: GemmPlan(DOWN_CONFIG, hidden, down, out, 1.0, scratch,
-                                            rows=rows, mask=mask)):
-            plan.run()
+        _layer_plan(down_plans, weight, lambda: GemmPlan(
+            DOWN_CONFIG, hidden,
+            _quantized_weight(weight, f"mxfp8_backbone_down_{weight.data_ptr()}"),
+            out, 1.0, scratch, rows=rows, mask=mask)).run()
         return out
 
     wrappers = {"llm_backbone_norm_gated_ffn_masked": llm_backbone_norm_gated_ffn_masked,
