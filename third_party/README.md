@@ -48,7 +48,7 @@ says where each scheme lives and what does not run on SM120.
 | --- | --- | --- | --- | --- |
 | vLLM | https://github.com/vllm-project/vllm | `v0.30.0`, `ced6857afa0ea7b2e3f0846a62e1394e90f15607` | `csrc/libtorch_stable/quantization` without its weight-only and W4A8 kernels, `csrc/quantization`, `csrc/cutlass_extensions`, `csrc/core`, `vllm/model_executor/layers/quantization` | Apache-2.0 |
 | SGLang | https://github.com/sgl-project/sglang | `v0.5.20`, `94602c9c2b7cbdb8efd5c52802dac6a1c180089e` | under `python/sglang/kernels/`: `jit/csrc/gemm` without Marlin and AWQ, `jit/include`, `kda_kernels`, `aot/csrc/gemm`, `aot/csrc/cutlass_extensions`, `ops/gemm`, `ops/diffusion`; and `python/sglang/srt/layers/quantization` | Apache-2.0; `kda_kernels/` files carry BSD-3-Clause headers |
-| FlashInfer | https://github.com/flashinfer-ai/flashinfer | `v0.7.0`, `4d75a33f19aaf48b44d5b1c5dbca33bc1eca5c58` | `csrc/cute_sm12x_gemm`, `csrc/nv_internal`, `csrc/nvfp4_attention_sm120`, the quantized GEMM and quantize entry files directly in `csrc/`, `include/flashinfer/gemm`, `include/flashinfer/attention/sm120`, `flashinfer/gemm`, `flashinfer/quantization`, `flashinfer/jit/gemm` | Apache-2.0 |
+| FlashInfer | https://github.com/flashinfer-ai/flashinfer | `v0.7.0`, `4d75a33f19aaf48b44d5b1c5dbca33bc1eca5c58` | `csrc/cute_sm12x_gemm`, `csrc/nv_internal`, `csrc/nvfp4_attention_sm120`, the quantized GEMM and quantize entry files directly in `csrc/`, `include/flashinfer/gemm`, `include/flashinfer/attention/sm120`, `flashinfer/gemm`, `flashinfer/quantization`, `flashinfer/jit/gemm`, `flashinfer/cute_dsl/{,add_}rmsnorm_fp4quant.py` | Apache-2.0 |
 
 ## Reuse map for the SM90 CuTe kernels
 

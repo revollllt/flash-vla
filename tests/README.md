@@ -5,6 +5,7 @@ Run the tests for the behavior being changed:
 | Behavior | Tests |
 | --- | --- |
 | Runtime and workload identity | `test_binding.py`, `test_cuda_stream_graph.py`, `test_identity.py` |
+| MXFP8/NVFP4 producer ops and fake quantization: fusion contract, references, graph capture, Pi0.5 per-layer recipe | `test_quant_ops.py`, `test_pi05_fake_quant_ffn.py` (Blackwell, sm_100+) |
 | Checkpoint loading and asset isolation | `test_checkpoint.py`, `test_checkpoint_compatibility.py`, `test_target_assets.py`, `test_source_engines.py` |
 | Latency protocol and device selection | `test_latency.py`, `test_environment.py` |
 | Profiling and saved-result interpretation | `test_profiling.py`, `test_kernel_trace.py`, `test_results.py` |

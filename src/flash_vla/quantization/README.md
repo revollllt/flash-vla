@@ -4,8 +4,13 @@ Preliminary home for quantized execution: recipes, weight formats and the
 reference quantize/dequantize math. The location may change once the
 implementation settles.
 
-**Status (2026-09-23): design only.** No Target runs a quantized policy yet;
-`VLA.precision` is `bf16` everywhere.
+**Status (2026-09-23):** no Target runs a quantized policy yet, and
+`VLA.precision` is `bf16` everywhere. `formats.py` (block formats, the 128x4
+scale layout) and `reference.py` (reference quantize/dequantize and producer
+rounding) back the first kernels, the fused producer-quantize ops in
+[`hardware/nvidia/quant_ops`](../hardware/nvidia/quant_ops/README.md) (any Blackwell GPU).
+The GEMM survey chose MXFP8 over 1D2D block FP8
+([results](../../../results/quant-kernel-survey-rtx5090/summary.md)).
 
 ## Scope
 
@@ -49,9 +54,9 @@ implementation settles.
 ## Where things live
 
 - This package: model- and hardware-independent pieces — recipe definitions,
-  weight formats and scale layouts, reference quantize/dequantize math. Runtime
-  and Targets may import it; it imports neither. Kernels belong under
-  `hardware/`.
+  weight formats and scale layouts (`formats.py`), reference quantize/dequantize
+  math (`reference.py`). Runtime and Targets may import it; it imports neither.
+  Kernels belong under `hardware/`, e.g. `hardware/nvidia/quant_ops`.
 - Kernel references: pinned vLLM, SGLang and FlashInfer sources committed in
   `third_party/quant-references/`, CUTLASS examples 79, 87 and 91 in the
   submodule, and kernel-wiki's

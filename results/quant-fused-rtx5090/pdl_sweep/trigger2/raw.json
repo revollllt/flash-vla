@@ -1,0 +1,390 @@
+[
+ {
+  "model": "groot",
+  "site": "llm rms1 -> qkv",
+  "m": 156,
+  "k": 2048,
+  "producer": "rms_mul",
+  "per_obs": 16,
+  "gemm_n": [
+   4096
+  ],
+  "fmt": "mxfp8",
+  "quant_ours_us": 0.8905000286176801,
+  "quant_flashinfer_us": 1.0300000431016088,
+  "producer_bf16_us": 1.8164999783039093,
+  "producer_fused_us": 1.915500033646822,
+  "isolated_saving_us": 0.7919999770820141,
+  "chain_unfused_us": 11.757333079973856,
+  "chain_fused_us": 10.762133200963339,
+  "chain_saving_us": 0.9874661763509103
+ },
+ {
+  "model": "groot",
+  "site": "llm rms1 -> qkv",
+  "m": 156,
+  "k": 2048,
+  "producer": "rms_mul",
+  "per_obs": 16,
+  "gemm_n": [
+   4096
+  ],
+  "fmt": "nvfp4",
+  "quant_ours_us": 1.0095000034198165,
+  "quant_flashinfer_us": 1.0470000561326742,
+  "producer_bf16_us": 1.9465000368654728,
+  "producer_fused_us": 2.0375000312924385,
+  "isolated_saving_us": 0.9200001368299127,
+  "chain_unfused_us": 8.524651444235513,
+  "chain_fused_us": 7.595907117045203,
+  "chain_saving_us": 0.9272555972254546
+ },
+ {
+  "model": "groot",
+  "site": "llm swiglu -> down",
+  "m": 156,
+  "k": 6144,
+  "producer": "swiglu",
+  "per_obs": 16,
+  "gemm_n": [
+   2048
+  ],
+  "fmt": "mxfp8",
+  "quant_ours_us": 1.5945000341162086,
+  "quant_flashinfer_us": 1.8779999809339643,
+  "producer_bf16_us": 2.1359999664127827,
+  "producer_fused_us": 2.3304999340325594,
+  "isolated_saving_us": 1.406499999575317,
+  "chain_unfused_us": 24.991750717163086,
+  "chain_fused_us": 23.64549972116947,
+  "chain_saving_us": 1.3430006802082062
+ },
+ {
+  "model": "groot",
+  "site": "llm swiglu -> down",
+  "m": 156,
+  "k": 6144,
+  "producer": "swiglu",
+  "per_obs": 16,
+  "gemm_n": [
+   2048
+  ],
+  "fmt": "nvfp4",
+  "quant_ours_us": 1.5620000194758177,
+  "quant_flashinfer_us": 1.398000051267445,
+  "producer_bf16_us": 2.136999974027276,
+  "producer_fused_us": 2.2799998987466097,
+  "isolated_saving_us": 1.425999915227294,
+  "chain_unfused_us": 14.987862315671197,
+  "chain_fused_us": 13.525516822420318,
+  "chain_saving_us": 1.4565515107121954
+ },
+ {
+  "model": "groot",
+  "site": "dit adaln -> qkv",
+  "m": 41,
+  "k": 1536,
+  "producer": "adaln",
+  "per_obs": 64,
+  "gemm_n": [
+   4608
+  ],
+  "fmt": "mxfp8",
+  "quant_ours_us": 0.8224999764934182,
+  "quant_flashinfer_us": 0.8919999818317592,
+  "producer_bf16_us": 1.5950000379234552,
+  "producer_fused_us": 1.6855000285431743,
+  "isolated_saving_us": 0.7299999706447124,
+  "chain_unfused_us": 9.490000350134713,
+  "chain_fused_us": 8.421142718621663,
+  "chain_saving_us": 1.0628567210265558
+ },
+ {
+  "model": "groot",
+  "site": "dit adaln -> qkv",
+  "m": 41,
+  "k": 1536,
+  "producer": "adaln",
+  "per_obs": 64,
+  "gemm_n": [
+   4608
+  ],
+  "fmt": "nvfp4",
+  "quant_ours_us": 0.7919999770820141,
+  "quant_flashinfer_us": 0.8870000019669533,
+  "producer_bf16_us": 1.5915000112727284,
+  "producer_fused_us": 1.6580000519752502,
+  "isolated_saving_us": 0.727499951608479,
+  "chain_unfused_us": 7.808941252091351,
+  "chain_fused_us": 6.7679998921413045,
+  "chain_saving_us": 1.0268238245272174
+ },
+ {
+  "model": "groot",
+  "site": "dit attn -> o",
+  "m": 41,
+  "k": 1536,
+  "producer": "quantize",
+  "per_obs": 128,
+  "gemm_n": [
+   1536
+  ],
+  "fmt": "mxfp8",
+  "quant_ours_us": 0.8239999879151583,
+  "quant_flashinfer_us": 0.8919999818317592
+ },
+ {
+  "model": "groot",
+  "site": "dit attn -> o",
+  "m": 41,
+  "k": 1536,
+  "producer": "quantize",
+  "per_obs": 128,
+  "gemm_n": [
+   1536
+  ],
+  "fmt": "nvfp4",
+  "quant_ours_us": 0.8024999988265336,
+  "quant_flashinfer_us": 0.8870000019669533
+ },
+ {
+  "model": "groot",
+  "site": "dit ln3 -> up",
+  "m": 41,
+  "k": 1536,
+  "producer": "ln",
+  "per_obs": 128,
+  "gemm_n": [
+   6144
+  ],
+  "fmt": "mxfp8",
+  "quant_ours_us": 0.8215000270865858,
+  "quant_flashinfer_us": 0.88900001719594,
+  "producer_bf16_us": 1.366000040434301,
+  "producer_fused_us": 1.4344999799504876,
+  "isolated_saving_us": 0.7465000380761921,
+  "chain_unfused_us": 10.546285954732744,
+  "chain_fused_us": 9.500190379127623,
+  "chain_saving_us": 1.047365249149383
+ },
+ {
+  "model": "groot",
+  "site": "dit ln3 -> up",
+  "m": 41,
+  "k": 1536,
+  "producer": "ln",
+  "per_obs": 128,
+  "gemm_n": [
+   6144
+  ],
+  "fmt": "nvfp4",
+  "quant_ours_us": 0.7929999846965075,
+  "quant_flashinfer_us": 0.8875000057742,
+  "producer_bf16_us": 1.3665000442415476,
+  "producer_fused_us": 1.4329999685287476,
+  "isolated_saving_us": 0.7280000718310475,
+  "chain_unfused_us": 8.173192802228426,
+  "chain_fused_us": 7.106245609751919,
+  "chain_saving_us": 1.0672279617242655
+ },
+ {
+  "model": "groot",
+  "site": "dit gelu -> down",
+  "m": 41,
+  "k": 6144,
+  "producer": "gelu",
+  "per_obs": 128,
+  "gemm_n": [
+   1536
+  ],
+  "fmt": "mxfp8",
+  "quant_ours_us": 0.9510000236332417,
+  "quant_flashinfer_us": 1.7859999788925052,
+  "producer_bf16_us": 0.9850000496953726,
+  "producer_fused_us": 1.1094999499619007,
+  "isolated_saving_us": 0.8285000221803784,
+  "chain_unfused_us": 15.602285899813213,
+  "chain_fused_us": 14.367999538542731,
+  "chain_saving_us": 1.2289522186158184
+ },
+ {
+  "model": "groot",
+  "site": "dit gelu -> down",
+  "m": 41,
+  "k": 6144,
+  "producer": "gelu",
+  "per_obs": 128,
+  "gemm_n": [
+   1536
+  ],
+  "fmt": "nvfp4",
+  "quant_ours_us": 0.9519999730400741,
+  "quant_flashinfer_us": 1.1109999613836408,
+  "producer_bf16_us": 0.9835000382736325,
+  "producer_fused_us": 1.08149996958673,
+  "isolated_saving_us": 0.8554999949410558,
+  "chain_unfused_us": 12.747789684094881,
+  "chain_fused_us": 11.584842414186712,
+  "chain_saving_us": 1.1584570533350895
+ },
+ {
+  "model": "pi05",
+  "site": "vit ln1 -> qkv",
+  "m": 768,
+  "k": 1152,
+  "producer": "ln_affine",
+  "per_obs": 27,
+  "gemm_n": [
+   3456
+  ],
+  "fmt": "mxfp8",
+  "quant_ours_us": 1.8789999885484576,
+  "quant_flashinfer_us": 1.4959999825805426,
+  "producer_bf16_us": 2.3944999556988478,
+  "producer_fused_us": 2.5774999521672726,
+  "isolated_saving_us": 1.6980000073090196,
+  "chain_unfused_us": 18.387199640274048,
+  "chain_fused_us": 16.524159908294678,
+  "chain_saving_us": 1.865919828414917
+ },
+ {
+  "model": "pi05",
+  "site": "vit ln1 -> qkv",
+  "m": 768,
+  "k": 1152,
+  "producer": "ln_affine",
+  "per_obs": 27,
+  "gemm_n": [
+   3456
+  ],
+  "fmt": "nvfp4",
+  "quant_ours_us": 1.9115000031888485,
+  "quant_flashinfer_us": 1.2405000161379576,
+  "producer_bf16_us": 2.4254999589174986,
+  "producer_fused_us": 2.581499982625246,
+  "isolated_saving_us": 1.7610001377761364,
+  "chain_unfused_us": 11.963999830186367,
+  "chain_fused_us": 9.82350017875433,
+  "chain_saving_us": 2.1417494863271713
+ },
+ {
+  "model": "pi05",
+  "site": "llm rms1 -> qkv",
+  "m": 968,
+  "k": 2048,
+  "producer": "rms",
+  "per_obs": 18,
+  "gemm_n": [
+   2560
+  ],
+  "fmt": "mxfp8",
+  "quant_ours_us": 2.4355000350624323,
+  "quant_flashinfer_us": 1.9404999911785126,
+  "producer_bf16_us": 3.0010000336915255,
+  "producer_fused_us": 3.1095000449568033,
+  "isolated_saving_us": 2.3270000237971544,
+  "chain_unfused_us": 28.458386136774433,
+  "chain_fused_us": 26.088139467072068,
+  "chain_saving_us": 2.340492449308698
+ },
+ {
+  "model": "pi05",
+  "site": "llm rms1 -> qkv",
+  "m": 968,
+  "k": 2048,
+  "producer": "rms",
+  "per_obs": 18,
+  "gemm_n": [
+   2560
+  ],
+  "fmt": "nvfp4",
+  "quant_ours_us": 2.426499966531992,
+  "quant_flashinfer_us": 1.663499977439642,
+  "producer_bf16_us": 3.031000029295683,
+  "producer_fused_us": 3.04200011305511,
+  "isolated_saving_us": 2.4190000258386135,
+  "chain_unfused_us": 16.11199975013733,
+  "chain_fused_us": 13.543250039219856,
+  "chain_saving_us": 2.5710007175803185
+ },
+ {
+  "model": "pi05",
+  "site": "exp adarms1 -> qkv",
+  "m": 50,
+  "k": 1024,
+  "producer": "adarms",
+  "per_obs": 180,
+  "gemm_n": [
+   2560
+  ],
+  "fmt": "mxfp8",
+  "quant_ours_us": 0.8270000107586384,
+  "quant_flashinfer_us": 0.92149997362867,
+  "producer_bf16_us": 1.5915000112727284,
+  "producer_fused_us": 1.687500043772161,
+  "isolated_saving_us": 0.7409999379888177,
+  "chain_unfused_us": 7.105750031769276,
+  "chain_fused_us": 6.017750129103661,
+  "chain_saving_us": 1.087999902665615
+ },
+ {
+  "model": "pi05",
+  "site": "exp adarms1 -> qkv",
+  "m": 50,
+  "k": 1024,
+  "producer": "adarms",
+  "per_obs": 180,
+  "gemm_n": [
+   2560
+  ],
+  "fmt": "nvfp4",
+  "quant_ours_us": 0.7910000276751816,
+  "quant_flashinfer_us": 0.8190000080503523,
+  "producer_bf16_us": 1.590500003658235,
+  "producer_fused_us": 1.6565000405535102,
+  "isolated_saving_us": 0.7280000136233866,
+  "chain_unfused_us": 6.4489999786019325,
+  "chain_fused_us": 5.472749937325716,
+  "chain_saving_us": 0.9759999811649323
+ },
+ {
+  "model": "pi05",
+  "site": "exp geglu -> down",
+  "m": 50,
+  "k": 4096,
+  "producer": "geglu",
+  "per_obs": 180,
+  "gemm_n": [
+   1024
+  ],
+  "fmt": "mxfp8",
+  "quant_ours_us": 0.9180000051856041,
+  "quant_flashinfer_us": 1.436999998986721,
+  "producer_bf16_us": 1.1454999912530184,
+  "producer_fused_us": 1.2710000155493617,
+  "isolated_saving_us": 0.7960000075399876,
+  "chain_unfused_us": 11.744340683551545,
+  "chain_fused_us": 10.630127597362437,
+  "chain_saving_us": 1.1271491963812643
+ },
+ {
+  "model": "pi05",
+  "site": "exp geglu -> down",
+  "m": 50,
+  "k": 4096,
+  "producer": "geglu",
+  "per_obs": 180,
+  "gemm_n": [
+   1024
+  ],
+  "fmt": "nvfp4",
+  "quant_ours_us": 0.9014999959617853,
+  "quant_flashinfer_us": 1.01500004529953,
+  "producer_bf16_us": 1.1424999684095383,
+  "producer_fused_us": 1.2440000427886844,
+  "isolated_saving_us": 0.8004999253898859,
+  "chain_unfused_us": 9.951749816536903,
+  "chain_fused_us": 8.83250031620264,
+  "chain_saving_us": 1.1202497407793999
+ }
+]

@@ -20,6 +20,7 @@ from . import cutlass_vision as _cutlass_vision
 from . import cutlass_expert_residual as _cutlass_expert_residual
 from . import fused_vision as _fused_vision
 from . import fused_prefix_qkv as _fused_prefix_qkv
+from .fake_quant_ffn import FakeQuantFFN
 
 BACKENDS = {
     "torch": _torch,
@@ -39,6 +40,9 @@ BACKENDS = {
     "cutlass-expert-residual": _cutlass_expert_residual,
     "fused-vision": _fused_vision,
     "fused-prefix-qkv": _fused_prefix_qkv,
+    # Quality measurement of quantization recipes: backbone FFN under fake quantization.
+    "fake-quant-mxfp8": FakeQuantFFN("mxfp8"),
+    "fake-quant-nvfp4": FakeQuantFFN("nvfp4"),
 }
 
 REGISTRY = Registry(BACKENDS, default="torch")

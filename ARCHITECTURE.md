@@ -28,7 +28,9 @@ lab/                          experiments and saved-result rendering
   plans and routing; components own reusable kernel implementations.
 - A Target never imports another Target's kernels. Shared expert builders live
   in `gemma_expert`; each Target keeps its own JIT registry and compiler settings.
-- CUDA tile primitives and TileLang JIT conventions are vendor-level utilities.
+- CUDA tile primitives and TileLang JIT conventions are vendor-level utilities, and so
+  are components that serve a whole architecture family rather than one device: the
+  Blackwell (sm_100+) block-scaled quantize ops live in `hardware/nvidia/quant_ops`.
 - Production source imports no `benchmarks`, `eval`, `tools`, `tests` or `lab` modules. Experiments
   may import production code; deployment never imports experiments.
 
