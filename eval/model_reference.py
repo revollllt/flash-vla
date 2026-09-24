@@ -22,8 +22,9 @@ enables it for convolutions by default, and upstream code a plan loads may
 enable it for matmuls (LingBot's policy does).
 `--reference-precision bfloat16` runs upstream's own inference dtypes instead
 and reports how far the engine is from upstream's numerics, which sit about as
-far from the float32 math as the engine does. At one step and one layer the
-shared tolerances gate; deeper runs report, because two implementations of a
+far from the float32 math as the engine does. At one step and one layer
+against the float32 reference the shared tolerances gate, and every compared
+tensor must be finite; other runs report, because two implementations of a
 deep denoising loop that are not bit-identical drift apart. The runner
 contains no model or stage names.
 """
@@ -34,17 +35,16 @@ import gc
 from importlib import import_module
 import json
 from pathlib import Path
-from typing import Literal, Mapping, Protocol
+from typing import Literal, Mapping, Protocol, TypedDict
 
 import torch
 
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
 from flash_vla.inference import PLAN_NAMES, TARGETS, build, resolve
+from flash_vla.models.official import Precision
 from flash_vla.runtime.vla import ConfigValue
 from measurement.cli import parse_options
-
-ReferencePrecision = Literal["bfloat16", "float32"]
 
 
 class WeightsSource(Protocol):
@@ -62,22 +62,44 @@ class ReferenceView(Protocol):
 
     def reference_outputs(self, weights: Mapping[str, torch.Tensor],
                           inputs: Mapping[str, torch.Tensor], buffers: Mapping[str, torch.Tensor], *,
-                          shape: Mapping[str, int], seed: int,
-                          precision: ReferencePrecision) -> object: ...
+                          shape: Mapping[str, int], seed: int, precision: Precision) -> object: ...
 
     def comparable(self, outputs: object, buffers: Mapping[str, torch.Tensor]
                    ) -> dict[str, tuple[torch.Tensor, torch.Tensor]]: ...
 
 
+class ReferenceConfig(TypedDict):
+    plan: str
+    steps: int | None
+    layers: int | None
+    seed: int
+    reference_precision: Precision
+    options: dict[str, ConfigValue]
+    oracle: Literal["model_reference"]
+
+
+class ReferenceReport(TypedDict):
+    """One comparison: `stages` holds each declared stage output's error metrics."""
+    identity: dict[str, object]
+    measurement_context: dict[str, dict[str, str]]
+    config: ReferenceConfig
+    stages: dict[str, dict[str, float]]
+    finite: bool
+    min_cosine: float
+    max_rel_rms: float
+    tolerance: dict[str, float]
+    within_tolerance: bool
+    mode: Literal["gate", "report"]
+    passed: bool
+
+
 def run(target: str, plan: str = "shipped", *, steps: int | None = 1, layers: int | None = 1,
-        seed: int = 0, reference_precision: ReferencePrecision = "float32",
-        **options: ConfigValue) -> dict[str, object]:
+        seed: int = 0, reference_precision: Precision = "float32",
+        **options: ConfigValue) -> ReferenceReport:
     """Compare Target `target` on `plan` with its model's reference, stage by stage."""
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; run this on a GPU node")
     entry = TARGETS[resolve(target)]
-    if entry.reference_view_module is None:
-        raise ValueError(f"{target} has no model reference yet")
     shape_options = {name: value for name, value in (("steps", steps), ("layers", layers))
                      if value is not None}
     engine = build(target, plan, seed=seed, **shape_options, **options)
@@ -104,13 +126,18 @@ def run(target: str, plan: str = "shipped", *, steps: int | None = 1, layers: in
     finally:
         torch.backends.cuda.matmul.allow_tf32 = matmul_tf32
         torch.backends.cudnn.allow_tf32 = convolution_tf32
+    pairs = view.comparable(outputs, buffers)
     stages = {name: error_metrics(expected.float(), observed.float())
-              for name, (expected, observed) in view.comparable(outputs, buffers).items()}
+              for name, (expected, observed) in pairs.items()}
+    # A non-finite value makes its metrics NaN, which `min` and `max` would skip.
+    finite = all(bool(torch.isfinite(expected).all() and torch.isfinite(observed).all())
+                 for expected, observed in pairs.values())
     tolerance = tolerances(identity.precision)["shallow"]
     min_cosine = min(metrics["cosine_similarity"] for metrics in stages.values())
     max_rel_rms = max(metrics["rel_rms"] for metrics in stages.values())
-    shallow = steps == 1 and layers == 1
-    within = bool(min_cosine > tolerance["cosine_min"] and max_rel_rms < tolerance["rel_rms_max"])
+    gate = steps == 1 and layers == 1 and reference_precision == "float32"
+    within = finite and bool(min_cosine > tolerance["cosine_min"]
+                             and max_rel_rms < tolerance["rel_rms_max"])
     return {
         "identity": identity.as_dict(),
         "measurement_context": context,
@@ -118,12 +145,13 @@ def run(target: str, plan: str = "shipped", *, steps: int | None = 1, layers: in
                    "reference_precision": reference_precision, "options": options,
                    "oracle": "model_reference"},
         "stages": stages,
+        "finite": finite,
         "min_cosine": min_cosine,
         "max_rel_rms": max_rel_rms,
         "tolerance": dict(tolerance),
         "within_tolerance": within,
-        "mode": "gate" if shallow else "report",
-        "passed": within or not shallow,
+        "mode": "gate" if gate else "report",
+        "passed": within or not gate,
     }
 
 

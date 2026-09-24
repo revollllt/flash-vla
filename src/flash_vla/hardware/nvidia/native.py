@@ -12,6 +12,17 @@ overwrite each other.
 The compiler is `$FLASH_VLA_NVCC`, else `$CUDA_HOME/bin/nvcc`, else `nvcc` on
 `PATH`; a library may name one more environment variable that takes precedence
 for it alone (LingBot's `LINGBOT_NVCC`). No machine path is assumed.
+
+Every library is compiled with `-fno-gnu-unique`. Otherwise the template
+statics of a C++ library -- CUTLASS's `GemmUniversalBase` caches its device
+properties and whether it raised its kernel's shared-memory limit in them --
+are GNU-unique symbols, which the loader unifies across every library in the
+process despite `RTLD_LOCAL`: after one library initialized a GEMM template,
+another library's copy of the same kernel would skip its own
+`cudaFuncSetAttribute` and fail to launch (Pi0's CUTLASS library, run first,
+broke Pi0.5's vision GEMMs in the same process). Without them each library
+keeps its own statics, since `load` opens it `RTLD_LOCAL` (`ctypes.CDLL`'s
+default). The flag is GCC's, nvcc's host compiler here; clang rejects it.
 """
 from __future__ import annotations
 
@@ -74,7 +85,7 @@ class NativeLibrary:
         nvcc = find_nvcc(self.nvcc_env)
         extra = os.environ.get(self.flags_env, "").split() if self.flags_env is not None else []
         link = [f"-L{nvcc.parents[1]}/lib64/stubs", "-lcuda"] if self.link_driver else []
-        return [str(nvcc), "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC",
+        return [str(nvcc), "-O3", "-std=c++17", "--shared", "-Xcompiler", "-fPIC,-fno-gnu-unique",
                 *self.arch, *self.flags, *extra,
                 *(f"-I{directory}" for directory in self.include_dirs),
                 "-o", str(output), *(str(source) for source in self.sources), *link]

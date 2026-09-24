@@ -7,9 +7,21 @@ upstream's inference dtypes, and a forward on meta tensors must produce every
 stage output in its documented shape. Numerical agreement with the engine is
 `eval.model_reference`, on a GPU.
 """
+from importlib import import_module
+
 import torch
 
+from flash_vla.inference import TARGETS
 from flash_vla.models.official import official_schema
+
+
+def test_every_target_pairs_its_engine_with_the_reference() -> None:
+    """Each registered Target names the reference view and the official
+    weights `eval.model_reference` runs it against."""
+    for entry in TARGETS.values():
+        view = import_module(entry.reference_view_module)
+        assert callable(view.reference_outputs) and callable(view.comparable)
+        assert callable(import_module(entry.sources_module).official_weights)
 
 
 def test_pi05_official_schema_converts_to_the_engine_layout() -> None:

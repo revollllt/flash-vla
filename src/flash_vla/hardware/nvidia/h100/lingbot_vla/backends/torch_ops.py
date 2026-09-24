@@ -1,7 +1,7 @@
 """LingBot's three stages as the model reference runs them, on the runner's buffers and weights.
 
 Each op binds the reference's parts it runs to its own weights, without a
-copy, on its first call (`reference.bind_parts`): the vision op, which carries
+copy, on its first call (`official.bind_parts`): the vision op, which carries
 every weight of the model, binds the vision tower; the prefix op the
 backbone; the action op the expert and the heads. The prefix's keys and values
 cross from the prefix to the action stage through the runner's buffers. The
@@ -16,8 +16,9 @@ from dataclasses import replace
 import torch
 
 from flash_vla.models.lingbot.ops import CALL_SITES
-from flash_vla.models.lingbot.reference import Prefix, VisionTables, bind_parts, make_reference
+from flash_vla.models.lingbot.reference import PREFIXES, Prefix, VisionTables, make_reference
 from flash_vla.models.lingbot.spec import BACKBONE_WEIGHT_NAMES, EXPERT_WEIGHT_NAMES, GRID, WEIGHT_NAMES
+from flash_vla.models.official import bind_parts
 from flash_vla.runtime.registry import Backend, Wrapper
 from flash_vla.runtime.workspace import Scratch
 
@@ -27,10 +28,12 @@ def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
     bound: set[str] = set()
     tables: VisionTables | None = None
 
-    def bind_once(parts: tuple[str, ...], names: tuple[str, ...], tensors: tuple[torch.Tensor, ...]) -> None:
+    def bind_once(parts: tuple[str, ...], names: tuple[str, ...],
+                  tensors: tuple[torch.Tensor, ...]) -> None:
         if bound.issuperset(parts):
             return
-        bind_parts(reference, parts, dict(zip(names, tensors)), precision="bfloat16")
+        bind_parts({part: reference.parts()[part] for part in parts}, prefixes=PREFIXES,
+                   weights=dict(zip(names, tensors)), precision="bfloat16")
         bound.update(parts)
 
     def staged_tables() -> VisionTables:
@@ -40,7 +43,8 @@ def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
         built = reference.vision.tables(GRID)
         tables = replace(built, **{
             role: scratch(f"lingbot_reference_{role}", table.shape, table.dtype, table.device).copy_(table)
-            for role, table in (("cos", built.cos), ("sin", built.sin), ("window_order", built.window_order),
+            for role, table in (("cos", built.cos), ("sin", built.sin),
+                                ("window_order", built.window_order),
                                 ("restore_order", built.restore_order))})
         return tables
 
@@ -67,8 +71,8 @@ def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
                prefix_k: torch.Tensor, prefix_v: torch.Tensor, actions: torch.Tensor,
                velocity_step_0: torch.Tensor, steps: int, layers: int, *weights: torch.Tensor) -> None:
         bind_once(("expert", "head"), EXPERT_WEIGHT_NAMES, weights)
-        cached = Prefix(cache=tuple((prefix_k[layer][None], prefix_v[layer][None]) for layer in range(layers)),
-                        pad_masks=prefix_masks)
+        cached = Prefix(cache=tuple((prefix_k[layer][None], prefix_v[layer][None])
+                                    for layer in range(layers)), pad_masks=prefix_masks)
         denoised, velocity = reference.denoise(cached, noise, state=state, steps=steps)
         actions.copy_(denoised)
         velocity_step_0.copy_(velocity)

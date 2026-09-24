@@ -73,19 +73,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Literal, Mapping, Sequence
+from typing import Mapping, Sequence
 
 import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ..official import PRECISION_DTYPES, bind, random_official
+from ..official import Precision, bind_parts, random_official
 from .spec import (
     ACTION_DIM,
     BACKBONE_DIM,
     BACKBONE_FFN,
     EXPERT_DIM,
     EXPERT_FFN,
+    FLOW_STEPS,
     FULL_ATTENTION_BLOCKS,
     HEAD_DIM,
     KV_HEADS,
@@ -312,7 +313,8 @@ class VisionTower(nn.Module):
             offset += frames * merged_rows * merged_columns
         frequency = self.inverse_frequency
         longest = max(max(rows, columns) for _, rows, columns in grid)
-        table = torch.outer(torch.arange(longest, device=frequency.device, dtype=frequency.dtype), frequency)
+        side_positions = torch.arange(longest, device=frequency.device, dtype=frequency.dtype)
+        table = torch.outer(side_positions, frequency)
         angles = table[torch.cat(coordinates).to(frequency.device)].flatten(1)
         window_order = torch.cat(orders).to(frequency.device)
         # The rotary table follows the patches into window order.
@@ -566,7 +568,7 @@ class LingBotReference(nn.Module):
     def forward(self, pixel_values: torch.Tensor, *, grid: Sequence[tuple[int, int, int]],
                 image_masks: torch.Tensor, language_tokens: torch.Tensor,
                 language_masks: torch.Tensor, state: torch.Tensor, noise: torch.Tensor,
-                steps: int = 10, depth: int = LAYERS) -> LingBotOutputs:
+                steps: int = FLOW_STEPS, depth: int = LAYERS) -> LingBotOutputs:
         """`sample_actions` for one observation; `grid` is every view's patch
         grid (frames, rows, columns), which `embed_image` derives from the
         patches as one frame of a square grid. `depth` runs the first `depth`
@@ -588,24 +590,12 @@ def make_reference(*, device: str | torch.device = "meta") -> LingBotReference:
         return LingBotReference().eval().requires_grad_(False)
 
 
-def bind_parts(reference: LingBotReference, parts: Sequence[str], weights: Mapping[str, torch.Tensor], *,
-               precision: Literal["bfloat16", "float32"]) -> None:
-    """Bind `parts` (`PREFIXES`) to their official tensors -- without a copy
-    where they are already in `precision`'s dtype -- and put their analytic
-    buffers beside them, in that dtype too: the deployment casts the whole
-    model to bfloat16."""
-    modules = {part: reference.parts()[part] for part in parts}
-    bind(modules, prefixes=PREFIXES, weights=weights)
-    for module in modules.values():
-        module.to(device=next(module.parameters()).device, dtype=PRECISION_DTYPES[precision])
-
-
-def load(weights: Mapping[str, torch.Tensor], *,
-         precision: Literal["bfloat16", "float32"] = "bfloat16") -> LingBotReference:
-    """The model bound to official tensors, in upstream's inference dtype
-    (`bfloat16`) or entirely in float32."""
+def load(weights: Mapping[str, torch.Tensor], *, precision: Precision = "bfloat16") -> LingBotReference:
+    """The model bound to official tensors, in upstream's inference dtype --
+    the deployment casts the whole model, buffers included, to `bfloat16` --
+    or entirely in float32."""
     reference = make_reference()
-    bind_parts(reference, tuple(PREFIXES), weights, precision=precision)
+    bind_parts(reference.parts(), prefixes=PREFIXES, weights=weights, precision=precision)
     return reference
 
 
@@ -618,4 +608,4 @@ def random_weights(seed: int, *, device: str | torch.device = "cuda",
 
 
 __all__ = ["KeyValue", "LingBotOutputs", "LingBotReference", "PREFIXES", "Prefix", "VisionTables",
-           "bind_parts", "load", "make_reference", "random_weights"]
+           "load", "make_reference", "random_weights"]

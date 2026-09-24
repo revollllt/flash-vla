@@ -26,6 +26,7 @@ from .spec import (
     CHUNK,
     EXPERT_DIM,
     EXPERT_FFN,
+    FLOW_STEPS,
     HEAD_DIM,
     IMAGE_SIZE,
     INFERENCE_SIGNATURE,
@@ -58,14 +59,14 @@ SYNTHETIC_PROMPT_TOKENS = 48
 
 @dataclass(frozen=True)
 class LingBotConfig:
-    steps: int = 10
+    steps: int = FLOW_STEPS
     layers: int = LAYERS
     #: Inputs drawn from the seed rather than read from the recorded fixture.
     synthetic: bool = False
 
     def __post_init__(self) -> None:
-        if not 1 <= self.steps <= 10:
-            raise ValueError("steps must be in [1, 10]")
+        if not 1 <= self.steps <= FLOW_STEPS:
+            raise ValueError(f"steps must be in [1, {FLOW_STEPS}]")
         if not 1 <= self.layers <= LAYERS:
             raise ValueError(f"layers must be in [1, {LAYERS}]")
 
@@ -157,7 +158,8 @@ class LingBotModel(ModelDefinition[LingBotConfig, None]):
                 "image_masks": torch.arange(VIEWS, device=device) < VIEWS - 1,
                 "language_tokens": torch.randint(0, VOCABULARY, (1, LANGUAGE_SLOTS), generator=generator,
                                                  device=device),
-                "language_masks": (torch.arange(LANGUAGE_SLOTS, device=device) < SYNTHETIC_PROMPT_TOKENS)[None],
+                "language_masks": (torch.arange(LANGUAGE_SLOTS, device=device)
+                                   < SYNTHETIC_PROMPT_TOKENS)[None],
                 "state": torch.randn((1, STATE_DIM), generator=generator, device=device).to(torch.bfloat16),
                 "noise": torch.randn((1, CHUNK, ACTION_DIM), generator=generator,
                                      device=device).to(torch.bfloat16),

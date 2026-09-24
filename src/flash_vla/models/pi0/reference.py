@@ -33,13 +33,13 @@ language model head and the expert's unused head are not read.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Mapping
+from typing import Mapping
 
 import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ..official import random_official
+from ..official import Precision, random_official
 from ..paligemma.reference import (
     GEMMA_2B,
     PREFIXES as PALIGEMMA_PREFIXES,
@@ -49,7 +49,7 @@ from ..paligemma.reference import (
     bind_upstream,
     sinusoidal,
 )
-from .spec import ACTION_DIM, DECODER_DIM, STATE_DIM
+from .spec import ACTION_DIM, DECODER_DIM, FLOW_STEPS, STATE_DIM
 
 #: Official prefix of every part: PaliGemma-with-expert's, and the heads at the top level.
 PREFIXES = {**PALIGEMMA_PREFIXES, "head": ""}
@@ -92,15 +92,6 @@ class Pi0Reference(nn.Module):
     def parts(self) -> dict[str, nn.Module]:
         return {**self.paligemma.parts(), "head": self.head}
 
-    def prefix(self, images: torch.Tensor, *, image_masks: torch.Tensor, prompt_ids: torch.Tensor,
-               prompt_mask: torch.Tensor, depth: int) -> tuple[torch.Tensor, Prefix]:
-        """The vision encoder and the backbone: SigLIP's last hidden state
-        before its final LayerNorm, and the backbone's pass over the prefix."""
-        vision_hidden, image_tokens = self.paligemma.embed_images(images)
-        return vision_hidden, self.paligemma.prefix(image_tokens, image_masks=image_masks,
-                                                    prompt_ids=prompt_ids, prompt_mask=prompt_mask,
-                                                    depth=depth)
-
     def velocity(self, prefix: Prefix, noisy: torch.Tensor, *, state: torch.Tensor,
                  time: torch.Tensor, depth: int) -> tuple[torch.Tensor, list[KeyValue]]:
         """One denoising step (`embed_suffix`, `denoise_step`): the velocity of
@@ -119,14 +110,18 @@ class Pi0Reference(nn.Module):
 
     def forward(self, images: torch.Tensor, *, image_masks: torch.Tensor, prompt_ids: torch.Tensor,
                 prompt_mask: torch.Tensor, state: torch.Tensor, noise: torch.Tensor,
-                steps: int = 10, depth: int = GEMMA_2B.depth) -> Pi0Outputs:
-        """`sample_actions` for one observation. `depth` runs the first
-        `depth` layers of both Gemma stacks and skips the rest, for bisection."""
-        vision_hidden, prefix = self.prefix(images, image_masks=image_masks, prompt_ids=prompt_ids,
-                                            prompt_mask=prompt_mask, depth=depth)
+                steps: int = FLOW_STEPS, schedule: int = FLOW_STEPS,
+                depth: int = GEMMA_2B.depth) -> Pi0Outputs:
+        """`sample_actions` for one observation: the first `steps` Euler
+        steps of a `schedule`-step flow (upstream runs them all, `steps ==
+        schedule`). `depth` runs the first `depth` layers of both Gemma stacks
+        and skips the rest, for bisection."""
+        vision_hidden, image_tokens = self.paligemma.embed_images(images)
+        prefix = self.paligemma.prefix(image_tokens, image_masks=image_masks, prompt_ids=prompt_ids,
+                                       prompt_mask=prompt_mask, depth=depth)
         # Upstream walks t = 1, 1 + dt, ... while t >= -dt / 2, accumulating t
-        # in float32; that is exactly `steps` iterations.
-        dt = torch.tensor(-1.0 / steps, dtype=torch.float32, device=noise.device)
+        # in float32; that is exactly `schedule` iterations.
+        dt = torch.tensor(-1.0 / schedule, dtype=torch.float32, device=noise.device)
         time = torch.tensor(1.0, dtype=torch.float32, device=noise.device)
         noisy = noise.float()
         for _ in range(steps):
@@ -144,12 +139,11 @@ def make_reference(*, device: str | torch.device = "meta") -> Pi0Reference:
         return Pi0Reference().eval().requires_grad_(False)
 
 
-def load(weights: Mapping[str, torch.Tensor], *,
-         precision: Literal["bfloat16", "float32"] = "bfloat16") -> Pi0Reference:
+def load(weights: Mapping[str, torch.Tensor], *, precision: Precision = "bfloat16") -> Pi0Reference:
     """The model bound to official tensors, in upstream's inference dtypes
     (`bfloat16`) or entirely in float32."""
     reference = make_reference()
-    bind_upstream(reference.paligemma, head=reference.head, weights=weights, precision=precision)
+    bind_upstream(reference.parts(), prefixes=PREFIXES, weights=weights, precision=precision)
     return reference
 
 

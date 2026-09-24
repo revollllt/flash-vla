@@ -10,12 +10,15 @@ reads a file: the caller owns the checkpoint.
 """
 from __future__ import annotations
 
-from typing import Mapping
+from typing import Literal, Mapping
 
 import torch
 from torch import nn
 
-#: The dtype of every parameter and buffer of a reference, per reference precision.
+#: A reference's precision: upstream's inference dtypes, or float32 throughout.
+Precision = Literal["bfloat16", "float32"]
+#: The dtype of every parameter and buffer of a reference, per precision,
+#: where upstream runs the whole model in one dtype.
 PRECISION_DTYPES = {"bfloat16": torch.bfloat16, "float32": torch.float32}
 
 
@@ -38,6 +41,16 @@ def bind(parts: Mapping[str, nn.Module], *, prefixes: Mapping[str, str],
                                strict=True, assign=True)
 
 
+def bind_parts(parts: Mapping[str, nn.Module], *, prefixes: Mapping[str, str],
+               weights: Mapping[str, torch.Tensor], precision: Precision) -> None:
+    """`bind`, then every part in `precision`'s dtype on its weights' device,
+    its analytic buffers (RoPE's inverse frequencies) included -- without a
+    copy where the weights already are in that dtype."""
+    bind(parts, prefixes=prefixes, weights=weights)
+    for module in parts.values():
+        module.to(device=next(module.parameters()).device, dtype=PRECISION_DTYPES[precision])
+
+
 def random_official(parts: Mapping[str, nn.Module], *, prefixes: Mapping[str, str], seed: int,
                     device: str | torch.device, scale: float) -> dict[str, torch.Tensor]:
     """Seeded official-layout weights for the parts: every tensor of their
@@ -50,4 +63,4 @@ def random_official(parts: Mapping[str, nn.Module], *, prefixes: Mapping[str, st
                    ).to(torch.bfloat16) for name in sorted(schema)}
 
 
-__all__ = ["PRECISION_DTYPES", "bind", "official_schema", "random_official"]
+__all__ = ["PRECISION_DTYPES", "Precision", "bind", "bind_parts", "official_schema", "random_official"]

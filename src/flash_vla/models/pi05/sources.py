@@ -96,7 +96,7 @@ def runner_source(target: Target[Pi05Config, PrefixInputs], *, device: str, decl
                         assets={"tokenizer": tokenizer}, config=config)
 
 
-def official_weights(*, device: str, seed: int = 0, checkpoint: str | None = None,
+def official_weights(*, device: str, seed: int, checkpoint: str | None = None,
                      converted_checkpoint: str | None = None,
                      **construction: ConfigValue) -> dict[str, torch.Tensor]:
     """The official-layout weights a construction with these options runs, for

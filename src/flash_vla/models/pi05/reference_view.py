@@ -18,17 +18,18 @@ the engine's layout, over the rows both define:
 """
 from __future__ import annotations
 
-from typing import Literal, Mapping
+from typing import Mapping
 
 import torch
 
+from ..official import Precision
 from ..pi0.openpi import pair_layout
 from .reference import Pi05Outputs, load
 
 
 def reference_outputs(weights: Mapping[str, torch.Tensor], inputs: Mapping[str, torch.Tensor],
                       buffers: Mapping[str, torch.Tensor], *, shape: Mapping[str, int], seed: int,
-                      precision: Literal["bfloat16", "float32"] = "bfloat16") -> Pi05Outputs:
+                      precision: Precision) -> Pi05Outputs:
     """The reference on the engine's observation: `inputs` as the engine was
     given them, `buffers` after its forward (the prompt its host slot
     tokenized, which already carries the fixture), `shape` its shape numbers.

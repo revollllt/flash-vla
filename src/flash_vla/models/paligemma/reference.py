@@ -52,13 +52,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Literal, Mapping
+from typing import Mapping
 
 import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ..official import bind
+from ..official import Precision, bind, bind_parts
 
 #: Additive bias of a key a query may not attend to (`pi0_pytorch.py`,
 #: `_prepare_attention_masks_4d`).
@@ -374,7 +374,7 @@ def additive(allowed: torch.Tensor) -> torch.Tensor:
 class Prefix:
     """The backbone's pass over the prefix: each layer's keys and values after
     RoPE, and which prefix positions are valid."""
-    cache: list[KeyValue]
+    cache: tuple[KeyValue, ...]
     pad_masks: torch.Tensor
 
 
@@ -413,7 +413,7 @@ class PaliGemmaWithExpert(nn.Module):
         mask = additive(attention_mask(pad_masks=pad_masks, block_starts=torch.zeros_like(pad_masks)))
         # The backbone's own output is never read: the expert reads its cache.
         _, cache = self.backbone(embeddings, positions=positions, mask=mask, depth=depth)
-        return Prefix(cache=cache, pad_masks=pad_masks)
+        return Prefix(cache=tuple(cache), pad_masks=pad_masks)
 
     def expert_pass(self, prefix: Prefix, suffix: torch.Tensor, *, block_starts: torch.Tensor,
                     cond: torch.Tensor | None, depth: int) -> tuple[torch.Tensor, list[KeyValue]]:
@@ -438,32 +438,24 @@ def sinusoidal(time: torch.Tensor, dimension: int) -> torch.Tensor:
     return torch.cat((phase.sin(), phase.cos()), dim=1).to(time.dtype)
 
 
-def bind_upstream(paligemma: PaliGemmaWithExpert, *, head: nn.Module,
-                  weights: Mapping[str, torch.Tensor],
-                  precision: Literal["bfloat16", "float32"]) -> None:
-    """Bind official tensors to PaliGemma-with-expert and the model's heads
-    (the heads' official names sit at the top level), in OpenPI's inference
-    dtypes (`bfloat16`) or entirely in float32."""
-    bind({**paligemma.parts(), "head": head}, prefixes={**PREFIXES, "head": ""}, weights=weights)
+def bind_upstream(parts: Mapping[str, nn.Module], *, prefixes: Mapping[str, str],
+                  weights: Mapping[str, torch.Tensor], precision: Precision) -> None:
+    """Bind official tensors to a PaliGemma-with-expert model's parts -- its
+    `PREFIXES`' parts, the model's own heads as part `head` -- in OpenPI's
+    inference dtypes (`bfloat16`: PaliGemma-with-expert in bfloat16 except the
+    `FLOAT32_SELECTORS`, the heads in float32) or entirely in float32."""
     if precision == "float32":
-        paligemma.float()
-        head.float()
+        bind_parts(parts, prefixes=prefixes, weights=weights, precision=precision)
         return
-    apply_upstream_precision(paligemma.parts(), head=head)
-
-
-def apply_upstream_precision(parts: Mapping[str, nn.Module], *, head: nn.Module) -> None:
-    """OpenPI's inference dtypes: PaliGemma-with-expert in bfloat16 except the
-    `FLOAT32_SELECTORS`, the model's own heads in float32."""
+    bind(parts, prefixes=prefixes, weights=weights)
     for part, module in parts.items():
         for name, parameter in module.named_parameters():
-            official = PREFIXES[part] + name
-            keep = any(selector in official for selector in FLOAT32_SELECTORS)
+            official = prefixes[part] + name
+            keep = part == "head" or any(selector in official for selector in FLOAT32_SELECTORS)
             parameter.data = parameter.data.to(torch.float32 if keep else torch.bfloat16)
-    head.float()
 
 
 __all__ = ["BLOCKED", "FLOAT32_SELECTORS", "GEMMA_2B", "GEMMA_300M", "GemmaGeometry",
            "GemmaStack", "KeyValue", "PREFIXES", "PaliGemmaWithExpert", "Prefix", "SIGLIP",
-           "SiglipGeometry", "SiglipVision", "VOCABULARY", "additive", "apply_upstream_precision",
-           "attention_mask", "bind_upstream", "rotary", "sinusoidal"]
+           "SiglipGeometry", "SiglipVision", "VOCABULARY", "additive", "attention_mask",
+           "bind_upstream", "rotary", "sinusoidal"]

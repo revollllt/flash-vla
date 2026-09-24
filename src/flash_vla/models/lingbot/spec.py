@@ -34,6 +34,8 @@ STATE_DIM = 75
 ACTION_DIM = 75
 CHUNK = 50
 SUFFIX_LEN = 51
+#: The checkpoint's denoising steps, the most a construction runs.
+FLOW_STEPS = 10
 LAYERS = 36
 BACKBONE_DIM = 2048
 BACKBONE_FFN = 11008

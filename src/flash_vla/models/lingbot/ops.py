@@ -24,6 +24,7 @@ from .spec import (
     EXPERT_DIM,
     EXPERT_FFN,
     EXPERT_WEIGHT_NAMES,
+    FLOW_STEPS,
     FULL_ATTENTION_BLOCKS,
     HEAD_DIM,
     KV_HEADS,
@@ -43,8 +44,6 @@ from .spec import (
     WINDOW_SIZE,
 )
 
-#: Denoising steps the cost model counts: the full schedule.
-FLOW_STEPS = 10
 #: Vision blocks with full per-view attention; the rest attend within windows.
 FULL_ATTENTION_LAYERS = len(FULL_ATTENTION_BLOCKS)
 #: Patches per attention window of the windowed vision blocks.
@@ -149,5 +148,4 @@ OPS = (
 )
 
 
-__all__ = ["ACTION_WEIGHT_PARAMS", "BACKBONE_WEIGHT_PARAMS", "CALL_SITES", "FLOW_STEPS", "OPS",
-           "WEIGHT_PARAMS"]
+__all__ = ["ACTION_WEIGHT_PARAMS", "BACKBONE_WEIGHT_PARAMS", "CALL_SITES", "OPS", "WEIGHT_PARAMS"]

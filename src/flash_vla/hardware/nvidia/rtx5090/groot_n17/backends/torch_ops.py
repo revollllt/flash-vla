@@ -1,7 +1,7 @@
 """GR00T's three stages as the model reference runs them, on the runner's buffers and weights.
 
 Each op's weights are the runner's, bound to the reference's part without a
-copy on the op's first call (`reference.bind_part`). The vision tables, which
+copy on the op's first call (`official.bind_parts`). The vision tables, which
 the reference builds from host-side lists, are built once, during warmup,
 into runner workspace, so the captured vision stage only reads them.
 """
@@ -12,7 +12,8 @@ from dataclasses import replace
 import torch
 
 from flash_vla.models.groot_n17.ops import CALL_SITES as NAMES, WEIGHTS
-from flash_vla.models.groot_n17.reference import VisionTables, bind_part, make_reference
+from flash_vla.models.groot_n17.reference import PREFIXES, VisionTables, make_reference
+from flash_vla.models.official import bind_parts
 from flash_vla.models.groot_n17.spec import GRID, STEPS
 from flash_vla.runtime.registry import Backend, Wrapper
 from flash_vla.runtime.workspace import Scratch
@@ -26,7 +27,8 @@ def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
     def bind_once(part: str, tensors: tuple[torch.Tensor, ...]) -> None:
         if part in bound:
             return
-        bind_part(reference, part, dict(zip(WEIGHTS[part], tensors)), precision="bfloat16")
+        bind_parts({part: reference.parts()[part]}, prefixes=PREFIXES,
+                   weights=dict(zip(WEIGHTS[part], tensors)), precision="bfloat16")
         bound.add(part)
 
     def staged_tables() -> VisionTables:

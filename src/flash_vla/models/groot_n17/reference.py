@@ -81,13 +81,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Literal, Mapping, Sequence
+from typing import Mapping, Sequence
 
 import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ..official import PRECISION_DTYPES, bind
+from ..official import Precision, bind_parts
 from .spec import (
     ACTION_DIM,
     BACKBONE_DIM,
@@ -268,7 +268,7 @@ class VisionModel(nn.Module):
         self.deepstack_merger_list = nn.ModuleList(PatchMerger(postshuffle_norm=True)
                                                    for _ in DEEPSTACK_BLOCKS)
         # Analytic, so not in the checkpoint: built here on the host, in
-        # float32, and cast with the model (`bind_part`).
+        # float32, and cast with the model (`official.bind_parts`).
         rotary_dim = VISION_HEAD_DIM // 2
         exponents = torch.arange(0, rotary_dim, 2, dtype=torch.float32, device="cpu")
         self.register_buffer("inverse_frequency", 1.0 / (VISION_ROPE_THETA ** (exponents / rotary_dim)),
@@ -759,26 +759,13 @@ def make_reference(*, device: str | torch.device = "meta") -> GrootReference:
         return GrootReference().eval().requires_grad_(False)
 
 
-def bind_part(reference: GrootReference, part: str, weights: Mapping[str, torch.Tensor], *,
-              precision: Literal["bfloat16", "float32"]) -> None:
-    """Bind one part (`PREFIXES`) to its official tensors -- without a copy
-    where they are already in `precision`'s dtype -- and put its analytic
-    buffers beside them, in that dtype too: GR00T's policy casts the whole
-    model to bfloat16."""
-    module = reference.parts()[part]
-    bind({part: module}, prefixes=PREFIXES, weights=weights)
-    module.to(device=next(module.parameters()).device, dtype=PRECISION_DTYPES[precision])
-
-
-def load(weights: Mapping[str, torch.Tensor], *,
-         precision: Literal["bfloat16", "float32"] = "bfloat16") -> GrootReference:
-    """The model bound to official tensors, in upstream's inference dtype
-    (`bfloat16`) or entirely in float32."""
+def load(weights: Mapping[str, torch.Tensor], *, precision: Precision = "bfloat16") -> GrootReference:
+    """The model bound to official tensors, in upstream's inference dtype --
+    GR00T's policy casts the whole model, buffers included, to `bfloat16` --
+    or entirely in float32."""
     reference = make_reference()
-    for part in PREFIXES:
-        bind_part(reference, part, weights, precision=precision)
+    bind_parts(reference.parts(), prefixes=PREFIXES, weights=weights, precision=precision)
     return reference
 
 
-__all__ = ["GrootOutputs", "GrootReference", "PREFIXES", "VisionTables", "bind_part", "load",
-           "make_reference"]
+__all__ = ["GrootOutputs", "GrootReference", "PREFIXES", "VisionTables", "load", "make_reference"]

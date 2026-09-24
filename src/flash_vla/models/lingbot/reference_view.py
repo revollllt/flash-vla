@@ -12,17 +12,18 @@ stage output pairs with the reference's directly:
 """
 from __future__ import annotations
 
-from typing import Literal, Mapping
+from typing import Mapping
 
 import torch
 
+from ..official import Precision
 from .reference import LingBotOutputs, load
 from .spec import GRID
 
 
 def reference_outputs(weights: Mapping[str, torch.Tensor], inputs: Mapping[str, torch.Tensor],
                       buffers: Mapping[str, torch.Tensor], *, shape: Mapping[str, int], seed: int,
-                      precision: Literal["bfloat16", "float32"] = "bfloat16") -> LingBotOutputs:
+                      precision: Precision) -> LingBotOutputs:
     """The reference on the engine's observation: `inputs` as the engine was
     given them, `shape` its shape numbers. `buffers` and `seed` are unused:
     nothing the reference needs is computed on the device, and the inputs are

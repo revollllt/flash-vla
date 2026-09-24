@@ -126,18 +126,27 @@ def test_components_read_only_model_constants_and_reference_math():
     assert found == {}
 
 
-#: Models whose `reference.py` is plain torch; every model joins once its
-#: reference drops its third-party dependencies.
-TORCH_ONLY_REFERENCES = ("groot_n17", "lingbot", "pi0", "pi05")
+MODELS = SOURCE / "flash_vla" / "models"
+#: Every model's end-to-end reference, and the reference parts models share.
+MODEL_REFERENCES = sorted(path.parent.name for path in MODELS.glob("*/reference.py"))
 #: What a model reference may import beyond its own model's `spec`.
 REFERENCE_IMPORTS = ("__future__", "dataclasses", "math", "typing", "torch",
                      "flash_vla.models.official", "flash_vla.models.paligemma.reference")
 
 
+def test_every_model_has_an_end_to_end_reference_and_view() -> None:
+    """A model definition comes with the reference it is checked against and
+    the view that pairs its engine's stage outputs with it."""
+    assert sorted(path.parent.name for path in MODELS.glob("*/definition.py")
+                  if not ((path.parent / "reference.py").is_file()
+                          and (path.parent / "reference_view.py").is_file())) == []
+
+
 @pytest.mark.parametrize("path,own", [
-    *((f"flash_vla/models/{model}/reference.py", (f"flash_vla.models.{model}.spec",))
-      for model in TORCH_ONLY_REFERENCES),
-    ("flash_vla/models/paligemma/reference.py", ()), ("flash_vla/models/official.py", ())])
+    *((f"flash_vla/models/{model}/reference.py",
+       (f"flash_vla.models.{model}.spec",) if (MODELS / model / "spec.py").is_file() else ())
+      for model in MODEL_REFERENCES),
+    ("flash_vla/models/official.py", ())])
 def test_model_references_depend_only_on_torch(path, own):
     """A reference is the model as upstream defines it, in plain torch: no
     third-party package, no graph, runtime, hardware or harness. (This reads a

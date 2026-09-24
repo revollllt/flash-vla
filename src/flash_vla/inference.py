@@ -26,39 +26,41 @@ from flash_vla.runtime.vla import ConfigValue, PlanSpec, Target
 
 @dataclass(frozen=True)
 class TargetEntry:
-    """Where one Target lives, both modules imported on first use:
-    `target_module` holds its `TARGET`, and `sources_module` is its model's,
-    whose `runner_source(target, device=, declare=, **options)` returns the
-    `RunnerSource` a runner is built from. Every model's `runner_source`
-    accepts `device`, `declare` and `seed`, even where one selects nothing,
-    so a harness passes the same options to every Target.
-    `reference_view_module` pairs the engine with the model's end-to-end
-    reference (`eval.model_reference`); `None` until the model has one."""
+    """Where one Target lives, every module imported on first use:
+    `target_module` holds its `TARGET`, and `model_package` is its model's.
+    That package's `sources` (`sources_module`) has `runner_source(target,
+    device=, declare=, **options)`, which returns the `RunnerSource` a runner
+    is built from, and `official_weights`, the official-layout weights the
+    model's reference runs; its `reference_view` (`reference_view_module`)
+    pairs the engine with that reference (`eval.model_reference`). Every
+    model's `runner_source` accepts `device`, `declare` and `seed`, even where
+    one selects nothing, so a harness passes the same options to every Target."""
     target_module: str
-    sources_module: str
-    reference_view_module: str | None = None
+    model_package: str
+
+    @property
+    def sources_module(self) -> str:
+        return f"{self.model_package}.sources"
+
+    @property
+    def reference_view_module(self) -> str:
+        return f"{self.model_package}.reference_view"
 
 
 #: Full Target name -> its entry. Short aliases resolve through `resolve`.
 TARGETS: dict[str, TargetEntry] = {
     "hardware/nvidia/rtx5090/groot_n17": TargetEntry(
-        "flash_vla.hardware.nvidia.rtx5090.groot_n17", "flash_vla.models.groot_n17.sources",
-        reference_view_module="flash_vla.models.groot_n17.reference_view"),
+        "flash_vla.hardware.nvidia.rtx5090.groot_n17", "flash_vla.models.groot_n17"),
     "hardware/nvidia/h100/lingbot_vla": TargetEntry(
-        "flash_vla.hardware.nvidia.h100.lingbot_vla", "flash_vla.models.lingbot.sources",
-        reference_view_module="flash_vla.models.lingbot.reference_view"),
+        "flash_vla.hardware.nvidia.h100.lingbot_vla", "flash_vla.models.lingbot"),
     "hardware/nvidia/h100/pi05": TargetEntry(
-        "flash_vla.hardware.nvidia.h100.pi05", "flash_vla.models.pi05.sources",
-        reference_view_module="flash_vla.models.pi05.reference_view"),
+        "flash_vla.hardware.nvidia.h100.pi05", "flash_vla.models.pi05"),
     "hardware/nvidia/h100/pi0": TargetEntry(
-        "flash_vla.hardware.nvidia.h100.pi0", "flash_vla.models.pi0.sources",
-        reference_view_module="flash_vla.models.pi0.reference_view"),
+        "flash_vla.hardware.nvidia.h100.pi0", "flash_vla.models.pi0"),
     "hardware/nvidia/rtx5090/pi0": TargetEntry(
-        "flash_vla.hardware.nvidia.rtx5090.pi0", "flash_vla.models.pi0.sources",
-        reference_view_module="flash_vla.models.pi0.reference_view"),
+        "flash_vla.hardware.nvidia.rtx5090.pi0", "flash_vla.models.pi0"),
     "hardware/nvidia/rtx5090/pi05": TargetEntry(
-        "flash_vla.hardware.nvidia.rtx5090.pi05", "flash_vla.models.pi05.sources",
-        reference_view_module="flash_vla.models.pi05.reference_view"),
+        "flash_vla.hardware.nvidia.rtx5090.pi05", "flash_vla.models.pi05"),
 }
 #: Short name -> full Target name.
 ALIASES = {"rtx5090/groot_n17": "hardware/nvidia/rtx5090/groot_n17",

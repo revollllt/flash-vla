@@ -20,14 +20,14 @@ from flash_vla.runtime.vla import ConfigValue, Target
 
 from . import reference, weights
 from .definition import FIXTURE_SEED, LingBotConfig
-from .spec import CHECKPOINT_REVISION, WEIGHT_SHAPES, random_checkpoint_revision
+from .spec import CHECKPOINT_REVISION, FLOW_STEPS, LAYERS, WEIGHT_SHAPES, random_checkpoint_revision
 
 #: The producer of the synthetic inputs, part of their ID and digest.
 SYNTHETIC_FIXTURE = "flash-vla/lingbot-inputs-v1"
 
 
 def runner_source(target: Target[LingBotConfig, None], *, device: str, declare: bool,
-                  seed: int = FIXTURE_SEED, steps: int = 10, layers: int = 36,
+                  seed: int = FIXTURE_SEED, steps: int = FLOW_STEPS, layers: int = LAYERS,
                   synthetic: bool = False, checkpoint: str | None = None,
                   fixture: str | None = None, checkpoint_id: str | None = None,
                   checkpoint_digest: str | None = None, fixture_id: str | None = None,
@@ -82,7 +82,7 @@ def runner_source(target: Target[LingBotConfig, None], *, device: str, declare: 
                         assets=assets, config=config)
 
 
-def official_weights(*, device: str, seed: int = FIXTURE_SEED, synthetic: bool = False,
+def official_weights(*, device: str, seed: int, synthetic: bool = False,
                      checkpoint: str | None = None, checkpoint_id: str | None = None,
                      asset_config: str | None = None,
                      **construction: ConfigValue) -> dict[str, torch.Tensor]:

@@ -98,7 +98,7 @@ python -m tools.profiling.model --target rtx5090/groot_n17 --plan reference \
 
 `eval.model_reference` compares every stage with the reference on the same
 checkpoint tensors. With `--reference-precision bfloat16` the captured engine
-and the eager reference agree bit for bit (`tests/test_reference_backends.py`
+and the eager reference agree bit for bit (`tests/test_model_reference_gpu.py`
 checks it where the assets are configured); the default float32 reference
 reports how far upstream's bfloat16 numerics sit from the model's math. Both
 compare against the reference, which runs the engine's own modules; fidelity

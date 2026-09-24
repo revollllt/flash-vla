@@ -31,13 +31,13 @@ model head and the expert's unused head are not read.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Mapping
+from typing import Mapping
 
 import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ..official import random_official
+from ..official import Precision, random_official
 from ..paligemma.reference import (
     GEMMA_2B,
     PREFIXES as PALIGEMMA_PREFIXES,
@@ -47,7 +47,7 @@ from ..paligemma.reference import (
     bind_upstream,
     sinusoidal,
 )
-from .spec import ACTION_DIM, DECODER_DIM
+from .spec import ACTION_DIM, DECODER_DIM, DEFAULT_FLOW_STEPS
 
 #: Official prefix of every part: PaliGemma-with-expert's, and the heads at the top level.
 PREFIXES = {**PALIGEMMA_PREFIXES, "head": ""}
@@ -102,7 +102,7 @@ class Pi05Reference(nn.Module):
         return head.action_out_proj(hidden[0, -chunk:].float()), cache
 
     def forward(self, images: torch.Tensor, *, image_masks: torch.Tensor, prompt_ids: torch.Tensor,
-                prompt_mask: torch.Tensor, noise: torch.Tensor, steps: int = 10,
+                prompt_mask: torch.Tensor, noise: torch.Tensor, steps: int = DEFAULT_FLOW_STEPS,
                 depth: int = GEMMA_2B.depth) -> Pi05Outputs:
         """`sample_actions` for one observation. `depth` runs the first
         `depth` layers of both Gemma stacks and skips the rest, for bisection."""
@@ -129,12 +129,11 @@ def make_reference(*, device: str | torch.device = "meta") -> Pi05Reference:
         return Pi05Reference().eval().requires_grad_(False)
 
 
-def load(weights: Mapping[str, torch.Tensor], *,
-         precision: Literal["bfloat16", "float32"] = "bfloat16") -> Pi05Reference:
+def load(weights: Mapping[str, torch.Tensor], *, precision: Precision = "bfloat16") -> Pi05Reference:
     """The model bound to official tensors, in upstream's inference dtypes
     (`bfloat16`) or entirely in float32."""
     reference = make_reference()
-    bind_upstream(reference.paligemma, head=reference.head, weights=weights, precision=precision)
+    bind_upstream(reference.parts(), prefixes=PREFIXES, weights=weights, precision=precision)
     return reference
 
 

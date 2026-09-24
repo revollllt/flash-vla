@@ -151,31 +151,40 @@ names the module the official forward came from, and the oracle records it.
 
 ## Model references
 
-A model's `models/<model>/reference.py` is the whole model as upstream defines
-it -- vision encoder, LLM backbone and the action expert's full denoising
-loop -- in plain torch, translated from the upstream implementation and
-citing it. It runs on the official checkpoint by its official tensor names:
-each part's parameters are the upstream names below that part's prefix
-(`PREFIXES`), so the schema it builds on the meta device is the official one
-and `models/official.py` binds an official state dict without a copy. It
-imports nothing but torch, its model's `spec` and shared reference parts such
-as `models/paligemma/reference.py` (`tests/test_layering.py`), holds no
-padding, fusion or folding, and reproduces upstream's inference dtypes; its
+Every model has one, and a view beside it (`tests/test_layering.py`); it is
+written first when a model is onboarded. A model's `models/<model>/reference.py`
+is the whole model as upstream defines it -- vision encoder, LLM backbone and
+the action expert's full denoising loop -- in plain torch, translated from the
+upstream implementation and citing it; its module docstring lists the
+upstream numerics it reproduces and every deliberate difference. It runs on
+the official checkpoint by its official tensor names: each part's parameters
+are the upstream names below that part's prefix (`PREFIXES`), so the schema
+it builds on the meta device is the official one, and `models/official.py`
+binds an official state dict without a copy, in upstream's inference dtypes
+or in float32 (`Precision`). It imports nothing but torch, its model's `spec`
+and shared reference parts such as `models/paligemma/reference.py`
+(`tests/test_layering.py`), holds no padding, fusion or folding, and its
 float32 mode is the model's math without anyone's bfloat16 roundings.
 
 `models/<model>/reference_view.py` states how the engine corresponds to it:
 the observation the engine ran, and every declared stage output paired with
-the reference's value in the engine's layout. `eval.model_reference` runs any
-Target and its model's reference on the same official-layout weights
+the reference's value in the engine's layout; every `TargetEntry` names the
+model package that holds both. `eval.model_reference` runs any Target and its
+model's reference on the same official-layout weights
 (`sources.official_weights`: the seeded random ones, or a checkpoint's) and
-compares stage by stage against the float32 reference, so the weight
-conversion, the fold, the graph and every routed kernel are held to the model
-itself. A model's seeded random
-checkpoint is its reference's random official weights converted as a real
-checkpoint is, so both sides hold the same model. A backend may also run the
-reference's own modules on the runner's weights, as GR00T's plain PyTorch
-stages and LingBot's `reference` route do; its engine then agrees with the
-bfloat16 reference bit for bit (`tests/test_reference_backends.py`).
+compares stage by stage against the float32 reference (TF32 off), so the
+weight conversion, the fold, the graph and every routed kernel are held to
+the model itself; at one step and one layer the shared tolerances gate.
+`tests/test_model_reference_gpu.py` runs that gate for every registered
+Target, plan and quantization recipe the local device and assets allow. A
+model's seeded random checkpoint is its reference's random official weights
+converted as a real checkpoint is, so both sides hold the same model. A
+backend may also run the reference's own modules on the runner's weights, as
+GR00T's plain PyTorch stages and LingBot's `reference` route do; its engine
+then agrees with the bfloat16 reference bit for bit, which the same test
+file checks. Fidelity to upstream itself is the official oracles'
+(`eval/<model>/`), where the upstream environment and checkpoints are
+available.
 
 ## Optimization and evidence
 

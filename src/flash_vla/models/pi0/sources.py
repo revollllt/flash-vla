@@ -70,7 +70,7 @@ def runner_source(target: Target[Pi0Config, None], *, device: str, declare: bool
                         fixture_provenance=named_fixture, assets={}, config=config)
 
 
-def official_weights(*, device: str, seed: int = 0, converted_checkpoint: str | None = None,
+def official_weights(*, device: str, seed: int, converted_checkpoint: str | None = None,
                      **construction: ConfigValue) -> dict[str, torch.Tensor]:
     """The official-layout weights a construction with these options runs, for
     the reference (`reference.load`): the seeded random ones, or the OpenPI

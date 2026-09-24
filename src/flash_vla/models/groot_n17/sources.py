@@ -48,7 +48,7 @@ def runner_source(target: Target[GrootConfig, None], *, device: str, declare: bo
                         assets=assets, config=config)
 
 
-def official_weights(*, device: str, seed: int = 0, checkpoint: str | None = None,
+def official_weights(*, device: str, seed: int, checkpoint: str | None = None,
                      checkpoint_id: str | None = None, asset_config: str | None = None,
                      **construction: ConfigValue) -> dict[str, torch.Tensor]:
     """The official checkpoint's tensors a construction with these options
