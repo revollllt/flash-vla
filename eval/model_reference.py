@@ -16,7 +16,10 @@ covers the weight conversion, the fold, the graph and every kernel the plan
 routes, against the model as upstream defines it.
 
 The reference runs in float32 by default: the model's math without either
-side's bfloat16 roundings, which is what the engine approximates.
+side's bfloat16 roundings, which is what the engine approximates. It runs with
+TF32 off for matmuls and cuDNN convolutions, whatever the process set: PyTorch
+enables it for convolutions by default, and upstream code a plan loads may
+enable it for matmuls (LingBot's policy does).
 `--reference-precision bfloat16` runs upstream's own inference dtypes instead
 and reports how far the engine is from upstream's numerics, which sit about as
 far from the float32 math as the engine does. At one step and one layer the
@@ -27,6 +30,7 @@ contains no model or stage names.
 from __future__ import annotations
 
 import argparse
+import gc
 from importlib import import_module
 import json
 from pathlib import Path
@@ -80,24 +84,36 @@ def run(target: str, plan: str = "shipped", *, steps: int | None = 1, layers: in
     inputs = engine.sample_inputs(seed)
     engine.forward(**inputs)
     torch.cuda.synchronize()
+    identity, context, device = engine.identity, engine.measurement_context, str(engine.device)
+    # Keep what the engine computed and release its weights and graphs: a
+    # float32 reference of a 4B model needs that device memory.
+    buffers = {name: tensor.clone() for name, tensor in engine.buffers.items()}
+    del engine
+    gc.collect()
+    torch.cuda.empty_cache()
     sources: WeightsSource = import_module(entry.sources_module)
-    weights = sources.official_weights(device=str(engine.device), seed=seed, **options)
+    weights = sources.official_weights(device=device, seed=seed, **options)
     view: ReferenceView = import_module(entry.reference_view_module)
-    with torch.inference_mode():
-        outputs = view.reference_outputs(weights, inputs, engine.buffers,
-                                         shape=engine.identity.shape, seed=seed,
-                                         precision=reference_precision)
-    torch.cuda.synchronize()
+    matmul_tf32, convolution_tf32 = torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = torch.backends.cudnn.allow_tf32 = False
+    try:
+        with torch.inference_mode():
+            outputs = view.reference_outputs(weights, inputs, buffers, shape=identity.shape,
+                                             seed=seed, precision=reference_precision)
+        torch.cuda.synchronize()
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = matmul_tf32
+        torch.backends.cudnn.allow_tf32 = convolution_tf32
     stages = {name: error_metrics(expected.float(), observed.float())
-              for name, (expected, observed) in view.comparable(outputs, engine.buffers).items()}
-    tolerance = tolerances(engine.identity.precision)["shallow"]
+              for name, (expected, observed) in view.comparable(outputs, buffers).items()}
+    tolerance = tolerances(identity.precision)["shallow"]
     min_cosine = min(metrics["cosine_similarity"] for metrics in stages.values())
     max_rel_rms = max(metrics["rel_rms"] for metrics in stages.values())
     shallow = steps == 1 and layers == 1
     within = bool(min_cosine > tolerance["cosine_min"] and max_rel_rms < tolerance["rel_rms_max"])
     return {
-        "identity": engine.identity.as_dict(),
-        "measurement_context": engine.measurement_context,
+        "identity": identity.as_dict(),
+        "measurement_context": context,
         "config": {"plan": plan, "steps": steps, "layers": layers, "seed": seed,
                    "reference_precision": reference_precision, "options": options,
                    "oracle": "model_reference"},

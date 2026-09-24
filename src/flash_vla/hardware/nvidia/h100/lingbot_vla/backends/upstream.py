@@ -647,7 +647,7 @@ def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
     return {name: wrappers[name] for name in (selected_names or CALL_SITES)}
 
 
-#: Upstream LingBot with no replacement: the reference route.
+#: Upstream LingBot with no replacement: the bottom rung of the shipped ladder.
 BACKEND = Backend(names=CALL_SITES, make_wrappers=make_wrappers,
                   route_constraints=ROUTE_CONSTRAINTS)
 

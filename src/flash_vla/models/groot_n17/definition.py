@@ -90,8 +90,8 @@ class GrootModel(ModelDefinition[GrootConfig, None]):
     def build(self, g: Graph, shape: Mapping[str, int]) -> None:
         graph.build(g, shape)
 
-    def sample_inputs(self, shape: Mapping[str, int], seed: int, device: torch.device,
-                      assets: Mapping[str, Path]) -> dict[str, torch.Tensor]:
+    def sample_inputs(self, config: GrootConfig, shape: Mapping[str, int], seed: int,
+                      device: torch.device, assets: Mapping[str, Path]) -> dict[str, torch.Tensor]:
         """The prepared fixture's observation with noise drawn from `seed`."""
         values = torch.load(assets["fixture"], map_location="cpu", weights_only=True)["inputs"]
         if not torch.equal(values["image_grid_thw"], torch.tensor(GRID)):

@@ -1,33 +1,58 @@
 """Where a LingBot-VLA runner's weights and fixture come from, and the provenance each carries.
 
-Both are frozen assets named by the Target's logical IDs (`Target.assets`),
-resolved to local paths through the machine's asset configuration
-(`flash_vla.assets`). An explicit local checkpoint or fixture overrides the
-configured one and must name its own ID and digest
-(`flash_vla.inference.build_runner`).
+By default both are frozen assets named by the Target's logical IDs
+(`Target.assets`), resolved to local paths through the machine's asset
+configuration (`flash_vla.assets`). An explicit local checkpoint or fixture
+overrides the configured one and must name its own ID and digest
+(`flash_vla.inference.build_runner`). A `synthetic` construction needs no
+asset: seeded random weights in the official layout
+(`reference.random_weights`) and inputs drawn from the same seed
+(`definition.LingBotModel.sample_inputs`).
 """
 from __future__ import annotations
 
-from flash_vla.assets import locate_assets
-from flash_vla.provenance import FixtureProvenance, WeightsProvenance
-from flash_vla.runtime.runner import RunnerSource
-from flash_vla.runtime.vla import Target
+import torch
 
-from . import weights
+from flash_vla.assets import locate_assets
+from flash_vla.provenance import FixtureProvenance, WeightsProvenance, canonical_digest
+from flash_vla.runtime.runner import RunnerSource
+from flash_vla.runtime.vla import ConfigValue, Target
+
+from . import reference, weights
 from .definition import FIXTURE_SEED, LingBotConfig
+from .spec import CHECKPOINT_REVISION, WEIGHT_SHAPES, random_checkpoint_revision
+
+#: The producer of the synthetic inputs, part of their ID and digest.
+SYNTHETIC_FIXTURE = "flash-vla/lingbot-inputs-v1"
 
 
 def runner_source(target: Target[LingBotConfig, None], *, device: str, declare: bool,
                   seed: int = FIXTURE_SEED, steps: int = 10, layers: int = 36,
-                  checkpoint: str | None = None, fixture: str | None = None,
-                  checkpoint_id: str | None = None, checkpoint_digest: str | None = None,
-                  fixture_id: str | None = None, fixture_digest: str | None = None,
+                  synthetic: bool = False, checkpoint: str | None = None,
+                  fixture: str | None = None, checkpoint_id: str | None = None,
+                  checkpoint_digest: str | None = None, fixture_id: str | None = None,
+                  fixture_digest: str | None = None,
                   asset_config: str | None = None) -> RunnerSource:
-    """The frozen weights, fixture and configuration of one LingBot construction.
+    """The weights, fixture and configuration of one LingBot construction.
 
-    The fixture is recorded at `FIXTURE_SEED`, so `seed` selects nothing.
-    `declare` reads no asset configuration and no weights.
+    The recorded fixture provides only `FIXTURE_SEED`; a `synthetic`
+    construction draws its weights and inputs from `seed`. `declare` reads
+    no asset configuration and draws no weights.
     """
+    config = dict(steps=steps, layers=layers, synthetic=synthetic)
+    assets_named = (checkpoint, fixture, checkpoint_id, checkpoint_digest, fixture_id, fixture_digest,
+                    asset_config)
+    if synthetic and any(value is not None for value in assets_named):
+        raise ValueError("a synthetic construction takes no checkpoint, fixture or asset configuration")
+    if synthetic:
+        revision = random_checkpoint_revision(seed)
+        return RunnerSource(
+            checkpoint=None if declare else reference.random_weights(seed, device=device),
+            weights_provenance=WeightsProvenance(checkpoint_id=revision, checkpoint_digest=revision),
+            fixture_provenance=FixtureProvenance(
+                id=f"{SYNTHETIC_FIXTURE}/seed-{seed}",
+                digest=canonical_digest({"producer": SYNTHETIC_FIXTURE, "seed": seed})),
+            assets={}, config=config)
     if checkpoint_id is None and (checkpoint is not None or checkpoint_digest is not None):
         raise ValueError("checkpoint override needs checkpoint_id and checkpoint_digest")
     if checkpoint_id is not None and not checkpoint_digest:
@@ -45,7 +70,6 @@ def runner_source(target: Target[LingBotConfig, None], *, device: str, declare: 
     named_fixture = (FixtureProvenance(id=target.assets["fixture"], digest=target.assets["fixture"])
                      if fixture_id is None
                      else FixtureProvenance(id=fixture_id, digest=fixture_digest))
-    config = dict(steps=steps, layers=layers)
     if declare:
         return RunnerSource(checkpoint=None, weights_provenance=named_weights,
                             fixture_provenance=named_fixture, assets={}, config=config)
@@ -57,4 +81,24 @@ def runner_source(target: Target[LingBotConfig, None], *, device: str, declare: 
                         weights_provenance=named_weights, fixture_provenance=named_fixture,
                         assets=assets, config=config)
 
-__all__ = ["runner_source"]
+
+def official_weights(*, device: str, seed: int = FIXTURE_SEED, synthetic: bool = False,
+                     checkpoint: str | None = None, checkpoint_id: str | None = None,
+                     asset_config: str | None = None,
+                     **construction: ConfigValue) -> dict[str, torch.Tensor]:
+    """The official-layout weights a construction with these options runs,
+    for the reference (`reference.load`): the seeded random ones, or the
+    checkpoint's, located as `runner_source` locates them and read into the
+    runner's bfloat16. The layout is the engine's own, so nothing is
+    converted. The other construction options select nothing here."""
+    if synthetic:
+        return reference.random_weights(seed, device=device)
+    assets = locate_assets({"checkpoint": checkpoint_id or CHECKPOINT_REVISION},
+                           overrides={"checkpoint": checkpoint}, config=asset_config)
+    tensors = {name: torch.empty(shape, dtype=torch.bfloat16, device=device)
+               for name, shape in WEIGHT_SHAPES.items()}
+    weights.load_checkpoint(assets["checkpoint"]).copy_into(tensors)
+    return tensors
+
+
+__all__ = ["SYNTHETIC_FIXTURE", "official_weights", "runner_source"]

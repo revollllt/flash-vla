@@ -174,7 +174,8 @@ itself. A model's seeded random
 checkpoint is its reference's random official weights converted as a real
 checkpoint is, so both sides hold the same model. A backend may also run the
 reference's own modules on the runner's weights, as GR00T's plain PyTorch
-stages do; its engine then agrees with the bfloat16 reference bit for bit.
+stages and LingBot's `reference` route do; its engine then agrees with the
+bfloat16 reference bit for bit (`tests/test_reference_backends.py`).
 
 ## Optimization and evidence
 

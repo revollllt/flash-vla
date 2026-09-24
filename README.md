@@ -26,7 +26,7 @@ Commands below run from the project root in the configured GPU environment.
 |---|---|
 | `h100/pi0` | Seeded synthetic weights and inputs |
 | `h100/pi05` | Synthetic weights, or an explicit OpenPI checkpoint/config |
-| `h100/lingbot_vla` | Real checkpoint and fixture, resolved through `FLASH_VLA_ASSETS` |
+| `h100/lingbot_vla` | Real checkpoint and fixture, resolved through `FLASH_VLA_ASSETS`; or `synthetic=true`, seeded random weights and inputs needing no asset (its `reference` plan runs on any CUDA device) |
 | `rtx5090/pi0` | Seeded synthetic weights and inputs |
 | `rtx5090/pi05` | Synthetic weights, or a checkpoint OpenPI's converter wrote |
 | `rtx5090/groot_n17` | [GR00T N1.7 LIBERO PyTorch reference](src/flash_vla/models/groot_n17/README.md), real checkpoint and observations |

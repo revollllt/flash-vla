@@ -1,8 +1,11 @@
 """LingBot-VLA-4B on H100, BF16: the upstream model with the measured replacement ladder.
 
 The model is `flash_vla.models.lingbot`; this Target owns the backends (the
-upstream composition and its `UpstreamRoute` ladder), the shipped plan and the
-logical IDs of the assets a machine resolves to files.
+model reference for the reference plan, the upstream composition and its
+`UpstreamRoute` ladder for the shipped one), the shipped plan and the logical
+IDs of the assets a machine resolves to files. The shipped routes need the
+`upstream` and `qwen` assets; the reference plan needs neither, and with
+`synthetic=True` no asset at all.
 """
 from __future__ import annotations
 

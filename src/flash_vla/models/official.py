@@ -15,6 +15,9 @@ from typing import Mapping
 import torch
 from torch import nn
 
+#: The dtype of every parameter and buffer of a reference, per reference precision.
+PRECISION_DTYPES = {"bfloat16": torch.bfloat16, "float32": torch.float32}
+
 
 def official_schema(parts: Mapping[str, nn.Module], *,
                     prefixes: Mapping[str, str]) -> dict[str, tuple[int, ...]]:
@@ -47,4 +50,4 @@ def random_official(parts: Mapping[str, nn.Module], *, prefixes: Mapping[str, st
                    ).to(torch.bfloat16) for name in sorted(schema)}
 
 
-__all__ = ["bind", "official_schema", "random_official"]
+__all__ = ["PRECISION_DTYPES", "bind", "official_schema", "random_official"]

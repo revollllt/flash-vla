@@ -205,12 +205,14 @@ class ModelDefinition(ABC, Generic[ConfigT, HostStateT]):
         between two stages."""
         raise KeyError(f"{self.name} declares no host slot {slot!r}")
 
-    def sample_inputs(self, shape: Mapping[str, int], seed: int, device: torch.device,
-                      assets: Mapping[str, Path]) -> dict[str, torch.Tensor]:
-        """Seeded inputs at `shape`, drawn in `inputs` order from one generator.
+    def sample_inputs(self, config: ConfigT, shape: Mapping[str, int], seed: int,
+                      device: torch.device, assets: Mapping[str, Path]) -> dict[str, torch.Tensor]:
+        """Seeded inputs of the configuration `config` at `shape`, drawn in
+        `inputs` order from one generator.
 
         A model whose inputs come from a recorded fixture reads it from `assets`
-        and may reject a seed its fixture does not provide.
+        and may reject a seed its fixture does not provide; its configuration
+        says whether a construction has one.
 
         Inputs a host slot consumes (`Input.buffer is None`) are returned in
         pinned host memory, as deployment delivers them: a device-resident copy

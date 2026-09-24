@@ -1,8 +1,9 @@
 """LingBot-VLA as a model definition: identity, configuration, shapes and inputs.
 
 The model runs at one frozen shape. Its inputs are a recorded fixture (the
-`fixture` asset), not random draws: the upstream vision tower and tokenizer
-produced them, and nothing else can.
+`fixture` asset), which the upstream processor and tokenizer produced; a
+synthetic construction (`LingBotConfig.synthetic`), which has no fixture,
+draws them from the seed instead (`sources.runner_source`).
 """
 from __future__ import annotations
 
@@ -45,17 +46,22 @@ from .spec import (
     VISION_HEADS,
     VISION_LAYERS,
     VISUAL_TOKENS_PER_VIEW,
+    VOCABULARY,
     WEIGHT_SHAPES,
 )
 
 #: The seed the frozen fixture was recorded with; it is the only one it provides.
 FIXTURE_SEED = 42
+#: Valid prompt tokens of the synthetic inputs; the rest of the slots are padding.
+SYNTHETIC_PROMPT_TOKENS = 48
 
 
 @dataclass(frozen=True)
 class LingBotConfig:
     steps: int = 10
     layers: int = LAYERS
+    #: Inputs drawn from the seed rather than read from the recorded fixture.
+    synthetic: bool = False
 
     def __post_init__(self) -> None:
         if not 1 <= self.steps <= 10:
@@ -65,7 +71,7 @@ class LingBotConfig:
 
 
 class LingBotModel(ModelDefinition[LingBotConfig, None]):
-    """LingBot-VLA: three monolithic stages over the frozen upstream model."""
+    """LingBot-VLA: vision, prefix and action stages, one monolithic call site each."""
 
     name = "lingbot-vla"
     model_revision = MODEL_REVISION
@@ -137,13 +143,29 @@ class LingBotModel(ModelDefinition[LingBotConfig, None]):
     def build(self, g: Graph, shape: Mapping[str, int]) -> None:
         graph.build(g, shape)
 
-    def sample_inputs(self, shape: Mapping[str, int], seed: int, device: torch.device,
-                      assets: Mapping[str, Path]) -> dict[str, torch.Tensor]:
-        """The recorded fixture's inputs; it provides only `FIXTURE_SEED`."""
+    def sample_inputs(self, config: LingBotConfig, shape: Mapping[str, int], seed: int,
+                      device: torch.device, assets: Mapping[str, Path]) -> dict[str, torch.Tensor]:
+        """The recorded fixture's inputs, which it provides only for
+        `FIXTURE_SEED`; a synthetic construction's are drawn from `seed`: unit
+        normal patches, state and noise, every view valid but the last, and
+        `SYNTHETIC_PROMPT_TOKENS` random prompt tokens before padding."""
+        if config.synthetic:
+            generator = torch.Generator(device=device).manual_seed(seed)
+            return {
+                "pixel_values": torch.randn((VIEWS, PATCH_ROWS_PER_VIEW, PATCH_WIDTH), generator=generator,
+                                            device=device).to(torch.bfloat16),
+                "image_masks": torch.arange(VIEWS, device=device) < VIEWS - 1,
+                "language_tokens": torch.randint(0, VOCABULARY, (1, LANGUAGE_SLOTS), generator=generator,
+                                                 device=device),
+                "language_masks": (torch.arange(LANGUAGE_SLOTS, device=device) < SYNTHETIC_PROMPT_TOKENS)[None],
+                "state": torch.randn((1, STATE_DIM), generator=generator, device=device).to(torch.bfloat16),
+                "noise": torch.randn((1, CHUNK, ACTION_DIM), generator=generator,
+                                     device=device).to(torch.bfloat16),
+            }
         if seed != FIXTURE_SEED:
             raise ValueError(f"the frozen LingBot fixture uses seed {FIXTURE_SEED}")
         values = load_file(Path(assets["fixture"]))
         return {spec.name: values[spec.name].to(device=device) for spec in self.inputs}
 
 
-__all__ = ["FIXTURE_SEED", "LingBotConfig", "LingBotModel"]
+__all__ = ["FIXTURE_SEED", "LingBotConfig", "LingBotModel", "SYNTHETIC_PROMPT_TOKENS"]

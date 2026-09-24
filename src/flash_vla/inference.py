@@ -45,7 +45,8 @@ TARGETS: dict[str, TargetEntry] = {
         "flash_vla.hardware.nvidia.rtx5090.groot_n17", "flash_vla.models.groot_n17.sources",
         reference_view_module="flash_vla.models.groot_n17.reference_view"),
     "hardware/nvidia/h100/lingbot_vla": TargetEntry(
-        "flash_vla.hardware.nvidia.h100.lingbot_vla", "flash_vla.models.lingbot.sources"),
+        "flash_vla.hardware.nvidia.h100.lingbot_vla", "flash_vla.models.lingbot.sources",
+        reference_view_module="flash_vla.models.lingbot.reference_view"),
     "hardware/nvidia/h100/pi05": TargetEntry(
         "flash_vla.hardware.nvidia.h100.pi05", "flash_vla.models.pi05.sources",
         reference_view_module="flash_vla.models.pi05.reference_view"),
@@ -75,7 +76,9 @@ ALIASES = {"rtx5090/groot_n17": "hardware/nvidia/rtx5090/groot_n17",
            # The `lab/plans/<target>-<name>.json` prefix form, which cannot
            # carry a slash.
            "rtx5090_pi0": "hardware/nvidia/rtx5090/pi0",
-           "rtx5090_pi05": "hardware/nvidia/rtx5090/pi05"}
+           "rtx5090_pi05": "hardware/nvidia/rtx5090/pi05",
+           # The LingBot campaign's early plans (`lab/plans/lingbot-*.json`).
+           "lingbot": "hardware/nvidia/h100/lingbot_vla"}
 
 #: The two plan names every Target understands.
 PLAN_NAMES = ("shipped", "reference")

@@ -87,7 +87,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ..official import bind
+from ..official import PRECISION_DTYPES, bind
 from .spec import (
     ACTION_DIM,
     BACKBONE_DIM,
@@ -113,8 +113,6 @@ PREFIXES = {
     "backbone": "backbone.model.model.language_model.",
     "action": "action_head.",
 }
-#: The dtype of every parameter and buffer, per reference precision.
-DTYPES = {"bfloat16": torch.bfloat16, "float32": torch.float32}
 
 VISION_HEADS = 16
 VISION_HEAD_DIM = VISION_DIM // VISION_HEADS
@@ -769,7 +767,7 @@ def bind_part(reference: GrootReference, part: str, weights: Mapping[str, torch.
     model to bfloat16."""
     module = reference.parts()[part]
     bind({part: module}, prefixes=PREFIXES, weights=weights)
-    module.to(device=next(module.parameters()).device, dtype=DTYPES[precision])
+    module.to(device=next(module.parameters()).device, dtype=PRECISION_DTYPES[precision])
 
 
 def load(weights: Mapping[str, torch.Tensor], *,

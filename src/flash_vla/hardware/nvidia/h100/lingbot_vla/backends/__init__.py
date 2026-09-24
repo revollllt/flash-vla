@@ -1,9 +1,12 @@
-"""LingBot routes: upstream LingBot and the ladder of replacements built on it.
+"""LingBot routes: the model reference, and upstream LingBot with its ladder of replacements.
 
-Every backend here is the upstream backend (`upstream.BACKEND`) with some of
-its `UpstreamRoute` replacements switched on. Each rung of the ladder is the
-previous rung plus one measured step, so a plan that names a rung names every
-step below it; the three monolithic call sites always route together
+`reference` runs the model reference itself (`torch_ops.BACKEND`, plain
+PyTorch on `models.lingbot.reference`); it is the reference plan's route and
+needs no upstream code. Every other backend is the upstream backend
+(`upstream.BACKEND`) with some of its `UpstreamRoute` replacements switched
+on. Each rung of the ladder is the previous rung plus one measured step, so a
+plan that names a rung names every step below it; the upstream backends'
+three call sites route together, since they share one loaded policy
 (`upstream.ROUTE_CONSTRAINTS`).
 """
 from __future__ import annotations
@@ -13,6 +16,7 @@ from dataclasses import replace
 
 from flash_vla.runtime.registry import Registry
 
+from .torch_ops import BACKEND as REFERENCE
 from .upstream import BACKEND as UPSTREAM, UpstreamRoute, route_backend
 
 #: Invariant RoPE frequencies cached at warmup.
@@ -57,7 +61,7 @@ FUSED_GATE = replace(VISION_ATTENTION, fused_gate=True)
 ATTENTION_KERNEL = replace(FUSED_BACKBONE, attention_kernel=True)
 
 BACKENDS = {
-    "upstream-reference": UPSTREAM,
+    "reference": REFERENCE,
     "upstream-shipped": UPSTREAM,
     "rope-frequency": route_backend(ROPE_FREQUENCY),
     "patch-linear": route_backend(PATCH_LINEAR),
@@ -79,6 +83,6 @@ BACKENDS = {
     "fused-gate": route_backend(FUSED_GATE),
     "attention-kernel": route_backend(ATTENTION_KERNEL),
 }
-REGISTRY = Registry(BACKENDS, default="upstream-reference")
+REGISTRY = Registry(BACKENDS, default="reference")
 
 __all__ = ["BACKENDS", "REGISTRY"]

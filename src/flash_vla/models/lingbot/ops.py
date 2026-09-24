@@ -1,8 +1,10 @@
-"""The LingBot graph's call sites: three monolithic stages over the frozen upstream model.
+"""The LingBot graph's call sites: vision, prefix and action as one op each.
 
-Each stage takes every weight of its tower as a numbered parameter, so the op
-specs name those parameters (`WEIGHT_PARAMS` and its backbone and action
-halves) and the graph binds them to the checkpoint names of `spec`. The FLOP
+Each stage takes its weights as numbered parameters -- the vision op every
+weight of the model (`WEIGHT_PARAMS`), which the upstream route loads as one
+policy; the prefix and action ops their towers' (`BACKBONE_WEIGHT_PARAMS`,
+`ACTION_WEIGHT_PARAMS`) -- and the graph binds them to the checkpoint names
+of `spec`. The FLOP
 formulas are the dense matmul and attention work of the fixed shapes; they are
 what the floor model prices, not a claim about any implementation.
 """
@@ -22,10 +24,12 @@ from .spec import (
     EXPERT_DIM,
     EXPERT_FFN,
     EXPERT_WEIGHT_NAMES,
+    FULL_ATTENTION_BLOCKS,
     HEAD_DIM,
     KV_HEADS,
     LAYERS,
     PATCH_ROWS_PER_VIEW,
+    PATCH_SIZE,
     PATCH_WIDTH,
     PREFIX_LEN,
     QUERY_HEADS,
@@ -36,14 +40,15 @@ from .spec import (
     VISION_WEIGHT_NAMES,
     VISUAL_TOKENS_PER_VIEW,
     WEIGHT_NAMES,
+    WINDOW_SIZE,
 )
 
 #: Denoising steps the cost model counts: the full schedule.
 FLOW_STEPS = 10
 #: Vision blocks with full per-view attention; the rest attend within windows.
-FULL_ATTENTION_LAYERS = 4
+FULL_ATTENTION_LAYERS = len(FULL_ATTENTION_BLOCKS)
 #: Patches per attention window of the windowed vision blocks.
-WINDOW_TOKENS = 64
+WINDOW_TOKENS = (WINDOW_SIZE // PATCH_SIZE) ** 2
 
 #: The three monolithic call sites of the LingBot graph.
 CALL_SITES = frozenset({"lingbot_vision", "lingbot_prefix", "lingbot_action"})

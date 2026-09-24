@@ -290,7 +290,8 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
 
     def sample_inputs(self, seed: int = 0) -> dict[str, torch.Tensor]:
         """Seeded inputs at this runner's shapes."""
-        return self.target.model.sample_inputs(self.shape, seed, self.device, assets=self.assets)
+        return self.target.model.sample_inputs(self.config, self.shape, seed, self.device,
+                                               assets=self.assets)
 
     def stage(self, **inputs: torch.Tensor) -> None:
         """Copy the device inputs into their static addresses; run nothing."""

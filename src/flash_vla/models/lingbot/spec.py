@@ -7,8 +7,13 @@ CHECKPOINT_REVISION = (
     "qwen2.5-vl-3b@66285546d2b821cf421d4f5eb2576359d3770cd3"
 )
 
+#: The project's seeded random checkpoint in the official layout (`reference.random_weights`).
+RANDOM_CHECKPOINT_REVISION = "flash-vla/lingbot-random-checkpoint/v1"
+
 VIEWS = 3
 IMAGE_SIZE = 224
+#: Each view's patch grid (frames, rows, columns), the processor's `image_grid_thw`.
+GRID = ((1, 16, 16),) * VIEWS
 PATCH_ROWS_PER_VIEW = 256
 PATCH_WIDTH = 1176
 VISUAL_TOKENS_PER_VIEW = 64
@@ -17,6 +22,12 @@ VISION_DIM = 1280
 VISION_FFN = 3420
 VISION_HEADS = 16
 VISION_HEAD_DIM = 80
+#: Patch side, and the side of a windowed vision block's attention window, in pixels.
+PATCH_SIZE = 14
+WINDOW_SIZE = 112
+#: Vision blocks that attend across the whole image instead of within windows.
+FULL_ATTENTION_BLOCKS = (7, 15, 23, 31)
+VOCABULARY = 151936
 LANGUAGE_SLOTS = 72
 PREFIX_LEN = 264
 STATE_DIM = 75
@@ -78,7 +89,7 @@ def weight_shapes() -> dict[str, tuple[int, ...]]:
     })
 
     backbone = root + "qwenvl_with_expert.qwenvl.model."
-    shapes[backbone + "embed_tokens.weight"] = (151936, BACKBONE_DIM)
+    shapes[backbone + "embed_tokens.weight"] = (VOCABULARY, BACKBONE_DIM)
     shapes[backbone + "norm.weight"] = (BACKBONE_DIM,)
     for layer in range(LAYERS):
         base = backbone + f"layers.{layer}."
@@ -137,7 +148,13 @@ EXPERT_WEIGHT_NAMES = tuple(
     if name not in set(VISION_WEIGHT_NAMES) | set(BACKBONE_WEIGHT_NAMES)
 )
 
-__all__ = [name for name in globals() if name.isupper()] + ["weight_shapes"]
+def random_checkpoint_revision(seed: int) -> str:
+    """Immutable project ID of the seeded random checkpoint."""
+    return f"{RANDOM_CHECKPOINT_REVISION}/seed-{seed}"
+
+
+__all__ = [name for name in globals() if name.isupper()] + ["random_checkpoint_revision",
+                                                            "weight_shapes"]
 
 
 from flash_vla.runtime.identity import inference_signature

@@ -177,3 +177,32 @@ def test_groot_reference_produces_every_stage_on_meta() -> None:
     assert [tuple(feature.shape) for feature in outputs.deepstack] == [(128, 2048)] * 3
     assert outputs.backbone_features.shape == (1, 156, 2048)
     assert outputs.actions.shape == outputs.velocity_step_0.shape == (1, 40, 132)
+
+
+def test_lingbot_official_schema_is_the_engine_layout() -> None:
+    """LingBot's engine runs the official layout itself: the reference's
+    schema is the frozen checkpoint's 1,555 tensors."""
+    from flash_vla.models.lingbot import reference, spec
+
+    schema = official_schema(reference.make_reference().parts(), prefixes=reference.PREFIXES)
+    assert schema == dict(spec.WEIGHT_SHAPES)
+
+
+def test_lingbot_reference_produces_every_stage_on_meta() -> None:
+    from flash_vla.models.lingbot import reference
+
+    meta = torch.device("meta")
+    model = reference.load({name: torch.empty(shape, dtype=torch.bfloat16, device=meta)
+                            for name, shape in official_schema(reference.make_reference().parts(),
+                                                               prefixes=reference.PREFIXES).items()})
+    assert model.vision.inverse_frequency.dtype == torch.bfloat16
+    outputs = model(
+        torch.empty(3, 256, 1176, dtype=torch.bfloat16, device=meta), grid=((1, 16, 16),) * 3,
+        image_masks=torch.ones(3, dtype=torch.bool, device=meta),
+        language_tokens=torch.zeros(1, 72, dtype=torch.long, device=meta),
+        language_masks=torch.ones(1, 72, dtype=torch.bool, device=meta),
+        state=torch.empty(1, 75, dtype=torch.bfloat16, device=meta),
+        noise=torch.empty(1, 50, 75, dtype=torch.bfloat16, device=meta), steps=2, depth=2)
+    assert outputs.vision_embeddings.shape == (3, 64, 2048)
+    assert [tuple(key.shape) for key, _ in outputs.prefix.cache] == [(1, 264, 2, 128)] * 2
+    assert outputs.actions.shape == outputs.velocity_step_0.shape == (1, 50, 75)
