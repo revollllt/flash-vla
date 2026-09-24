@@ -34,7 +34,7 @@ from typing import Any
 
 import torch
 
-from flash_vla.inference import PLAN_NAMES, build, resolve
+from flash_vla.inference import PLAN_NAMES, build, get_target, resolve
 from flash_vla.environment import collect as _env
 from flash_vla.environment import report_context
 from flash_vla.runtime.identity import MeasurementContext
@@ -81,8 +81,9 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
     depth = {k: v for k, v in (("steps", steps), ("layers", layers)) if v is not None}
     reference = build(target, "reference", seed=seed, **depth, **overrides)
     candidate = build(target, plan or "shipped", seed=seed, **depth, **overrides)
-    oracle = dict(reference.identity.as_dict(), plan=reference.target.registry.resolve(
-        reference.target.select_plan("reference", reference.quantization),
+    registered_target = get_target(target)
+    oracle = dict(reference.identity.as_dict(), plan=registered_target.registry.resolve(
+        registered_target.select_plan("reference", reference.quantization),
         reference.graph.call_sites))
     if reference.identity.plan != oracle["plan"]:
         raise ValueError("reference runner does not use the Target reference route")

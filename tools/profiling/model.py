@@ -355,24 +355,11 @@ def overview(target: str, plan: str | None = None, *, seed: int = 0,
     for _ in range(5):
         engine.forward(**inputs)
     torch.cuda.synchronize()
-    replay, host = engine.replay, engine.host
-
-    def traced_replay(name):
-        with record_function(f"segment:{name}"):
-            return replay(name)
-
-    def traced_host(name, **inputs):
-        with record_function(f"host:{name}"):
-            return host(name, **inputs)
-
-    engine.replay, engine.host = traced_replay, traced_host
-    try:
+    with engine.observe(record_function):
         with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
             with record_function("forward"):
                 engine.forward(**inputs)
                 torch.cuda.synchronize()
-    finally:
-        engine.replay, engine.host = replay, host
     path = Path(trace_dir) / "overview.json"
     events = _trace_events(prof, path)
     gpu = _gpu_events(events)

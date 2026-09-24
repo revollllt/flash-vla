@@ -62,7 +62,6 @@ def report_context(engine, environment):
         },
         hostname=environment.get("node"), slurm_job_id=environment.get("job"),
         timestamp=time.time(),
-        reference_provenance=engine.measurement_context.get("reference_provenance", {}),
     ).as_dict()
 
 

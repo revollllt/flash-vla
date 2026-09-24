@@ -34,7 +34,6 @@ from eval.libero.policy import Pi05LiberoPolicy
 from flash_vla.models.pi05.session import set_task
 from eval.metrics import error_metrics
 from flash_vla.hardware.nvidia.rtx5090.pi05.target import TARGET
-from flash_vla.inference import declare
 from flash_vla.models.pi05.openpi import converted_checkpoint
 from flash_vla.models.pi05.spec import ENCODER_LAYERS
 from flash_vla.models.pi05.weights import fold
@@ -142,8 +141,7 @@ def compare(args: argparse.Namespace) -> None:
         recipe_path = args.out / "recipes" / f"{name}.json"
         recipe_path.parent.mkdir(exist_ok=True)
         recipe_path.write_text(json.dumps(variant.recipe) + "\n")
-        runner = ModelRunner(declare("rtx5090/pi05").target, weights, engine_revision=git_revision(),
-                             checkpoint_id="openpi/pi05_libero",
+        runner = ModelRunner(TARGET, weights, engine_revision=git_revision(),
                              plan=variant.plan, quantization=variant.quantization,
                              num_views=2, chunk_size=10, steps=10, prompt_len=config["max_token_len"],
                              discrete_state=False, prompt="pick up the object",

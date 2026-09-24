@@ -13,8 +13,8 @@ import torch
 import yaml
 
 from flash_vla.environment import record_path
-from flash_vla.inference import resolve_assets
-from flash_vla.inference import build
+from flash_vla.assets import resolve_assets
+from flash_vla.source import build
 from eval.tolerances import tolerances
 from eval.metrics import error_metrics
 
@@ -90,7 +90,8 @@ def run(plan: str = "reference", oracle: Path | None = None,
     ) and torch.equal(first, second)
     return {
         "identity": engine.identity.as_dict(),
-        "implementation_source": getattr(engine, "implementation_source", None),
+        "implementation_source": (None if engine.implementation_source is None
+                                  else engine.implementation_source.as_dict()),
         "measurement_context": engine.measurement_context,
         "oracle": record_path(oracle / "official-eager.safetensors"),
         "reference_provenance": dict(oracle_metadata["identity"],

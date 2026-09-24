@@ -73,9 +73,16 @@ def test_models_are_hardware_free():
                       ("flash_vla.hardware", "flash_vla.inference", "flash_vla.source")) == {}
 
 
-def test_provenance_is_a_leaf():
-    assert violations({"flash_vla.provenance": imports_of(SOURCE / "flash_vla/provenance.py", SOURCE)},
+@pytest.mark.parametrize("leaf", ["provenance", "assets"])
+def test_provenance_and_assets_are_leaves(leaf):
+    assert violations({f"flash_vla.{leaf}": imports_of(SOURCE / f"flash_vla/{leaf}.py", SOURCE)},
                       ("flash_vla",)) == {}
+
+
+def test_entry_point_names_targets_without_importing_them():
+    """`inference` reaches a Target and its model's sources by module name, on first use."""
+    assert violations({"flash_vla.inference": imports_of(SOURCE / "flash_vla/inference.py", SOURCE)},
+                      ("flash_vla.models", "flash_vla.hardware", "flash_vla.source")) == {}
 
 
 @pytest.mark.parametrize("device,other", [("h100", "rtx5090"), ("rtx5090", "h100")])

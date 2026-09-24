@@ -42,15 +42,13 @@ class Pi05LiberoPolicy:
                              steps=steps, torch=torch.__version__, gpu=torch.cuda.get_device_name(),
                              exact_rope=exact_rope if engine == "official" else None)
         if engine == "flashvla":
-            from flash_vla.inference import declare
+            from flash_vla.inference import get_target
             from flash_vla.models.pi05.weights import fold
             from flash_vla.provenance import git_revision
             from flash_vla.runtime import ModelRunner
 
-            device_target = declare(target).target
             weights = fold(converted_checkpoint(directory), steps=steps)
-            self.runner = ModelRunner(device_target, weights, engine_revision=git_revision(),
-                                      checkpoint_id="openpi/pi05_libero",
+            self.runner = ModelRunner(get_target(target), weights, engine_revision=git_revision(),
                                       plan=plan, num_views=2, chunk_size=10, steps=steps,
                                       prompt_len=config["max_token_len"], discrete_state=False,
                                       prompt="pick up the object",

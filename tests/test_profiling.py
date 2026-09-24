@@ -1,5 +1,5 @@
 """Coarse profiling keeps real forward order; detailed work stays in the selected segment."""
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
 
 import pytest
@@ -19,7 +19,13 @@ def engine(monkeypatch):
                                                   "fixture": {"id": "inputs"}}, graph_contract=GraphContract(),
                              sample_inputs=lambda seed: {},
                              replay=lambda name: calls.append(name),
-                             host=lambda name, **kw: calls.append(name), calls=calls)
+                             host=lambda name, **kw: calls.append(name), calls=calls, scopes=[])
+
+    @contextmanager
+    def observe(scope):
+        engine.scopes.append(scope)
+        yield
+    engine.observe = observe
     def forward(**kw):
         engine.replay("vision")
         engine.host("prepare")
@@ -55,19 +61,43 @@ def test_unknown_segment_fails(engine):
         profile.run("test", ["a"], segment="missing")
 
 
-def test_overview_profiles_forward_and_restores_methods(engine, monkeypatch, tmp_path):
-    replay, host = engine.replay, engine.host
+def test_overview_profiles_forward_inside_observed_steps(engine, monkeypatch, tmp_path):
     monkeypatch.setattr(profile, "profile", lambda **kw: nullcontext())
     monkeypatch.setattr(profile, "_trace_events", lambda *a: [
         dict(cat="kernel", ts=10, dur=2), dict(cat="kernel", ts=15, dur=3)])
     report = profile.overview("test", "a", trace_dir=str(tmp_path))
     assert engine.calls == ["vision", "prepare", "expert"] * 6
-    assert engine.replay is replay and engine.host is host
+    assert engine.scopes == [profile.record_function]
     assert report["diagnostic_only"] is True
     assert report["gpu_activity_us"] == 5
     assert report["gpu_span_us"] == 8
     assert report["gpu_gaps_us"] == 3
 
+
+def test_runner_observes_each_replay_and_host_slot_then_restores(monkeypatch):
+    from flash_vla.inference import declare
+
+    runner = declare("h100/pi05")
+    steps, labels = [], []
+    runner.graphs = SimpleNamespace(replay=steps.append)
+    monkeypatch.setattr(runner.target.model, "host", lambda slot, **kw: steps.append(slot))
+
+    def scope(tag):
+        @contextmanager
+        def enter(label):
+            labels.append((tag, label))
+            yield
+        return enter
+
+    with runner.observe(scope("outer")):
+        runner.replay("vision_encoder")
+        with runner.observe(scope("inner")):
+            runner.host("prompt")
+        runner.replay("llm_backbone")
+    runner.replay("action_expert")
+    assert steps == ["vision_encoder", "prompt", "llm_backbone", "action_expert"]
+    assert labels == [("outer", "segment:vision_encoder"), ("inner", "host:prompt"),
+                      ("outer", "segment:llm_backbone")]
 
 
 def event(start, end, site='a', inv=0, stream=7):

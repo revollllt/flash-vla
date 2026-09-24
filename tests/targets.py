@@ -55,7 +55,6 @@ def check_target(target: str) -> list[dict[str, Any]]:
             if spec is None:
                 outputs_ok = False
                 continue
-            base = graph.buffers[spec.alias] if spec.alias else spec
             exposed = graph.buf(buffer).shape
             if axis is not None and (axis >= len(exposed) or exposed[axis] < 1):
                 outputs_ok = False

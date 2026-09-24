@@ -55,7 +55,8 @@ from flash_vla.runtime.identity import Identity, MeasurementContext
 from flash_vla.runtime.engine import host_slots, segments
 
 from flash_vla.environment import collect as _env, device_selector, require_cuda, report_context
-from flash_vla.inference import PLAN_NAMES, build, resolve, parse_options
+from flash_vla.inference import PLAN_NAMES, parse_options, resolve
+from flash_vla.source import build
 
 _LAT = LATENCY_DEFAULTS
 
@@ -270,7 +271,8 @@ def _measure_leg(target, plan, *, reps, warmup, seed, soak_s, attribution, optio
                                    "after": environment.get("runtime_observation")},
            "options": options, "process_id": os.getpid(),
            "gpu_uuid": environment.get("gpu_uuid"),
-           "implementation_source": getattr(engine, "implementation_source", None)}
+           "implementation_source": (None if engine.implementation_source is None
+                                     else engine.implementation_source.as_dict())}
     if evidence is not None:
         print(attribution_summary(evidence), flush=True)
     return leg, environment

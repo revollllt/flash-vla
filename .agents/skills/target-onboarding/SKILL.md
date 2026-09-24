@@ -24,14 +24,18 @@ loop begins after that model's semantics and correctness reference are understoo
    numerical requirements, descending to intermediate activations only where the
    outputs already differ. Establish a working benchmark of this workload;
    make no speedup claim against a mismatched checkpoint or execution mode.
-4. Register the Target, assets and plans, record the upstream source and revision
-   with the commands that run and check it, then hand the identified bottlenecks
-   to the [optimization workflow](../model-optimization/SKILL.md).
+4. Register the Target, assets and plans: `models/<model>/sources.py` resolves
+   where the weights and fixture come from and their provenance
+   (`runner_source`), and one `TargetEntry` in `src/flash_vla/inference.py`
+   names the Target. Record the upstream source and revision with the commands
+   that run and check it, then hand the identified bottlenecks to the
+   [optimization workflow](../model-optimization/SKILL.md).
 
 Adding a GPU to a model that already has a Target reuses that reference: write
 a new `Target` value over the existing model definition, with that device's
-backends, and verify it runs. Do not re-derive the model, and do not import the
-other device's Target or kernels (`tests/test_layering.py`).
+backends, register it with the model's existing sources, and verify it runs.
+Do not re-derive the model, and do not import the other device's Target or
+kernels (`tests/test_layering.py`).
 
 ## Example
 

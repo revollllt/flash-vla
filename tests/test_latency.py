@@ -24,6 +24,7 @@ class _Engine:
             "weights": {"checkpoint_id": "a", "checkpoint_digest": "a"},
             "fixture": {"id": "inputs", "digest": "inputs"},
         }
+        self.implementation_source = None
 
     def capture(self):
         raise AssertionError("measurement must use the initial capture")

@@ -25,16 +25,20 @@ recipe's backends anywhere else.
 
 ```text
 models/<model>/               model semantics: graph, call sites, shapes, host
-                              work, checkpoint loading
+                              work, checkpoint loading, weight and fixture sources
 runtime/                      graph API, Target composition, buffers, execution,
                               plan binding
 hardware/<vendor>/<device>/   Targets and reusable component kernels
+inference.py                  Target names and runner construction by name
+provenance.py, assets.py      provenance values; logical asset IDs to local paths
 eval/, benchmarks/           accuracy and latency consumers
 tools/, tests/                diagnostics and engineering checks
 lab/                          experiments and saved-result rendering
 ```
 
 - Models have no hardware dependencies. Runtime imports no model, backend or Target.
+- `inference.py` names every Target and imports none until one is asked for;
+  `provenance.py` and `assets.py` import nothing of the package.
 - A Target combines one model, runtime and device component packages. It owns the
   layout the device's kernels see, plans and routing; components own reusable
   kernel implementations and may read a model's spec constants and reference math.
@@ -91,10 +95,21 @@ against the op vocabulary. A Target is a `runtime.vla.Target` value in
 `hardware/<vendor>/<device>/<model>/target.py`: the model object with its
 layout, a backend registry, two plans (`shipped` and `reference`), quantization
 recipes, measured ceilings and the logical IDs of its assets. Candidate
-plans stay under `lab/plans/`. Factories in `src/flash_vla/inference.py` handle model
-construction. OpenPI loading/conversion belongs to `models/pi0/openpi.py` and
-`models/pi05/openpi.py`; evaluation adds official forward adapters. Accuracy,
-latency and profiling tools all consume this same inference entrypoint.
+plans stay under `lab/plans/`. OpenPI loading/conversion belongs to
+`models/pi0/openpi.py` and `models/pi05/openpi.py`; evaluation adds official
+forward adapters.
+
+A runner is built from a Target and a `runtime.runner.RunnerSource`: the
+checkpoint, its `WeightsProvenance`, the input fixture's `FixtureProvenance`,
+local assets and the model configuration. `models/<model>/sources.py` resolves
+one from construction options (`runner_source`), with no hardware of its own,
+so every Target of a model shares it. `src/flash_vla/inference.py` maps Target
+names to the Target and its model's sources and is the one place a named
+Target's runner is constructed (`build`, `declare`, `build_runner`,
+`get_target`); accuracy, latency and profiling tools all consume it. The
+runner receives its provenance at construction and never changes it;
+`implementation_source` names the checkout its backends came from when that is
+not this one (`flash_vla.source`, which qualifies a LingBot backend revision).
 
 A backend is a `runtime.registry.Backend` value declared beside its
 implementation: the call sites it implements, the factory that builds their
@@ -109,11 +124,11 @@ registered under. Hand-written CUDA libraries are `hardware/nvidia/native`
 `CUDA_HOME`, then `PATH`) and one cache under `.cache/cuda_ext/`, keyed on the
 compiler, the command and every source and declared header.
 
-Machine configuration maps logical asset IDs to files. `FLASH_VLA_ASSETS` is a
-JSON mapping for file-backed construction; relative asset paths resolve beside
-that JSON. Explicit path overrides retain their separate checkpoint/fixture IDs.
-The runner receives its resolved assets without mutating another runner's
-process environment.
+Machine configuration maps logical asset IDs to files (`flash_vla.assets`).
+`FLASH_VLA_ASSETS` is a JSON mapping for file-backed construction; relative
+asset paths resolve beside that JSON. Explicit path overrides retain their
+separate checkpoint/fixture IDs. The runner receives its resolved assets
+without mutating another runner's process environment.
 
 Official references use `OPENPI_PYTHON` or `LINGBOT_PYTHON`. Pi0 official weights
 also use `OPENPI_PI0_CHECKPOINT` and its explicit immutable ID. Missing reference

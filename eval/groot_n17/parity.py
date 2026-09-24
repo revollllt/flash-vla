@@ -73,10 +73,11 @@ def official(args):
 
 
 def compare(args):
-    from flash_vla.inference import build
+    from flash_vla.inference import build, get_target
     oracle = torch.load(args.oracle, map_location="cpu", weights_only=True)
     processor = processor_for(oracle["checkpoint"], oracle["backbone"])
     runner = build("groot-n17", args.plan, asset_config=str(args.assets))
+    model_inputs = get_target("groot-n17").model.inputs
     limits = tolerances("bf16")["shallow"]
 
     def within(metrics):
@@ -84,7 +85,7 @@ def compare(args):
 
     results = []
     for case in oracle["cases"]:
-        inputs = {inp.name: case["inputs"][inp.name].to("cuda") for inp in runner.target.model.inputs}
+        inputs = {inp.name: case["inputs"][inp.name].to("cuda") for inp in model_inputs}
         got = runner.forward(**inputs).clone()
         repeat = runner.forward(**inputs).clone()
         torch.cuda.synchronize()

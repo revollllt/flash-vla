@@ -28,7 +28,7 @@ graph never carries a value an op returns.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from math import prod
 from typing import Any, Mapping, Sequence
 
@@ -37,7 +37,7 @@ import torch
 from .cost import Cost, Invocation, Pricing, SegmentCosts
 from .cuda.arena import Buffer, Init
 from .cuda.program import Step
-from .ops import OpSpec, Vocabulary
+from .ops import Vocabulary
 
 
 def _index_shape(shape: tuple[int, ...], key: Any) -> tuple[int, ...]:

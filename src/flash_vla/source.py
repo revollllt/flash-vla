@@ -1,4 +1,11 @@
-"""Load LingBot Python backends from a clean inference-source checkout."""
+"""Load LingBot Python backends from a clean inference-source checkout.
+
+`build` is `flash_vla.inference.build` with one more option,
+`source_checkout`: the LingBot Target's backends loaded from that clean
+checkout of this repository (`lingbot_target`), recorded as the runner's
+implementation source, so a latency or parity run can compare two revisions
+of those backends in one process.
+"""
 from __future__ import annotations
 
 from dataclasses import replace
@@ -10,8 +17,11 @@ import subprocess
 import sys
 import uuid
 
-from flash_vla.runtime.vla import Target
+from flash_vla.inference import build as build_registered, build_runner, resolve
+from flash_vla.provenance import ImplementationProvenance
+from flash_vla.runtime import ModelRunner
 from flash_vla.runtime.registry import Backend, Registry, Wrapper
+from flash_vla.runtime.vla import ConfigValue, PlanSpec, Target
 from flash_vla.runtime.workspace import Scratch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -53,7 +63,7 @@ def isolate_rope(backend: Backend) -> Backend:
     return replace(backend, make_wrappers=make)
 
 
-def lingbot_target(checkout: str | Path) -> tuple[Target, dict[str, str]]:
+def lingbot_target(checkout: str | Path) -> tuple[Target, ImplementationProvenance]:
     """The LingBot Target of `checkout`: its backend modules, isolated per engine.
 
     Shared inference code must be identical between `checkout` and this
@@ -96,8 +106,20 @@ def lingbot_target(checkout: str | Path) -> tuple[Target, dict[str, str]]:
                          for backend_name, backend in loaded.BACKENDS.items()},
                         default=loaded.REGISTRY.default)
     target = replace(module.TARGET, registry=registry)
-    provenance = dict(revision=revision, checkout=str(source),
-                      controller_revision=controller_revision,
-                      target_package=str(package), module=name,
-                      scope="isolated LingBot backends with per-call upstream RoPE; remaining src/flash_vla matches the source revision")
+    provenance = ImplementationProvenance(
+        revision=revision, checkout=str(source), controller_revision=controller_revision,
+        target_package=str(package), module=name,
+        scope="isolated LingBot backends with per-call upstream RoPE; remaining src/flash_vla matches the source revision")
     return target, provenance
+
+
+def build(name: str, plan: PlanSpec = "shipped", *, source_checkout: str | None = None,
+          **options: ConfigValue) -> ModelRunner:
+    """The runner of Target `name` on `plan`; with `source_checkout`, its
+    backends come from that checkout, which only the LingBot Target supports."""
+    if source_checkout is None:
+        return build_registered(name, plan, **options)
+    if resolve(name) != resolve("lingbot_vla"):
+        raise ValueError(f"only LingBot loads its backends from a source checkout, not {name}")
+    target, provenance = lingbot_target(source_checkout)
+    return build_runner(target, plan, implementation_source=provenance, **options)

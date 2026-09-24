@@ -10,8 +10,8 @@ buffer. Nothing here depends on the model: the graph says what to run, the
 registry says who runs it.
 
 The runner is also the engine protocol's implementation (`runtime/engine.py`):
-harnesses see identity, buffers, program, stage outputs, costs, the graph,
-and the instrumentation hooks, and never a model name.
+harnesses see identity, provenance, buffers, program, stage outputs, costs,
+the graph, and the instrumentation hooks, and never a model name.
 
 Construction with `checkpoint=None` and `capture=False` stops after the graph
 is built and checked: no device, no allocation. That is the declaration path
@@ -20,7 +20,7 @@ the CPU smoke check uses.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from functools import partial
 import gc
 from pathlib import Path
@@ -29,10 +29,12 @@ import warnings
 
 import torch
 
+from flash_vla.provenance import FixtureProvenance, ImplementationProvenance, WeightsProvenance
+
 from .cost import SegmentCosts
 from .cuda.arena import StaticArena
 from .cuda.program import Program, Segment, Step
-from .engine import WrapOp, wrap_ops
+from .engine import StepScope, WrapOp, wrap_ops
 from .graph import BufRef, Graph, Node, WeightRef
 from .identity import ExecutionVariant, Identity, validate_weight_schema
 from .registry import GraphContract, Wrapper
@@ -52,6 +54,22 @@ from .workspace import Scratch
 BoundArgument = torch.Tensor | int | float | None
 
 
+@dataclass(frozen=True)
+class RunnerSource:
+    """What a runner is built from beyond its Target and plan.
+
+    A model's `sources` module resolves one from construction options: the
+    weights (`None` declares the graph without them) and their provenance, the
+    fixture a measurement feeds the runner, its local assets and the model
+    configuration (`flash_vla.inference.build_runner`).
+    """
+    checkpoint: CheckpointReader | Mapping[str, torch.Tensor] | None
+    weights_provenance: WeightsProvenance
+    fixture_provenance: FixtureProvenance
+    assets: Mapping[str, Path]
+    config: Mapping[str, ConfigValue]
+
+
 class ModelRunner(Generic[ConfigT, HostStateT]):
     """One constructed Target: graph built, plan bound, buffers allocated, stages captured.
 
@@ -63,9 +81,13 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
     for this runner's input sampler, host state and backend factories. It is
     not part of configuration, shape, graph arguments or identity.
 
-    `engine_revision` is the source revision the identity records
-    (`flash_vla.provenance.git_revision` at the entry point); the runner never
-    inspects a checkout itself, so `None` means the caller named none.
+    `weights_provenance`, `fixture_provenance` and `implementation_source`
+    are the provenance the caller names (`flash_vla.provenance`), and
+    `engine_revision` the source revision the identity records (`git_revision`
+    at the entry point). The runner never inspects a checkout or a file
+    itself, so `None` means the caller named none, and none of them changes
+    after construction. `measurement_context` is their report form: the named
+    weights and fixture, derived on each read.
 
     `quantization` names one of the Target's recipes (`Target.quantization`),
     or its precision policy. It selects the named plans' routes for the
@@ -83,7 +105,9 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
 
     def __init__(self, target: Target[ConfigT, HostStateT],
                  checkpoint: CheckpointReader | Mapping[str, torch.Tensor] | None = None, *,
-                 checkpoint_id: str | None = None, checkpoint_digest: str | None = None,
+                 weights_provenance: WeightsProvenance | None = None,
+                 fixture_provenance: FixtureProvenance | None = None,
+                 implementation_source: ImplementationProvenance | None = None,
                  checkpoint_signature: str | None = None, model_revision: str | None = None,
                  engine_revision: str | None = None, plan: PlanSpec = "shipped",
                  quantization: str | None = None, device: str = "cuda", capture: bool = True,
@@ -91,19 +115,19 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
                  **config: ConfigValue) -> None:
         model = target.model
         if model_revision is not None:
-            warnings.warn("model_revision is owned by the model; use checkpoint_id for weights",
+            warnings.warn("model_revision is owned by the model; use weights_provenance for the checkpoint",
                           DeprecationWarning, stacklevel=2)
             if model_revision != model.model_revision:
                 raise ValueError("model_revision must equal the model's revision; "
-                                 "checkpoint provenance belongs in checkpoint_id")
+                                 "checkpoint provenance belongs in weights_provenance")
         if checkpoint_signature is not None and checkpoint_signature != model.inference_signature:
             raise ValueError("inference signature mismatch; resolve a compatible Target/model revision")
         reader = (checkpoint if checkpoint is None or isinstance(checkpoint, CheckpointReader)
                   else TensorCheckpoint(checkpoint))
         self.target = target
-        self.measurement_context = {
-            "weights": {"checkpoint_id": checkpoint_id, "checkpoint_digest": checkpoint_digest},
-        }
+        self.weights_provenance = weights_provenance
+        self.fixture_provenance = fixture_provenance
+        self.implementation_source = implementation_source
         self.config = model.configure(**config)
         self.shape: dict[str, int] = dict(model.shape(self.config, reader))
         self.graph: Graph = target.graph(self.shape)
@@ -138,6 +162,8 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
         self.graphs: Program | None = None
         #: Per stage, every node with its references resolved once to tensors.
         self.bound: dict[str, list[tuple[Node, tuple[BoundArgument, ...]]]] = {}
+        #: The scope each replay and host slot runs in while `observe` is active.
+        self.step_scope: StepScope | None = None
         if reader is None:
             if capture:
                 raise ValueError("capturing needs a checkpoint; pass capture=False to only "
@@ -207,13 +233,36 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
         finally:
             self.ops = original
 
+    @contextmanager
+    def observe(self, scope: StepScope) -> Iterator[None]:
+        """While active, every stage replay runs inside `scope("segment:<name>")`
+        and every host slot inside `scope("host:<name>")`."""
+        outer = self.step_scope
+        self.step_scope = scope
+        try:
+            yield
+        finally:
+            self.step_scope = outer
+
     def replay(self, segment: str) -> None:
         """Replay one stage on its capture stream, ordered with the caller."""
         if self.graphs is None:
             raise RuntimeError("this runner was built without capture")
-        self.graphs.replay(segment)
+        if self.step_scope is None:
+            self.graphs.replay(segment)
+            return
+        with self.step_scope(f"segment:{segment}"):
+            self.graphs.replay(segment)
 
     # -- the engine protocol --------------------------------------------------
+
+    @property
+    def measurement_context(self) -> dict[str, dict[str, str]]:
+        """The named weights and fixture in report form, a fresh copy on each read."""
+        return {role: provenance.as_dict()
+                for role, provenance in (("weights", self.weights_provenance),
+                                         ("fixture", self.fixture_provenance))
+                if provenance is not None}
 
     @property
     def costs(self) -> SegmentCosts:
@@ -251,7 +300,13 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
         """Run one declared host slot."""
         if slot not in self.graph.host_slots:
             raise KeyError(f"no host slot {slot!r}; this Target declares {self.graph.host_slots}")
-        self.target.model.host(slot, host_state=self.host_state, buffers=self.buffers, inputs=inputs)
+        if self.step_scope is None:
+            self.target.model.host(slot, host_state=self.host_state, buffers=self.buffers,
+                                   inputs=inputs)
+            return
+        with self.step_scope(f"host:{slot}"):
+            self.target.model.host(slot, host_state=self.host_state, buffers=self.buffers,
+                                   inputs=inputs)
 
     def forward(self, **inputs: torch.Tensor) -> torch.Tensor:
         """Stage the inputs, run the program in order, return the output view."""
@@ -264,4 +319,4 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
         return self.buffers[self.target.model.output]
 
 
-__all__ = ["ModelRunner", "Scratch"]
+__all__ = ["ModelRunner", "RunnerSource", "Scratch"]

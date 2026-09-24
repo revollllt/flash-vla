@@ -3,12 +3,17 @@
     from flash_vla import ModelRunner
     from flash_vla.hardware.nvidia.h100.pi0 import TARGET
     from flash_vla.models.pi0 import random_checkpoint, random_checkpoint_revision
+    from flash_vla.provenance import WeightsProvenance
 
+    revision = random_checkpoint_revision(0)
     runner = ModelRunner(TARGET, random_checkpoint(),
-                         checkpoint_id=random_checkpoint_revision(0),
-                         checkpoint_digest=random_checkpoint_revision(0),
+                         weights_provenance=WeightsProvenance(checkpoint_id=revision,
+                                                              checkpoint_digest=revision),
                          num_views=3, chunk_size=50)
     actions = runner.forward(images=images, state=state, noise=noise)
+
+A harness builds a Target by name instead (`flash_vla.inference.build`), with
+the weights and fixture its model's `sources` module resolves.
 
 A model (`flash_vla.models.<model>`) writes its computation graph against the
 framework's op vocabulary; a Target (`flash_vla.hardware.<vendor>.<device>`)

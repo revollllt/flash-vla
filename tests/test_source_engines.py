@@ -65,10 +65,10 @@ def test_loads_actual_old_and_new_modules_with_independent_globals(checkouts):
     assert (a.marker, b.marker) == ("old", "new")
     a.state.append("control")
     assert b.state == []
-    assert ap["revision"] == git(old, "rev-parse", "HEAD")
-    assert bp["revision"] == git(current, "rev-parse", "HEAD")
-    assert ap["module"] != bp["module"]
-    assert Path(ap["target_package"]).is_relative_to(old)
+    assert ap.revision == git(old, "rev-parse", "HEAD")
+    assert bp.revision == git(current, "rev-parse", "HEAD")
+    assert ap.module != bp.module
+    assert Path(ap.target_package).is_relative_to(old)
 
 
 def test_refuses_unisolated_shared_source_change(checkouts):
@@ -101,8 +101,8 @@ def test_recovery_records_and_notes_do_not_invalidate_committed_execution(checko
     with patch.object(source, "ROOT", current):
         target, provenance = source.lingbot_target(old)
     assert target.marker == "old"
-    assert provenance["revision"] == git(old, "rev-parse", "HEAD")
-    assert provenance["controller_revision"] == git(current, "rev-parse", "HEAD")
+    assert provenance.revision == git(old, "rev-parse", "HEAD")
+    assert provenance.controller_revision == git(current, "rev-parse", "HEAD")
 
 
 def test_source_wrappers_restore_rope_between_engines_and_after_error():

@@ -170,6 +170,7 @@ def test_legacy_report_remains_explicitly_unmigrated():
 def test_runner_rejects_incompatible_weight_schema_before_allocation(target):
     import torch
     from flash_vla.inference import declare
+    from flash_vla.provenance import WeightsProvenance
     from flash_vla.runtime import ModelRunner
 
     declaration = declare(target)
@@ -182,30 +183,35 @@ def test_runner_rejects_incompatible_weight_schema_before_allocation(target):
     config = {"prompt_len": 0} if target == "h100/pi0" else {}
     with patch.object(torch, "empty", side_effect=AssertionError("allocated before ABI check")):
         with pytest.raises(ValueError, match="inference signature mismatch"):
-            ModelRunner(declaration.target, weights, checkpoint_id="incompatible",
+            ModelRunner(declaration.target, weights,
+                        weights_provenance=WeightsProvenance(checkpoint_id="incompatible",
+                                                             checkpoint_digest="incompatible"),
                         device="cpu", capture=False, **config)
 
 
 def test_runner_rejects_same_shapes_with_incompatible_semantic_signature():
-    from flash_vla.inference import declare
+    from flash_vla.inference import get_target
+    from flash_vla.provenance import WeightsProvenance
     from flash_vla.runtime import ModelRunner
-    target = declare("h100/pi05").target
+    target = get_target("h100/pi05")
     with pytest.raises(ValueError, match="inference signature mismatch"):
-        ModelRunner(target, None, checkpoint_id="other-architecture",
+        ModelRunner(target, None,
+                    weights_provenance=WeightsProvenance(checkpoint_id="other-architecture",
+                                                         checkpoint_digest="other-architecture"),
                     checkpoint_signature="sha256:changed-attention-semantics",
                     device="cpu", capture=False)
 
 
 def test_runner_legacy_revision_is_architecture_only():
-    from flash_vla.inference import declare
+    from flash_vla.inference import get_target
     from flash_vla.runtime import ModelRunner
-    target = declare("h100/pi05").target
+    target = get_target("h100/pi05")
     with pytest.warns(DeprecationWarning):
         runner = ModelRunner(target, None, model_revision=target.model.model_revision,
                              device="cpu", capture=False)
     assert runner.identity.model_revision == target.model.model_revision
     with pytest.warns(DeprecationWarning):
-        with pytest.raises(ValueError, match="checkpoint_id"):
+        with pytest.raises(ValueError, match="weights_provenance"):
             ModelRunner(target, None, model_revision="checkpoint-a",
                         device="cpu", capture=False)
 

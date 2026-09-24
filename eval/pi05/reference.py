@@ -158,7 +158,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
 
     from flash_vla.hardware.nvidia.h100.pi05 import TARGET
     from flash_vla.models.pi05.session import forward_prefix
-    from flash_vla.provenance import git_revision
+    from flash_vla.provenance import WeightsProvenance, git_revision
     from flash_vla.runtime import ModelRunner
 
     torch_device = torch.device(device)
@@ -188,7 +188,8 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
     torch.cuda.empty_cache()
 
     engine = ModelRunner(TARGET, target_weights, engine_revision=git_revision(),
-                         checkpoint_id=revision, checkpoint_digest=digest,
+                         weights_provenance=WeightsProvenance(checkpoint_id=revision,
+                                                              checkpoint_digest=digest),
                          plan=plan or "reference", device=device,
                          num_views=3, chunk_size=config.action_horizon, layers=layers, prompt=prompt,
                          assets={"tokenizer": Path(tokenizer_path or os.environ["PALIGEMMA_TOKENIZER"])})
@@ -293,7 +294,7 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
 
     from flash_vla.hardware.nvidia.h100.pi05 import TARGET
     from flash_vla.models.pi05.session import forward_prefix
-    from flash_vla.provenance import git_revision
+    from flash_vla.provenance import WeightsProvenance, git_revision
     from flash_vla.runtime import ModelRunner
 
     torch_device = torch.device(device)
@@ -327,7 +328,8 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
     torch.cuda.empty_cache()
 
     engine = ModelRunner(TARGET, target_weights, engine_revision=git_revision(),
-                         checkpoint_id=revision, checkpoint_digest=digest,
+                         weights_provenance=WeightsProvenance(checkpoint_id=revision,
+                                                              checkpoint_digest=digest),
                          plan="reference", device=device, num_views=3,
                          chunk_size=config.action_horizon, steps=steps, layers=layers, prompt=prompt,
                          assets={"tokenizer": Path(tokenizer_path or os.environ["PALIGEMMA_TOKENIZER"])})

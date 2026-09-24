@@ -151,7 +151,7 @@ def test_real_declaration_preserves_target_and_distinct_weight_provenance(checkp
 
 
 @pytest.mark.parametrize("missing", ["checkpoint_id", "checkpoint_digest", "openpi_config"])
-def test_real_factory_requires_asset_provenance_and_config(checkpoint_options, missing):
+def test_real_checkpoint_requires_asset_provenance_and_config(checkpoint_options, missing):
     del checkpoint_options[missing]
     with pytest.raises(ValueError):
         targets.declare("pi05", **checkpoint_options)
@@ -184,9 +184,9 @@ def test_real_values_are_converted_and_folded_for_each_construction(checkpoint_o
     monkeypatch.setattr(weights, "fold", fold)
     from flash_vla.models.pi05 import tokenize
     monkeypatch.setattr(tokenize, "Pi05Tokenizer", lambda path: object())
-    def runner(target, checkpoint, *, checkpoint_id, checkpoint_digest, **kwargs):
+    def runner(target, checkpoint, *, weights_provenance, fixture_provenance, **kwargs):
         return SimpleNamespace(checkpoint=checkpoint, measurement_context={
-            "weights": dict(checkpoint_id=checkpoint_id, checkpoint_digest=checkpoint_digest)})
+            "weights": weights_provenance.as_dict(), "fixture": fixture_provenance.as_dict()})
     monkeypatch.setattr(targets, "ModelRunner", runner)
     a = targets.build("pi05", **checkpoint_options, device="cpu", steps=2, seed=1)
     b = targets.build("pi05", **checkpoint_options, device="cpu", steps=3, seed=9)

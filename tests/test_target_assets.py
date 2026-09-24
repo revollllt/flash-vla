@@ -36,8 +36,8 @@ def test_interleaved_runners_keep_their_fixture_and_identity(tmp_path, monkeypat
         first.assets["fixture"] = b
 
 
-def test_factory_resolves_logical_assets_per_layout_without_mutating_environment(tmp_path, monkeypatch):
-    from flash_vla.models import lingbot
+def test_build_resolves_logical_assets_per_layout_without_mutating_environment(tmp_path, monkeypatch):
+    from flash_vla.models.lingbot import weights
     loaded = []
     def load(path):
         loaded.append(Path(path))
@@ -45,7 +45,7 @@ def test_factory_resolves_logical_assets_per_layout_without_mutating_environment
     def declared(target, checkpoint, **kwargs):
         kwargs["capture"] = False
         return ModelRunner(target, None, **kwargs)
-    monkeypatch.setattr(lingbot, "load_checkpoint", load)
+    monkeypatch.setattr(weights, "load_checkpoint", load)
     monkeypatch.setattr(targets, "ModelRunner", declared)
     monkeypatch.setenv("LINGBOT_CHECKPOINT", "unrelated-existing-checkpoint")
     monkeypatch.setenv("LINGBOT_FIXTURE", "unrelated-existing-fixture")
@@ -185,6 +185,7 @@ def test_lingbot_parity_reports_the_cached_oracle_producer(tmp_path, monkeypatch
     monkeypatch.setattr(parity, "load_file", lambda path: values)
     engine = SimpleNamespace(identity=SimpleNamespace(as_dict=lambda: {"engine_revision": "candidate-source"}),
                              buffers=values, program=(), measurement_context={"weights": {}}, assets={},
+                             implementation_source=None,
                              sample_inputs=lambda seed: {}, stage=lambda **kw: None,
                              forward=lambda **kw: torch.ones(1))
     monkeypatch.setattr(parity, "build", lambda *a, **kw: engine)
@@ -197,11 +198,6 @@ def test_lingbot_parity_reports_the_cached_oracle_producer(tmp_path, monkeypatch
     assert report["identity"]["engine_revision"] == "candidate-source"
 
 
-def _pi05_factory():
-    """The registered Pi0.5 factory, reached without importing a hardware Target."""
-    return targets.TARGETS[targets.resolve("h100/pi05")]
-
-
 def test_converted_pi05_checkpoint_states_the_provenance_it_cannot_resolve():
     """The converted path reads no upstream config, so the caller supplies the identity.
 
@@ -210,17 +206,22 @@ def test_converted_pi05_checkpoint_states_the_provenance_it_cannot_resolve():
     a machine where OpenPI is absent. Confusing the two would record a config
     that was never checked, so each is refused without what it needs.
     """
+    from functools import partial
     from types import SimpleNamespace
 
-    build = _pi05_factory()
+    from flash_vla.models.pi05.sources import runner_source
+
+    # A stub Target: the source reads only its model's default chunk.
     stub = SimpleNamespace(model=SimpleNamespace(configure=lambda: SimpleNamespace(chunk_size=50)))
+    source = partial(runner_source, stub, device="cpu", declare=True)
     with pytest.raises(ValueError, match="not both"):
-        build(checkpoint="a", converted_checkpoint="b", target=stub)
+        source(checkpoint="a", converted_checkpoint="b")
     with pytest.raises(ValueError, match="checkpoint_id and checkpoint_digest"):
-        build(converted_checkpoint="b", target=stub)
+        source(converted_checkpoint="b")
     with pytest.raises(ValueError, match="resolves no OpenPI config"):
-        build(converted_checkpoint="b", checkpoint_id="id", checkpoint_digest="digest",
-              openpi_config="pi05_aloha", target=stub)
+        source(converted_checkpoint="b", checkpoint_id="id", checkpoint_digest="digest",
+               openpi_config="pi05_aloha")
+
 
 def test_pi05_parity_refuses_an_oracle_built_on_another_prompt(tmp_path, monkeypatch):
     """The oracle carries its own fixture, so a Target that tokenized something else is a mismatch.

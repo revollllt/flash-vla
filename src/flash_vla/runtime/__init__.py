@@ -15,7 +15,7 @@ from .graph import BufRef, Graph, WeightRef
 from .identity import IDENTITY_SCHEMA_VERSION, PRECISION_POLICIES, Identity
 from .ops import OpSpec, Vocabulary
 from .registry import Backend, GraphContract, Registry
-from .runner import ModelRunner
+from .runner import ModelRunner, RunnerSource
 from .vla import (
     DTYPES,
     STAGES,
@@ -31,5 +31,5 @@ from .workspace import Scratch
 
 __all__ = ["Backend", "BufRef", "CheckpointReader", "DTYPES", "Graph", "GraphContract",
            "IDENTITY_SCHEMA_VERSION", "Identity", "Input", "ModelDefinition", "ModelRunner", "OpSpec",
-           "PRECISION_POLICIES", "QuantizationRecipe", "Registry", "STAGES", "STAGE_OUTPUTS", "Scratch",
+           "PRECISION_POLICIES", "QuantizationRecipe", "Registry", "RunnerSource", "STAGES", "STAGE_OUTPUTS", "Scratch",
            "Target", "TensorCheckpoint", "Vocabulary", "WeightRef"]

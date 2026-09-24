@@ -11,9 +11,11 @@ from __future__ import annotations
 
 from contextlib import AbstractContextManager
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Protocol, Sequence, runtime_checkable
+from typing import Callable, Mapping, Protocol, Sequence, runtime_checkable
 
 import torch
+
+from flash_vla.provenance import ImplementationProvenance
 
 from .cost import SegmentCosts
 from .cuda.program import Step
@@ -23,6 +25,8 @@ from .registry import GraphContract, Wrapper
 
 #: Replaces op-table entry `call_site` while `Engine.instrument` is active.
 WrapOp = Callable[[str, Wrapper], Wrapper]
+#: The scope `Engine.observe` runs each step in, given the step's label.
+StepScope = Callable[[str], AbstractContextManager[object]]
 
 
 @runtime_checkable
@@ -31,6 +35,12 @@ class Engine(Protocol):
 
     #: The four axes, the shape numbers and the resolved plan.
     identity: Identity
+    #: The checkout the backends were loaded from, when it is not this one.
+    implementation_source: ImplementationProvenance | None
+    #: The device the buffers and weights live on.
+    device: torch.device
+    #: The quantization recipe in force (`Target.quantization`), or the precision policy.
+    quantization: str
     #: The shape numbers of the identity, and derived numbers (a prefix length).
     shape: Mapping[str, int]
     derived: Mapping[str, int]
@@ -57,13 +67,18 @@ class Engine(Protocol):
     #: Call sites the resolved plan must invoke together.
     atomic_groups: Sequence[frozenset[str]]
 
-    def sample_inputs(self, seed: int = 0) -> dict[str, Any]:
+    @property
+    def measurement_context(self) -> Mapping[str, Mapping[str, str]]:
+        """The weights and fixture the caller named, in report form
+        (`WeightsProvenance.as_dict`, `FixtureProvenance.as_dict`)."""
+
+    def sample_inputs(self, seed: int = 0) -> dict[str, torch.Tensor]:
         """Seeded inputs at this engine's shapes, for measurement and comparison."""
 
-    def stage(self, **inputs: Any) -> None:
+    def stage(self, **inputs: torch.Tensor) -> None:
         """Copy the device inputs into their static addresses; run nothing."""
 
-    def forward(self, **inputs: Any) -> torch.Tensor:
+    def forward(self, **inputs: torch.Tensor) -> torch.Tensor:
         """Stage the inputs, run every step in order, return the output view."""
 
     def capture(self, *, warmup: int = 3) -> None:
@@ -72,7 +87,7 @@ class Engine(Protocol):
     def replay(self, segment: str) -> None:
         """Replay one stage on its capture stream, ordered with the caller."""
 
-    def host(self, slot: str, **inputs: Any) -> None:
+    def host(self, slot: str, **inputs: torch.Tensor) -> None:
         """Run one host slot: the host work that sits between two stages."""
 
     def allocation(self, name: str) -> torch.Tensor:
@@ -83,6 +98,10 @@ class Engine(Protocol):
 
     def instrument(self, wrap: WrapOp) -> AbstractContextManager[None]:
         """While active, every op-table entry `name` is replaced by `wrap(name, fn)`."""
+
+    def observe(self, scope: StepScope) -> AbstractContextManager[None]:
+        """While active, every stage replay runs inside `scope("segment:<name>")`
+        and every host slot inside `scope("host:<name>")`."""
 
 
 def wrap_ops(ops: Mapping[str, Wrapper], wrap: WrapOp) -> Mapping[str, Wrapper]:
