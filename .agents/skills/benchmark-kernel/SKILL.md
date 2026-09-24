@@ -9,7 +9,7 @@ Own local timing. [ncu-report](../ncu-report/SKILL.md) explains hardware counter
 `python -m benchmarks latency` measures the deployed model.
 
 1. Reuse the selected call site's actual inputs and plan. For a standalone kernel,
-   use the existing `flash_vla.bench.bench_gpu_time` helper.
+   use the existing `measurement.kernel_bench.bench_gpu_time` helper.
 2. Keep shapes, dtype, layout, cache policy and timer the same on both sides.
    Warm up JIT/allocation work before timing; use the graph's capture stream.
 3. Select a timer matching the question. The Target CLI defaults to amortized

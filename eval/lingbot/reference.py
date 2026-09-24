@@ -25,7 +25,7 @@ import torch
 def record_path(path) -> str:
     """Record a path without stamping this machine's layout.
 
-    A copy of `flash_vla.environment.record_path`, not an import: this adapter
+    A copy of `measurement.environment.record_path`, not an import: this adapter
     runs inside the upstream LingBot environment, where flash_vla is absent.
     """
     path = Path(path)

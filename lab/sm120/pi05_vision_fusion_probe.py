@@ -8,7 +8,7 @@ from statistics import median
 
 import torch
 
-from benchmarks.kernels import _graph_samples
+from flash_vla.runtime.cuda.timing import graph_samples
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
 from flash_vla.hardware.nvidia.rtx5090.pi05.backends import fused_vision, torch_ops
@@ -77,7 +77,7 @@ def main():
             def invoke(index):
                 fn(*site_calls[index % len(site_calls)])
 
-            samples = _graph_samples(
+            samples = graph_samples(
                 invoke, n_inner=len(site_calls), reps=30, warmup=len(site_calls))
             row = {"site": name, "backend": label, "samples_ms_per_call": samples,
                    "median_ms_per_call": median(samples),

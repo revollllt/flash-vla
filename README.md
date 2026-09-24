@@ -73,7 +73,7 @@ not the execution.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) owns the dependency and execution boundaries.
 Use [eval](eval/README.md) for accuracy and [tests](tests/README.md) for scoped engineering checks. Published measurements
-live in [results](results/README.md). [Result tools](lab/results/README.md) rebuild
+live in [results](results/README.md). [Result tools](measurement/results/README.md) rebuild
 those views from saved traces; [historical plans](docs/history/README.md) remain for reference.
 
 ## License

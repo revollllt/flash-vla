@@ -18,7 +18,7 @@ import json
 import math
 import statistics
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Iterable, Optional
 
 import torch
 

@@ -179,7 +179,8 @@ def main():
     # selected deployment checkout, while its timing helper stays local.
     sys.path.insert(0, str(args.source_checkout / "src"))
     from flash_vla.hardware.nvidia.rtx5090 import RTX5090Spec
-    from flash_vla.inference import build, parse_options, resolve
+    from flash_vla.inference import build, resolve
+    from measurement.cli import parse_options
     from lab.pi05.cutlass_gemm_screen import samples_ms
 
     host = args.source_checkout / "src/flash_vla/hardware/nvidia/rtx5090/pi0/backends/cuda/cutlass_gemm.py"

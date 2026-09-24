@@ -94,7 +94,7 @@ def build_runner(target: Target, plan: PlanSpec = "shipped", *, quantization: st
     """Construct a runner of `target` on `plan`.
 
     `target` is a registered Target or a variant of one under its name, such
-    as one whose backends another checkout provides (`flash_vla.source`); that
+    as one whose backends another checkout provides (`measurement.source_checkout`); that
     checkout is its `implementation_source`, and its revision the engine
     revision. `options` are the model's (its `runner_source`). With `declare`
     the runner stops at its graph: no weights, no assets, no capture.
@@ -121,16 +121,5 @@ def declare(name: str, plan: PlanSpec = "shipped", **options: ConfigValue) -> Mo
     return build_runner(get_target(name), plan, declare=True, device="cpu", **options)
 
 
-def parse_options(items: list[str]) -> dict[str, ConfigValue]:
-    """`key=value` strings to a dict; true/false and integers are converted."""
-    out: dict[str, ConfigValue] = {}
-    for item in items:
-        key, _, value = item.partition("=")
-        low = value.lower()
-        out[key] = (True if low == "true" else False if low == "false"
-                    else int(value) if value.lstrip("-").isdigit() else value)
-    return out
-
-
 __all__ = ["ALIASES", "PLAN_NAMES", "TARGETS", "TargetEntry", "build", "build_runner", "declare",
-           "get_target", "parse_options", "resolve"]
+           "get_target", "resolve"]

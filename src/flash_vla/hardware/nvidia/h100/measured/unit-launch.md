@@ -4,9 +4,10 @@
 `cluster.count.max`, `sched.ctas.sm.knee` · **Probe** none in this skill
 
 This unit was measured before the skill existed, as Phase 0 of a decoder
-project, through `flash_vla.runtime.cuda.graph_time_cold`. The constants are
-recorded here, with their tables, and this file is their provenance. **They
-carry no Slurm job ids**, only a date, harness and toolchain: that is the weakest
+project, through `flash_vla.runtime.cuda.graph_time_cold` (now `graph_samples`,
+whose median it was). The constants are recorded here, with their tables, and
+this file is their provenance. **They carry no Slurm job ids**, only a date,
+harness and toolchain: that is the weakest
 provenance in this skill and the reason `unit-launch` has no probe of its own
 yet. The method that produced them is protocol rules 13b and 8; the original
 2026-08-20 worked-run write-up was deleted as an outdated record once these

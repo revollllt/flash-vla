@@ -8,12 +8,13 @@ import statistics
 
 import torch
 
-from benchmarks.kernels import _graph_samples
+from flash_vla.runtime.cuda.timing import graph_samples
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
 from flash_vla.hardware.nvidia.rtx5090.pi05.backends import fused_ffn, packed_ffn, torch_ops
-from flash_vla.inference import build, parse_options, resolve
+from flash_vla.inference import build, resolve
 from flash_vla.runtime.runner import Scratch
+from measurement.cli import parse_options
 
 
 def _record(engine):
@@ -86,8 +87,8 @@ def main() -> None:
         comparison_name = "fused"
         comparison = fused_ffn.make_wrappers(Scratch(torch.device("cuda")))[fused_ffn.NAMES[0]]
     for name, fn in ((comparison_name, comparison), (args.candidate, candidate)):
-        samples = _graph_samples(lambda i: fn(*calls[i % len(calls)]),
-                                 n_inner=len(calls), reps=args.reps)
+        samples = graph_samples(lambda i: fn(*calls[i % len(calls)]),
+                                n_inner=len(calls), reps=args.reps)
         timings[name] = {"median_ms": statistics.median(samples), "samples_ms": samples}
     report = {"seed": args.seed, "shape": [50, 1024, 4096], "dtype": "bf16",
               "invocations": len(calls), "timer": "amortized CUDA graph",

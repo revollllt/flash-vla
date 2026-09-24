@@ -39,7 +39,7 @@ def main(argv=None):
     parser.add_argument("--option", action="append", default=[])
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
-    from flash_vla.inference import parse_options
+    from measurement.cli import parse_options
     report = run(args.checkpoint, checkpoint_id=args.checkpoint_id,
                  checkpoint_digest=args.checkpoint_digest, openpi_config=args.openpi_config,
                  seed=args.seed, **parse_options(args.option))

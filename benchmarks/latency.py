@@ -21,7 +21,7 @@ observations before and after each leg remain separate from stable context
 identity; they are evidence for drift, not a request to change clocks.
 
 Beside each leg's `metrics` sits an additive `attribution` block
-(`tools/profiling/attribution.py`): every timed loop's per-forward samples with
+(`measurement/attribution.py`): every timed loop's per-forward samples with
 their timestamps, the process's per-forward context-switch and page-fault
 deltas, the cyclic collector's collections, and a 10 Hz record of the device's
 clocks and of the other compute processes on it. A tail is then attributable
@@ -37,93 +37,28 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import statistics
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
-
-if TYPE_CHECKING:
-    from tools.profiling.attribution import Attribution, LoopTrace
+from typing import Any, Callable
 
 import torch
 
 from benchmarks.config import LATENCY_DEFAULTS
-from flash_vla.runtime.identity import Identity, MeasurementContext
+from flash_vla.runtime.identity import Identity
 from flash_vla.runtime.engine import host_slots, segments
 
-from flash_vla.environment import collect as _env, device_selector, require_cuda, report_context
-from flash_vla.inference import PLAN_NAMES, parse_options, resolve
-from flash_vla.source import build
+from flash_vla.inference import PLAN_NAMES, resolve
+from measurement.attribution import Attribution, LoopTrace, summary as attribution_summary
+from measurement.cli import parse_options
+from measurement.environment import collect_environment, device_selector, require_cuda, report_context
+from measurement.provenance import MeasurementContext
+from measurement.source_checkout import build
+from measurement.timing import event_samples, summarize, wall_samples
 
 _LAT = LATENCY_DEFAULTS
-
-
-def _stats(samples: list[float], p99_min_reps: int) -> dict[str, Any]:
-    ordered = sorted(samples)
-    n = len(ordered)
-    out = {"min": ordered[0], "median": statistics.median(ordered), "n": n,
-           "samples_ms": samples}
-    if n >= p99_min_reps:
-        out["p99"] = ordered[min(n - 1, int(round(0.99 * (n - 1))))]
-    else:
-        out["p99"] = None
-        out["p99_note"] = f"insufficient: {n} < {p99_min_reps} repetitions"
-    return out
-
-
-def _time_wall(call: Callable[[], Any], reps: int, warmup: int,
-               trace: LoopTrace | None = None) -> list[float]:
-    """Wall clock of `call` plus a synchronize, `reps` times.
-
-    A `trace` is filled outside the timed region only: the repetition's start
-    is the same `perf_counter` reading the sample is computed from, and the
-    process counters are read after the synchronize has returned.
-    """
-    for _ in range(warmup):
-        call()
-    torch.cuda.synchronize()
-    samples = []
-    if trace is not None:
-        trace.enter()
-    for index in range(reps):
-        start = time.perf_counter()
-        call()
-        torch.cuda.synchronize()
-        samples.append((time.perf_counter() - start) * 1e3)
-        if trace is not None:
-            trace.start(index, start)
-            trace.mark(index)
-    if trace is not None:
-        trace.leave()
-    return samples
-
-
-def _time_event(call: Callable[[], Any], reps: int, warmup: int,
-                trace: LoopTrace | None = None) -> list[float]:
-    for _ in range(warmup):
-        call()
-    torch.cuda.synchronize()
-    samples = []
-    if trace is not None:
-        trace.enter()
-    for index in range(reps):
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        host_start = time.perf_counter()
-        start.record()
-        call()
-        end.record()
-        torch.cuda.synchronize()
-        samples.append(start.elapsed_time(end))
-        if trace is not None:
-            trace.start(index, host_start)
-            trace.mark(index)
-    if trace is not None:
-        trace.leave()
-    return samples
 
 
 def measure(engine, inputs: dict[str, Any], reps: int, warmup: int,
@@ -143,7 +78,7 @@ def measure(engine, inputs: dict[str, Any], reps: int, warmup: int,
         samples = timer(call, reps, warmup, trace)
         if attribution is not None and trace is not None:
             attribution.record(trace, samples)
-        return _stats(samples, p99_min_reps)
+        return summarize(samples, p99_min_reps)
 
     engine.forward(**inputs)                     # settles any host-side state
     torch.cuda.synchronize()
@@ -152,17 +87,17 @@ def measure(engine, inputs: dict[str, Any], reps: int, warmup: int,
         engine.forward(**inputs)
     torch.cuda.synchronize()
     forward = lambda: engine.forward(**inputs)   # noqa: E731
-    metrics = {"chunk_latency": timed("chunk_latency", _time_wall, forward)}
+    metrics = {"chunk_latency": timed("chunk_latency", wall_samples, forward)}
     if not breakdown:
         return metrics
-    metrics.update(device_latency=timed("device_latency", _time_event, forward),
+    metrics.update(device_latency=timed("device_latency", event_samples, forward),
                    host_time={}, segment_latency={})
     for slot in host_slots(engine):
         metrics["host_time"][slot] = timed(
-            f"host_time.{slot}", _time_wall, lambda slot=slot: engine.host(slot, **inputs))
+            f"host_time.{slot}", wall_samples, lambda slot=slot: engine.host(slot, **inputs))
     for name in segments(engine):
         metrics["segment_latency"][name] = timed(
-            f"segment_latency.{name}", _time_event, lambda name=name: engine.replay(name))
+            f"segment_latency.{name}", event_samples, lambda name=name: engine.replay(name))
     # Overhead is the chunk statistic minus the sum of the segments' same
     # statistic; for `p99` that is a difference of tails, not a tail of a
     # difference, and is reported as such.
@@ -244,12 +179,11 @@ def _measure_leg(target, plan, *, reps, warmup, seed, soak_s, attribution, optio
     torch.cuda.init()
     engine = build(target, plan, seed=seed, **options)
     inputs = engine.sample_inputs(seed)
-    environment = _env(engine.device)
+    environment = collect_environment(engine.device)
     runtime_before = environment.get("runtime_observation")
     context = report_context(engine, environment)
     collector = None
     if attribution:
-        from tools.profiling.attribution import Attribution, summary as attribution_summary
         collector = Attribution(device_index=device_selector(engine.device))
     with torch.cuda.device(engine.device):
         if collector is None:
@@ -261,7 +195,7 @@ def _measure_leg(target, plan, *, reps, warmup, seed, soak_s, attribution, optio
                 metrics = measure(engine, inputs, reps, warmup, _LAT["p99_min_reps"],
                                   soak_s=soak_s, attribution=collector, breakdown=breakdown)
             evidence = collector.as_dict()
-    environment = _env(engine.device)
+    environment = collect_environment(engine.device)
     after = MeasurementContext.from_dict(report_context(engine, environment))
     if after.segment_key != MeasurementContext.from_dict(context).segment_key:
         raise ValueError("latency measurement context changed during a leg; repeat that measurement")

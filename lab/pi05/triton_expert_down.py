@@ -18,7 +18,8 @@ import triton.language as tl
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
 from flash_vla.hardware.nvidia.rtx5090.pi05.backends import fused_ffn
-from flash_vla.inference import build, parse_options, resolve
+from flash_vla.inference import build, resolve
+from measurement.cli import parse_options
 from lab.pi05.cutlass_gemm_screen import samples_ms
 
 SITE = "action_expert_ffn_down_residual"

@@ -34,7 +34,7 @@ Target's derived costs and are meaningful only for those stated counts.
 
 ```python
 import torch
-from flash_vla.bench import bench_gpu_time, KernelResult
+from measurement.kernel_bench import bench_gpu_time, KernelResult
 
 # Replace matmul with the candidate wrapper, keeping its actual shape and dtype.
 a = torch.randn(1024, 1024, device="cuda", dtype=torch.bfloat16)

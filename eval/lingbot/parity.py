@@ -12,9 +12,9 @@ from safetensors.torch import load_file
 import torch
 import yaml
 
-from flash_vla.environment import record_path
 from flash_vla.assets import resolve_assets
-from flash_vla.source import build
+from measurement.environment import record_path
+from measurement.source_checkout import build
 from eval.tolerances import tolerances
 from eval.metrics import error_metrics
 
@@ -118,7 +118,7 @@ def main(argv=None) -> int:
     parser.add_argument("--steps", type=int, default=10)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
-    from flash_vla.inference import parse_options
+    from measurement.cli import parse_options
     options = parse_options(args.option)
     unknown = set(options) - {"asset_config", "source_checkout"}
     if unknown:

@@ -402,7 +402,7 @@ def main(argv=None) -> int:
     parser.add_argument("--full", action="store_true",
                         help="action_expert only: run end to end instead of transplanting the cache")
     args = parser.parse_args(argv)
-    from flash_vla.inference import parse_options
+    from measurement.cli import parse_options
     options = parse_options(args.option)
     supported = {"checkpoint", "checkpoint_id", "checkpoint_digest", "openpi_config", "prompt", "tokenizer_path"}
     unknown = set(options) - supported

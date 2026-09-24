@@ -18,8 +18,8 @@ Per call site of every stage, at the Target's shapes:
   measured_us   the in-graph time `tools.profiling.model` attributes to the site
 
 and, per site, `pct_of_ceiling` and `within_ceiling`: measured at most
-(1 + headroom_pct / 100) times the ceiling (default from `benchmarks/config.py`). These comparisons are guidance, not proof that no kernel-level opportunity
-remains. Overlapping atomic groups have no supported additive latency model
+(1 + headroom_pct / 100) times the ceiling (default 10). These comparisons are
+guidance, not proof that no kernel-level opportunity remains. Overlapping atomic groups have no supported additive latency model
 and cannot trigger automatic stopping.
 
 Validity is checked, not assumed: a site's ceiling above its attributed time
@@ -38,92 +38,39 @@ class they came from.
 """
 from __future__ import annotations
 
-from flash_vla.environment import record_path, report_context
-
 import argparse
 import hashlib
-import importlib
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import torch
 
+from flash_vla.hardware.nvidia import HARDWARE_ROOFLINES
+from flash_vla.hardware.roofline import Roofline
+from flash_vla.inference import PLAN_NAMES, build, resolve
 from flash_vla.runtime.cost import Invocation, total
 from flash_vla.runtime.engine import segments
+from measurement.environment import collect_environment, record_path, report_context, require_cuda
+from measurement.timing import event_samples, summarize
 
-from flash_vla.environment import collect as _env
-from benchmarks.latency import _stats, _time_event
-from flash_vla.environment import require_cuda
 from .model import attribute
-from flash_vla.inference import PLAN_NAMES, build, resolve
 
 #: The model form; bump when a column or a term changes.
 FORM_VERSION = "4"
-REPO = Path(__file__).resolve().parents[2]
-#: What differs between hardware axes. The roles are the model's; which constant
-#: fills each role, and which `spec.py` field carries each datasheet peak, are
-#: the machine's. sm90 names its tensor rate after `wgmma`, an instruction that
-#: does not exist on sm_120, so the mapping cannot be one table.
-class Axis:
-    """`tensors` maps a call site's tensor-core format (`Invocation.tensor`) to
-    the spec's dense-peak key and the constants role of its observed rate."""
-    __slots__ = ("package", "tags", "dram_attr", "tensors")
-
-    def __init__(self, package, tags, dram_attr, tensors):
-        self.package, self.tags = package, tags
-        self.dram_attr, self.tensors = dram_attr, tensors
-
-
-#: Roles the ceiling column consumes. `burst` is OPTIONAL: without a measured
-#: burst curve the ceiling falls back to the stream model at every size, which
-#: is the conservative reading and is reported as such.
-SM90_TAGS = {
-    "stream": "ld.bw.dev.dram",       # TB/s marginal cold rate behind `fixed_us`
-    "burst": "tma.bw.dev.burst",      # GB/s end-to-end vs burst size, `curve_mb_gbs`
-    "tensor": "wgmma.clock.sm",       # TFLOP/s bf16 observed at real clocks
-    "launch": "launch.lat.dev.ramp",  # us per launch (information)
-    "knee": "ld.ctas.dev.knee",       # CTAs below which a cold read is derated
-}
-#: sm_120 has no `wgmma` and no measured burst curve -- only sweep A of the tma
-#: unit has been run. The tensor role needs a RATE, so it points at the observed
-#: TFLOP/s row rather than at `mma.rate.sm.bf16`, which is per-cycle, or at
-#: `mma.clock.sm`, which is a clock and produced an 87x ceiling error when this
-#: mapping was first written.
-SM120_TAGS = {
-    "stream": "ld.bw.dev.dram",
-    "tensor": "mma.tflops.dev.bf16",
-    "tensor_mxfp8": "mma.tflops.dev.mxfp8",
-    "launch": "launch.lat.dev.ramp",
-    "knee": "ld.ctas.dev.knee",
-}
-
-#: hardware axis of the identity -> where its spec and measured table live.
-HARDWARE = {
-    "h100-sxm5-80gb": Axis("flash_vla.hardware.nvidia.h100", SM90_TAGS,
-                           "HBM_BANDWIDTH_BYTES_PER_SECOND", {"bf16": ("bf16", "tensor")}),
-    "rtx5090-32gb": Axis("flash_vla.hardware.nvidia.rtx5090", SM120_TAGS,
-                         "DRAM_BANDWIDTH_BYTES_PER_SECOND",
-                         {"bf16": ("bf16_acc_fp32", "tensor"),
-                          "mxfp8": ("mxfp8_block_scaled", "tensor_mxfp8")}),
-}
 #: Machine-readable fields a row may carry beside value/units/short/rule.
 ROW_FIELDS = ("fixed_us", "curve_mb_gbs", "derate_at_32")
 
 
-def hardware_axis(hardware: str) -> tuple[type, Path, Axis]:
-    """The datasheet spec class, the measured table, and the axis descriptor."""
-    axis = HARDWARE.get(hardware)
-    if axis is None:
-        raise KeyError(f"no hardware axis known for {hardware!r}; known: {sorted(HARDWARE)}")
-    module = importlib.import_module(axis.package)
-    spec = importlib.import_module(axis.package + ".spec")
-    spec_cls = next(getattr(spec, name) for name in spec.__all__ if name.endswith("Spec"))
-    return spec_cls, Path(module.__file__).parent / "measured" / "constants.yaml", axis
+def roofline_of(hardware: str) -> Roofline:
+    """The datasheet peaks and measured table of an identity's hardware axis."""
+    if hardware not in HARDWARE_ROOFLINES:
+        raise KeyError(f"no hardware axis known for {hardware!r}; known: {sorted(HARDWARE_ROOFLINES)}")
+    return HARDWARE_ROOFLINES[hardware]
 
 
-def load_constants(path: Path, tags: dict[str, str]) -> tuple[dict[str, Any], str]:
+def load_constants(path: Path, tags: Mapping[str, str]) -> tuple[dict[str, Any], str]:
     """The tagged rows the ceiling uses (plus the machine's noise floor), and the table's version."""
     import yaml
     raw = path.read_bytes()
@@ -143,20 +90,14 @@ def load_constants(path: Path, tags: dict[str, str]) -> tuple[dict[str, Any], st
     return picked, hashlib.sha1(raw).hexdigest()[:12]
 
 
-def datasheet(spec_cls: type, axis: Axis) -> dict[str, Any]:
+def datasheet(roofline: Roofline) -> dict[str, Any]:
     """The datasheet peaks the roofline divides by, with their source named:
-    DRAM, and the dense tensor peak of every format the axis prices.
-
-    Which field carries each peak is the axis's, not the model's: consumer
-    Blackwell has no HBM, and its bf16 peak is qualified by accumulator width
-    because fp32 accumulate runs at half the fp16-accumulate rate there.
-    """
-    peaks = spec_cls.TENSOR_CORE_DENSE_PEAK_FLOPS
-    tensor_fps = {fmt: float(peaks[key]) for fmt, (key, _role) in axis.tensors.items()}
-    return {"hbm_bps": float(getattr(spec_cls, axis.dram_attr)),
+    DRAM, and the dense tensor peak of every format the device prices."""
+    tensor_fps = {fmt: float(peak.flops_per_second) for fmt, peak in roofline.tensor_peaks.items()}
+    return {"hbm_bps": float(roofline.dram_bytes_per_second),
             "bf16_fps": tensor_fps["bf16"], "tensor_fps": tensor_fps,
-            "tensor_roles": {fmt: role for fmt, (_key, role) in axis.tensors.items()},
-            "source": f"{spec_cls.__module__}.{spec_cls.__name__}"}
+            "tensor_roles": {fmt: peak.role for fmt, peak in roofline.tensor_peaks.items()},
+            "source": f"{roofline.spec.__module__}.{roofline.spec.__name__}"}
 
 
 def delivered_us(nbytes: int, constants: dict[str, Any]) -> tuple[float, str]:
@@ -213,9 +154,10 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
     target = resolve(target)
     engine = build(target, plan or "shipped", seed=seed, **overrides)
     identity = engine.identity
-    spec_cls, constants_path, axis = hardware_axis(identity.hardware)
-    constants, constants_version = load_constants(constants_path, axis.tags)
-    peaks = datasheet(spec_cls, axis)
+    device_roofline = roofline_of(identity.hardware)
+    constants, constants_version = load_constants(device_roofline.constants_file,
+                                                  device_roofline.constant_tags)
+    peaks = datasheet(device_roofline)
     limit = 1.0 + headroom_pct / 100.0
 
     inputs = engine.sample_inputs(seed)
@@ -232,7 +174,8 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
         roofline = sum(r["roofline_us"] for r in rows)
         ceiling = sum(r["ceiling_us"] for r in rows)
         profiled = attribute(engine, name, sm_count)
-        measured = _stats(_time_event(lambda name=name: engine.replay(name), reps, warmup), reps)
+        measured = summarize(event_samples(lambda name=name: engine.replay(name), reps=reps,
+                                           warmup=warmup), p99_min_reps=reps)
         measured_us = measured["min"] * 1e3
         seg_valid = ceiling <= measured_us and roofline <= ceiling
         attributed = profiled["call_sites"] if profiled["valid"] else {}
@@ -297,9 +240,9 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
     totals["headroom_pct"] = headroom_pct
     report = {
         "identity": identity.as_dict(),
-        "measurement_context": report_context(engine, _env()),
-        "env": _env(),
-        "floor_model": {"form": FORM_VERSION, "constants_file": record_path(constants_path),
+        "measurement_context": report_context(engine, collect_environment()),
+        "env": collect_environment(),
+        "floor_model": {"form": FORM_VERSION, "constants_file": record_path(device_roofline.constants_file),
                         "constants_version": constants_version, "constants": constants,
                         "datasheet": peaks,
                         "version": f"{FORM_VERSION}+{constants_version}"},
@@ -330,7 +273,7 @@ def main(argv=None) -> int:
     parser.add_argument("--option", action="append", default=[])
     parser.add_argument("--out", default=None)
     args = parser.parse_args(argv)
-    from flash_vla.inference import parse_options
+    from measurement.cli import parse_options
     report = run(args.target, args.plan, reps=args.reps, seed=args.seed,
                  **parse_options(args.option))
     text = json.dumps(report, indent=2)

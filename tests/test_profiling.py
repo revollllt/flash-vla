@@ -39,7 +39,7 @@ def engine(monkeypatch):
                         lambda device: SimpleNamespace(multi_processor_count=132))
     monkeypatch.setattr(profile, "resolve", lambda target: target)
     monkeypatch.setattr(profile, "build", lambda *a, **kw: engine)
-    monkeypatch.setattr(profile, "_env", lambda *a: {})
+    monkeypatch.setattr(profile, "collect_environment", lambda *a: {})
     monkeypatch.setattr(profile, "segments", lambda e: ["vision", "expert"])
     return engine
 
@@ -98,6 +98,19 @@ def test_runner_observes_each_replay_and_host_slot_then_restores(monkeypatch):
     assert steps == ["vision_encoder", "prompt", "llm_backbone", "action_expert"]
     assert labels == [("outer", "segment:vision_encoder"), ("inner", "host:prompt"),
                       ("outer", "segment:llm_backbone")]
+
+
+@pytest.mark.parametrize("hardware", ["h100-sxm5-80gb", "rtx5090-32gb"])
+def test_each_device_roofline_reads_its_measured_table(hardware):
+    """A device's roofline names rows its own table has, and a rate for every format."""
+    from flash_vla.hardware.nvidia import HARDWARE_ROOFLINES
+    from tools.profiling.floor import datasheet, load_constants
+
+    roofline = HARDWARE_ROOFLINES[hardware]
+    constants, _ = load_constants(roofline.constants_file, roofline.constant_tags)
+    assert "bf16" in roofline.tensor_peaks
+    assert {peak.role for peak in roofline.tensor_peaks.values()} <= set(constants)
+    assert all(rate > 0 for rate in datasheet(roofline)["tensor_fps"].values())
 
 
 def event(start, end, site='a', inv=0, stream=7):

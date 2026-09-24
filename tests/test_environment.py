@@ -8,8 +8,8 @@ from unittest.mock import patch
 import pytest
 
 from benchmarks import latency
-from flash_vla import environment as metrics
-from flash_vla.runtime.identity import MeasurementContext
+from measurement import environment as metrics
+from measurement.provenance import MeasurementContext
 
 
 @pytest.mark.parametrize("uuid", ["1234", "GPU-1234", "MIG-1234"])
@@ -31,7 +31,7 @@ def test_environment_stamps_selected_device_power_without_claiming_clock_lock(fr
          patch.object(metrics, "env_block", return_value={"gpu": "H100"}), \
          patch.object(latency.subprocess, "run", return_value=SimpleNamespace(
              stdout="570.86.10, 700.00, 650.00, 1980, 2619, 1590, 2619, P0, 45, 350, 0x4\n")) as query:
-        env = latency._env()
+        env = latency.collect_environment()
     argv = query.call_args.args[0]
     assert argv[argv.index("-i") + 1] == "GPU-selected"
     assert query.call_args.kwargs["check"] is True
@@ -69,7 +69,7 @@ def test_missing_or_ambiguous_power_evidence_is_not_silently_accepted(stdout):
          patch.object(metrics, "env_block", return_value={}), \
          patch.object(latency.subprocess, "run", return_value=SimpleNamespace(stdout=stdout)):
         with pytest.raises(ValueError):
-            latency._env()
+            latency.collect_environment()
 
 
 def test_environment_query_error_propagates():
@@ -77,7 +77,7 @@ def test_environment_query_error_propagates():
     with patch.object(metrics, "device_selector", return_value="GPU-selected"), \
          patch.object(latency.subprocess, "run", side_effect=error):
         with pytest.raises(subprocess.CalledProcessError) as raised:
-            latency._env()
+            latency.collect_environment()
     assert raised.value.stderr == "device unavailable"
 
 
@@ -102,7 +102,7 @@ def test_last_leg_environment_drift_rejects_complete_run(field, before, after):
          patch.object(latency, "_run_leg", side_effect=latency._measure_leg), \
          patch.object(latency, "resolve", side_effect=lambda value: value), \
          patch.object(latency, "build", side_effect=lambda target, plan, **kwargs: _Engine(plan)), \
-         patch.object(latency, "_env", side_effect=[initial] * 5 + [changed]), \
+         patch.object(latency, "collect_environment", side_effect=[initial] * 5 + [changed]), \
          patch.object(latency, "measure", return_value=result) as measure:
         with pytest.raises(ValueError, match="changed during a leg"):
             latency.run("test", ["a", "b", "a"], reps=1, warmup=0, attribution=False)
@@ -120,7 +120,6 @@ def test_explicit_runner_device_controls_selector_and_gpu_name():
 
 def test_explicit_device_is_used_for_every_latency_leg_and_collector():
     from tests.test_latency import _Engine
-    from tools.profiling import attribution
 
     engine = _Engine("a")
     engine.device = "cuda:1"
@@ -135,11 +134,11 @@ def test_explicit_device_is_used_for_every_latency_leg_and_collector():
          patch.object(latency, "_run_leg", side_effect=latency._measure_leg), \
          patch.object(latency, "resolve", side_effect=lambda value: value), \
          patch.object(latency, "build", return_value=engine), \
-         patch.object(latency, "_env", return_value={}) as environment, \
+         patch.object(latency, "collect_environment", return_value={}) as environment, \
          patch.object(latency, "measure", return_value=result), \
          patch.object(latency, "device_selector", return_value="GPU-other") as selector, \
-         patch.object(attribution, "summary", return_value=""), \
-         patch.object(attribution, "Attribution") as collector:
+         patch.object(latency, "attribution_summary", return_value=""), \
+         patch.object(latency, "Attribution") as collector:
         collector.return_value.as_dict.return_value = {}
         latency.run("test", ["a"], reps=1, warmup=0, attribution=True, device="cuda:1")
     assert [call.args for call in environment.call_args_list] == [("cuda:1",), ("cuda:1",)]

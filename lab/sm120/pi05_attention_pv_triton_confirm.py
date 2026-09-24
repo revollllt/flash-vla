@@ -12,7 +12,7 @@ from safetensors.torch import save_file
 
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
-from flash_vla.bench import bench_gpu_time
+from measurement.kernel_bench import bench_gpu_time
 from pi05_attention_pv_triton_probe import _pv
 
 

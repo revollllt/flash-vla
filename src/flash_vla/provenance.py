@@ -43,7 +43,7 @@ class FixtureProvenance:
 @dataclass(frozen=True, kw_only=True)
 class ImplementationProvenance:
     """The clean checkout a Target's backends were loaded from, when it is not
-    this one (`flash_vla.source`), and the controller checkout that loaded them."""
+    this one (`measurement.source_checkout`), and the controller checkout that loaded them."""
     revision: str
     checkout: str
     controller_revision: str

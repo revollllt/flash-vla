@@ -13,7 +13,7 @@ from safetensors import safe_open
 
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
-from flash_vla.bench import bench_gpu_time
+from measurement.kernel_bench import bench_gpu_time
 
 
 @triton.jit

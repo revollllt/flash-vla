@@ -10,9 +10,9 @@ import torch
 
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
-from flash_vla.bench import bench_gpu_time, calculate_rotation_count
 from flash_vla.hardware.nvidia.rtx5090.pi05.backends import fused_qkv, torch_ops
 from flash_vla.runtime.runner import Scratch
+from measurement.kernel_bench import bench_gpu_time, calculate_rotation_count
 
 
 def inputs(seed, magnitude=1.0):

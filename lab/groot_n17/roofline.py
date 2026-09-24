@@ -10,7 +10,8 @@ from pathlib import Path
 
 from flash_vla.inference import build
 from flash_vla.runtime.cost import Cost, Invocation, attention, gemm
-from tools.profiling.floor import datasheet, hardware_axis, load_constants, site_row
+from flash_vla.hardware.nvidia.rtx5090.spec import ROOFLINE
+from tools.profiling.floor import datasheet, load_constants, site_row
 
 
 def invocations():
@@ -70,9 +71,8 @@ def invocations():
 
 
 def estimate():
-    spec, constants_path, axis = hardware_axis("rtx5090-32gb")
-    constants, _ = load_constants(constants_path, axis.tags)
-    peaks = datasheet(spec, axis)
+    constants, _ = load_constants(ROOFLINE.constants_file, ROOFLINE.constant_tags)
+    peaks = datasheet(ROOFLINE)
     stages = defaultdict(lambda: defaultdict(float))
     detail = []
     for stage, name, cost, weight_bytes, count, geometry in invocations():

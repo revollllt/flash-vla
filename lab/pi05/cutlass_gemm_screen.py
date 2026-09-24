@@ -18,8 +18,9 @@ import torch
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
 from flash_vla.hardware.nvidia.rtx5090 import RTX5090Spec
-from flash_vla.inference import build, parse_options, resolve
+from flash_vla.inference import build, resolve
 from flash_vla.runtime.cuda.graph import StreamGraph
+from measurement.cli import parse_options
 
 
 def samples_ms(functions, reset, *, reps=15):

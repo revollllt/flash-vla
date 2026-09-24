@@ -24,8 +24,8 @@ the table; everything else has a default or a fallback, so a new run gets a
 figure on its first trial and improves it later.
 
 ```bash
-python -m lab.results curve results/<target>/<run>          # writes progress.svg beside the table
-python -m lab.results rebuild                               # refreshes every run's figure and the index
+python -m measurement.results curve results/<target>/<run>          # writes progress.svg beside the table
+python -m measurement.results rebuild                               # refreshes every run's figure and the index
 ```
 
 `group` is required on every row and says where the change's time came from,
@@ -89,7 +89,7 @@ stays blank. Only `start` and `keep` advance the retained-model line. Different
 checkpoint/input/shape/device or timing conditions use separate run directories.
 
 ```bash
-python -m lab.results curve results/pi05-h100/run-name/iterations.csv \
+python -m measurement.results curve results/pi05-h100/run-name/iterations.csv \
   --out results/pi05-h100/run-name/progress.svg --title "Pi0.5 · H100"
 ```
 
@@ -105,8 +105,8 @@ loading a model or importing a Campaign controller. Run from the project root
 with Matplotlib installed:
 
 ```bash
-python -m lab.results plot path/to/trace.json --out artifacts/progress.svg
-python -m lab.results rebuild
+python -m measurement.results plot path/to/trace.json --out artifacts/progress.svg
+python -m measurement.results rebuild
 ```
 
 `plot` renders one trace. `rebuild` regenerates the SVG, summaries and dashboard

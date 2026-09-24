@@ -14,8 +14,8 @@ import triton.language as tl
 
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
-from flash_vla.bench import bench_gpu_time
 from flash_vla.hardware.nvidia.rtx5090.pi05.backends.torch_ops import llm_backbone_attention
+from measurement.kernel_bench import bench_gpu_time
 
 
 @triton.jit

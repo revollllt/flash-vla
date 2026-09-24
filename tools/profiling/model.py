@@ -39,8 +39,6 @@ subtraction. Shares are of the duration sum, not critical-path latency.
 """
 from __future__ import annotations
 
-from flash_vla.environment import report_context
-
 import argparse
 import json
 import os
@@ -53,14 +51,15 @@ from typing import Any, Callable
 import torch
 from torch.profiler import ProfilerActivity, profile, record_function
 
-from flash_vla.runtime.identity import Identity, MeasurementContext
-from flash_vla.runtime.engine import segments
-from flash_vla.runtime.registry import GraphContract
-
-from flash_vla.environment import collect as _env
-from flash_vla.inference import parse_options
-from flash_vla.environment import require_cuda
 from flash_vla.inference import PLAN_NAMES, build, resolve
+from flash_vla.runtime.engine import segments
+from flash_vla.runtime.identity import Identity
+from flash_vla.runtime.registry import GraphContract
+from measurement.cli import parse_options
+from measurement.environment import collect_environment, report_context, require_cuda
+from measurement.provenance import MeasurementContext
+from measurement.timing import event_samples
+
 from .timeline import intervals, occurrences, region_occurrences
 
 ANNOTATION = "callsite:"
@@ -260,7 +259,8 @@ def attribute(engine, segment: str, sm_count: int, trace_path: Path | None = Non
     """Per-call-site in-graph time of one segment, by positional match of the two runs."""
     eager, eager_info = eager_sequence(engine, segment, eager_trace_path)
     replay = replay_sequence(engine, segment, trace_path)
-    wall_us = _replay_wall_us(engine, segment)
+    # The segment's real duration: the fastest of a few unprofiled, event-timed replays.
+    wall_us = min(event_samples(lambda: engine.replay(segment), reps=5, warmup=0)) * 1e3
     same_length = len(eager) == len(replay)
     mismatches = [{"position": i, "eager": a["name"], "replay": b["name"]}
                   for i, (a, b) in enumerate(zip(eager, replay)) if not _same_launch(a, b)]
@@ -316,21 +316,6 @@ def attribute(engine, segment: str, sm_count: int, trace_path: Path | None = Non
             "kernel_names": sorted({b["name"] for b in replay if b["name"]})}
 
 
-def _replay_wall_us(engine, segment: str, reps: int = 5) -> float:
-    """Event-timed minimum of an unprofiled replay, the segment's real duration."""
-    best = None
-    for _ in range(reps):
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        start.record()
-        engine.replay(segment)
-        end.record()
-        torch.cuda.synchronize()
-        ms = start.elapsed_time(end)
-        best = ms if best is None else min(best, ms)
-    return (best or 0.0) * 1e3
-
-
 def check_contract(contract: GraphContract, names: set[str]) -> dict[str, Any]:
     violations = []
     for pattern in contract.forbid:
@@ -364,7 +349,7 @@ def overview(target: str, plan: str | None = None, *, seed: int = 0,
     events = _trace_events(prof, path)
     gpu = _gpu_events(events)
     span = intervals([dict(start_us=e["ts"], end_us=e["ts"] + e.get("dur", 0)) for e in gpu])
-    environment = _env(engine.device)
+    environment = collect_environment(engine.device)
     return dict(identity=engine.identity.as_dict(), env=environment,
                 measurement_context=report_context(engine, environment),
                 config=dict(seed=seed, plan=plan or "shipped", warmup=5, options=options),
@@ -397,7 +382,7 @@ def run(target: str, plans: list[str | None], seed: int = 0, trace_dir: str | No
         elif not reference_identity.same_workload(engine.identity):
             raise ValueError(f"leg {index} is not the same workload as leg 0; "
                              "profile legs may differ in plan only")
-        context = report_context(engine, _env())
+        context = report_context(engine, collect_environment())
         current_context = MeasurementContext.from_dict(context)
         if reference_context is None:
             reference_context = current_context
@@ -425,7 +410,7 @@ def run(target: str, plans: list[str | None], seed: int = 0, trace_dir: str | No
         del engine
         torch.cuda.empty_cache()
     report = {"identity": legs[0]["identity"],
-              "measurement_context": legs[0]["measurement_context"], "env": _env(), "sm_count": sm_count,
+              "measurement_context": legs[0]["measurement_context"], "env": collect_environment(), "sm_count": sm_count,
               "config": {"seed": seed, "plans": plans, "trace_dir": trace_dir, "segment": segment},
               "legs": legs, "deltas": _deltas(legs) if len(legs) > 1 else None}
     return report

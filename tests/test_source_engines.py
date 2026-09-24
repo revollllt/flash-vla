@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from flash_vla import source
 from flash_vla.runtime.registry import Backend
+from measurement import source_checkout
 
 #: A checkout's Target stand-in: a frozen value with a registry, like `runtime.vla.Target`.
 FAKE_TARGET = (
@@ -41,7 +41,7 @@ def checkouts(tmp_path):
     runtime = current / "src/flash_vla/runtime"
     runtime.mkdir(parents=True)
     (runtime / "identity.py").write_text("# source locator\n")
-    package = current / source.BACKENDS.parent
+    package = current / source_checkout.BACKENDS.parent
     (package / "backends").mkdir(parents=True)
     (package / "backends/upstream.py").write_text("def make_wrappers(*args, **kwargs): return {}\n")
     (package / "__init__.py").write_text("from .backends import TARGET\n")
@@ -59,9 +59,9 @@ def checkouts(tmp_path):
 
 def test_loads_actual_old_and_new_modules_with_independent_globals(checkouts):
     current, old = checkouts
-    with patch.object(source, "ROOT", current):
-        a, ap = source.lingbot_target(old)
-        b, bp = source.lingbot_target(current)
+    with patch.object(source_checkout, "ROOT", current):
+        a, ap = source_checkout.lingbot_target(old)
+        b, bp = source_checkout.lingbot_target(current)
     assert (a.marker, b.marker) == ("old", "new")
     a.state.append("control")
     assert b.state == []
@@ -76,9 +76,9 @@ def test_refuses_unisolated_shared_source_change(checkouts):
     (current / "src/flash_vla/runtime/identity.py").write_text("# different runtime\n")
     git(current, "add", ".")
     git(current, "commit", "-m", "shared change")
-    with patch.object(source, "ROOT", current):
+    with patch.object(source_checkout, "ROOT", current):
         with pytest.raises(ValueError, match="outside isolated LingBot"):
-            source.lingbot_target(old)
+            source_checkout.lingbot_target(old)
 
 
 @pytest.mark.parametrize('role', ['source', 'controller'])
@@ -86,9 +86,9 @@ def test_refuses_dirty_source(checkouts, role):
     current, old = checkouts
     dirty_root = old if role == "source" else current
     (dirty_root / "src/flash_vla/runtime/identity.py").write_text("# uncommitted\n")
-    with patch.object(source, "ROOT", current):
+    with patch.object(source_checkout, "ROOT", current):
         with pytest.raises(ValueError, match="clean committed"):
-            source.lingbot_target(old)
+            source_checkout.lingbot_target(old)
 
 
 def test_recovery_records_and_notes_do_not_invalidate_committed_execution(checkouts):
@@ -98,8 +98,8 @@ def test_recovery_records_and_notes_do_not_invalidate_committed_execution(checko
             path = root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("updated recovery state")
-    with patch.object(source, "ROOT", current):
-        target, provenance = source.lingbot_target(old)
+    with patch.object(source_checkout, "ROOT", current):
+        target, provenance = source_checkout.lingbot_target(old)
     assert target.marker == "old"
     assert provenance.revision == git(old, "rev-parse", "HEAD")
     assert provenance.controller_revision == git(current, "rev-parse", "HEAD")
@@ -131,13 +131,13 @@ def test_source_wrappers_restore_rope_between_engines_and_after_error():
                 return external.apply_rope()
 
             return {"vision": vision, "prefix": prefix}
-        return source.isolate_rope(Backend(names=names, make_wrappers=partial(make, enabled=enabled)))
+        return source_checkout.isolate_rope(Backend(names=names, make_wrappers=partial(make, enabled=enabled)))
 
     scratch = SimpleNamespace(assets={"upstream": "/test/upstream"})
     cached = backend(True).make_wrappers(scratch, names)
     reference = backend(False).make_wrappers(scratch, names)
-    with patch.object(source.importlib, "import_module", return_value=external), \
-         patch.object(source.sys, "path", list(source.sys.path)):
+    with patch.object(source_checkout.importlib, "import_module", return_value=external), \
+         patch.object(source_checkout.sys, "path", list(source_checkout.sys.path)):
         assert cached["vision"]() == "cached"
         assert external.apply_rope is official
         assert reference["vision"]() == "official"
@@ -164,7 +164,7 @@ def test_prebound_route_factory_is_isolated(checkouts):
     """A route whose factory was bound at import still runs isolated: isolation
     wraps the registered backends, not the module attribute a route may bypass."""
     current, _ = checkouts
-    package = current / source.BACKENDS.parent
+    package = current / source_checkout.BACKENDS.parent
     (package / "backends/upstream.py").write_text(
         "def make_wrappers(*args, **kwargs):\n"
         "    import probe_rope_external as external\n"
@@ -189,13 +189,13 @@ def test_prebound_route_factory_is_isolated(checkouts):
     git(current, "commit", "-m", "prebound route")
     official = lambda: "official"
     external = SimpleNamespace(apply_rope=official)
-    with patch.object(source, "ROOT", current):
-        target, _ = source.lingbot_target(current)
+    with patch.object(source_checkout, "ROOT", current):
+        target, _ = source_checkout.lingbot_target(current)
     backend = target.registry.backends["candidate"]
     scratch = SimpleNamespace(assets={"upstream": "/test/upstream"})
-    with patch.dict(source.sys.modules, probe_rope_external=external), \
-         patch.object(source.importlib, "import_module", return_value=external), \
-         patch.object(source.sys, "path", list(source.sys.path)):
+    with patch.dict(source_checkout.sys.modules, probe_rope_external=external), \
+         patch.object(source_checkout.importlib, "import_module", return_value=external), \
+         patch.object(source_checkout.sys, "path", list(source_checkout.sys.path)):
         engine = backend.make_wrappers(scratch, backend.names)
         assert engine["vision"]() == "cached"
         assert external.apply_rope is official

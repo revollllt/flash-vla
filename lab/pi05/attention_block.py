@@ -240,7 +240,7 @@ def run_replay_check(impl, seed: int, device: str, reps: int, dbg=None) -> dict:
 # bench (contract 6)
 # ---------------------------------------------------------------------------
 def _block_flops_bytes() -> tuple[int, int]:
-    from flash_vla.bench import attention_flops
+    from measurement.kernel_bench import attention_flops
     flops = (2 * M * D * taskref.QKV_W
              + attention_flops(batch_size=1, qo_seqlen=M, kv_seqlen=KEYS, head_dim_qk=DH,
                                head_dim_vo=DH, num_qo_heads=H, causal=False)
@@ -403,7 +403,7 @@ def run_stage_bench(kt: AttnTaskloop, ws: Workspace, seed: int, device: str, rep
     counters pre-filled (the prefill is captured in the graph and is inside
     the span; it is a handful of 64-element writes). Compared with the
     per-stage floors in the proposal, not with the composition."""
-    from flash_vla.bench import KernelResult, bench_gpu_time
+    from measurement.kernel_bench import KernelResult, bench_gpu_time
     t = make_inputs(seed, device, alias_out=True)
     tref = task_reference(t)
     t["q_buf"].copy_(tref["q_buf"]); t["k_cache"].copy_(tref["k_cache"])
@@ -431,7 +431,7 @@ def run_op_bench(kt: AttnTaskloop, ws: Workspace, ctl, seed: int, device: str, r
     attention = split + combine vs fd_split + fd_combine; o_proj = split +
     reduce vs tl_matmul_gated_res.  Inputs are produced once by the
     standalone pipeline so every op reads a realistic operand."""
-    from flash_vla.bench import KernelResult, bench_gpu_time
+    from measurement.kernel_bench import KernelResult, bench_gpu_time
     t = make_inputs(seed, device, alias_out=True)
     StandaloneBlock(kt, ws)(t)                     # populates q_buf/o_buf/caches
     ctl(t)                                          # populates the control's scratch
@@ -473,10 +473,10 @@ def run_op_bench(kt: AttnTaskloop, ws: Workspace, ctl, seed: int, device: str, r
 
 
 def run_bench(impls: dict, seed: int, device: str, reps: int, rounds: int) -> dict:
-    from flash_vla.bench import KernelResult, bench_gpu_time
-    from flash_vla.bench.timer import _cupti_available
+    from measurement.kernel_bench import KernelResult, bench_gpu_time
+    from measurement.kernel_bench import cupti_available
 
-    if not _cupti_available():
+    if not cupti_available():
         raise RuntimeError("contract 6.2: CUPTI timer required (pip install -U cupti-python)")
     flops, nbytes = _block_flops_bytes()
     t = make_inputs(seed, device, alias_out=True)

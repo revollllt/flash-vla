@@ -14,7 +14,8 @@ import triton
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
 from flash_vla.hardware.nvidia.rtx5090.pi05.backends import dual_ffn
-from flash_vla.inference import build, parse_options, resolve
+from flash_vla.inference import build, resolve
+from measurement.cli import parse_options
 from lab.pi05.cutlass_gemm_screen import samples_ms
 
 OPTIONS = dict(num_stages=3, enable_fp_fusion=False, enable_reflect_ftz=False)

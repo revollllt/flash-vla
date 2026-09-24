@@ -11,10 +11,11 @@ import torch
 
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
-from flash_vla.inference import build, parse_options, resolve
+from flash_vla.inference import build, resolve
 from flash_vla.hardware.nvidia.rtx5090.pi05.backends import cutlass_vision, fused_vision, torch_ops
 from flash_vla.runtime.cuda.graph import StreamGraph
 from flash_vla.runtime.runner import Scratch
+from measurement.cli import parse_options
 from lab.pi05.cutlass_gemm_screen import samples_ms
 
 

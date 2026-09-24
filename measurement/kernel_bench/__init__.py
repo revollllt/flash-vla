@@ -22,6 +22,7 @@ from .timer import (
     bench_gpu_time_with_cudagraph,
     bench_gpu_time_with_cupti,
     calculate_rotation_count,
+    cupti_available,
     get_l2_cache_size,
 )
 from .metrics import (
@@ -40,6 +41,7 @@ __all__ = [
     "bench_gpu_time_with_cudagraph",
     "bench_gpu_time_with_cupti",
     "calculate_rotation_count",
+    "cupti_available",
     "get_l2_cache_size",
     "KernelResult",
     "attention_flops",

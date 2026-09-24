@@ -2,7 +2,7 @@
 import pathlib
 import re
 
-from lab.results import html, plot, schema
+from measurement.results import html, plot, schema
 
 
 def trace():
@@ -56,7 +56,7 @@ def test_index_keeps_hand_written_notes_and_names_the_legacy_table(tmp_path):
     measurement. When the note saying so was hand-written it was dropped by the
     next rebuild, and one of those numbers was then quoted as a current best.
     """
-    from lab.results import index
+    from measurement.results import index
 
     run = tmp_path / "pi0-rtx5090" / "run-01"
     run.mkdir(parents=True)
@@ -81,7 +81,7 @@ def test_index_keeps_hand_written_notes_and_names_the_legacy_table(tmp_path):
 
 def test_curve_reads_a_run_directory_and_renders_the_same_bytes_twice(tmp_path):
     """One renderer for every run: the table is enough, figure.json tunes it."""
-    from lab.results import curve
+    from measurement.results import curve
 
     run = tmp_path / "rig" / "run-01"
     run.mkdir(parents=True)
@@ -117,7 +117,7 @@ def test_no_saved_artifact_records_an_absolute_machine_path():
     `asset_config`, `source_checkout`, `process_name` -- is written beside a
     logical id or digest that survives the move to another machine, so the
     absolute form adds only a username and a directory layout. The writers go
-    through `flash_vla.environment.record_path`; this holds the artifacts to
+    through `measurement.environment.record_path`; this holds the artifacts to
     the same rule, including ones written before it existed.
     """
     root = pathlib.Path(__file__).resolve().parent.parent

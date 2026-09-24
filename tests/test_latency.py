@@ -60,7 +60,7 @@ class LatencyRunTests(unittest.TestCase):
              patch.object(latency, "resolve", side_effect=lambda value: value), \
              patch.object(latency, "build", side_effect=build), \
              patch.object(latency, "measure", side_effect=measure), \
-             patch.object(latency, "_env", side_effect=[
+             patch.object(latency, "collect_environment", side_effect=[
                  {"runtime_observation": {"clocks.sm": str(value)}}
                  for value in (1590, 1980, 1980, 1980)]):
             report = latency.run("test", ["a", "b"], reps=1, warmup=0)
@@ -99,7 +99,7 @@ class LatencyRunTests(unittest.TestCase):
              patch.object(latency, "resolve", side_effect=lambda value: value), \
              patch.object(latency, "build", side_effect=build), \
              patch.object(latency, "measure", side_effect=measure), \
-             patch.object(latency, "_env", return_value={}):
+             patch.object(latency, "collect_environment", return_value={}):
             report = latency.run(
                 "test", ["shipped"] * 3, reps=1, warmup=0, attribution=False,
                 source_checkout="new", soak_s=10,
@@ -143,7 +143,7 @@ class LatencyRunTests(unittest.TestCase):
                      patch.object(latency, "resolve", side_effect=lambda value: value), \
                      patch.object(latency, "build", side_effect=build), \
                      patch.object(latency, "measure", side_effect=measure), \
-                     patch.object(latency, "_env", side_effect=environment):
+                     patch.object(latency, "collect_environment", side_effect=environment):
                     with self.assertRaisesRegex(ValueError, "measurement context changed"):
                         latency.run("test", ["a", "b", "a"], reps=1, warmup=0,
                                     attribution=False)
@@ -156,7 +156,8 @@ if __name__ == "__main__":
 
 def test_raw_samples_preserve_time_order_without_affecting_statistics():
     samples = [90., 79., 85., 80.]
-    result = latency._stats(samples, p99_min_reps=4)
+    from measurement.timing import summarize
+    result = summarize(samples, p99_min_reps=4)
     assert result["samples_ms"] == [90., 79., 85., 80.]
     assert (result["min"], result["median"], result["p99"]) == (79., 82.5, 90.)
 
@@ -169,7 +170,7 @@ def test_default_measure_times_only_complete_forward(monkeypatch):
     def wall(fn, reps, warmup, trace):
         fn()
         return [2., 1., 3.]
-    monkeypatch.setattr(latency, "_time_wall", wall)
+    monkeypatch.setattr(latency, "wall_samples", wall)
     result = latency.measure(engine, {"input": 1}, 3, 5, 100)
     assert list(result) == ["chunk_latency"]
     assert result["chunk_latency"]["samples_ms"] == [2., 1., 3.]
@@ -188,8 +189,8 @@ def test_breakdown_is_explicit_and_retains_legacy_metrics(monkeypatch):
     def timer(fn, reps, warmup, trace):
         fn()
         return [2.]
-    monkeypatch.setattr(latency, "_time_wall", timer)
-    monkeypatch.setattr(latency, "_time_event", timer)
+    monkeypatch.setattr(latency, "wall_samples", timer)
+    monkeypatch.setattr(latency, "event_samples", timer)
     result = latency.measure(engine, {}, 1, 0, 100, breakdown=True)
     assert set(result) == {"chunk_latency", "device_latency", "host_time", "segment_latency", "overhead"}
     assert calls == ["prepare", "expert"]
@@ -207,7 +208,7 @@ def test_optional_repeated_control_still_reports_detected_drift():
 
 def test_comparison_rejects_different_physical_gpus(monkeypatch):
     import pytest
-    from flash_vla.environment import report_context
+    from measurement.environment import report_context
     engine = _Engine("a")
     context = report_context(engine, {})
     responses = iter([(dict(identity=engine.identity.as_dict(), measurement_context=context,

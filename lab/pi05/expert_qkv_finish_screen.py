@@ -111,7 +111,8 @@ def main():
     revision = subprocess.check_output(
         ["git", "-C", str(args.source_checkout), "rev-parse", "HEAD"], text=True).strip()
     sys.path.insert(0, str(args.source_checkout / "src"))
-    from flash_vla.inference import build, parse_options, resolve
+    from flash_vla.inference import build, resolve
+    from measurement.cli import parse_options
     from flash_vla.hardware.nvidia.rtx5090.pi05.backends import fused_qkv, triton_qkv
     from lab.pi05.cutlass_gemm_screen import samples_ms
 

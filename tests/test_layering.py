@@ -64,25 +64,34 @@ def violations(importers: dict[str, set[str]], forbidden: tuple[str, ...]) -> di
 
 def test_runtime_knows_no_model_device_or_entry_point():
     assert violations(modules(SOURCE, "flash_vla.runtime"),
-                      ("flash_vla.models", "flash_vla.hardware", "flash_vla.inference",
-                       "flash_vla.source")) == {}
+                      ("flash_vla.models", "flash_vla.hardware", "flash_vla.inference")) == {}
 
 
 def test_models_are_hardware_free():
     assert violations(modules(SOURCE, "flash_vla.models"),
-                      ("flash_vla.hardware", "flash_vla.inference", "flash_vla.source")) == {}
+                      ("flash_vla.hardware", "flash_vla.inference")) == {}
 
 
-@pytest.mark.parametrize("leaf", ["provenance", "assets"])
-def test_provenance_and_assets_are_leaves(leaf):
-    assert violations({f"flash_vla.{leaf}": imports_of(SOURCE / f"flash_vla/{leaf}.py", SOURCE)},
+@pytest.mark.parametrize("leaf", ["provenance", "assets", "hardware/roofline"])
+def test_leaves_import_nothing_of_the_package(leaf):
+    assert violations({leaf: imports_of(SOURCE / f"flash_vla/{leaf}.py", SOURCE)},
                       ("flash_vla",)) == {}
 
 
 def test_entry_point_names_targets_without_importing_them():
     """`inference` reaches a Target and its model's sources by module name, on first use."""
     assert violations({"flash_vla.inference": imports_of(SOURCE / "flash_vla/inference.py", SOURCE)},
-                      ("flash_vla.models", "flash_vla.hardware", "flash_vla.source")) == {}
+                      ("flash_vla.models", "flash_vla.hardware")) == {}
+
+
+def test_measurement_imports_no_harness():
+    assert violations(modules(REPO, "measurement"),
+                      ("benchmarks", "eval", "tools", "tests", "lab")) == {}
+
+
+@pytest.mark.parametrize("harness,other", [("benchmarks", "tools"), ("tools", "benchmarks")])
+def test_benchmarks_and_tools_share_only_the_measurement_layer(harness, other):
+    assert violations(modules(REPO, harness), (other,)) == {}
 
 
 @pytest.mark.parametrize("device,other", [("h100", "rtx5090"), ("rtx5090", "h100")])

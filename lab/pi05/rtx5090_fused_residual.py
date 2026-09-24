@@ -8,12 +8,13 @@ import statistics
 
 import torch
 
-from benchmarks.kernels import _graph_samples
+from flash_vla.runtime.cuda.timing import graph_samples
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
 from flash_vla.hardware.nvidia.rtx5090.pi05.backends import fused_residual, torch_ops
-from flash_vla.inference import build, parse_options, resolve
+from flash_vla.inference import build, resolve
 from flash_vla.runtime.runner import Scratch
+from measurement.cli import parse_options
 
 
 def _record(engine):
@@ -74,8 +75,8 @@ def main() -> None:
         scratch.freeze()
         timings = {}
         for route, fn in (("torch", reference), ("fused", candidate)):
-            samples = _graph_samples(lambda i: _invoke(fn, invocations[i % len(invocations)]),
-                                     n_inner=len(invocations), reps=args.reps)
+            samples = graph_samples(lambda i: _invoke(fn, invocations[i % len(invocations)]),
+                                    n_inner=len(invocations), reps=args.reps)
             timings[route] = {"median_ms": statistics.median(samples), "samples_ms": samples}
         sites[name] = {"invocations": len(invocations), "correctness": correctness,
                        "timings": timings}

@@ -16,6 +16,8 @@ def _cell(value):
 #: Everything between these is regenerated. A human may write below the end
 #: marker and it survives; the file used to be rewritten whole, which silently
 #: dropped the note saying the legacy table was historical.
+# The markers predate the move from `lab.results`; every saved results/ page
+# carries them, so they keep the old package name.
 GENERATED_BEGIN = "<!-- lab.results: generated below -->"
 GENERATED_END = "<!-- lab.results: end generated; hand-written notes go below -->"
 

@@ -24,7 +24,7 @@ from flash_vla.runtime.registry import Backend, Registry, Wrapper
 from flash_vla.runtime.vla import ConfigValue, PlanSpec, Target
 from flash_vla.runtime.workspace import Scratch
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 BACKENDS = Path("src/flash_vla/hardware/nvidia/h100/lingbot_vla/backends")
 
 

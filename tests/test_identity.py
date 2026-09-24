@@ -10,9 +10,10 @@ import pytest
 
 from flash_vla.runtime import identity as identity_module
 from flash_vla.provenance import git_revision
-from flash_vla.runtime.identity import Identity, MeasurementContext
+from flash_vla.runtime.identity import Identity
 from flash_vla.runtime.registry import GraphContract
-from flash_vla.bench import KernelResult, write_csv
+from measurement.provenance import MeasurementContext
+from measurement.kernel_bench import KernelResult, write_csv
 
 
 def payload(**changes):
@@ -259,7 +260,7 @@ def test_profile_rejects_cross_context_delta(field):
                       return_value=SimpleNamespace(multi_processor_count=132)), \
          patch.object(profile, "resolve", side_effect=lambda name: name), \
          patch.object(profile, "build", side_effect=build), \
-         patch.object(profile, "_env", return_value={}), \
+         patch.object(profile, "collect_environment", return_value={}), \
          patch.object(profile, "segments", return_value=()), \
          patch.object(profile, "_deltas") as deltas:
         with pytest.raises(ValueError, match="measurement context changed"):

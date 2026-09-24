@@ -31,14 +31,18 @@ runtime/                      graph API, Target composition, buffers, execution,
 hardware/<vendor>/<device>/   Targets and reusable component kernels
 inference.py                  Target names and runner construction by name
 provenance.py, assets.py      provenance values; logical asset IDs to local paths
-eval/, benchmarks/           accuracy and latency consumers
+measurement/                  timing loops and statistics, kernel timing,
+                              attribution, environment and measurement context,
+                              source-checkout qualification, result rendering
+eval/, benchmarks/            accuracy and latency consumers
 tools/, tests/                diagnostics and engineering checks
-lab/                          experiments and saved-result rendering
+lab/                          experiments
 ```
 
 - Models have no hardware dependencies. Runtime imports no model, backend or Target.
 - `inference.py` names every Target and imports none until one is asked for;
-  `provenance.py` and `assets.py` import nothing of the package.
+  `provenance.py`, `assets.py` and `hardware/roofline.py` import nothing of
+  the package.
 - A Target combines one model, runtime and device component packages. It owns the
   layout the device's kernels see, plans and routing; components own reusable
   kernel implementations and may read a model's spec constants and reference math.
@@ -50,8 +54,14 @@ lab/                          experiments and saved-result rendering
 - CUDA tile primitives and TileLang JIT conventions are vendor-level utilities, and so
   are components that serve a whole architecture family rather than one device: the
   Blackwell (sm_100+) block-scaled quantize ops live in `hardware/nvidia/quant_ops`.
-- Production source imports no `benchmarks`, `eval`, `tools`, `tests` or `lab` modules. Experiments
-  may import production code; deployment never imports experiments.
+- Production source imports no `measurement`, `benchmarks`, `eval`, `tools`,
+  `tests` or `lab` modules. Experiments may import production code; deployment
+  never imports experiments.
+- `measurement` is the one layer every harness measures through: it imports
+  production code and no harness, and `benchmarks` and `tools` never import each
+  other. What the floor model reads of a device is that device's
+  `spec.ROOFLINE` (`hardware/roofline.py`), found from the identity's hardware
+  axis (`hardware.nvidia.HARDWARE_SPECS`).
 
 ## Forward execution
 
@@ -109,7 +119,8 @@ Target's runner is constructed (`build`, `declare`, `build_runner`,
 `get_target`); accuracy, latency and profiling tools all consume it. The
 runner receives its provenance at construction and never changes it;
 `implementation_source` names the checkout its backends came from when that is
-not this one (`flash_vla.source`, which qualifies a LingBot backend revision).
+not this one (`measurement.source_checkout`, which qualifies a LingBot backend
+revision).
 
 A backend is a `runtime.registry.Backend` value declared beside its
 implementation: the call sites it implements, the factory that builds their
@@ -145,7 +156,7 @@ links the relevant skills. Hardware rooflines and measured primitive limits
 guide hypotheses; deployed end-to-end measurements decide whether a change helps.
 
 Current reports use Identity v3. Existing reports and traces remain readable.
-[Result tools](lab/results/README.md) render saved traces independently of inference;
+[Result tools](measurement/results/README.md) render saved traces independently of inference;
 the retired Campaign controller is no longer part of the project.
 
 [Agent Notes](.agents/notes/README.md) explain durable decisions. Historical notes

@@ -22,7 +22,7 @@ import argparse
 
 import torch
 
-from flash_vla.bench import KernelResult, bench_gpu_time, render_table, write_csv
+from measurement.kernel_bench import KernelResult, bench_gpu_time, render_table, write_csv
 
 #: Model constants of the Gemma backbone, shared by both Targets.
 K_DIM, FFN, QKV_WIDTH = 2048, 16384, 2560

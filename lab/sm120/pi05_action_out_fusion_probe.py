@@ -8,7 +8,7 @@ from statistics import median
 
 import torch
 
-from benchmarks.kernels import _graph_samples
+from flash_vla.runtime.cuda.timing import graph_samples
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
 from flash_vla.hardware.nvidia.rtx5090.pi05.backends import fused_qkv, torch_ops
@@ -79,7 +79,7 @@ def main():
             call[3].copy_(initial_outputs[index % len(calls)])
             function(*call)
 
-        samples = _graph_samples(invoke, n_inner=len(calls), reps=50, warmup=len(calls))
+        samples = graph_samples(invoke, n_inner=len(calls), reps=50, warmup=len(calls))
         row = {"backend": label, "samples_ms_per_call": samples,
                "median_ms_per_call": median(samples),
                "median_ms_all_steps": median(samples) * len(calls)}

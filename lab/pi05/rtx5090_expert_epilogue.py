@@ -8,12 +8,13 @@ import statistics
 
 import torch
 
-from benchmarks.kernels import _graph_samples
+from flash_vla.runtime.cuda.timing import graph_samples
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
 from flash_vla.hardware.nvidia.rtx5090.pi05.backends import cutlass_expert_residual, fused_ffn
-from flash_vla.inference import build, parse_options, resolve
+from flash_vla.inference import build, resolve
 from flash_vla.runtime.runner import Scratch
+from measurement.cli import parse_options
 
 
 def _record(engine, site):
@@ -97,8 +98,8 @@ def main() -> None:
     timings = []
     for route, fn in (("current", reference), ("candidate", candidate),
                       ("candidate", candidate), ("current", reference)):
-        samples = _graph_samples(lambda i: _invoke(fn, calls[i % len(calls)]),
-                                 n_inner=len(calls), reps=args.reps)
+        samples = graph_samples(lambda i: _invoke(fn, calls[i % len(calls)]),
+                                n_inner=len(calls), reps=args.reps)
         timings.append({"route": route, "median_ms": statistics.median(samples),
                         "samples_ms": samples})
     report = {"seed": args.seed, "site": args.site,

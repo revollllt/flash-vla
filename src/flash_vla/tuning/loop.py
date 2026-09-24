@@ -6,7 +6,7 @@ is the same for TileLang and for hand-written CUDA, so it lives here; the two
 things that are not the same -- how a candidate becomes a callable, and how a
 callable is launched -- arrive as `build` and `invoke`.
 
-Timing is always `graph_time_cold`. Eager timing cannot resolve these kernels:
+Timing is always the median of `graph_samples`. Eager timing cannot resolve these kernels:
 at Pi0's decoder shapes the launch overhead is several times the kernel, so an
 eager sweep ranks launch noise. Three production configs were wrong in exactly
 that way and survived an eager benchmark.
@@ -26,9 +26,10 @@ time, and a sweep over that flag has to tolerate it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import statistics
 from typing import Any, Callable
 
-from flash_vla.runtime.cuda import graph_time_cold
+from flash_vla.runtime.cuda import graph_samples
 
 CATEGORIES = ("infeasible", "compile_failed", "incorrect", "timing_failed")
 
@@ -92,11 +93,12 @@ def sweep(candidates: list[dict], build: Callable[[dict], Any],
                 failed("incorrect")
                 continue
         try:
-            microseconds = graph_time_cold(lambda i: invoke(built, i), n_inner=n_inner, reps=reps)
+            samples = graph_samples(lambda i: invoke(built, i), n_inner=n_inner, reps=reps)
         except Exception as error:
             failed("timing_failed", error)
             continue
-        results.append({"us": round(microseconds, 3), **candidate})
+        results.append({"us": round(statistics.median(ms * 1000 for ms in samples), 3),
+                        **candidate})
 
     results.sort(key=lambda entry: entry["us"])
     outcome = SweepResult(label=label, results=results, counts=counts, errors=errors)

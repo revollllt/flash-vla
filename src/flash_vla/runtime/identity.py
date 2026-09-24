@@ -1,4 +1,7 @@
-"""Architecture identity, execution policy and measurement provenance.
+"""Architecture identity and execution policy.
+
+Measurement provenance -- the weights, fixture and environment an observation
+was taken under -- is the measurement layer's (`measurement.provenance`).
 
 No GPU imports: report readers and Campaign discovery use these types offline.
 """
@@ -53,44 +56,6 @@ class ExecutionVariant:
 
     @classmethod
     def from_dict(cls, value: Mapping) -> ExecutionVariant:
-        return cls(**value)
-
-
-@dataclass(frozen=True)
-class MeasurementContext:
-    """Checkpoint/fixture identity and the environment of an observation."""
-    weights: Mapping[str, Any]
-    fixture: Mapping[str, Any]
-    environment: Mapping[str, Any]
-    hostname: str | None = None
-    slurm_job_id: str | None = None
-    timestamp: float | None = None
-    reference_provenance: Mapping[str, Any] = field(default_factory=dict)
-
-    @property
-    def context_id(self) -> str:
-        # Locations and observation provenance do not identify immutable assets.
-        return canonical_digest({
-            "weights": {key: self.weights[key] for key in ("checkpoint_id", "checkpoint_digest")},
-            "fixture": {key: self.fixture[key] for key in ("id", "digest")},
-        })
-
-    @property
-    def segment_key(self) -> dict:
-        return {"context_id": self.context_id, "environment": dict(self.environment)}
-
-    @property
-    def fingerprint(self) -> str:
-        return canonical_digest(self.segment_key)
-
-    def as_dict(self) -> dict:
-        return dict(weights=dict(self.weights), fixture=dict(self.fixture),
-                    environment=dict(self.environment), hostname=self.hostname,
-                    slurm_job_id=self.slurm_job_id, timestamp=self.timestamp,
-                    reference_provenance=dict(self.reference_provenance))
-
-    @classmethod
-    def from_dict(cls, value: Mapping) -> MeasurementContext:
         return cls(**value)
 
 

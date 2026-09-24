@@ -35,9 +35,8 @@ from typing import Any
 import torch
 
 from flash_vla.inference import PLAN_NAMES, build, get_target, resolve
-from flash_vla.environment import collect as _env
-from flash_vla.environment import report_context
-from flash_vla.runtime.identity import MeasurementContext
+from measurement.environment import collect_environment, report_context
+from measurement.provenance import MeasurementContext
 from eval.tolerances import tolerances
 from eval.metrics import error_metrics
 
@@ -99,7 +98,7 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
         raise ValueError("reference and candidate use different checkpoint provenance")
     if reference.measurement_context["fixture"] != candidate.measurement_context["fixture"]:
         raise ValueError("reference and candidate use different fixture provenance")
-    environment = _env(candidate.device)
+    environment = collect_environment(candidate.device)
     contexts = {role: report_context(engine, environment)
                 for role, engine in (("reference", reference), ("candidate", candidate))}
     inputs = reference.sample_inputs(seed)
@@ -155,7 +154,7 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
     max_rel_rms = max(m["rel_rms"] for m in compared)
     tolerance = tol[threshold]
     within = bool(min_cosine > tolerance["cosine_min"] and max_rel_rms < tolerance["rel_rms_max"])
-    after = report_context(candidate, _env(candidate.device))
+    after = report_context(candidate, collect_environment(candidate.device))
     if (MeasurementContext.from_dict(after).segment_key
             != MeasurementContext.from_dict(contexts["candidate"]).segment_key):
         raise ValueError("correctness measurement context changed during execution")
@@ -200,7 +199,7 @@ def main(argv=None) -> int:
     parser.add_argument("--option", action="append", default=[],
                         help="target construction option as key=value, both implementations")
     args = parser.parse_args(argv)
-    from flash_vla.inference import parse_options
+    from measurement.cli import parse_options
     options = parse_options(args.option)
     if {"steps", "layers"} & options.keys():
         parser.error("set check depth with --steps/--layers; --option is for other construction parameters")

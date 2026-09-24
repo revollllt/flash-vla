@@ -24,8 +24,11 @@ mainloop can reach.
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping
+
+from flash_vla.hardware.roofline import Roofline, TensorPeak
 
 
 KB = 1 << 10
@@ -229,4 +232,34 @@ class RTX5090Spec:
         )
 
 
-__all__ = ["RTX5090Spec"]
+#: What the latency floor model reads of this device. sm_120 has no `wgmma`
+#: and no measured burst curve -- only sweep A of the tma unit has been run --
+#: so the ceiling uses the stream model at every size. The tensor roles need a
+#: RATE, so they point at the observed TFLOP/s rows rather than at
+#: `mma.rate.sm.bf16`, which is per-cycle, or at `mma.clock.sm`, which is a
+#: clock and produced an 87x ceiling error when this mapping was first written.
+#: The bf16 peak is qualified by accumulator width: fp32 accumulate runs at half
+#: the fp16-accumulate rate here.
+ROOFLINE = Roofline(
+    spec=RTX5090Spec,
+    dram_bytes_per_second=RTX5090Spec.DRAM_BANDWIDTH_BYTES_PER_SECOND,
+    tensor_peaks=MappingProxyType({
+        "bf16": TensorPeak(
+            flops_per_second=RTX5090Spec.TENSOR_CORE_DENSE_PEAK_FLOPS["bf16_acc_fp32"],
+            role="tensor"),
+        "mxfp8": TensorPeak(
+            flops_per_second=RTX5090Spec.TENSOR_CORE_DENSE_PEAK_FLOPS["mxfp8_block_scaled"],
+            role="tensor_mxfp8"),
+    }),
+    constants_file=Path(__file__).parent / "measured" / "constants.yaml",
+    constant_tags=MappingProxyType({
+        "stream": "ld.bw.dev.dram",
+        "tensor": "mma.tflops.dev.bf16",
+        "tensor_mxfp8": "mma.tflops.dev.mxfp8",
+        "launch": "launch.lat.dev.ramp",
+        "knee": "ld.ctas.dev.knee",
+    }),
+)
+
+
+__all__ = ["ROOFLINE", "RTX5090Spec"]

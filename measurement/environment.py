@@ -7,8 +7,12 @@ import subprocess
 import time
 from pathlib import Path
 from importlib import metadata
-from typing import Any
+from typing import Any, Mapping
 import torch
+
+from flash_vla.runtime.engine import Engine
+
+from .provenance import MeasurementContext
 
 def env_block(device=None) -> dict[str, Any]:
     """GPU / toolchain versions, for stamping result files."""
@@ -47,9 +51,8 @@ def require_cuda() -> None:
         raise RuntimeError("CUDA is required; run with a visible GPU and a compatible PyTorch/CUDA environment")
 
 
-def report_context(engine, environment):
+def report_context(engine: Engine, environment: Mapping[str, object]) -> dict[str, object]:
     """Stamp measurement provenance separately from architecture identity."""
-    from flash_vla.runtime.identity import MeasurementContext
     return MeasurementContext(
         weights=engine.measurement_context["weights"],
         fixture=engine.measurement_context["fixture"],
@@ -65,7 +68,7 @@ def report_context(engine, environment):
     ).as_dict()
 
 
-def collect(device=None) -> dict[str, Any]:
+def collect_environment(device: torch.device | None = None) -> dict[str, Any]:
     observation_fields = ("clocks.sm", "clocks.mem", "pstate", "temperature.gpu",
                           "power.draw", "clocks_event_reasons.active")
     fields = ("driver_version", "power.limit", "enforced.power.limit",

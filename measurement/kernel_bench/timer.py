@@ -6,7 +6,7 @@ measured the way the production baselines are measured: hardware-level GPU time
 when CUPTI is available, CUDA-graph-amortised or event timing otherwise, always
 against a cold L2.
 
-Why three backends instead of just reusing ``flash_vla.runtime.cuda.graph_time_cold``:
+Why three backends instead of just reusing ``flash_vla.runtime.cuda.graph_samples``:
 
 - CUPTI measures pure GPU kernel execution time from hardware timestamps,
   excluding the CPU-side launch overhead entirely. For a 4 us decoder kernel a
@@ -15,7 +15,7 @@ Why three backends instead of just reusing ``flash_vla.runtime.cuda.graph_time_c
 - CUDA events measure launch + execution. That is the right quantity for
   whole-pipeline wall time but wrong for per-kernel attribution.
 - CUDA graphs amortise launch overhead by replaying many calls per graph, which
-  is what ``graph_time_cold`` already does for the tuning loop. It is the
+  is what ``graph_samples`` already does for the tuning loop. It is the
   fallback when CUPTI is not installed (e.g. CUDA < 13).
 
 Cold-L2 strategy is picked per backend, mirroring FlashInfer:
@@ -36,7 +36,7 @@ import math
 import statistics
 import warnings
 from functools import partial as _partial
-from typing import Any, Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 import torch
 
@@ -303,7 +303,7 @@ def bench_gpu_time_with_cudagraph(
     return samples
 
 
-def _cupti_available() -> bool:
+def cupti_available() -> bool:
     """True when cupti-python >= 13 is importable (CUDA 13+)."""
     try:
         from cupti import cupti  # noqa: F401
@@ -343,7 +343,7 @@ def bench_gpu_time_with_cupti(
     """
     if input_kwargs is None:
         input_kwargs = {}
-    if not _cupti_available():
+    if not cupti_available():
         warnings.warn(
             "CUPTI is not installed. Try 'pip install -U cupti-python'. "
             "Falling back to CUDA events for benchmarking.",
@@ -532,7 +532,7 @@ def bench_gpu_time_with_cupti(
         if kernel_filter is not None:
             iter_kernels = [k for k in iter_kernels if kernel_filter in str(k[0])]
         if not iter_kernels:
-            raise ValueError(f"No kernel activities recorded for an iteration"
+            raise ValueError("No kernel activities recorded for an iteration"
                              + (f" matching {kernel_filter!r}" if kernel_filter else ""))
         current_names = {f"{k[0]}_{k[4]}_{k[5]}_{k[6]}_{k[7]}" for k in iter_kernels}
         if kernel_names is None:

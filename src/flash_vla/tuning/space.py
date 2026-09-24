@@ -44,7 +44,7 @@ def cold_n_inner(footprint_bytes: int, cache_bytes: int, *, margin: float = 2.0,
                  minimum: int = 8) -> int:
     """Distinct input sets needed before `cache_bytes` stops serving the reads.
 
-    `graph_time_cold` calls `invoke(i)` for i in range(n_inner). Those reads are
+    `graph_samples` calls `invoke(i)` for i in range(n_inner). Those reads are
     only cold if the caller actually indexes into that many distinct buffers and
     their total exceeds the cache -- otherwise the second graph replay onward
     finds everything resident and the measurement quietly becomes a hot one.

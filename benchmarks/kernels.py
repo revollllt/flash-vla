@@ -32,18 +32,16 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Any, Callable
+from typing import Callable
 
 import torch
 
-from flash_vla.runtime.cuda.graph import StreamGraph
-
-from flash_vla.bench import KernelResult, bench_gpu_time, render_table, write_csv
-from flash_vla.runtime.engine import segments
-
-from flash_vla.inference import parse_options
-from flash_vla.environment import require_cuda
 from flash_vla.inference import PLAN_NAMES, build, resolve
+from flash_vla.runtime.cuda.timing import graph_samples
+from flash_vla.runtime.engine import segments
+from measurement.cli import parse_options
+from measurement.environment import require_cuda
+from measurement.kernel_bench import KernelResult, bench_gpu_time, render_table, write_csv
 
 
 def record_invocations(engine, segment: str) -> dict[str, list[tuple[tuple, dict]]]:
@@ -60,32 +58,6 @@ def record_invocations(engine, segment: str) -> dict[str, list[tuple[tuple, dict
         engine.run_eager(segment)
         torch.cuda.synchronize()
     return calls
-
-
-def _graph_samples(invoke: Callable[[int], Any], n_inner: int, reps: int, warmup: int = 4) -> list[float]:
-    """Per-call ms over `reps` replays of a graph holding `n_inner` invocations."""
-    side = torch.cuda.Stream()
-    side.wait_stream(torch.cuda.current_stream())
-    with torch.cuda.stream(side):
-        for i in range(warmup):
-            invoke(i)
-    torch.cuda.current_stream().wait_stream(side)
-    torch.cuda.synchronize()
-    graph = StreamGraph()
-    with graph.capture():
-        for i in range(n_inner):
-            invoke(i)
-    torch.cuda.synchronize()
-    samples = []
-    for _ in range(reps):
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        start.record()
-        graph.replay()
-        end.record()
-        torch.cuda.synchronize()
-        samples.append(start.elapsed_time(end) / n_inner)
-    return samples
 
 
 def run(target: str, plan: str | None = None, seed: int = 0, only_segments: list[str] | None = None,
@@ -141,7 +113,7 @@ def run(target: str, plan: str | None = None, seed: int = 0, only_segments: list
                 print(f"{label:24} :: skipped (no device work at this shape)", flush=True)
                 continue
             if timer == "cudagraph":
-                samples = _graph_samples(invoke, n_inner=min(n_inner, count), reps=reps)
+                samples = graph_samples(invoke, n_inner=min(n_inner, count), reps=reps)
             else:
                 samples = bench_gpu_time(
                     invoke, input_args=(0,), enable_cupti=(timer == "cupti"),

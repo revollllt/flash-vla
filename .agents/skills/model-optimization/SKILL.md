@@ -96,14 +96,14 @@ the alternative; an ambiguous result revises it rather than adding a candidate.
 Save each round's change, revision, command, environment, correctness result and
 raw benchmark JSON under `results/<target>/<run>/`, append the trial to
 `iterations.csv` with the `group` the [results
-tools](../../../lab/results/README.md#the-progress-figure) define -- the segment
+tools](../../../measurement/results/README.md#the-progress-figure) define -- the segment
 whose time the change cut, `multi-stage` when it cannot be assigned to one,
 `control` for a row that changes no module -- so the figure colours every
-milestone by module, and redraw with `python -m lab.results curve
+milestone by module, and redraw with `python -m measurement.results curve
 results/<target>/<run>`. Step 7's two denominators go in that run's
 `figure.json`, which is what draws the share-of-floor panel; without it the same
 renderer produces the same figure with a panel missing ([results
-tools](../../../lab/results/README.md)). Keep the candidates that did not gain,
+tools](../../../measurement/results/README.md)). Keep the candidates that did not gain,
 but let only retained versions advance the curve -- a kernel's local gain never
 stands in for model latency on it. Report the
 deployed version and its comparable end-to-end change, correctness evidence,

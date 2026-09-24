@@ -11,8 +11,11 @@ device-specific microbenchmark with its clock and profiler provenance.
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping
+
+from flash_vla.hardware.roofline import Roofline, TensorPeak
 
 
 KB = 1 << 10
@@ -243,4 +246,28 @@ class H100Spec:
         )
 
 
-__all__ = ["H100Spec"]
+#: What the latency floor model reads of this device. The tags are the rows of
+#: `measured/constants.yaml` behind each role: `stream` the marginal cold DRAM
+#: rate behind `fixed_us`, `burst` the end-to-end rate against burst size
+#: (`curve_mb_gbs`), `tensor` the bf16 rate observed at real clocks, `launch`
+#: the per-launch cost (information), `knee` the CTA count below which a cold
+#: read is derated.
+ROOFLINE = Roofline(
+    spec=H100Spec,
+    dram_bytes_per_second=H100Spec.HBM_BANDWIDTH_BYTES_PER_SECOND,
+    tensor_peaks=MappingProxyType({
+        "bf16": TensorPeak(flops_per_second=H100Spec.TENSOR_CORE_DENSE_PEAK_FLOPS["bf16"],
+                           role="tensor"),
+    }),
+    constants_file=Path(__file__).parent / "measured" / "constants.yaml",
+    constant_tags=MappingProxyType({
+        "stream": "ld.bw.dev.dram",
+        "burst": "tma.bw.dev.burst",
+        "tensor": "wgmma.clock.sm",
+        "launch": "launch.lat.dev.ramp",
+        "knee": "ld.ctas.dev.knee",
+    }),
+)
+
+
+__all__ = ["H100Spec", "ROOFLINE"]

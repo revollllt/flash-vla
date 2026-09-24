@@ -1,5 +1,5 @@
 """Context-local summaries; cross-context minima are never compared."""
-from flash_vla.runtime.identity import MeasurementContext
+from measurement.provenance import MeasurementContext
 
 
 def summaries(value):

@@ -9,12 +9,18 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
+import sys
 from pathlib import Path
 
 from .abi import Unit
 from .toolchain import cache_dir, cuda_home, cutlass_include
 
 _INCLUDE = Path(__file__).resolve().parents[1] / "include"
+# The CUPTI timer lives in the repository's top-level `measurement` package,
+# which is not installed; probes run by file path, so the repository root goes
+# on the path once here. Outside the repository the import fails and
+# `time_us` falls back to events, saying so.
+sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
 
 # Enough samples that the median is not one unlucky launch, few enough that a
 # sweep stays inside the probe time budget. Every unit uses this number, so two
@@ -76,7 +82,7 @@ def time_us(run, *, reps=None, flush_l2=False, kernel_filter=None):
     reps = REPS if reps is None else reps
     import torch
     try:
-        from flash_vla.bench import bench_gpu_time
+        from measurement.kernel_bench import bench_gpu_time
         samples = bench_gpu_time(run, enable_cupti=True, cold_l2_cache=flush_l2,
                                  dry_run_iters=3, repeat_iters=reps,
                                  kernel_filter=kernel_filter)
