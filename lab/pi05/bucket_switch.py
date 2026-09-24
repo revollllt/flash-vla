@@ -9,7 +9,7 @@ from safetensors.torch import load_file
 import torch
 
 from eval.metrics import error_metrics
-from eval.pi05.reference import to_pair_layout
+from flash_vla.models.pi05.reference_view import pair_layout
 from eval.tolerances import tolerances
 from flash_vla.models.pi05.session import set_task
 from flash_vla.inference import build
@@ -24,7 +24,7 @@ def _compare(expected, keys, values, actions, n_valid, limits):
     """Use parity.compare's full-depth KV/action formulas and tolerances."""
     rows = [
         {"layer": layer,
-         "k": error_metrics(to_pair_layout(expected["prefix_k"][layer, :n_valid]),
+         "k": error_metrics(pair_layout(expected["prefix_k"][layer, :n_valid]),
                             keys[layer, :n_valid]),
          "v": error_metrics(expected["prefix_v"][layer, :n_valid],
                             values[layer, :n_valid])}

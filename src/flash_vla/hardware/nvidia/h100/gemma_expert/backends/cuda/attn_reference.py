@@ -1,7 +1,7 @@
 """Torch mirror of `attn_taskloop_launch`, task body by task body.
 
 Two references exist for this block and they answer different questions.
-`models/pi05/reference.py` is the ALGORITHM: clean shapes, no padding, no task
+`models/pi05/expert_attention.py` is the ALGORITHM: clean shapes, no padding, no task
 structure, and it is what a spec is written against. This one is the KERNEL's
 shape: the same buffers in the same layouts, mutated in place, decomposed into
 the same three task bodies over the same split structure. It is what you read

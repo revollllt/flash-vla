@@ -149,6 +149,31 @@ comparison runs in two interpreters instead of one: `eval.pi05.parity` captures
 the official tensors with the fixture that produced them, `OPENPI_PI05_MODULE`
 names the module the official forward came from, and the oracle records it.
 
+## Model references
+
+A model's `models/<model>/reference.py` is the whole model as upstream defines
+it -- vision encoder, LLM backbone and the action expert's full denoising
+loop -- in plain torch, translated from the upstream implementation and
+citing it. It runs on the official checkpoint by its official tensor names:
+each part's parameters are the upstream names below that part's prefix
+(`PREFIXES`), so the schema it builds on the meta device is the official one
+and `models/official.py` binds an official state dict without a copy. It
+imports nothing but torch, its model's `spec` and shared reference parts such
+as `models/paligemma/reference.py` (`tests/test_layering.py`), holds no
+padding, fusion or folding, and reproduces upstream's inference dtypes; its
+float32 mode is the model's math without anyone's bfloat16 roundings.
+
+`models/<model>/reference_view.py` states how the engine corresponds to it:
+the observation the engine ran, and every declared stage output paired with
+the reference's value in the engine's layout. `eval.model_reference` runs any
+Target and its model's reference on the same official-layout weights
+(`sources.official_weights`: the seeded random ones, or a checkpoint's) and
+compares stage by stage against the float32 reference, so the weight
+conversion, the fold, the graph and every routed kernel are held to the model
+itself. A model's seeded random
+checkpoint is its reference's random official weights converted as a real
+checkpoint is, so both sides hold the same model.
+
 ## Optimization and evidence
 
 [.agents/skills/model-optimization/SKILL.md](.agents/skills/model-optimization/SKILL.md) owns the two optimization loops and

@@ -4,6 +4,7 @@ from pathlib import Path
 import torch
 from dataclasses import replace
 import json
+from typing import Mapping
 from flash_vla.models.pi0.openpi import _bf16, _fold_norm, _interleave_rope, _linear, _stack_layers, _value
 from .spec import DECODER_HEADS, ENCODER_LAYERS, VISION_LAYERS, weight_shapes
 
@@ -140,7 +141,8 @@ def checkpoint_contract(checkpoint: str | Path, config) -> dict:
             raise ValueError(f"checkpoint tied-parameter alias does not match the reference: {name}")
         observed[name] = observed[original]
     validate_weight_schema(observed, expected)
-    normalized = {name: tuple(value.shape) for name, value in target_checkpoint(model).items()}
+    normalized = {name: tuple(value.shape)
+                  for name, value in target_checkpoint(model.state_dict()).items()}
     validate_weight_schema(normalized, spec.weight_shapes())
     return {
         "contract": {**spec.INFERENCE_CONTRACT, "parameter_shapes": normalized},
@@ -193,18 +195,15 @@ def build_model(checkpoint: str | Path | None = None,
     return model
 
 
-def converted_checkpoint(checkpoint: str | Path) -> dict[str, torch.Tensor]:
-    """The Target's packed weights from an already-converted OpenPI PyTorch checkpoint.
+def read_checkpoint(checkpoint: str | Path) -> dict[str, torch.Tensor]:
+    """An OpenPI PyTorch checkpoint's official state dict, on the CPU.
 
-    `build_model` needs OpenPI, JAX and a patched `transformers`; a deployment
-    machine need not host them, and the conversion has already happened. This
-    reads the stored state dict through the same `target_checkpoint`
-    normalization, restoring the ties `save_model` stores once. It establishes
-    tensor compatibility only -- the caller states which checkpoint this is.
+    `save_model` stores tied tensors once and names the ties in the file's
+    metadata (the prompt embedding is the language-model head); each tie is
+    restored under its own name.
     """
     from safetensors import safe_open
     from safetensors.torch import load_file
-    from types import SimpleNamespace
 
     path = Path(checkpoint)
     if path.is_dir():
@@ -216,10 +215,22 @@ def converted_checkpoint(checkpoint: str | Path) -> dict[str, torch.Tensor]:
         for name, original in (source.metadata() or {}).items():
             if name not in state and original in state:
                 state[name] = state[original]
-    return target_checkpoint(SimpleNamespace(state_dict=lambda: state))
+    return state
 
 
-def _decoder_qkv(state: dict[str, torch.Tensor], layer: int) -> torch.Tensor:
+def converted_checkpoint(checkpoint: str | Path) -> dict[str, torch.Tensor]:
+    """The Target's packed weights from an already-converted OpenPI PyTorch checkpoint.
+
+    `build_model` needs OpenPI, JAX and a patched `transformers`; a deployment
+    machine need not host them, and the conversion has already happened. This
+    reads the stored state dict (`read_checkpoint`) through the same
+    `target_checkpoint` normalization. It establishes tensor compatibility
+    only -- the caller states which checkpoint this is.
+    """
+    return target_checkpoint(read_checkpoint(checkpoint))
+
+
+def _decoder_qkv(state: Mapping[str, torch.Tensor], layer: int) -> torch.Tensor:
     """Packed decoder QKV in the target's RoPE layout, with no norm to fold in."""
     attention = f"{DECODER}.layers.{layer}.self_attn"
     return torch.cat(
@@ -232,7 +243,7 @@ def _decoder_qkv(state: dict[str, torch.Tensor], layer: int) -> torch.Tensor:
     )
 
 
-def _encoder_qkv(state: dict[str, torch.Tensor], layer: int) -> torch.Tensor:
+def _encoder_qkv(state: Mapping[str, torch.Tensor], layer: int) -> torch.Tensor:
     """Packed encoder QKV, with the plain RMSNorm scale folded in as in Pi0."""
     attention = f"{ENCODER}.layers.{layer}.self_attn"
     norm = f"{ENCODER}.layers.{layer}.input_layernorm.weight"
@@ -247,9 +258,8 @@ def _encoder_qkv(state: dict[str, torch.Tensor], layer: int) -> torch.Tensor:
 
 
 @torch.inference_mode()
-def target_checkpoint(model) -> dict[str, torch.Tensor]:
+def target_checkpoint(state: Mapping[str, torch.Tensor]) -> dict[str, torch.Tensor]:
     """Convert one official Pi0.5 state dict to the packed `weight_shapes()` layout."""
-    state = model.state_dict()
 
     def vision_layer(index: int) -> str:
         return f"{VISION}.encoder.layers.{index}"

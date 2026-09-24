@@ -7,7 +7,7 @@ CPU, and images/noise round to BF16 on the device exactly as in
 eval.pi05.parity.compare. No seeded fixture is regenerated.
 
 This is full-depth parity, not a latency measurement. It reuses error_metrics,
-tolerances, and to_pair_layout; reports every layer's valid prefix K/V,
+tolerances, and pair_layout; reports every layer's valid prefix K/V,
 actions, finite padded K/V, exact staged token IDs, and the runtime valid count.
 Acceptance uses the existing parity formulas for layer0/deepest/step/actions.
 The two fixture directories are inputs; their state/image/noise equivalence is

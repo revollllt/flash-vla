@@ -31,9 +31,12 @@ class TargetEntry:
     whose `runner_source(target, device=, declare=, **options)` returns the
     `RunnerSource` a runner is built from. Every model's `runner_source`
     accepts `device`, `declare` and `seed`, even where one selects nothing,
-    so a harness passes the same options to every Target."""
+    so a harness passes the same options to every Target.
+    `reference_view_module` pairs the engine with the model's end-to-end
+    reference (`eval.model_reference`); `None` until the model has one."""
     target_module: str
     sources_module: str
+    reference_view_module: str | None = None
 
 
 #: Full Target name -> its entry. Short aliases resolve through `resolve`.
@@ -43,13 +46,15 @@ TARGETS: dict[str, TargetEntry] = {
     "hardware/nvidia/h100/lingbot_vla": TargetEntry(
         "flash_vla.hardware.nvidia.h100.lingbot_vla", "flash_vla.models.lingbot.sources"),
     "hardware/nvidia/h100/pi05": TargetEntry(
-        "flash_vla.hardware.nvidia.h100.pi05", "flash_vla.models.pi05.sources"),
+        "flash_vla.hardware.nvidia.h100.pi05", "flash_vla.models.pi05.sources",
+        reference_view_module="flash_vla.models.pi05.reference_view"),
     "hardware/nvidia/h100/pi0": TargetEntry(
         "flash_vla.hardware.nvidia.h100.pi0", "flash_vla.models.pi0.sources"),
     "hardware/nvidia/rtx5090/pi0": TargetEntry(
         "flash_vla.hardware.nvidia.rtx5090.pi0", "flash_vla.models.pi0.sources"),
     "hardware/nvidia/rtx5090/pi05": TargetEntry(
-        "flash_vla.hardware.nvidia.rtx5090.pi05", "flash_vla.models.pi05.sources"),
+        "flash_vla.hardware.nvidia.rtx5090.pi05", "flash_vla.models.pi05.sources",
+        reference_view_module="flash_vla.models.pi05.reference_view"),
 }
 #: Short name -> full Target name.
 ALIASES = {"rtx5090/groot_n17": "hardware/nvidia/rtx5090/groot_n17",

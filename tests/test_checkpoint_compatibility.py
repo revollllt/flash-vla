@@ -29,9 +29,9 @@ def checkpoint(tmp_path, monkeypatch):
     save_model(model, str(path))
     monkeypatch.setitem(sys.modules, "openpi.models_pytorch.pi0_pytorch",
                         SimpleNamespace(PI0Pytorch=Tiny))
-    def normalized(model):
-        assert model.weight.device.type == "meta"
-        return {"normalized": model.weight}
+    def normalized(state):
+        assert state["weight"].device.type == "meta"
+        return {"normalized": state["weight"]}
     monkeypatch.setattr(openpi05, "target_checkpoint", normalized)
     monkeypatch.setattr(spec, "weight_shapes", lambda: {"normalized": (2, 2)})
     contract = deepcopy(spec.INFERENCE_CONTRACT)
@@ -74,6 +74,6 @@ def test_unsupported_state_semantics_fail_before_header_check(checkpoint):
 
 def test_normalized_adapter_layout_must_match_target(checkpoint, monkeypatch):
     monkeypatch.setattr(openpi05, "target_checkpoint",
-                        lambda model: {"normalized": torch.empty(3, 2, device="meta")})
+                        lambda state: {"normalized": torch.empty(3, 2, device="meta")})
     with pytest.raises(ValueError, match="weight ABI"):
         openpi05.checkpoint_contract(checkpoint, Config())

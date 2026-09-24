@@ -34,7 +34,8 @@ out of the model contract.
 
 # --- Shared backbone (identical to Pi0) ------------------------------------
 
-RANDOM_CHECKPOINT_REVISION = "flash-vla/pi05-random-checkpoint/v1"
+#: v2: official-layout random weights converted as a real checkpoint is (`weights.random_checkpoint`).
+RANDOM_CHECKPOINT_REVISION = "flash-vla/pi05-random-checkpoint/v2"
 
 
 def random_checkpoint_revision(seed: int) -> str:

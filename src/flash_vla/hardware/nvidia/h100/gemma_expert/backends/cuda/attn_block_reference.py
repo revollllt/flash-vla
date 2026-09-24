@@ -18,7 +18,7 @@ replaces this one:
   task body is wrong; read this one to decide whether the block computes the
   right function at all. Geometry is imported from it so there is one mirror of
   the header, not two.
-- `flash_vla.models.pi05.reference` is the hardware-independent algorithm with
+- `flash_vla.models.pi05.expert_attention` is the hardware-independent algorithm with
   no padding and no ABI, split into the three call sites. This module is checked
   against it.
 - `lab.pi05.kernels` owns the ROUNDING contract and is the
@@ -226,15 +226,15 @@ def _cosine(a, b) -> float:
 
 
 def _cross_check(t: dict) -> dict[str, float]:
-    """Against `models.pi05.reference`, the hardware-independent algorithm.
+    """Against `models.pi05.expert_attention`, the hardware-independent algorithm.
 
     That module runs unpadded (M rows, KEYS keys) and computes the RMS factor
     itself, so the comparison is over the real rows only -- which is also a
     demonstration of the row-independence invariant in the module docstring.
     """
-    from flash_vla.models.pi05 import reference as algo
+    from flash_vla.models.pi05 import expert_attention as algo
 
-    # `models.pi05.reference.attention_block` models the pipeline's aliased
+    # `models.pi05.expert_attention.attention_block` models the pipeline's aliased
     # form, where the projection input is also the residual, so the comparison
     # requires it. The reference runs first, on copies: `forward` mutates the
     # caches, and mutates `x` too when `out` aliases it.
@@ -261,6 +261,6 @@ if __name__ == "__main__":
     for name, tensor in (("q_buf", inputs["q_buf"]), ("o_buf", inputs["o_buf"]),
                          ("k_cache", inputs["k_cache"]), ("out", inputs["out"])):
         print(f"  {name:<10}{str(tuple(tensor.shape)):<18}{tensor.dtype}")
-    print("\nagainst models.pi05.reference (real rows only):")
+    print("\nagainst models.pi05.expert_attention (real rows only):")
     for name, value in scores.items():
         print(f"  {name:<16}cosine {value:.7f}  {'PASS' if value > 0.999 else 'FAIL'}")

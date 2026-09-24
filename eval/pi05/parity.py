@@ -15,7 +15,7 @@ records it. Compared: the prefix KV cache over valid rows -- padded rows attend
 normally here and are zeroed upstream, so only their finiteness is checked --
 and the action chunk, at the registry's `deepest` pair since it is read at full
 depth. The oracle keeps OpenPI's half-split K layout and `compare` permutes it
-(`reference.to_pair_layout`). Fixture inputs are bf16-representable, so a
+(`flash_vla.models.pi05.reference_view.pair_layout`). Fixture inputs are bf16-representable, so a
 rounding difference cannot masquerade as a model difference.
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ import torch
 from flash_vla.inference import build
 from eval.metrics import error_metrics
 from eval.pi05 import official as official_pi05
-from eval.pi05.reference import to_pair_layout
+from flash_vla.models.pi05.reference_view import pair_layout
 from eval.tolerances import tolerances
 
 DEFAULT_PROMPT = "pick up the plate and put it in the sink"
@@ -216,7 +216,7 @@ def compare(oracle: str, checkpoint: str, *, target: str = "rtx5090/pi05",
     prefix_len = engine.derived["prefix_len"]
     per_layer = [
         {"layer": index,
-         "k": error_metrics(to_pair_layout(expected["prefix_k"][index, :n_valid]),
+         "k": error_metrics(pair_layout(expected["prefix_k"][index, :n_valid]),
                             keys[index, :n_valid]),
          "v": error_metrics(expected["prefix_v"][index, :n_valid], values[index, :n_valid])}
         for index in range(min(depth, expected["prefix_k"].shape[0]))

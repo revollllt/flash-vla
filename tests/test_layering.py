@@ -111,18 +111,41 @@ def test_a_target_imports_no_other_target():
 
 
 def test_components_read_only_model_constants_and_reference_math():
-    """A component may read a model's spec and reference math, never its graph or definition."""
+    """A component may read a model's spec and reference math (`reference`, and
+    Pi0.5's `expert_attention` on folded weights), never its graph or definition."""
     found = {}
     for device, component in COMPONENTS:
         importers = modules(SOURCE, f"flash_vla.hardware.nvidia.{device}.{component}")
         for name, imported in importers.items():
-            # flash_vla.models.<model>.<module>[.<name>]: only spec and reference modules.
+            # flash_vla.models.<model>.<module>[.<name>]: only spec and reference-math modules.
             models = sorted(target for target in imported
                             if target.startswith("flash_vla.models.") and len(target.split(".")) > 3
-                            and target.split(".")[3] not in ("spec", "reference"))
+                            and target.split(".")[3] not in ("spec", "reference", "expert_attention"))
             if models:
                 found[name] = models
     assert found == {}
+
+
+#: Models whose `reference.py` is plain torch; every model joins once its
+#: reference drops its third-party dependencies.
+TORCH_ONLY_REFERENCES = ("pi05",)
+#: What a model reference may import beyond its own model's `spec`.
+REFERENCE_IMPORTS = ("__future__", "dataclasses", "math", "typing", "torch",
+                     "flash_vla.models.official", "flash_vla.models.paligemma.reference")
+
+
+@pytest.mark.parametrize("path,own", [
+    *((f"flash_vla/models/{model}/reference.py", (f"flash_vla.models.{model}.spec",))
+      for model in TORCH_ONLY_REFERENCES),
+    ("flash_vla/models/paligemma/reference.py", ()), ("flash_vla/models/official.py", ())])
+def test_model_references_depend_only_on_torch(path, own):
+    """A reference is the model as upstream defines it, in plain torch: no
+    third-party package, no graph, runtime, hardware or harness. (This reads a
+    module's own imports; importing a model package also runs its `__init__`.)"""
+    allowed = (*REFERENCE_IMPORTS, *own)
+    imported = imports_of(SOURCE / path, SOURCE)
+    assert sorted(name for name in imported
+                  if not any(name == rule or name.startswith(rule + ".") for rule in allowed)) == []
 
 
 def test_production_imports_no_harness():

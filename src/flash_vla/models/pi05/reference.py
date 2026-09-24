@@ -1,310 +1,158 @@
-"""Readable torch description of the Pi0.5 action-expert attention block.
+# SPDX-FileCopyrightText: Copyright 2025 Physical Intelligence
+# SPDX-License-Identifier: Apache-2.0
+"""Pi0.5 end to end, in plain torch, on the official OpenPI checkpoint.
 
-This is the *algorithm*, written to be read: one operation per line, every
-tensor annotated with its shape, nothing reused in place. It describes the maths that the hardware implementation must reproduce.
+Translated from OpenPI (github.com/Physical-Intelligence/openpi, revision
+215abfb), `src/openpi/models_pytorch/pi0_pytorch.py`: `PI0Pytorch` with
+`pi05=True`, its `embed_prefix`, `embed_suffix`, `sample_actions` and
+`denoise_step`. The PaliGemma parts Pi0 shares are
+`models.paligemma.reference`, which also states the numerics reproduced.
 
-It is deliberately NOT any of these:
+The three stages:
 
-- not the fast path (`hardware/nvidia/h100/pi05/` owns that);
-- not the parity gate (`lab/pi05/kernels.py` owns that, and
-  its references are the authority on rounding -- this file mirrors them);
-- not a training module: there are no parameters here, only folded constants.
+    vision encoder  SigLIP over every view; `vision_hidden` is its last hidden
+                    state before the final LayerNorm
+    LLM backbone    the image tokens (final LayerNorm, projector) and the prompt
+                    through Gemma-2B, bidirectionally among valid tokens;
+                    every layer's keys and values after RoPE
+    action expert   `steps` Euler steps of the Gemma-300M expert from `noise`
+                    at t = 1 down to t = 0; each step embeds the noisy chunk,
+                    conditions every RMSNorm on the timestep through the time
+                    MLP (adaptive RMSNorm), attends over the valid prefix and
+                    the whole chunk, and projects the velocity out
 
-Everything the action expert's AdaRMSNorm needs arrives as per-(step, layer)
-vectors, folded at checkpoint load by `weights.fold`. Nothing is streamed:
-
-    s = 1 + scale     indexed by K (input width)   scales the GEMM's A operand
-    b = shift @ W     indexed by N (output width)  a plain bias
-    g = gate          indexed by N (output width)  multiplies the residual
-
-## Shapes, at the reference configuration
-
-    M        50      action chunk (queries; the state token Pi0 carried is gone)
-    D      1024      action-expert width (DECODER_DIM)
-    H         8      query heads (DECODER_HEADS)
-    Dh      256      head width (HEAD_DIM)
-    QKV    2560      = H*Dh (Q) + Dh (K) + Dh (V) -- multi-query, one KV head
-    S_pre   968      prefix length = 3 views * 256 image tokens + 200 prompt
-    KEYS   1018      = S_pre + M; the decoder attends over prefix AND chunk
-
-The block runs 18 layers x 10 flow steps = 180 times per inference.
+The inputs are already prepared, as the model receives them: images
+[views, 224, 224, 3] in [-1, 1], a per-view validity mask, the tokenized
+prompt -- Pi0.5 writes the discretized state into it (`tokenize.Pi05Tokenizer`)
+-- with its mask, and the noise [chunk, 32]. Weights are the official
+checkpoint's tensors by their official names (`PREFIXES`); the language
+model head and the expert's unused head are not read.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Literal, Mapping
+
 import torch
+from torch import nn
+from torch.nn import functional as F
 
-from .spec import DECODER_DIM, DECODER_HEADS, HEAD_DIM, QKV_WIDTH, ROPE_THETA
+from ..official import bind, official_schema
+from ..paligemma.reference import (
+    GEMMA_2B,
+    PREFIXES as PALIGEMMA_PREFIXES,
+    KeyValue,
+    PaliGemmaWithExpert,
+    Prefix,
+    apply_upstream_precision,
+    sinusoidal,
+)
+from .spec import ACTION_DIM, DECODER_DIM
 
-#: RMSNorm epsilon, matching the kernels.
-EPS = 1e-6
-
-#: Q and K rotate; V does not. RoPE therefore covers the first (H+1)*Dh columns
-#: of the QKV projection, and the V slice passes through untouched.
-ROPE_COLS = (DECODER_HEADS + 1) * HEAD_DIM      # 2304 of 2560
-
-#: Additive mask value for a padded prompt column. Finite, not -inf: -inf
-#: produces NaN when a whole tile is masked.
-MASK_NEG = -3.0e38
-
-
-# ---------------------------------------------------------------------------
-# Inputs that are computed per inference rather than folded
-# ---------------------------------------------------------------------------
-def rope_table(chunk: int, n_valid: int) -> torch.Tensor:
-    """Cosines and sines for the chunk's positions, interleaved.
-
-    The action chunk sits immediately after the *valid* prefix, so its absolute
-    positions are `n_valid + 0..chunk-1`. `n_valid` depends on the tokenized
-    state, which is why this table is a per-inference input and not a weight.
-
-    Returns (chunk, Dh), with cos in the even columns and sin in the odd ones,
-    so that column pair `(2p, 2p+1)` carries the (cos, sin) of frequency `p` --
-    the same pair the rotation below consumes.
-    """
-    inv_freq = 1.0 / (ROPE_THETA ** (torch.arange(0, HEAD_DIM, 2).float() / HEAD_DIM))
-    positions = torch.arange(chunk).float() + n_valid       # (chunk,)
-    phase = positions[:, None] * inv_freq[None, :]          # (chunk, Dh/2)
-    return torch.stack([phase.cos(), phase.sin()], dim=2).view(chunk, HEAD_DIM)
+#: Official prefix of every part: PaliGemma-with-expert's, and the heads at the top level.
+PREFIXES = {**PALIGEMMA_PREFIXES, "head": ""}
 
 
-def key_mask(keys: int, prefix_len: int, n_valid: int) -> torch.Tensor:
-    """Additive per-key bias: 0 on real keys, MASK_NEG on prompt padding.
+class Pi05Head(nn.Module):
+    """The projections outside PaliGemma-with-expert: the chunk in and the
+    velocity out, and the time MLP whose output conditions the expert."""
 
-    The prefix is bidirectional and the chunk attends over all of it, so the
-    mask is per-KEY only -- one vector, identical for every query row. There is
-    no causal structure anywhere in this block.
-
-    Layout of the `keys` axis:  [ 0, n_valid )        real prefix   -> 0
-                                [ n_valid, prefix_len ) prompt pad  -> MASK_NEG
-                                [ prefix_len, keys )   action chunk -> 0
-    """
-    mask = torch.zeros(keys)
-    mask[n_valid:prefix_len] = MASK_NEG
-    return mask
+    def __init__(self) -> None:
+        super().__init__()
+        self.action_in_proj = nn.Linear(ACTION_DIM, DECODER_DIM)
+        self.action_out_proj = nn.Linear(DECODER_DIM, ACTION_DIM)
+        self.time_mlp_in = nn.Linear(DECODER_DIM, DECODER_DIM)
+        self.time_mlp_out = nn.Linear(DECODER_DIM, DECODER_DIM)
 
 
-# ---------------------------------------------------------------------------
-# 1. QKV projection under AdaRMSNorm, then RoPE
-# ---------------------------------------------------------------------------
-def qkv_proj(x, s, w_qkv, b, rope):
-    """AdaRMS-scale x, project to QKV, add the shift bias, rotate Q and K.
-
-    The folded identity this implements is
-
-        q = rstd(x) * ((x * s) @ W_q) + b_q     and only then    RoPE(q)
-
-    Two orderings in there are load-bearing and silent if wrong:
-
-    - `s` multiplies x *before* the contraction. It is indexed by K, so it sits
-      inside the reduction and cannot ride the epilogue the way `b` and `g` do.
-      This is the entire reason the AdaRMS kernels exist.
-    - `b` is added *before* the rotation. Adding it after computes a different
-      function that still looks plausible.
-
-    Shapes
-        x      (M, D)          action-expert hidden state
-        s      (D,)            1 + scale, per (step, layer)
-        w_qkv  (D, QKV)        QKV weight, q/k/v concatenated on the N axis
-        b      (QKV,)          shift @ w_qkv, per (step, layer)
-        rope   (M, Dh)         from `rope_table`
-    Returns
-        q      (M, H, Dh)      rotated
-        k      (M, Dh)         rotated, one head (multi-query)
-        v      (M, Dh)         not rotated
-    """
-    # rstd is per ROW, so it commutes with the contraction and rides the
-    # epilogue. Computed on the UNSCALED x -- `s` is part of the projection,
-    # not part of the norm.
-    rstd = torch.rsqrt(x.float().square().mean(-1, keepdim=True) + EPS)  # (M, 1)
-
-    # The kernel forms this product in bf16, in shared memory, inside the
-    # mainloop. Rounding here rather than in fp32 is what the reference has to
-    # mirror to be comparable.
-    a = (x * s[None, :]).bfloat16()                          # (M, D)
-
-    acc = a.float() @ w_qkv.float()                          # (M, QKV)  fp32 accumulator
-    acc = acc * rstd + b.float()[None, :]                    # (M, QKV)  epilogue: rstd then bias
-
-    rotated = _rotate_pairs(acc, rope, ROPE_COLS)            # (M, QKV)  Q and K only
-
-    q = rotated[:, :DECODER_HEADS * HEAD_DIM]                # (M, H*Dh)
-    k = rotated[:, DECODER_HEADS * HEAD_DIM:][:, :HEAD_DIM]  # (M, Dh)
-    v = rotated[:, DECODER_HEADS * HEAD_DIM + HEAD_DIM:]     # (M, Dh)
-    return (q.reshape(-1, DECODER_HEADS, HEAD_DIM).bfloat16(),
-            k.bfloat16(),
-            v.bfloat16())
+@dataclass(frozen=True)
+class Pi05Outputs:
+    """Every stage's output, in clean shapes (no padding, OpenPI's layouts)."""
+    #: The vision tower's last hidden state before its final LayerNorm [views, 256, 1152].
+    vision_hidden: torch.Tensor
+    #: The backbone's pass: each layer's keys and values, and the valid prefix positions.
+    prefix: Prefix
+    #: The denoised chunk [chunk, 32], float32.
+    actions: torch.Tensor
+    #: The expert's own keys and values at the last step, per layer.
+    suffix_cache: list[KeyValue]
 
 
-def _rotate_pairs(acc, rope, columns):
-    """Rotate ADJACENT column pairs of the first `columns` columns.
+class Pi05Reference(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.paligemma = PaliGemmaWithExpert(adaptive_expert=True)
+        self.head = Pi05Head()
 
-    Pairs are (2p, 2p+1), not the (p, p + Dh/2) split some implementations use.
-    OpenPI's checkpoint uses the split form; `spec.weight_shapes()` permutes the
-    QKV weight columns offline so that this cheap adjacent-pair form is correct
-    here -- the permutation is a weight relayout, never a runtime shuffle.
+    def parts(self) -> dict[str, nn.Module]:
+        return {**self.paligemma.parts(), "head": self.head}
 
-    `columns` stops the rotation at the V slice, which must pass through.
-    """
-    cos = rope[:, 0::2].float()                              # (M, Dh/2)
-    sin = rope[:, 1::2].float()                              # (M, Dh/2)
+    def velocity(self, prefix: Prefix, noisy: torch.Tensor, *, time: torch.Tensor,
+                 depth: int) -> tuple[torch.Tensor, list[KeyValue]]:
+        """One denoising step (`embed_suffix`, `denoise_step`): the velocity of
+        the noisy chunk [chunk, 32] at `time`, and the expert's own keys and values."""
+        head = self.head
+        chunk = noisy.shape[0]
+        embedded_time = sinusoidal(time[None], DECODER_DIM)
+        cond = F.silu(head.time_mlp_out(F.silu(head.time_mlp_in(embedded_time))))
+        # The first action token opens the chunk's one block; the chunk attends to itself fully.
+        block_starts = (torch.arange(chunk, device=noisy.device) == 0)[None]
+        hidden, cache = self.paligemma.expert_pass(prefix, head.action_in_proj(noisy[None]),
+                                                   block_starts=block_starts, cond=cond, depth=depth)
+        return head.action_out_proj(hidden[0, -chunk:].float()), cache
 
-    head = acc[:, :columns].reshape(-1, columns // HEAD_DIM, HEAD_DIM // 2, 2)
-    even = head[..., 0]                                      # (M, columns/Dh, Dh/2)
-    odd = head[..., 1]
-    out = torch.empty_like(head)
-    out[..., 0] = even * cos[:, None, :] - odd * sin[:, None, :]
-    out[..., 1] = odd * cos[:, None, :] + even * sin[:, None, :]
-
-    return torch.cat([out.reshape(acc.shape[0], columns), acc[:, columns:]], dim=1)
-
-
-# ---------------------------------------------------------------------------
-# 2. Multi-query attention over the KV cache
-# ---------------------------------------------------------------------------
-def append_to_cache(k_cache, v_cache, k, v, prefix_len):
-    """Write this step's chunk K/V into the suffix rows of the cache.
-
-    The prefix rows [0, prefix_len) were built once by the prefix stage and are
-    read-only for all 180 block invocations. The suffix rows are rewritten every
-    layer and every flow step, because the chunk itself changes.
-
-    Shapes
-        k_cache, v_cache  (KEYS, Dh)   KEYS = prefix_len + M
-        k, v              (M, Dh)
-    """
-    k_cache = k_cache.clone()                                # readable, not the fast path
-    v_cache = v_cache.clone()
-    k_cache[prefix_len:] = k
-    v_cache[prefix_len:] = v
-    return k_cache, v_cache
-
-
-def attention(q, k_cache, v_cache, mask):
-    """Multi-query attention: H query heads against ONE key/value head.
-
-    Bidirectional over the whole key axis. Every query row sees the same mask,
-    so the softmax denominator differs across rows only through the logits.
-
-    The H heads share k_cache/v_cache entirely -- that is the multi-query part,
-    and it is why the arithmetic intensity here is high (each cached byte feeds
-    8 query heads) while every other decoder op is weight-bandwidth bound.
-
-    Shapes
-        q                 (M, H, Dh)
-        k_cache, v_cache  (KEYS, Dh)
-        mask              (KEYS,)          additive, 0 or MASK_NEG
-    Returns
-        out               (M, H, Dh)
-    """
-    scale = HEAD_DIM ** -0.5                                 # 0.0625 at Dh=256
-
-    logits = torch.einsum("mhd,kd->mhk", q.float(), k_cache.float())   # (M, H, KEYS)
-    logits = logits * scale + mask.float()[None, None, :]
-
-    probs = torch.softmax(logits, dim=-1)                    # (M, H, KEYS)  fp32
-
-    out = torch.einsum("mhk,kd->mhd", probs, v_cache.float())          # (M, H, Dh)
-    return out.bfloat16()
+    def forward(self, images: torch.Tensor, *, image_masks: torch.Tensor, prompt_ids: torch.Tensor,
+                prompt_mask: torch.Tensor, noise: torch.Tensor, steps: int = 10,
+                depth: int = GEMMA_2B.depth) -> Pi05Outputs:
+        """`sample_actions` for one observation. `depth` runs the first
+        `depth` layers of both Gemma stacks and skips the rest, for bisection."""
+        vision_hidden, image_tokens = self.paligemma.embed_images(images)
+        prefix = self.paligemma.prefix(image_tokens, image_masks=image_masks, prompt_ids=prompt_ids,
+                                       prompt_mask=prompt_mask, depth=depth)
+        # Upstream walks t = 1, 1 + dt, ... while t >= -dt / 2, accumulating t
+        # in float32; that is exactly `steps` iterations.
+        dt = torch.tensor(-1.0 / steps, dtype=torch.float32, device=noise.device)
+        time = torch.tensor(1.0, dtype=torch.float32, device=noise.device)
+        noisy = noise.float()
+        for _ in range(steps):
+            velocity, suffix_cache = self.velocity(prefix, noisy, time=time, depth=depth)
+            noisy = noisy + dt * velocity
+            time = time + dt
+        return Pi05Outputs(vision_hidden=vision_hidden, prefix=prefix, actions=noisy,
+                           suffix_cache=suffix_cache)
 
 
-# ---------------------------------------------------------------------------
-# 3. Output projection, gated, into the residual
-# ---------------------------------------------------------------------------
-def o_proj_residual(attn_out, w_o, g, residual):
-    """residual + (attn @ W_o) * g.
-
-    `g` is indexed by the output width, so it is a plain epilogue multiply --
-    the cheap half of AdaRMSNorm. The heads are concatenated, not summed: the
-    (M, H, Dh) attention output is reinterpreted as (M, H*Dh) and W_o contracts
-    over that whole axis.
-
-    Shapes
-        attn_out  (M, H, Dh)
-        w_o       (H*Dh, D)
-        g         (D,)              gate, per (step, layer)
-        residual  (M, D)
-    Returns
-        (M, D)
-    """
-    flat = attn_out.reshape(-1, DECODER_HEADS * HEAD_DIM)    # (M, H*Dh) = (M, 2048)
-    delta = flat.float() @ w_o.float()                       # (M, D)  fp32 accumulator
-    return (residual.float() + delta * g.float()[None, :]).bfloat16()
+def make_reference(*, device: str | torch.device = "meta") -> Pi05Reference:
+    """The model without weights; on `meta` it allocates nothing, and its
+    `official_schema` is the official checkpoint's."""
+    with torch.device(device):
+        return Pi05Reference().eval().requires_grad_(False)
 
 
-# ---------------------------------------------------------------------------
-# The block
-# ---------------------------------------------------------------------------
-def attention_block(x, s, w_qkv, b, rope, k_cache, v_cache, mask, w_o, g, prefix_len):
-    """One layer's attention half, for one flow step: x -> x + gated attention.
-
-    The FFN half that follows it (AdaRMS -> gated FFN -> down-projection into
-    the same residual) is a separate chain, implemented by the expert CUDA backend.
-
-    Returns (x_next, k_cache, v_cache) -- the caches are returned rather than
-    mutated so the data flow is visible.
-    """
-    q, k, v = qkv_proj(x, s, w_qkv, b, rope)                 # (M,H,Dh) (M,Dh) (M,Dh)
-    k_cache, v_cache = append_to_cache(k_cache, v_cache, k, v, prefix_len)
-    attn = attention(q, k_cache, v_cache, mask)              # (M, H, Dh)
-    x_next = o_proj_residual(attn, w_o, g, x)                # (M, D)
-    return x_next, k_cache, v_cache
+def load(weights: Mapping[str, torch.Tensor], *,
+         precision: Literal["bfloat16", "float32"] = "bfloat16") -> Pi05Reference:
+    """The model bound to official tensors, in upstream's inference dtypes
+    (`bfloat16`) or entirely in float32."""
+    reference = make_reference()
+    bind(reference.parts(), prefixes=PREFIXES, weights=weights)
+    if precision == "float32":
+        reference.float()
+        return reference
+    apply_upstream_precision(reference.paligemma.parts(), head=reference.head)
+    return reference
 
 
-# ---------------------------------------------------------------------------
-# Shape and cost trace: `python -m flash_vla.models.pi05.reference`
-# ---------------------------------------------------------------------------
-def _trace(chunk: int = 50, prefix_len: int = 968, n_valid: int = 903, seed: int = 0):
-    """Run the block once at the reference shapes and print what it moved.
-
-    Runs on CPU. The per-invocation costs below are what a fused kernel is
-    budgeted against; multiply by 18 layers x 10 steps for the stage.
-    """
-    torch.manual_seed(seed)
-    keys = prefix_len + chunk
-    heads, dh, d, qkv = DECODER_HEADS, HEAD_DIM, DECODER_DIM, QKV_WIDTH
-
-    def rand(*shape):
-        return (torch.randn(shape) * 0.05).bfloat16()
-
-    x = rand(chunk, d)
-    s = (1.0 + torch.randn(d) * 0.1).bfloat16()
-    w_qkv, b = rand(d, qkv), rand(qkv)
-    w_o, g = rand(heads * dh, d), rand(d)
-    k_cache, v_cache = rand(keys, dh), rand(keys, dh)
-    rope = rope_table(chunk, n_valid).bfloat16()
-    mask = key_mask(keys, prefix_len, n_valid)
-
-    q, k, v = qkv_proj(x, s, w_qkv, b, rope)
-    k_cache, v_cache = append_to_cache(k_cache, v_cache, k, v, prefix_len)
-    attn = attention(q, k_cache, v_cache, mask)
-    x_next = o_proj_residual(attn, w_o, g, x)
-
-    rows = [
-        ("qkv_proj", f"({chunk},{d}) @ ({d},{qkv})", tuple(q.shape),
-         2 * chunk * d * qkv, d * qkv * 2),
-        ("attention QK", f"({chunk},{heads},{dh}) x ({keys},{dh})", tuple(attn.shape),
-         2 * chunk * heads * dh * keys, keys * dh * 2),
-        ("attention PV", f"({chunk},{heads},{keys}) x ({keys},{dh})", tuple(attn.shape),
-         2 * chunk * heads * keys * dh, keys * dh * 2),
-        ("o_proj", f"({chunk},{heads * dh}) @ ({heads * dh},{d})", tuple(x_next.shape),
-         2 * chunk * heads * dh * d, heads * dh * d * 2),
-    ]
-    print(f"M={chunk} D={d} H={heads} Dh={dh} QKV={qkv} "
-          f"prefix={prefix_len} n_valid={n_valid} KEYS={keys}\n")
-    print(f"{'op':<14}{'contraction':<34}{'out':<18}{'MFLOP':>8}{'MB read':>9}{'FLOP/B':>8}")
-    for name, contraction, out, flop, byts in rows:
-        print(f"{name:<14}{contraction:<34}{str(out):<18}"
-              f"{flop / 1e6:>8.1f}{byts / 1e6:>9.2f}{flop / byts:>8.1f}")
-    total_flop = sum(r[3] for r in rows)
-    total_bytes = sum(r[4] for r in rows)
-    print(f"\n{'block':<14}{'':<34}{'':<18}{total_flop / 1e6:>8.1f}"
-          f"{total_bytes / 1e6:>9.2f}{total_flop / total_bytes:>8.1f}")
-    print(f"\nx {tuple(x.shape)} -> x_next {tuple(x_next.shape)}, "
-          f"finite={bool(torch.isfinite(x_next).all())}")
-    print(f"cache suffix rows [{prefix_len}:{keys}) rewritten every invocation "
-          f"({chunk * dh * 2 * 2 / 1e3:.1f} KB)")
-    return x_next
+def random_weights(seed: int, *, device: str | torch.device = "cuda",
+                   scale: float = 0.05) -> dict[str, torch.Tensor]:
+    """Seeded official-layout weights: every tensor of the schema, drawn in the
+    order of their official names (so the draw does not depend on how this
+    file declares its modules), N(0, scale^2) rounded to bfloat16 as the
+    official checkpoint stores them. The small scale keeps deep random
+    residual streams numerically useful."""
+    generator = torch.Generator(device=device).manual_seed(seed)
+    schema = official_schema(make_reference().parts(), prefixes=PREFIXES)
+    return {name: (torch.randn(schema[name], generator=generator, device=device) * scale
+                   ).to(torch.bfloat16) for name in sorted(schema)}
 
 
-if __name__ == "__main__":
-    _trace()
+__all__ = ["PREFIXES", "Pi05Outputs", "Pi05Reference", "load", "make_reference", "random_weights"]

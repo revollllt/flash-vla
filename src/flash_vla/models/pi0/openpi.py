@@ -1,5 +1,7 @@
 """Convert official OpenPI Pi0 weights to the inference tensor layout."""
 from __future__ import annotations
+from typing import Mapping
+
 import torch
 from .spec import DECODER_HEADS, ENCODER_LAYERS, VISION_LAYERS, weight_shapes
 
@@ -9,19 +11,19 @@ ENCODER = "paligemma_with_expert.paligemma.model.language_model"
 DECODER = "paligemma_with_expert.gemma_expert.model"
 IMAGE_KEYS = ("base_0_rgb", "left_wrist_0_rgb", "right_wrist_0_rgb")
 
-def _value(state: dict[str, torch.Tensor], name: str) -> torch.Tensor:
+def _value(state: Mapping[str, torch.Tensor], name: str) -> torch.Tensor:
     try:
         return state[name].detach().float()
     except KeyError as error:
         raise KeyError(f"OpenPI checkpoint is missing {name!r}") from error
 
 
-def _linear(state: dict[str, torch.Tensor], name: str) -> torch.Tensor:
+def _linear(state: Mapping[str, torch.Tensor], name: str) -> torch.Tensor:
     return _value(state, f"{name}.weight").T
 
 
 def _fold_norm(
-    state: dict[str, torch.Tensor], linear: str, norm: str
+    state: Mapping[str, torch.Tensor], linear: str, norm: str
 ) -> torch.Tensor:
     scale = 1.0 + _value(state, norm)
     return _linear(state, linear) * scale[:, None]
@@ -47,7 +49,7 @@ def _interleave_rope(weight: torch.Tensor, heads: int) -> torch.Tensor:
 
 
 def _qkv(
-    state: dict[str, torch.Tensor], root: str, layer: int, norm: str
+    state: Mapping[str, torch.Tensor], root: str, layer: int, norm: str
 ) -> torch.Tensor:
     attention = f"{root}.layers.{layer}.self_attn"
     return torch.cat(

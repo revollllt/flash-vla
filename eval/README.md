@@ -4,6 +4,7 @@ Compare model outputs against the existing numerical reference. Keep the same
 checkpoint, inputs, shape and execution policy on both sides.
 
 ```bash
+python -m eval.model_reference --target rtx5090/pi05 --plan shipped --steps 1 --layers 1
 python -m eval.correctness --target h100/pi0 --plan shipped --steps 1 --layers 1
 python -m eval.pi0.reference --help
 python -m eval.pi05.reference --help
@@ -11,8 +12,11 @@ python -m eval.pi05.parity --help
 python -m eval.lingbot.parity --help
 ```
 
-`correctness.py` compares a plan with its in-engine reference, including stage
-outputs. The model directories contain official-reference execution and parity
+`model_reference.py` compares a Target with its model's end-to-end reference
+(`models/<model>/reference.py`: plain torch on the official checkpoint), stage
+by stage, on the same official-layout weights -- random at a seed, or a
+checkpoint's -- in the flash-vla environment. `correctness.py` compares a plan
+with its in-engine reference plan, including stage outputs. The model directories contain official-reference execution and parity
 adapters. `metrics.py` owns error calculations; `tolerances.py` owns the existing
 numerical thresholds. Use the configured upstream environment and real asset
 options for official comparisons; missing assets are reported as unavailable.

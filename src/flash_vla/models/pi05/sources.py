@@ -14,11 +14,14 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import torch
+
+from flash_vla.models.official import official_schema
 from flash_vla.provenance import FixtureProvenance, WeightsProvenance, canonical_digest
 from flash_vla.runtime.runner import RunnerSource
-from flash_vla.runtime.vla import Target
+from flash_vla.runtime.vla import ConfigValue, Target
 
-from . import openpi, weights
+from . import openpi, reference, weights
 from .definition import Pi05Config
 from .prompt import PrefixInputs
 from .spec import MAX_TOKEN_LEN, random_checkpoint_revision
@@ -84,7 +87,7 @@ def runner_source(target: Target[Pi05Config, PrefixInputs], *, device: str, decl
         unfolded = weights.random_checkpoint(seed=seed, device=device)
     else:
         model = openpi.build_model(checkpoint, device, seed=seed, config=reference_config)
-        unfolded = openpi.target_checkpoint(model)
+        unfolded = openpi.target_checkpoint(model.state_dict())
         del model
     tokenizer = Path(tokenizer_path or os.environ["PALIGEMMA_TOKENIZER"])
     return RunnerSource(checkpoint=weights.fold(unfolded, steps=steps),
@@ -92,4 +95,20 @@ def runner_source(target: Target[Pi05Config, PrefixInputs], *, device: str, decl
                         assets={"tokenizer": tokenizer}, config=config)
 
 
-__all__ = ["runner_source"]
+def official_weights(*, device: str, seed: int = 0, checkpoint: str | None = None,
+                     converted_checkpoint: str | None = None,
+                     **construction: ConfigValue) -> dict[str, torch.Tensor]:
+    """The official-layout weights a construction with these options runs, for
+    the reference (`reference.load`): the seeded random ones, or the OpenPI
+    PyTorch checkpoint's -- both `checkpoint` and `converted_checkpoint` name
+    one. The other construction options select nothing here."""
+    path = checkpoint or converted_checkpoint
+    if path is None:
+        return reference.random_weights(seed, device=device)
+    # Only the tensors the reference runs: not the language-model heads.
+    state = openpi.read_checkpoint(path)
+    schema = official_schema(reference.make_reference().parts(), prefixes=reference.PREFIXES)
+    return {name: state[name].to(device) for name in schema}
+
+
+__all__ = ["official_weights", "runner_source"]

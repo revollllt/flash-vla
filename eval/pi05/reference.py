@@ -93,7 +93,8 @@ from eval.tolerances import tolerances
 from flash_vla.models.pi05 import openpi as openpi05
 from eval.pi05 import official as official_pi05
 from eval.metrics import error_metrics
-from flash_vla.models.pi05.spec import HEAD_DIM, VISION_TOKENS
+from flash_vla.models.pi05.reference_view import pair_layout
+from flash_vla.models.pi05.spec import VISION_TOKENS
 from flash_vla.models.pi05.tokenize import Pi05Tokenizer
 from flash_vla.models.pi05.weights import fold
 
@@ -110,15 +111,6 @@ OPENPI_RANDOM_CHECKPOINT_REVISION = "flash-vla/openpi-pi05-random-checkpoint/v1"
 def _within(metrics: dict, pair: dict) -> bool:
     return bool(metrics["cosine_similarity"] > pair["cosine_min"]
                 and metrics["rel_rms"] < pair["rel_rms_max"])
-
-
-def to_pair_layout(x: torch.Tensor) -> torch.Tensor:
-    """OpenPI's half-split channel order -> the target's adjacent-pair order.
-
-    Public because `eval.pi05.parity` compares the same cache across two
-    interpreters and has to apply the identical permutation.
-    """
-    return x.view(*x.shape[:-1], 2, HEAD_DIM // 2).transpose(-1, -2).reshape(x.shape)
 
 
 def _checkpoint_id(checkpoint: str | None, checkpoint_id: str | None,
@@ -183,7 +175,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
         torch.from_numpy(mask).to(torch_device))
     reference = [(k.detach().clone(), v.detach().clone())
                  for k, v in official_pi05.cache_layers(past_key_values)]
-    target_weights = fold(openpi05.target_checkpoint(baseline))
+    target_weights = fold(openpi05.target_checkpoint(baseline.state_dict()))
     del baseline, past_key_values
     torch.cuda.empty_cache()
 
@@ -228,7 +220,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
     for index in range(min(layers, len(reference))):
         ref_k, ref_v = reference[index]
         # [batch, kv_heads, seq, head_dim] -> [seq, head_dim]; one kv head.
-        ref_k = to_pair_layout(ref_k[0, 0, :n_valid])
+        ref_k = pair_layout(ref_k[0, 0, :n_valid])
         ref_v = ref_v[0, 0, :n_valid]
         per_layer.append({
             "layer": index,
@@ -277,7 +269,7 @@ def _transplant(engine, reference_cache, seq_len: int) -> None:
     """Write OpenPI's prefix K/V into the runner's cache, in the target's layout."""
     keys, values = engine.buffers["kv_k"], engine.buffers["kv_v"]
     for index, (ref_k, ref_v) in enumerate(reference_cache):
-        keys[index, :seq_len] = to_pair_layout(ref_k[0, 0, :seq_len]).bfloat16()
+        keys[index, :seq_len] = pair_layout(ref_k[0, 0, :seq_len]).bfloat16()
         values[index, :seq_len] = ref_v[0, 0, :seq_len].bfloat16()
 
 
@@ -323,7 +315,7 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
                                  noise.unsqueeze(0), num_steps=steps)[0].float().clone()
     cache = [(k.detach().clone(), v.detach().clone())
              for k, v in official_pi05.cache_layers(past_key_values)]
-    target_weights = fold(openpi05.target_checkpoint(baseline), steps=steps)
+    target_weights = fold(openpi05.target_checkpoint(baseline.state_dict()), steps=steps)
     del baseline, past_key_values
     torch.cuda.empty_cache()
 

@@ -34,6 +34,8 @@ import math
 
 import torch
 
+from .openpi import target_checkpoint
+from .reference import random_weights
 from .spec import (
     DECODER_DIM,
     DEFAULT_FLOW_STEPS,
@@ -200,20 +202,16 @@ def fold(checkpoint: dict[str, torch.Tensor], steps: int = DEFAULT_FLOW_STEPS,
     return folded
 
 
-def random_checkpoint(wscale: float = 0.05, seed: int = 0,
-                      device: str = "cuda") -> dict[str, torch.Tensor]:
-    """Create a synthetic Pi0.5 checkpoint in the `weight_shapes()` layout.
+def random_checkpoint(seed: int = 0, device: str = "cuda") -> dict[str, torch.Tensor]:
+    """A synthetic Pi0.5 checkpoint in the `weight_shapes()` layout.
 
-    The small default scale keeps deep random residual streams numerically
-    useful, as in Pi0. Note this is the *unfolded* layout; run it through `fold`
-    to get what a target loads.
+    It is the seeded official-layout weights the reference runs
+    (`reference.random_weights`), converted as a real checkpoint is
+    (`openpi.target_checkpoint`), so the engine and the reference hold the
+    same model. Note this is the *unfolded* layout; run it through `fold` to
+    get what a target loads.
     """
-    generator = torch.Generator(device=device).manual_seed(seed)
-    return {
-        name: (torch.randn(shape, dtype=torch.float32, device=device,
-                           generator=generator) * wscale).to(torch.bfloat16)
-        for name, shape in weight_shapes().items()
-    }
+    return target_checkpoint(random_weights(seed, device=device))
 
 
 __all__ = ["adarms_conditions", "flow_timesteps", "fold", "posemb_sincos",

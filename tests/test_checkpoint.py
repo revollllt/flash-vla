@@ -173,9 +173,9 @@ def test_checkpoint_horizon_defaults_from_source_config_and_conflicts_fail(check
 
 def test_real_values_are_converted_and_folded_for_each_construction(checkpoint_options, monkeypatch):
     calls = []
-    monkeypatch.setattr(openpi05, "build_model",
-                        lambda checkpoint, device, **kwargs: load_file(str(checkpoint)))
-    monkeypatch.setattr(openpi05, "target_checkpoint", lambda model: model)
+    monkeypatch.setattr(openpi05, "build_model", lambda checkpoint, device, **kwargs:
+                        SimpleNamespace(state_dict=lambda: load_file(str(checkpoint))))
+    monkeypatch.setattr(openpi05, "target_checkpoint", lambda state: state)
     monkeypatch.setattr(weights, "random_checkpoint",
                         lambda **kwargs: pytest.fail("real checkpoint fell back to random weights"))
     def fold(checkpoint, steps):
