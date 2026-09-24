@@ -2,9 +2,10 @@
 
 `rtx5090/groot_n17` (alias `groot-n17`) runs the official LIBERO checkpoint
 through Flash-VLA's vision, language and action stages. Both `reference` and
-`shipped` initially use plain PyTorch, including PyTorch SDPA. There are no
-custom kernels, quantization, torch.compile or cross-observation feature caches.
-The existing runtime captures each stage in a CUDA Graph.
+`shipped` run the model reference's own modules ([reference.py](reference.py):
+GR00T end to end in plain PyTorch, with PyTorch SDPA) on the runner's weights.
+There are no custom kernels, quantization, torch.compile or cross-observation
+feature caches. The existing runtime captures each stage in a CUDA Graph.
 
 ## Workload
 
@@ -35,11 +36,12 @@ Stage FLOP estimates count dense matmuls and attention, excluding pointwise ops.
 
 ## Environment and assets
 
-The verified environment is Python 3.12, PyTorch 2.9.0+cu128, TorchVision
-0.24.0+cu128, Transformers 4.57.3 and Diffusers 0.35.1. Use a separate environment
-from existing Pi0.5 work. The model dependency extra is `.[groot-n17]`.
-
-Official preparation/parity additionally needs the NVIDIA source checkout and
+The Target and its reference run in the project's environment with the
+`.[groot-n17]` extra; they import neither Transformers nor Diffusers.
+Official preparation and parity run the upstream model and need their own
+environment: the verified one is Python 3.12, PyTorch 2.9.0+cu128, TorchVision
+0.24.0+cu128, Transformers 4.57.3 and Diffusers 0.35.1 (`.[groot-n17-official]`),
+separate from Pi0.5 work. It additionally needs the NVIDIA source checkout and
 its processor dependencies (`albumentations==1.4.18`, `dm-tree`,
 `pandas==2.2.3`, `pyarrow`, `av`, `accelerate`). Install that checkout with
 `pip install --no-deps -e "$GROOT_UPSTREAM"` after preparing those dependencies;
@@ -87,11 +89,20 @@ paths (relative paths resolve beside that JSON):
 ```bash
 python -m tests.targets --target rtx5090/groot_n17
 python -m eval.correctness --target rtx5090/groot_n17 --steps 0 --layers 0
+python -m eval.model_reference --target rtx5090/groot_n17 --steps 0 --layers 0
 python -m benchmarks latency --target rtx5090/groot_n17 --plan reference \
   --out artifacts/groot-n17/latency.json
 python -m tools.profiling.model --target rtx5090/groot_n17 --plan reference \
   --overview --trace-dir artifacts/groot-n17/profile
 ```
+
+`eval.model_reference` compares every stage with the reference on the same
+checkpoint tensors. With `--reference-precision bfloat16` the captured engine
+and the eager reference agree bit for bit (`tests/test_reference_backends.py`
+checks it where the assets are configured); the default float32 reference
+reports how far upstream's bfloat16 numerics sit from the model's math. Both
+compare against the reference, which runs the engine's own modules; fidelity
+to upstream GR00T remains the official oracle below.
 
 Use separate processes for the official oracle and the project comparison:
 
@@ -138,13 +149,19 @@ PYTHONPATH=src:. python -m lab.groot_n17.roofline --out artifacts/groot-n17/roof
 
 ## Implementation details that preserve the official forward
 
+[reference.py](reference.py) lists the upstream numerics it reproduces and its
+deliberate differences. The ones that matter most:
+
 - GR00T consumes `ForConditionalGeneration.hidden_states[-1]`. In the verified
   Transformers version that is the final decoder output **before** the final
   language RMSNorm. Normalizing it again changes the action output.
+- The policy casts the whole model to BF16, RoPE's inverse-frequency buffers
+  included; the vision rotary table is built in BF16.
 - Match the official Conv3d input's `channels_last_3d` layout. With this layout,
   both vision outputs and DeepStack features matched the official tensors.
-- Prepare fixed-grid vision position tables during initialization: upstream
-  uploads Python-built indices inside forward, which CUDA Graph capture rejects.
+- The fixed-grid vision position and rotary tables are built once, during
+  warmup: upstream uploads Python-built indices inside forward, which CUDA
+  Graph capture rejects.
 - Use fixed-size gather/scatter for DeepStack injection instead of dynamic
   boolean indexing during capture. RoPE positions remain explicit inputs.
 - Preserve category-conditioned projections, image/text attention alternation,
@@ -152,5 +169,7 @@ PYTHONPATH=src:. python -m lab.groot_n17.roofline --out artifacts/groot-n17/roof
   is explicit in the project forward.
 
 The adapted inference code in [reference.py](reference.py) is distributed under
-the accompanying [Apache-2.0 license](LICENSE). It retains ordinary Transformers
-and Diffusers modules so later optimization can replace individual stages.
+the accompanying [Apache-2.0 license](LICENSE). It translates Isaac-GR00T and the
+Transformers (Qwen3-VL) and Diffusers modules it builds on into plain PyTorch,
+under their official parameter names, so later optimization can replace
+individual stages.

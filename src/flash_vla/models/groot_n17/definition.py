@@ -20,6 +20,7 @@ from .ops import OPS
 from .spec import (
     ACTION_DIM,
     CHUNK,
+    GRID,
     IMAGE_SIZE,
     INFERENCE_SIGNATURE,
     LAYERS,
@@ -93,8 +94,7 @@ class GrootModel(ModelDefinition[GrootConfig, None]):
                       assets: Mapping[str, Path]) -> dict[str, torch.Tensor]:
         """The prepared fixture's observation with noise drawn from `seed`."""
         values = torch.load(assets["fixture"], map_location="cpu", weights_only=True)["inputs"]
-        expected_grid = torch.tensor([[1, 16, 16]] * VIEWS)
-        if not torch.equal(values["image_grid_thw"], expected_grid):
+        if not torch.equal(values["image_grid_thw"], torch.tensor(GRID)):
             raise ValueError(f"This workload requires {VIEWS} {IMAGE_SIZE}x{IMAGE_SIZE} views "
                              "after preprocessing")
         dims = {spec.name: spec.dims(shape) for spec in self.inputs}

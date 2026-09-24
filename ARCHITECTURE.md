@@ -172,7 +172,9 @@ compares stage by stage against the float32 reference, so the weight
 conversion, the fold, the graph and every routed kernel are held to the model
 itself. A model's seeded random
 checkpoint is its reference's random official weights converted as a real
-checkpoint is, so both sides hold the same model.
+checkpoint is, so both sides hold the same model. A backend may also run the
+reference's own modules on the runner's weights, as GR00T's plain PyTorch
+stages do; its engine then agrees with the bfloat16 reference bit for bit.
 
 ## Optimization and evidence
 

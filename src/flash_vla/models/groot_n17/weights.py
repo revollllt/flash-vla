@@ -1,7 +1,7 @@
 """Load the inference tensors from the two official LIBERO safetensors shards."""
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from functools import lru_cache
 import json
 from pathlib import Path
@@ -11,7 +11,8 @@ import torch
 
 from flash_vla.runtime.vla import CheckpointReader
 
-from .reference import PREFIXES, make_modules
+from ..official import official_schema
+from .reference import PREFIXES, make_reference
 
 CHECKPOINT_ID = "nvidia/GR00T-N1.7-LIBERO@2ea293aa20ba7cf5bbf3ba17a5fbcb1a01cbfe21/libero_10"
 FIXTURE_ID = "isaac-gr00t@51d4c89/libero-demo/episode-0/frame-0"
@@ -19,9 +20,8 @@ FIXTURE_ID = "isaac-gr00t@51d4c89/libero-demo/episode-0/frame-0"
 
 @lru_cache(maxsize=1)
 def weight_shapes() -> dict[str, tuple[int, ...]]:
-    return {PREFIXES[part] + name: tuple(tensor.shape)
-            for part, module in make_modules().items()
-            for name, tensor in module.state_dict().items()}
+    """The runtime weights: the official schema of what the reference runs."""
+    return official_schema(make_reference().parts(), prefixes=PREFIXES)
 
 
 class Checkpoint(CheckpointReader, Mapping[str, torch.Tensor]):
@@ -38,19 +38,19 @@ class Checkpoint(CheckpointReader, Mapping[str, torch.Tensor]):
         # GR00T consumes hidden states, never language-generation logits.
         self.files = {name: file for name, file in self.files.items()
                       if name != "backbone.model.lm_head.weight"}
-        self.shapes = {}
+        self.shapes: dict[str, tuple[int, ...]] = {}
         for shard in sorted(set(self.files.values())):
             with safe_open(self.path / shard, framework="pt", device="cpu") as source:
                 self.shapes.update({name: tuple(source.get_slice(name).get_shape())
                                     for name, file in self.files.items() if file == shard})
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.files)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         return iter(self.files)
 
-    def __getitem__(self, name):
+    def __getitem__(self, name: str) -> torch.Tensor:
         with safe_open(self.path / self.files[name], framework="pt", device="cpu") as source:
             return source.get_tensor(name)
 

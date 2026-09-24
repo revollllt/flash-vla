@@ -18,11 +18,13 @@ from .spec import (
     DIT_BLOCKS,
     DIT_DIM,
     DIT_FFN,
+    HEAD_HIDDEN,
     KV_DIM,
     LAYERS,
     PATCHES_PER_VIEW,
     STATE_DIM,
     STEPS,
+    TIMESTEP_CHANNELS,
     VIEWS,
     VISION_BLOCKS,
     VISION_DIM,
@@ -30,11 +32,6 @@ from .spec import (
     VISUAL_TOKENS,
 )
 from .weights import weight_shapes
-
-#: Hidden width of the embodiment-conditioned state MLP and action decoder.
-HEAD_HIDDEN = 1024
-#: Sinusoidal channels of the flow-matching timestep embedding.
-TIMESTEP_CHANNELS = 256
 
 #: The three monolithic call sites of the GR00T graph.
 CALL_SITES = ("groot_vision", "groot_backbone", "groot_action")

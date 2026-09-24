@@ -12,7 +12,7 @@ import torch
 from flash_vla.models.official import official_schema
 
 
-def test_pi05_official_schema_converts_to_the_engine_layout():
+def test_pi05_official_schema_converts_to_the_engine_layout() -> None:
     from flash_vla.models.pi05 import openpi, reference, spec
 
     schema = official_schema(reference.make_reference().parts(), prefixes=reference.PREFIXES)
@@ -21,7 +21,7 @@ def test_pi05_official_schema_converts_to_the_engine_layout():
     assert {name: tuple(tensor.shape) for name, tensor in converted.items()} == spec.weight_shapes()
 
 
-def test_pi05_reference_keeps_upstreams_float32_parameters():
+def test_pi05_reference_keeps_upstreams_float32_parameters() -> None:
     """OpenPI runs PaliGemma-with-expert in bfloat16 but keeps the SigLIP
     embeddings, every RMSNorm (for the expert, its adaptive dense layers) and
     the model's own heads in float32."""
@@ -49,7 +49,7 @@ def test_pi05_reference_keeps_upstreams_float32_parameters():
     assert float32 == expected and len(expected) == 3 + 37 + 74 + 8
 
 
-def test_pi05_reference_produces_every_stage_on_meta():
+def test_pi05_reference_produces_every_stage_on_meta() -> None:
     from flash_vla.models.pi05 import reference
 
     meta = torch.device("meta")
@@ -64,7 +64,7 @@ def test_pi05_reference_produces_every_stage_on_meta():
     assert outputs.actions.shape == (50, 32)
 
 
-def test_pi0_official_schema_converts_to_the_engine_layout():
+def test_pi0_official_schema_converts_to_the_engine_layout() -> None:
     from flash_vla.models.pi0 import openpi, reference, spec
 
     schema = official_schema(reference.make_reference().parts(), prefixes=reference.PREFIXES)
@@ -75,7 +75,7 @@ def test_pi0_official_schema_converts_to_the_engine_layout():
             == spec.weight_shapes(prompt_len=7))
 
 
-def test_pi0_reference_keeps_upstreams_float32_parameters():
+def test_pi0_reference_keeps_upstreams_float32_parameters() -> None:
     """Pi0's expert norms are plain RMSNorms, kept float32 like the backbone's."""
     from flash_vla.models.pi0 import reference
 
@@ -99,7 +99,7 @@ def test_pi0_reference_keeps_upstreams_float32_parameters():
     assert float32 == expected and len(expected) == 3 + 37 + 37 + 10
 
 
-def test_pi0_reference_produces_every_stage_on_meta():
+def test_pi0_reference_produces_every_stage_on_meta() -> None:
     from flash_vla.models.pi0 import reference
 
     meta = torch.device("meta")
@@ -112,3 +112,68 @@ def test_pi0_reference_produces_every_stage_on_meta():
     assert [tuple(key.shape) for key, _ in outputs.prefix.cache] == [(1, 1, 768, 256)] * 2
     assert [tuple(key.shape) for key, _ in outputs.suffix_cache] == [(1, 1, 51, 256)] * 2
     assert outputs.actions.shape == (50, 32)
+
+
+def test_groot_reference_reads_every_official_tensor_but_the_language_head() -> None:
+    """The two LIBERO shards hold 494 backbone and 537 action-head tensors;
+    the reference holds all of them but `lm_head` (and runs all but the
+    language model's final norm), under the names Transformers' Qwen3-VL and
+    Diffusers give them."""
+    from flash_vla.models.groot_n17 import reference
+
+    prefixes = reference.PREFIXES
+    schema = official_schema(reference.make_reference().parts(), prefixes=prefixes)
+    counts = {part: sum(name.startswith(prefix) for name in schema)
+              for part, prefix in prefixes.items()}
+    assert counts == {"vision": 315, "backbone": 178, "action": 537}
+    vision, backbone = prefixes["vision"], prefixes["backbone"]
+    block = "action_head.model.transformer_blocks.0."
+    expected = {
+        f"{vision}patch_embed.proj.weight": (1024, 3, 2, 16, 16),
+        f"{vision}merger.norm.weight": (1024,),
+        f"{vision}deepstack_merger_list.2.norm.weight": (4096,),
+        f"{backbone}layers.15.self_attn.k_norm.weight": (128,),
+        f"{block}attn1.to_k.weight": (1536, 2048),
+        f"{block}attn1.to_out.0.weight": (1536, 1536),
+        f"{block}ff.net.0.proj.weight": (6144, 1536),
+        f"{block}ff.net.2.weight": (1536, 6144),
+        "action_head.model.timestep_encoder.timestep_embedder.linear_1.weight": (1536, 256),
+    }
+    assert {name: schema[name] for name in expected} == expected
+
+
+def test_groot_reference_casts_its_rope_buffers_with_the_model() -> None:
+    """GR00T's policy casts the whole model to bfloat16, RoPE's inverse
+    frequencies included; float32 keeps every parameter and buffer float32."""
+    from flash_vla.models.groot_n17 import reference
+
+    schema = official_schema(reference.make_reference().parts(), prefixes=reference.PREFIXES)
+    weights = {name: torch.empty(shape, dtype=torch.bfloat16, device="meta")
+               for name, shape in schema.items()}
+    for precision, dtype in (("bfloat16", torch.bfloat16), ("float32", torch.float32)):
+        model = reference.load(weights, precision=precision)
+        assert {tensor.dtype for tensor in (*model.parameters(), *model.buffers())} == {dtype}
+        assert {model.vision.inverse_frequency.dtype, model.backbone.inverse_frequency.dtype} == {dtype}
+
+
+def test_groot_reference_produces_every_stage_on_meta() -> None:
+    from flash_vla.models.groot_n17 import reference
+    from flash_vla.models.groot_n17.spec import GRID
+
+    meta = torch.device("meta")
+    schema = official_schema(reference.make_reference().parts(), prefixes=reference.PREFIXES)
+    model = reference.load({name: torch.empty(shape, dtype=torch.bfloat16, device=meta)
+                            for name, shape in schema.items()})
+    outputs = model(
+        torch.empty(512, 1536, dtype=torch.bfloat16, device=meta), grid=GRID,
+        input_ids=torch.zeros(1, 156, dtype=torch.long, device=meta),
+        attention_mask=torch.ones(1, 156, dtype=torch.long, device=meta),
+        position_ids=torch.zeros(3, 1, 156, dtype=torch.long, device=meta),
+        image_indices=torch.zeros(128, dtype=torch.long, device=meta),
+        state=torch.empty(1, 1, 132, dtype=torch.bfloat16, device=meta),
+        embodiment_id=torch.zeros(1, dtype=torch.long, device=meta),
+        noise=torch.empty(1, 40, 132, dtype=torch.bfloat16, device=meta), steps=2)
+    assert outputs.vision_embeddings.shape == (128, 2048)
+    assert [tuple(feature.shape) for feature in outputs.deepstack] == [(128, 2048)] * 3
+    assert outputs.backbone_features.shape == (1, 156, 2048)
+    assert outputs.actions.shape == outputs.velocity_step_0.shape == (1, 40, 132)

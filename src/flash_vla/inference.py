@@ -42,7 +42,8 @@ class TargetEntry:
 #: Full Target name -> its entry. Short aliases resolve through `resolve`.
 TARGETS: dict[str, TargetEntry] = {
     "hardware/nvidia/rtx5090/groot_n17": TargetEntry(
-        "flash_vla.hardware.nvidia.rtx5090.groot_n17", "flash_vla.models.groot_n17.sources"),
+        "flash_vla.hardware.nvidia.rtx5090.groot_n17", "flash_vla.models.groot_n17.sources",
+        reference_view_module="flash_vla.models.groot_n17.reference_view"),
     "hardware/nvidia/h100/lingbot_vla": TargetEntry(
         "flash_vla.hardware.nvidia.h100.lingbot_vla", "flash_vla.models.lingbot.sources"),
     "hardware/nvidia/h100/pi05": TargetEntry(

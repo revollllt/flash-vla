@@ -12,6 +12,8 @@ INFERENCE_SIGNATURE = "groot-n17-qwen3vl16-dit32-libero-bf16-v1"
 
 VIEWS = 2
 IMAGE_SIZE = 256
+#: Each view's patch grid (frames, rows, columns), the processor's `image_grid_thw`.
+GRID = ((1, 16, 16),) * VIEWS
 #: Vision patches of all views, and their flattened width.
 PATCHES = 512
 PATCH_WIDTH = 1536
@@ -24,8 +26,10 @@ SEQUENCE_LENGTH = 156
 VISION_BLOCKS = 24
 VISION_DIM = 1024
 VISION_FFN = 4096
-#: Vision blocks whose output joins the first backbone layers (Qwen3-VL deepstack).
-DEEPSTACK_LAYERS = 3
+#: Vision blocks whose outputs join the first backbone layers (Qwen3-VL DeepStack),
+#: one backbone layer each.
+DEEPSTACK_BLOCKS = (5, 11, 17)
+DEEPSTACK_LAYERS = len(DEEPSTACK_BLOCKS)
 
 LAYERS = 16
 BACKBONE_DIM = 2048
@@ -35,6 +39,10 @@ KV_DIM = 1024
 DIT_BLOCKS = 32
 DIT_DIM = 1536
 DIT_FFN = 6144
+#: Width of the DiT's output and of the embodiment-conditioned state MLP and action decoder.
+HEAD_HIDDEN = 1024
+#: Sinusoidal channels of the DiT's timestep embedding.
+TIMESTEP_CHANNELS = 256
 
 STATE_DIM = 132
 ACTION_DIM = 132
@@ -42,8 +50,8 @@ CHUNK = 40
 STEPS = 4
 
 
-__all__ = ["ACTION_DIM", "BACKBONE_DIM", "BACKBONE_FFN", "CHUNK", "DEEPSTACK_LAYERS", "DIT_BLOCKS",
-           "DIT_DIM", "DIT_FFN", "IMAGE_SIZE", "INFERENCE_SIGNATURE", "KV_DIM", "LAYERS",
-           "MODEL_REVISION", "PATCHES", "PATCHES_PER_VIEW", "PATCH_WIDTH", "SEQUENCE_LENGTH",
-           "STATE_DIM", "STEPS", "VIEWS", "VISION_BLOCKS", "VISION_DIM", "VISION_FFN",
-           "VISUAL_TOKENS"]
+__all__ = ["ACTION_DIM", "BACKBONE_DIM", "BACKBONE_FFN", "CHUNK", "DEEPSTACK_BLOCKS", "DEEPSTACK_LAYERS",
+           "DIT_BLOCKS", "DIT_DIM", "DIT_FFN", "GRID", "HEAD_HIDDEN", "IMAGE_SIZE",
+           "INFERENCE_SIGNATURE", "KV_DIM", "LAYERS", "MODEL_REVISION", "PATCHES", "PATCHES_PER_VIEW",
+           "PATCH_WIDTH", "SEQUENCE_LENGTH", "STATE_DIM", "STEPS", "TIMESTEP_CHANNELS", "VIEWS",
+           "VISION_BLOCKS", "VISION_DIM", "VISION_FFN", "VISUAL_TOKENS"]

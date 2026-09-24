@@ -9,13 +9,16 @@ fixture's provenance names the seed beside the observation
 """
 from __future__ import annotations
 
+import torch
+
 from flash_vla.assets import locate_assets
 from flash_vla.provenance import FixtureProvenance, WeightsProvenance
+from flash_vla.runtime.identity import validate_weight_schema
 from flash_vla.runtime.runner import RunnerSource
-from flash_vla.runtime.vla import Target
+from flash_vla.runtime.vla import ConfigValue, Target
 
 from .definition import GrootConfig
-from .weights import Checkpoint
+from .weights import CHECKPOINT_ID, Checkpoint, weight_shapes
 
 
 def runner_source(target: Target[GrootConfig, None], *, device: str, declare: bool,
@@ -45,4 +48,21 @@ def runner_source(target: Target[GrootConfig, None], *, device: str, declare: bo
                         assets=assets, config=config)
 
 
-__all__ = ["runner_source"]
+def official_weights(*, device: str, seed: int = 0, checkpoint: str | None = None,
+                     checkpoint_id: str | None = None, asset_config: str | None = None,
+                     **construction: ConfigValue) -> dict[str, torch.Tensor]:
+    """The official checkpoint's tensors a construction with these options
+    runs, for the reference (`reference.load`), located as `runner_source`
+    locates them; the checkpoint stores bfloat16. GR00T has no seeded weights,
+    so `seed` selects nothing here, nor do the other construction options."""
+    assets = locate_assets({"checkpoint": checkpoint_id or CHECKPOINT_ID},
+                           overrides={"checkpoint": checkpoint}, config=asset_config)
+    source = Checkpoint(assets["checkpoint"])
+    validate_weight_schema(source.shapes, weight_shapes())
+    weights = {name: torch.empty(shape, dtype=torch.bfloat16, device=device)
+               for name, shape in weight_shapes().items()}
+    source.copy_into(weights)
+    return weights
+
+
+__all__ = ["official_weights", "runner_source"]
