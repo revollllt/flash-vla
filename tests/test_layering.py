@@ -128,7 +128,7 @@ def test_components_read_only_model_constants_and_reference_math():
 
 #: Models whose `reference.py` is plain torch; every model joins once its
 #: reference drops its third-party dependencies.
-TORCH_ONLY_REFERENCES = ("pi05",)
+TORCH_ONLY_REFERENCES = ("pi0", "pi05")
 #: What a model reference may import beyond its own model's `spec`.
 REFERENCE_IMPORTS = ("__future__", "dataclasses", "math", "typing", "torch",
                      "flash_vla.models.official", "flash_vla.models.paligemma.reference")

@@ -10,7 +10,7 @@ the engine's layout, over the rows both define:
 
     vision_encoder_x   SigLIP's last hidden state before the final LayerNorm
     prefix_k, prefix_v each layer's prefix keys and values; keys in the
-                       engine's adjacent-pair RoPE order (`pair_layout`); valid
+                       engine's adjacent-pair RoPE order (`pi0.openpi.pair_layout`); valid
                        rows only, since the engine zeroes padded prompt rows
                        that OpenPI embeds and masks
     actions            the denoised chunk
@@ -22,27 +22,23 @@ from typing import Literal, Mapping
 
 import torch
 
+from ..pi0.openpi import pair_layout
 from .reference import Pi05Outputs, load
-from .spec import HEAD_DIM
-
-
-def pair_layout(x: torch.Tensor) -> torch.Tensor:
-    """OpenPI's half-split RoPE channel order -> the engine's adjacent-pair order."""
-    return x.view(*x.shape[:-1], 2, HEAD_DIM // 2).transpose(-1, -2).reshape(x.shape)
 
 
 def reference_outputs(weights: Mapping[str, torch.Tensor], inputs: Mapping[str, torch.Tensor],
-                      buffers: Mapping[str, torch.Tensor], *, steps: int, depth: int,
+                      buffers: Mapping[str, torch.Tensor], *, shape: Mapping[str, int], seed: int,
                       precision: Literal["bfloat16", "float32"] = "bfloat16") -> Pi05Outputs:
     """The reference on the engine's observation: `inputs` as the engine was
-    given them, `buffers` after its forward (the tokenized prompt). `depth` is
-    the engine's `layers`. In `float32` the reference holds a float32 copy of
-    the weights beside `weights`, about twice their memory."""
+    given them, `buffers` after its forward (the prompt its host slot
+    tokenized, which already carries the fixture), `shape` its shape numbers.
+    The fixture `seed` selects nothing further. In `float32` the reference
+    holds a float32 copy of the weights beside `weights`, about twice their memory."""
     images = inputs["images"]
     return load(weights, precision=precision)(
         images.float(), image_masks=torch.ones(images.shape[0], dtype=torch.bool, device=images.device),
         prompt_ids=buffers["prompt_ids"].long(), prompt_mask=buffers["prompt_scale"][:, 0] > 0,
-        noise=inputs["noise"].float(), steps=steps, depth=depth)
+        noise=inputs["noise"].float(), steps=shape["steps"], depth=shape["layers"])
 
 
 def comparable(outputs: Pi05Outputs,
@@ -64,4 +60,4 @@ def comparable(outputs: Pi05Outputs,
     }
 
 
-__all__ = ["comparable", "pair_layout", "reference_outputs"]
+__all__ = ["comparable", "reference_outputs"]

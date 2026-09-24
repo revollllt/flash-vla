@@ -1,6 +1,7 @@
 """Hardware-independent Pi0 constants and checkpoint schema."""
 
-RANDOM_CHECKPOINT_REVISION = "flash-vla/pi0-random-checkpoint/v1"
+#: v2: official-layout random weights converted as a real checkpoint is (`weights.random_checkpoint`).
+RANDOM_CHECKPOINT_REVISION = "flash-vla/pi0-random-checkpoint/v2"
 
 
 def random_checkpoint_revision(seed: int) -> str:
@@ -23,6 +24,10 @@ DECODER_HEADS = 8
 KV_HEADS = 1
 QKV_WIDTH = 2560
 DECODER_DIM = 1024
+#: The flow schedule a Pi0 checkpoint is converted for: ten Euler steps of
+#: dt = -0.1 from t = 1, folded into `decoder_action_fused_*`. A run with fewer
+#: `steps` executes the first ones.
+FLOW_STEPS = 10
 DECODER_FFN = 4096
 STATE_DIM = 32
 ACTION_DIM = 32
@@ -56,7 +61,7 @@ def weight_shapes(prompt_len: int) -> dict[str, tuple[int, ...]]:
         "encoder_ffn_down_w": (ENCODER_LAYERS, 16384, 2048),
         "decoder_state_in_proj_w": (32, 1024), "decoder_state_in_proj_b": (1024,),
         "decoder_action_fused_in_proj_w": (32, 1024),
-        "decoder_action_fused_time_biases": (10, 1024),
+        "decoder_action_fused_time_biases": (FLOW_STEPS, DECODER_DIM),
         "decoder_action_mlp_w": (1024, 1024), "decoder_action_mlp_b": (1024,),
         "decoder_attn_qkv_w": (ENCODER_LAYERS, 1024, 2560),
         "decoder_attn_o_w": (ENCODER_LAYERS, 2048, 1024),

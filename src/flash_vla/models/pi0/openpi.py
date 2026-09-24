@@ -1,9 +1,22 @@
 """Convert official OpenPI Pi0 weights to the inference tensor layout."""
 from __future__ import annotations
-from typing import Mapping
+import math
+from pathlib import Path
+from typing import Iterable, Mapping
 
 import torch
-from .spec import DECODER_HEADS, ENCODER_LAYERS, VISION_LAYERS, weight_shapes
+
+from ..paligemma.reference import sinusoidal
+from .spec import (
+    DECODER_DIM,
+    DECODER_HEADS,
+    ENCODER_DIM,
+    ENCODER_LAYERS,
+    FLOW_STEPS,
+    HEAD_DIM,
+    VISION_LAYERS,
+    weight_shapes,
+)
 
 VISION = "paligemma_with_expert.paligemma.model.vision_tower.vision_model"
 PROJECTOR = "paligemma_with_expert.paligemma.model.multi_modal_projector.linear"
@@ -64,10 +77,47 @@ def _qkv(
     )
 
 
+def pair_layout(x: torch.Tensor) -> torch.Tensor:
+    """An activation's RoPE channels, OpenPI's half-split order -> the engine's
+    adjacent-pair order: what `_interleave_rope` does to the Q and K weights."""
+    return x.view(*x.shape[:-1], 2, HEAD_DIM // 2).transpose(-1, -2).reshape(x.shape)
+
+
+def read_checkpoint(checkpoint: str | Path) -> dict[str, torch.Tensor]:
+    """An OpenPI PyTorch checkpoint's official state dict (Pi0 or Pi0.5), on
+    the CPU. `save_model` stores tied tensors once and names each tie in the
+    file's metadata (the prompt embedding is the language-model head); every
+    tie is restored under its own name."""
+    from safetensors import safe_open
+    from safetensors.torch import load_file
+
+    path = Path(checkpoint)
+    path = path / "model.safetensors" if path.is_dir() else path
+    state = load_file(str(path), device="cpu")
+    with safe_open(str(path), framework="pt", device="cpu") as source:
+        ties = {name: state[original] for name, original in (source.metadata() or {}).items()
+                if name not in state and original in state}
+    return {**state, **ties}
+
+
+def read_official(checkpoint: str | Path, *, names: Iterable[str],
+                  device: str | torch.device) -> dict[str, torch.Tensor]:
+    """The tensors `names` of an OpenPI PyTorch checkpoint, on `device`: what a
+    reference runs, without the language-model heads it never reads."""
+    state = read_checkpoint(checkpoint)
+    return {name: state[name].to(device) for name in names}
+
+
 @torch.inference_mode()
-def target_checkpoint(model) -> dict[str, torch.Tensor]:
-    """Convert one official Pi0 state dict to the packed H100/Pi0 layout."""
-    state = model.state_dict()
+def target_checkpoint(state: Mapping[str, torch.Tensor], *,
+                      prompt_ids: torch.Tensor) -> dict[str, torch.Tensor]:
+    """Convert one official Pi0 state dict to the packed H100/Pi0 layout.
+
+    Pi0's prompt is fixed at load: `prompt_ids`, int64 [prompt_len] on the
+    state's device, are embedded here as `embed_prefix` does (the table row
+    times sqrt(width), rounded to bfloat16 once) into the `language_embeds`
+    the graph copies into the prefix.
+    """
 
     def vision_layer(index: int) -> str:
         return f"{VISION}.encoder.layers.{index}"
@@ -201,9 +251,9 @@ def target_checkpoint(model) -> dict[str, torch.Tensor]:
             ENCODER_LAYERS,
             lambda i: _linear(state, f"{DECODER}.layers.{i}.mlp.down_proj"),
         ),
-        "language_embeds": torch.empty(
-            (0, 2048), dtype=torch.bfloat16, device=_value(state, "action_in_proj.weight").device
-        ),
+        # Gather the prompt's rows before widening: the table is 257152 rows.
+        "language_embeds": _bf16(state[f"{ENCODER}.embed_tokens.weight"][prompt_ids].float()
+                                 * math.sqrt(ENCODER_DIM)),
     }
 
     # The target fixes all ten timesteps, so action/time projection can be folded ahead of capture.
@@ -216,17 +266,13 @@ def target_checkpoint(model) -> dict[str, torch.Tensor]:
 
     checkpoint["decoder_action_fused_in_proj_w"] = _bf16(action_projection @ action_mix)
 
-    from openpi.models_pytorch.pi0_pytorch import create_sinusoidal_pos_embedding
-
-    dt = torch.tensor(-0.1, dtype=torch.float32, device=action_projection.device)
+    dt = torch.tensor(-1.0 / FLOW_STEPS, dtype=torch.float32, device=action_projection.device)
     time = torch.tensor(1.0, dtype=torch.float32, device=action_projection.device)
     times = []
-    for _ in range(10):
+    for _ in range(FLOW_STEPS):
         times.append(time.clone())
         time += dt
-    time_embeddings = create_sinusoidal_pos_embedding(
-        torch.stack(times), 1024, min_period=4e-3, max_period=4.0, device=action_projection.device
-    ).float()
+    time_embeddings = sinusoidal(torch.stack(times), DECODER_DIM)
     checkpoint["decoder_action_fused_time_biases"] = _bf16(
         action_bias @ action_mix + time_embeddings @ time_mix + mix_bias
     )
@@ -240,7 +286,7 @@ def target_checkpoint(model) -> dict[str, torch.Tensor]:
         dt * _value(state, "action_out_proj.bias")
     )
 
-    expected = weight_shapes(prompt_len=0)
+    expected = weight_shapes(prompt_len=len(prompt_ids))
     if set(checkpoint) != set(expected):
         missing = sorted(set(expected) - set(checkpoint))
         extra = sorted(set(checkpoint) - set(expected))

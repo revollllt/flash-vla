@@ -186,4 +186,4 @@ def make_wrappers(scratch, selected_names=None) -> dict:
 BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
 
 
-__all__ = ["BACKEND", "NAMES", "OPS", "make_wrappers"]
+__all__ = ["BACKEND", "NAMES", "make_wrappers"]

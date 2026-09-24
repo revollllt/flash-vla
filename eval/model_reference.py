@@ -52,11 +52,14 @@ class WeightsSource(Protocol):
 
 class ReferenceView(Protocol):
     """A model's `reference_view` module: the engine's observation fed to the
-    reference, and each declared stage output paired as (reference, engine)."""
+    reference, and each declared stage output paired as (reference, engine).
+    `shape` is the engine's shape numbers (`identity.shape`), `seed` the
+    construction's fixture seed."""
 
     def reference_outputs(self, weights: Mapping[str, torch.Tensor],
                           inputs: Mapping[str, torch.Tensor], buffers: Mapping[str, torch.Tensor], *,
-                          steps: int, depth: int, precision: ReferencePrecision) -> object: ...
+                          shape: Mapping[str, int], seed: int,
+                          precision: ReferencePrecision) -> object: ...
 
     def comparable(self, outputs: object, buffers: Mapping[str, torch.Tensor]
                    ) -> dict[str, tuple[torch.Tensor, torch.Tensor]]: ...
@@ -82,8 +85,7 @@ def run(target: str, plan: str = "shipped", *, steps: int | None = 1, layers: in
     view: ReferenceView = import_module(entry.reference_view_module)
     with torch.inference_mode():
         outputs = view.reference_outputs(weights, inputs, engine.buffers,
-                                         steps=engine.identity.shape["steps"],
-                                         depth=engine.identity.shape["layers"],
+                                         shape=engine.identity.shape, seed=seed,
                                          precision=reference_precision)
     torch.cuda.synchronize()
     stages = {name: error_metrics(expected.float(), observed.float())

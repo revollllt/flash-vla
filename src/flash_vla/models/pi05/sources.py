@@ -17,6 +17,7 @@ from pathlib import Path
 import torch
 
 from flash_vla.models.official import official_schema
+from flash_vla.models.pi0.openpi import read_official
 from flash_vla.provenance import FixtureProvenance, WeightsProvenance, canonical_digest
 from flash_vla.runtime.runner import RunnerSource
 from flash_vla.runtime.vla import ConfigValue, Target
@@ -105,10 +106,9 @@ def official_weights(*, device: str, seed: int = 0, checkpoint: str | None = Non
     path = checkpoint or converted_checkpoint
     if path is None:
         return reference.random_weights(seed, device=device)
-    # Only the tensors the reference runs: not the language-model heads.
-    state = openpi.read_checkpoint(path)
-    schema = official_schema(reference.make_reference().parts(), prefixes=reference.PREFIXES)
-    return {name: state[name].to(device) for name in schema}
+    return read_official(path, device=device,
+                         names=official_schema(reference.make_reference().parts(),
+                                               prefixes=reference.PREFIXES))
 
 
 __all__ = ["official_weights", "runner_source"]

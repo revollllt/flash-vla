@@ -10,7 +10,6 @@ import ctypes
 from functools import lru_cache
 from pathlib import Path
 
-import torch
 
 from flash_vla.hardware.nvidia.native import NativeLibrary
 

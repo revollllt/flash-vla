@@ -1,12 +1,13 @@
 """Extreme-latency VLA inference: one runner, a model definition per model, a Target per device.
 
+    import torch
     from flash_vla import ModelRunner
     from flash_vla.hardware.nvidia.h100.pi0 import TARGET
     from flash_vla.models.pi0 import random_checkpoint, random_checkpoint_revision
     from flash_vla.provenance import WeightsProvenance
 
     revision = random_checkpoint_revision(0)
-    runner = ModelRunner(TARGET, random_checkpoint(),
+    runner = ModelRunner(TARGET, random_checkpoint(0, prompt_ids=torch.empty(0, dtype=torch.long)),
                          weights_provenance=WeightsProvenance(checkpoint_id=revision,
                                                               checkpoint_digest=revision),
                          num_views=3, chunk_size=50)

@@ -49,9 +49,11 @@ TARGETS: dict[str, TargetEntry] = {
         "flash_vla.hardware.nvidia.h100.pi05", "flash_vla.models.pi05.sources",
         reference_view_module="flash_vla.models.pi05.reference_view"),
     "hardware/nvidia/h100/pi0": TargetEntry(
-        "flash_vla.hardware.nvidia.h100.pi0", "flash_vla.models.pi0.sources"),
+        "flash_vla.hardware.nvidia.h100.pi0", "flash_vla.models.pi0.sources",
+        reference_view_module="flash_vla.models.pi0.reference_view"),
     "hardware/nvidia/rtx5090/pi0": TargetEntry(
-        "flash_vla.hardware.nvidia.rtx5090.pi0", "flash_vla.models.pi0.sources"),
+        "flash_vla.hardware.nvidia.rtx5090.pi0", "flash_vla.models.pi0.sources",
+        reference_view_module="flash_vla.models.pi0.reference_view"),
     "hardware/nvidia/rtx5090/pi05": TargetEntry(
         "flash_vla.hardware.nvidia.rtx5090.pi05", "flash_vla.models.pi05.sources",
         reference_view_module="flash_vla.models.pi05.reference_view"),

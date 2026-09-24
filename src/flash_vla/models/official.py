@@ -35,4 +35,16 @@ def bind(parts: Mapping[str, nn.Module], *, prefixes: Mapping[str, str],
                                strict=True, assign=True)
 
 
-__all__ = ["bind", "official_schema"]
+def random_official(parts: Mapping[str, nn.Module], *, prefixes: Mapping[str, str], seed: int,
+                    device: str | torch.device, scale: float) -> dict[str, torch.Tensor]:
+    """Seeded official-layout weights for the parts: every tensor of their
+    schema, drawn in the order of the official names (so the draw does not
+    depend on how a reference declares its modules), N(0, scale^2) rounded to
+    bfloat16 as released checkpoints store them."""
+    generator = torch.Generator(device=device).manual_seed(seed)
+    schema = official_schema(parts, prefixes=prefixes)
+    return {name: (torch.randn(schema[name], generator=generator, device=device) * scale
+                   ).to(torch.bfloat16) for name in sorted(schema)}
+
+
+__all__ = ["bind", "official_schema", "random_official"]

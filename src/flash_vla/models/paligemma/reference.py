@@ -52,11 +52,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Mapping
+from typing import Literal, Mapping
 
 import torch
 from torch import nn
 from torch.nn import functional as F
+
+from ..official import bind
 
 #: Additive bias of a key a query may not attend to (`pi0_pytorch.py`,
 #: `_prepare_attention_masks_4d`).
@@ -436,6 +438,20 @@ def sinusoidal(time: torch.Tensor, dimension: int) -> torch.Tensor:
     return torch.cat((phase.sin(), phase.cos()), dim=1).to(time.dtype)
 
 
+def bind_upstream(paligemma: PaliGemmaWithExpert, *, head: nn.Module,
+                  weights: Mapping[str, torch.Tensor],
+                  precision: Literal["bfloat16", "float32"]) -> None:
+    """Bind official tensors to PaliGemma-with-expert and the model's heads
+    (the heads' official names sit at the top level), in OpenPI's inference
+    dtypes (`bfloat16`) or entirely in float32."""
+    bind({**paligemma.parts(), "head": head}, prefixes={**PREFIXES, "head": ""}, weights=weights)
+    if precision == "float32":
+        paligemma.float()
+        head.float()
+        return
+    apply_upstream_precision(paligemma.parts(), head=head)
+
+
 def apply_upstream_precision(parts: Mapping[str, nn.Module], *, head: nn.Module) -> None:
     """OpenPI's inference dtypes: PaliGemma-with-expert in bfloat16 except the
     `FLOAT32_SELECTORS`, the model's own heads in float32."""
@@ -450,4 +466,4 @@ def apply_upstream_precision(parts: Mapping[str, nn.Module], *, head: nn.Module)
 __all__ = ["BLOCKED", "FLOAT32_SELECTORS", "GEMMA_2B", "GEMMA_300M", "GemmaGeometry",
            "GemmaStack", "KeyValue", "PREFIXES", "PaliGemmaWithExpert", "Prefix", "SIGLIP",
            "SiglipGeometry", "SiglipVision", "VOCABULARY", "additive", "apply_upstream_precision",
-           "attention_mask", "rotary", "sinusoidal"]
+           "attention_mask", "bind_upstream", "rotary", "sinusoidal"]

@@ -24,6 +24,7 @@ from .spec import (
     ENCODER_DIM,
     ENCODER_FFN,
     ENCODER_LAYERS,
+    FLOW_STEPS,
     HEAD_DIM,
     IMAGE_CHANNELS,
     IMAGE_SIZE,
@@ -34,8 +35,8 @@ from .spec import (
     STATE_DIM,
     VISION_DIM,
     VISION_FFN,
-    VISION_HEAD_DIM,
     VISION_HEADS,
+    VISION_HEAD_DIM,
     VISION_LAYERS,
     VISION_TOKENS,
     weight_shapes,
@@ -83,6 +84,9 @@ class Pi0Model(ModelDefinition[Pi0Config, None]):
         a checkpoint is given, and the configuration's otherwise (then required)."""
         if checkpoint is None and config.prompt_len is None:
             raise ValueError("Pi0 needs prompt_len, from the checkpoint or the configuration")
+        if config.steps > FLOW_STEPS:
+            raise ValueError(f"a Pi0 checkpoint folds a {FLOW_STEPS}-step flow schedule; "
+                             f"steps={config.steps} would run past t = 0")
         prompt_len = (config.prompt_len if checkpoint is None
                       else checkpoint.shapes["language_embeds"][0])
         if config.prompt_len is not None and prompt_len != config.prompt_len:

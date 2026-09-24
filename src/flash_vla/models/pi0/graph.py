@@ -5,7 +5,7 @@ every op names its inputs, outputs and weights explicitly, buffers are
 declared where the graph first needs them, and Python loops only unroll
 layers and diffusion steps into nodes. Nothing here runs.
 
-Shapes for the reference configuration (3 views, empty prompt, chunk 50): the
+Shapes for the default configuration (3 views, empty prompt, chunk 50): the
 vision encoder runs 27 layers at 768 tokens, the backbone 18 layers at 768,
 and the action expert 18 layers at 51 rows (the state token and the chunk),
 repeated for each of the 10 diffusion steps.
@@ -161,7 +161,7 @@ def build(g: Graph, shape: Mapping[str, int]) -> None:
         g.copy(ex[:1], est)
         g.op("action_expert_action_in_proj", x=actions,
              weight=g.w("decoder_action_fused_in_proj_w"),
-             bias=g.w("decoder_action_fused_time_biases")[step % 10], out=ain)
+             bias=g.w("decoder_action_fused_time_biases")[step], out=ain)
         g.op("action_expert_action_mlp", x=ain, weight=g.w("decoder_action_mlp_w"),
              bias=g.w("decoder_action_mlp_b"), out=ex[1:])
         for i in range(layers):

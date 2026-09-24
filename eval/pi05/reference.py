@@ -93,7 +93,7 @@ from eval.tolerances import tolerances
 from flash_vla.models.pi05 import openpi as openpi05
 from eval.pi05 import official as official_pi05
 from eval.metrics import error_metrics
-from flash_vla.models.pi05.reference_view import pair_layout
+from flash_vla.models.pi0.openpi import pair_layout
 from flash_vla.models.pi05.spec import VISION_TOKENS
 from flash_vla.models.pi05.tokenize import Pi05Tokenizer
 from flash_vla.models.pi05.weights import fold

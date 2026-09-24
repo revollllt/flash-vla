@@ -60,7 +60,9 @@ def run(checkpoint: str, *, checkpoint_id: str, seed: int = 0, device: str = "cu
 
     baseline = official_pi0.load_model(checkpoint, torch_device)
     reference = official_pi0.sample_actions(baseline, images, state, noise).float().clone()
-    target_weights = openpi.target_checkpoint(baseline)
+    # The official baseline runs an empty prompt (`official.sample_actions`).
+    target_weights = openpi.target_checkpoint(
+        baseline.state_dict(), prompt_ids=torch.empty(0, dtype=torch.long, device=torch_device))
     del baseline
     torch.cuda.empty_cache()
 

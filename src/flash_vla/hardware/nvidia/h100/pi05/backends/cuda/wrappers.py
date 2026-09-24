@@ -59,4 +59,4 @@ def make_wrappers(
     return table
 
 
-__all__ = ["ATTENTION_NAMES", "M", "NAMES", "OPS", "make_wrappers"]
+__all__ = ["ATTENTION_NAMES", "M", "NAMES", "make_wrappers"]
