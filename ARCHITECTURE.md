@@ -38,6 +38,7 @@ inference.py                  Target names and runner construction by name
 provenance.py, assets.py      provenance values; logical asset IDs to local paths
 measurement/                  timing loops and statistics, kernel timing,
                               attribution, environment and measurement context,
+                              the work a model's forward must do (floor numerator),
                               source-checkout qualification, result rendering
 eval/, benchmarks/            accuracy and latency consumers
 tools/, tests/                diagnostics and engineering checks
@@ -66,7 +67,15 @@ lab/                          experiments
   production code and no harness, and `benchmarks` and `tools` never import each
   other. What the floor model reads of a device is that device's
   `spec.ROOFLINE` (`hardware/roofline.py`), found from the identity's hardware
-  axis (`hardware.nvidia.HARDWARE_SPECS`).
+  axis (`hardware.nvidia.HARDWARE_ROOFLINES`).
+- The floor's numerator is read from the model's reference, not declared:
+  `measurement.work` traces `models/<model>/reference.py` on the meta device at
+  a workload's shape and attributes each op to a call site through the model's
+  `models/<model>/work.py` (`runtime.work.CallSiteRule`). It counts only work
+  that reaches the output and depends on an input, once per distinct
+  computation, and derives two bounds: `launch_kernel_bound` (a kernel per
+  call-site invocation, intermediates through DRAM) and `flow_kernel_bound`
+  (a kernel per stage pass, intermediates on chip; the floor).
 
 ## Forward execution
 

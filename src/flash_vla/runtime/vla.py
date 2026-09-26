@@ -45,10 +45,10 @@ from typing import Callable, Generic, Mapping, TypeVar
 
 import torch
 
-from .cost import Ceiling, Pricing as CallSitePricing
 from .graph import Graph
 from .ops import OpSpec, Vocabulary
 from .registry import Registry
+from .work import CallSiteRule, ReferenceRun
 
 #: Canonical stage names, in program order.
 STAGES = ("vision_encoder", "llm_backbone", "action_expert")
@@ -134,12 +134,27 @@ class TensorCheckpoint(CheckpointReader):
 
 
 @dataclass(frozen=True)
+class Ceiling:
+    """What this machine has delivered for one call of a call site's geometry.
+
+    Declared by a Target when a hardware unit test measured the call site's
+    own geometry (bytes, CTAs, box) cold, so the floor model's ceiling column
+    uses the observed number rather than the constants' rule. `tag` names the
+    measured constant it was read against and `job` the Slurm job that
+    produced it; both are copied into every floor report that uses it.
+    """
+    us: float
+    tag: str
+    job: int
+
+
+@dataclass(frozen=True)
 class Pricing:
     """How a quantization recipe prices its call sites in the work of a forward
     (`measurement.work`): their FLOPs run in the `tensor` format; the weights
-    they read cost `weight_itemsize` bytes per element, and the activations one of
-    them passes another `activation_itemsize`, block scales included (MXFP8:
-    1 + 1/32). Everything else keeps the Target's precision."""
+    their matmuls read cost `weight_itemsize` bytes per element, and the
+    activations one of them passes another `activation_itemsize`, block scales
+    included (MXFP8: 1 + 1/32). Everything else keeps the Target's precision."""
     call_sites: frozenset[str]
     tensor: str
     weight_itemsize: float
@@ -159,21 +174,22 @@ class QuantizationRecipe:
     defines the math (fake quantization) over the Target's reference plan.
     `backends` names every backend implementing the recipe: its call sites
     accept only these, and no other call site accepts any recipe's backends.
-    `pricing` is how the floor model prices those call sites: the tensor-core
-    format and the quantized operands' bytes (`runtime/cost.py`).
+    `pricing` is how the work of a forward prices them (`measurement.work`): the
+    tensor-core format and the quantized operands' bytes; it covers exactly the
+    recipe's call sites.
     Agents optimize the kernels; changing `spec` or the call sites needs approval.
     """
     spec: Mapping[str, str]
     plan: Mapping[str, str]
     reference_plan: Mapping[str, str]
     backends: frozenset[str]
-    pricing: Mapping[str, CallSitePricing] = field(default_factory=dict)
+    pricing: Pricing | None = None
 
     def __post_init__(self) -> None:
         if set(self.plan) != set(self.reference_plan):
             raise ValueError("a recipe's plan and reference plan must name the same call sites")
-        if not set(self.pricing) <= set(self.plan):
-            raise ValueError("a recipe prices only its own call sites")
+        if self.pricing is not None and self.pricing.call_sites != set(self.plan):
+            raise ValueError("a recipe prices exactly its own call sites")
         if not {*self.plan.values(), *self.reference_plan.values()} <= self.backends:
             raise ValueError(f"a recipe routes only to its own backends {sorted(self.backends)}")
 
@@ -208,6 +224,11 @@ class ModelDefinition(ABC, Generic[ConfigT, HostStateT]):
     stage_outputs: Mapping[str, tuple[tuple[str, int | None], ...]] = STAGE_OUTPUTS
     #: The op specs this model's graph uses beyond the standard vocabulary.
     ops: tuple[OpSpec, ...] = ()
+    #: Which call site each op of the reference's forward belongs to, and the
+    #: reference ready to trace at a shape with that many valid prompt tokens
+    #: (`models/<model>/work.py`; `measurement.work` reads the floor from them).
+    work_rules: tuple[CallSiteRule, ...]
+    reference_run: Callable[[Mapping[str, int], int | None], ReferenceRun]
 
     def workload(self, name: str) -> Workload:
         """The declared workload called `name`."""
@@ -388,4 +409,4 @@ class Target(Generic[ConfigT, HostStateT]):
 
 
 __all__ = ["CheckpointReader", "ConfigT", "ConfigValue", "HostStateT", "DTYPES", "Input", "ModelDefinition", "PlanSpec",
-           "Pricing", "QuantizationRecipe", "STAGES", "STAGE_OUTPUTS", "Target", "TensorCheckpoint", "Workload"]
+           "Ceiling", "Pricing", "QuantizationRecipe", "STAGES", "STAGE_OUTPUTS", "Target", "TensorCheckpoint", "Workload"]

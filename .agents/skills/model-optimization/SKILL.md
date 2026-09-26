@@ -52,13 +52,20 @@ the alternative; an ambiguous result revises it rather than adding a candidate.
    timeline with [gpu-profiler-analysis](../gpu-profiler-analysis/SKILL.md) for
    the costly module or host/sync gap, then down to call sites and kernels;
    [ncu-report](../ncu-report/SKILL.md) where counters settle compute- against
-   memory- against pipeline-bound. Size the headroom from the call count,
-   `tools.profiling.floor` and the measured constants in
-   [hardware-unit-test](../hardware-unit-test/SKILL.md).
+   memory- against pipeline-bound. Size the headroom from the floor of this
+   workload (`tools.profiling.floor --workload`, the work read from the model's
+   reference by `measurement.work`) and the measured constants in
+   [hardware-unit-test](../hardware-unit-test/SKILL.md). Per call site, far from
+   `launch_kernel_bound` means the kernel itself has room; near it but far from
+   its stage's `flow_kernel_bound` means only fusion across call sites recovers
+   the rest; near both means stop. The floor is the smaller of the stage's
+   `flow_kernel_bound_us` (datasheet) and `flow_kernel_ceiling_us` (measured
+   rates).
 
    ```bash
    python -m tools.profiling.model --target h100/lingbot_vla --plan shipped --seed 42 --overview --trace-dir artifacts/profile/overview
    # Descend only when the overview points at action_expert: --segment action_expert
+   python -m measurement.work --target rtx5090/pi05 --workload libero --prompt-tokens 12   # no GPU
    ```
 
 5. **Design and implement, in parallel.** One agent and worktree per kernel or

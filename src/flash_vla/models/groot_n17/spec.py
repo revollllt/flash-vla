@@ -35,7 +35,6 @@ KV_DIM = 1024
 
 DIT_BLOCKS = 32
 DIT_DIM = 1536
-DIT_FFN = 6144
 #: Width of the DiT's output and of the embodiment-conditioned state MLP and action decoder.
 HEAD_HIDDEN = 1024
 #: Sinusoidal channels of the DiT's timestep embedding.
@@ -48,7 +47,7 @@ STEPS = 4
 
 
 __all__ = ["ACTION_DIM", "BACKBONE_DIM", "BACKBONE_FFN", "CHUNK", "DEEPSTACK_BLOCKS", "DEEPSTACK_LAYERS",
-           "DIT_BLOCKS", "DIT_DIM", "DIT_FFN", "HEAD_HIDDEN", "IMAGE_SIZE",
+           "DIT_BLOCKS", "DIT_DIM", "HEAD_HIDDEN", "IMAGE_SIZE",
            "INFERENCE_SIGNATURE", "KV_DIM", "LAYERS", "MODEL_REVISION", "PATCHES_PER_VIEW",
            "PATCH_WIDTH", "STATE_DIM", "STEPS", "TIMESTEP_CHANNELS", "VIEW_GRID",
            "VISION_BLOCKS", "VISION_DIM", "VISION_FFN", "VISUAL_TOKENS_PER_VIEW"]

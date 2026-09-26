@@ -2,6 +2,8 @@
 
 [中文](README.md) | [English](README.en.md)
 
+**Superseded.** GR00T's floor is now derived from its reference, for any workload: `python -m measurement.work --target rtx5090/groot_n17 --workload libero` (`docs/workloads.md`). This page keeps the conditional estimate the four ablation runs used, and where it came from. Its script depended on the removed `runtime.cost`; read it with `git show e6869fd:lab/groot_n17/roofline.py`.
+
 2026-09-17; reference implementation `cf2d196`. This directory is versioned in the main project and supplied to all four runs through their common starting commit, using the project's existing `Cost`, `gemm`, `attention` and `tools.profiling.floor.site_row`. Inference code was not changed.
 
 **The conditional estimate for the current dense computation is 8.261 ms. Reaching 90% of that estimated performance means full-model latency ≤9.179 ms.** This is an optimization objective with unproven attainability; the run still stops when its budget is exhausted.
@@ -32,7 +34,7 @@ Expanded matrix/attention FLOPs agree with all three stage declarations and were
 Recompute from any Flash-VLA checkout root using the GR00T environment; no GPU or weights are needed:
 
 ```bash
-PYTHONPATH=src:. python -m lab.groot_n17.roofline --out artifacts/groot-n17/roofline.json
+git show e6869fd:lab/groot_n17/roofline.py > roofline.py   # run in a checkout of e6869fd
 ```
 
-The common numerical record is [roofline.json](../../results/groot-n17-rtx5090/reference/roofline.json), and the real-forward check is [roofline-execution-check.json](../../results/groot-n17-rtx5090/reference/roofline-execution-check.json). The script is [roofline.py](roofline.py). All four runs inherit these files from the same common commit. Launch prompts reference this page, with 8.261 ms as the original comparison denominator and ≤9.179 ms as the objective. Record evidence for any modeling correction and apply it consistently during analysis; do not change only one run's comparison denominator.
+The common numerical record is [roofline.json](../../results/groot-n17-rtx5090/reference/roofline.json), and the real-forward check is [roofline-execution-check.json](../../results/groot-n17-rtx5090/reference/roofline-execution-check.json). The script is `git show e6869fd:lab/groot_n17/roofline.py`. All four runs inherit these files from the same common commit. Launch prompts reference this page, with 8.261 ms as the original comparison denominator and ≤9.179 ms as the objective. Record evidence for any modeling correction and apply it consistently during analysis; do not change only one run's comparison denominator.

@@ -1,14 +1,14 @@
 """The call sites Pi0's graph emits, and its two ops beyond the standard vocabulary."""
 from __future__ import annotations
 
-from flash_vla.runtime.ops import STANDARD, OpSpec, gemm
+from flash_vla.runtime.ops import STANDARD, OpSpec
 
 #: The state token's projection and the second action MLP, both plain bias GEMMs.
 OPS = (
     OpSpec("action_expert_state_proj", ("x", "weight", "bias", "out"), outputs=("out",),
-           weights=("weight", "bias"), flops=gemm("x", "weight")),
+           weights=("weight", "bias")),
     OpSpec("action_expert_action_mlp", ("x", "weight", "bias", "out"), outputs=("out",),
-           weights=("weight", "bias"), flops=gemm("x", "weight")),
+           weights=("weight", "bias")),
 )
 
 #: Every call site the Pi0 graph emits: the whole standard vocabulary and `OPS`.

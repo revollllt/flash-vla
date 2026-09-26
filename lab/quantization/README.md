@@ -7,7 +7,7 @@ Results: [`results/quant-kernel-survey-rtx5090/`](../../results/quant-kernel-sur
 ## Method
 
 - **Shapes** (`vla_shapes.py`): the 27 main linear call sites of GR00T N1.7
-  (from `lab/groot_n17/roofline.py`, checked against a real forward) and Pi0.5
+  (from `git show e6869fd:lab/groot_n17/roofline.py`, checked against a real forward) and Pi0.5
   (from `models/pi05/spec.py`), packed as shipped, with calls per observation.
   Pi0.5's SigLIP FFN width 4304 is padded to 4352.
 - **Formats**: MXFP8 (E4M3, UE8M0 per [1,32] on both operands), NVFP4 (E2M1,

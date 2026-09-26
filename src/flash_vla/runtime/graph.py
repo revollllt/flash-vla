@@ -16,9 +16,8 @@ nothing here touches a device, so a graph builds on a login node.
 
 What the graph then gives the runner, without model knowledge: the buffer
 plan to materialize; per stage, the node sequence to execute and capture; the
-set of call sites a plan must route; per node, the tensors read and written;
-and the minimal traffic and math of every call site (`costs`), derived from
-the op specs and the argument shapes.
+set of call sites a plan must route; per node, the tensors read and written.
+What the call sites cost is read from the model's reference (`measurement.work`).
 
 References are immutable descriptions, not tensors. `BufRef` supports the two
 operations the pipelines need on a buffer -- leading-axis indexing / slicing
@@ -34,7 +33,6 @@ from typing import Any, Mapping, Sequence
 
 import torch
 
-from .cost import Cost, Invocation, Pricing, SegmentCosts
 from .cuda.arena import Buffer, Init
 from .cuda.program import Step
 from .ops import Vocabulary
@@ -312,49 +310,6 @@ class Graph:
         writes = tuple(a.name for p, a in zip(spec.params, node.args)
                        if isinstance(a, BufRef) and p in outputs)
         return reads, writes
-
-    def node_cost(self, node: Node, itemsizes: Mapping[str, float] | None = None) -> Cost:
-        """`itemsizes` replaces the bytes per element of the parameters it names
-        (a quantized operand, `Pricing.itemsizes`)."""
-        if node.is_copy:
-            dst, src = node.args
-            return Cost(bytes_read=src.numel * src.dtype.itemsize,
-                        bytes_written=dst.numel * dst.dtype.itemsize, flops=0)
-        spec = self.vocabulary[node.call_site]
-        shapes = {p: (a.shape if isinstance(a, (BufRef, WeightRef)) else None)
-                  for p, a in zip(spec.params, node.args)}
-        sizes = {p: (a.dtype.itemsize if isinstance(a, (BufRef, WeightRef)) else 0)
-                 for p, a in zip(spec.params, node.args)}
-        cost = spec.cost(shapes, {**sizes, **(itemsizes or {})})
-        return Cost(bytes_read=round(cost.bytes_read), bytes_written=round(cost.bytes_written),
-                    flops=cost.flops)
-
-    def costs(self, pricing: Mapping[str, Pricing] | None = None) -> SegmentCosts:
-        """Per stage, one `Invocation` per call site: its per-call cost and count.
-
-        A call site whose calls differ in cost (a bisected leading row) reports
-        the mean per-call cost so that count times cost stays the total. A call
-        site in `pricing` (a quantization recipe's) is priced in its format.
-        """
-        priced = pricing or {}
-        out: dict[str, list[Invocation]] = {}
-        for stage in self.segment_names:
-            groups: dict[str, list[Cost]] = {}
-            for node in self.nodes_of(stage):
-                site = priced.get(node.call_site)
-                groups.setdefault(node.call_site, []).append(
-                    self.node_cost(node, site.itemsizes if site is not None else None))
-            rows = []
-            for call_site, costs in groups.items():
-                n = len(costs)
-                mean = Cost(bytes_read=sum(c.bytes_read for c in costs) // n,
-                            bytes_written=sum(c.bytes_written for c in costs) // n,
-                            flops=sum(c.flops for c in costs) // n)
-                site = priced.get(call_site)
-                rows.append(Invocation(call_site, mean, n,
-                                       tensor=site.tensor if site is not None else "bf16"))
-            out[stage] = rows
-        return out
 
     def check(self) -> None:
         """Raise on a graph that cannot run: empty stages, undeclared outputs, bad weights."""

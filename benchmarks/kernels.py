@@ -19,14 +19,16 @@ Timing backends (--timer):
              cold L2 by flush (needs cupti-python; auto-fallback to events)
   events     CUDA events around the first recorded invocation, cold L2 by flush
 
-FLOPs and bytes come from the graph's derived costs, so the achieved TFLOP/s
-and TB/s are against the same minimal-traffic model the floor uses.
+FLOPs and bytes come from the model reference's work (`measurement.work`, its
+launch bound per call), so the achieved TFLOP/s and TB/s are against the same
+minimal-traffic model the floor uses.
 
 Call sites a plan must invoke together (`engine.atomic_groups`: a producer
 and the persistent consumer that waits on its counters) are one case, their
 recorded invocations replayed in pipeline order, because one of them alone is
-not a valid program. A case whose derived cost is zero at the Target's shape
-issues no kernel and is skipped rather than timed.
+not a valid program. A case the reference gives no work (Pi0's prompt
+embedding, folded because the prompt is fixed at load) has no FLOPs or bytes
+to rate the kernel against and is skipped rather than timed.
 """
 from __future__ import annotations
 
@@ -36,12 +38,13 @@ from typing import Callable
 
 import torch
 
-from flash_vla.inference import PLAN_NAMES, build, resolve
+from flash_vla.inference import PLAN_NAMES, build, get_target, resolve
 from flash_vla.runtime.cuda.timing import graph_samples
 from flash_vla.runtime.engine import segments
 from measurement.cli import WORKLOAD_HELP, parse_options
 from measurement.environment import require_cuda
 from measurement.kernel_bench import KernelResult, bench_gpu_time, render_table, write_csv
+from measurement.work import work
 
 
 def record_invocations(engine, segment: str) -> dict[str, list[tuple[tuple, dict]]]:
@@ -71,12 +74,19 @@ def run(target: str, plan: str | None = None, seed: int = 0, only_segments: list
     inputs = engine.sample_inputs(seed)
     engine.forward(**inputs)
     torch.cuda.synchronize()
-    costs = engine.costs
+    depth = {axis: engine.shape[axis] for axis in ("steps", "layers")}
+    derived = work(get_target(target), workload=engine.workload,
+                   quantization=engine.quantization, **depth)
+    # Per call site, its total work; one call does its share of the engine's calls.
+    totals: dict[str, tuple[float, float]] = {}
+    for launch in derived.launch:
+        flops, nbytes = totals.get(launch.call_sites[0], (0.0, 0.0))
+        totals[launch.call_sites[0]] = (flops + sum(launch.flops.values()),
+                                        nbytes + launch.bytes_read + launch.bytes_written)
     results: list[KernelResult] = []
     for segment in segments(engine):
         if only_segments and segment not in only_segments:
             continue
-        per_call = {inv.call_site: inv.cost for inv in costs.get(segment, ())}
         calls = record_invocations(engine, segment)
         order = list(calls)                       # pipeline order of first invocation
         grouped: set[str] = set()
@@ -102,15 +112,14 @@ def run(target: str, plan: str | None = None, seed: int = 0, only_segments: list
                     args, kwargs = calls_of[i % count]
                     fn(*args, **kwargs)
 
-            flops = sum(per_call[s].flops for s in members if s in per_call) or None
-            nbytes = sum(per_call[s].bytes for s in members if s in per_call) or None
+            flops = sum(totals[s][0] / len(calls[s]) for s in members if s in totals) or None
+            nbytes = sum(totals[s][1] / len(calls[s]) for s in members if s in totals) or None
             label = f"{segment}/" + "+".join(members)
             if not flops and not nbytes:
-                # A site that moves no bytes and does no math at this shape
-                # (Pi0's prompt embedding at prompt_len 0) issues no kernel:
-                # the CUPTI timer raises on an empty iteration and the other
-                # timers would time nothing. Skipped, as the floor model does.
-                print(f"{label:24} :: skipped (no device work at this shape)", flush=True)
+                # The reference gives this site no work (Pi0's prompt embedding
+                # folds: the prompt is fixed at load), so there is nothing to
+                # rate its kernel against.
+                print(f"{label:24} :: skipped (no work in the reference)", flush=True)
                 continue
             if timer == "cudagraph":
                 samples = graph_samples(invoke, n_inner=min(n_inner, count), reps=reps)

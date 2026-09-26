@@ -10,7 +10,7 @@ buffer. Nothing here depends on the model: the graph says what to run, the
 registry says who runs it.
 
 The runner is also the engine protocol's implementation (`runtime/engine.py`):
-harnesses see identity, provenance, buffers, program, stage outputs, costs,
+harnesses see identity, provenance, buffers, program, stage outputs,
 the graph, and the instrumentation hooks, and never a model name.
 
 Construction with `checkpoint=None` and `capture=False` stops after the graph
@@ -20,7 +20,7 @@ the CPU smoke check uses.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from functools import partial
 import gc
 from pathlib import Path
@@ -31,7 +31,6 @@ import torch
 
 from flash_vla.provenance import FixtureProvenance, ImplementationProvenance, WeightsProvenance
 
-from .cost import SegmentCosts
 from .cuda.arena import StaticArena
 from .cuda.program import Program, Segment, Step
 from .engine import StepScope, WrapOp, wrap_ops
@@ -269,16 +268,6 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
                 for role, provenance in (("weights", self.weights_provenance),
                                          ("fixture", self.fixture_provenance))
                 if provenance is not None}
-
-    @property
-    def costs(self) -> SegmentCosts:
-        """Per stage, every call site's minimal bytes and FLOPs, derived from the graph
-        and priced in the quantization recipe's formats, with the ceilings the Target
-        declares (`Target.ceilings`) attached by call site."""
-        ceilings = self.target.ceilings
-        pricing = self.target.quantization_recipe(self.quantization).pricing
-        return {stage: [replace(inv, ceiling=ceilings.get(inv.call_site)) for inv in rows]
-                for stage, rows in self.graph.costs(pricing).items()}
 
     @property
     def graph_contract(self) -> GraphContract:

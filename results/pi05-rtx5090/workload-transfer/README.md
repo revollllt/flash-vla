@@ -74,3 +74,39 @@ For W0 these are observations only; floor shares come with the F phase.
 4. At chunk 10 the expert's `action_out_proj` is three times slower and its
    `ffn_down_residual` 7% slower than at chunk 50. The expert kernels were
    tuned only at M=50.
+
+## Floor per workload (F phase)
+
+`measurement.work` reads the work from the model's reference
+(`floor/work-bounds.json`), and `tools.profiling.floor --workload` sets it beside
+the measured times (`floor/floor-bf16-*.json`).
+
+Both bounds use datasheet rates. "Physical" traces every prompt slot; "valid"
+traces only the tokens a fixture fills. The robodojo fixture fills 70, within
+the 43-101 range; libero's fills 12, within 6-22.
+
+| Recipe / workload | launch, physical | flow, physical | flow, valid (fixture) | flow, valid range |
+|---|---:|---:|---:|---:|
+| bf16 / robodojo | 25.11 ms | 24.14 ms | 21.65 ms | 21.14-22.24 ms |
+| bf16 / libero | 18.76 ms | 18.21 ms | 14.67 ms | 14.56-14.86 ms |
+| mxfp8-llm-ffn / robodojo | 13.26 ms | 12.29 ms | 11.39 ms | 11.21-11.60 ms |
+| mxfp8-llm-ffn / libero | 10.05 ms | 9.49 ms | 8.26 ms | 8.22-8.32 ms |
+
+The mxfp8 launch bound of 13.26 ms matches the 13.29 ms datasheet floor of the
+MXFP8 round, which was computed with the hand-written call-site costs.
+
+The floor reports are `valid: false`, for the reason earlier floors on this
+machine were. The GPU runs above its rated clock, so its measured BF16 tensor
+rate (253 TFLOP/s) beats the datasheet's (209.5), and the datasheet roofline
+exceeds the measured ceiling. The floor is therefore the smaller of each
+stage's datasheet `flow_kernel_bound_us` and measured-rate
+`flow_kernel_ceiling_us`.
+
+| Stage, bf16 | robodojo floor | measured | libero floor | measured |
+|---|---:|---:|---:|---:|
+| vision | 2.60 ms (measured rate) | 4.09 ms | 1.73 ms | 3.18 ms |
+| backbone | 14.86 ms (measured rate) | 16.69 ms | 10.83 ms | 14.04 ms |
+| expert | 3.07 ms (datasheet DRAM) | 9.67 ms | 3.05 ms | 9.22 ms |
+
+These are physical-layout floors. Counting only libero's valid rows lowers its
+backbone floor by a further 3.5 ms at datasheet rates.

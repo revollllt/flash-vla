@@ -16,7 +16,7 @@ import torch
 from flash_vla.runtime.graph import Graph
 from flash_vla.runtime.vla import CheckpointReader, ConfigValue, Input, ModelDefinition, Workload
 
-from . import graph
+from . import graph, work
 from .ops import OPS
 from .spec import (
     ACTION_DIM,
@@ -85,6 +85,8 @@ class GrootModel(ModelDefinition[GrootConfig, None]):
         "action_expert": (("actions", None), ("velocity_step_0", None)),
     }
     ops = OPS
+    work_rules = work.RULES
+    reference_run = staticmethod(work.reference_run)
 
     def configure(self, **config: ConfigValue) -> GrootConfig:
         return GrootConfig(**config)

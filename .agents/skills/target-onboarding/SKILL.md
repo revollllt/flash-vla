@@ -27,9 +27,11 @@ loop begins after that model's semantics and correctness reference are understoo
    optimization is checked against.
 3. Express the graph over the runtime vocabulary. Model details go in
    `src/flash_vla/models/<model>/` -- `definition.py` (a `ModelDefinition`),
-   `graph.py`, `ops.py` for call sites beyond the standard vocabulary, and
+   `graph.py`, `ops.py` for call sites beyond the standard vocabulary,
    `reference_view.py`, which pairs every declared stage output with the
-   reference's -- and the Target in `hardware/<vendor>/<device>/<model>/target.py`
+   reference's, and `work.py`, which attributes the reference's ops to those call
+   sites so the floor is read from the reference (`measurement.work`,
+   `tests/test_work.py`) -- and the Target in `hardware/<vendor>/<device>/<model>/target.py`
    only composes that model with the device's layout, backends and plans. The
    first backend can simply run the reference's own modules on the runner's
    weights (as GR00T's and LingBot's reference routes do). A shared runtime

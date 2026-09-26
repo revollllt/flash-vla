@@ -2,18 +2,25 @@
 
     python -m tools.profiling.floor --target h100/pi05
 
-Per call site of every stage, at the Target's shapes:
+Bytes and FLOPs are the work of the model's reference at the workload's shapes
+(`measurement.work`): per call site its `launch_kernel_bound` work, per stage
+also its `flow_kernel_bound`, the floor no fusion can pass, in both columns:
+`flow_kernel_bound_us` at datasheet peaks and `flow_kernel_ceiling_us` at the
+measured stream and tensor rates. The smaller is the floor: a part that runs
+above its rated clock delivers more than its datasheet (RTX 5090 BF16).
+
+Per call site of every stage:
 
   roofline_us   datasheet: max(bytes / HBM peak, flops / dense tensor peak of the
-                call site's format -- bf16, or a quantization recipe's,
-                `Invocation.tensor`), the peaks read from the hardware axis's
-                `spec.py`; plan-independent within a workload
+                call site's format -- the precision's, or a quantization
+                recipe's `Pricing.tensor`), the peaks read from the hardware
+                axis's `spec.py`; plan-independent within a workload
   ceiling_us    measured: what this machine has delivered for the geometry,
                 from the tagged rows of the hardware axis's measured table
                 (`measured/constants.yaml`): below the burst curve
                 fixed_us + bytes / marginal rate, on the curve bytes /
                 delivered rate, against flops / observed tensor rate; a Target
-                may declare a call site's ceiling outright (`Invocation.ceiling`
+                may declare a call site's ceiling outright (`Target.ceilings`,
                 with its tag and job)
   measured_us   the in-graph time `tools.profiling.model` attributes to the site
 
@@ -43,23 +50,24 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import torch
 
 from flash_vla.hardware.nvidia import HARDWARE_ROOFLINES
 from flash_vla.hardware.roofline import Roofline
-from flash_vla.inference import PLAN_NAMES, build, resolve
-from flash_vla.runtime.cost import Invocation, total
+from flash_vla.inference import PLAN_NAMES, build, get_target, resolve
 from flash_vla.runtime.engine import segments
+from flash_vla.runtime.vla import Ceiling
 from measurement.cli import WORKLOAD_HELP, parse_options
 from measurement.environment import collect_environment, record_path, report_context, require_cuda
 from measurement.timing import event_samples, summarize
+from measurement.work import Invocation, summary, work
 
 from .model import attribute
 
-#: The model form; bump when a column or a term changes.
-FORM_VERSION = "4"
+#: The model form; bump when a column or a term changes. 5: work from the reference.
+FORM_VERSION = "5"
 #: Machine-readable fields a row may carry beside value/units/short/rule.
 ROW_FIELDS = ("fixed_us", "curve_mb_gbs", "derate_at_32")
 
@@ -122,26 +130,35 @@ def delivered_us(nbytes: int, constants: dict[str, Any]) -> tuple[float, str]:
     return mb * 1e3 / curve[-1][1], f"MB / {curve[-1][1]} GB/s (curve top) [{constants['burst']['tag']}]"
 
 
-def site_row(invocation: Invocation, peaks: dict[str, Any], constants: dict[str, Any]) -> dict[str, Any]:
-    """One call site's roofline and ceiling columns, per call and times its count."""
-    cost = invocation.cost
-    tensor = constants[peaks["tensor_roles"][invocation.tensor]]   # the format's observed rate
-    roof_stream = cost.bytes / peaks["hbm_bps"] * 1e6
-    roof_tensor = cost.flops / peaks["tensor_fps"][invocation.tensor] * 1e6
+def site_row(call_site: str, invocations: Sequence[Invocation], n: int, ceiling_declared: Ceiling | None,
+             peaks: dict[str, Any], constants: dict[str, Any]) -> dict[str, Any]:
+    """One call site's roofline and ceiling columns, per call and times its count.
+
+    `invocations` are the reference's launches of the site, `n` the engine's
+    calls: the site's work divided by them is one call's (a monolithic call
+    site does every denoising step in one call)."""
+    formats = {fmt for invocation in invocations for fmt in invocation.flops}
+    if len(formats) != 1:
+        raise ValueError(f"{call_site} runs in {sorted(formats)}; one format per call site")
+    fmt = formats.pop()
+    nbytes = sum(i.bytes_read + i.bytes_written for i in invocations) / n
+    flops = sum(i.flops[fmt] for i in invocations) / n
+    tensor = constants[peaks["tensor_roles"][fmt]]   # the format's observed rate
+    roof_stream = nbytes / peaks["hbm_bps"] * 1e6
+    roof_tensor = flops / peaks["tensor_fps"][fmt] * 1e6
     roofline = max(roof_stream, roof_tensor)
     tensor_fps = float(tensor["value"]) * 1e12
-    tensor_us = cost.flops / tensor_fps * 1e6
-    if invocation.ceiling is not None:
-        ceiling = invocation.ceiling.us
-        source = {"declared": True, "tag": invocation.ceiling.tag, "job": invocation.ceiling.job}
+    tensor_us = flops / tensor_fps * 1e6
+    if ceiling_declared is not None:
+        ceiling = ceiling_declared.us
+        source = {"declared": True, "tag": ceiling_declared.tag, "job": ceiling_declared.job}
     else:
-        memory_us, rule = delivered_us(cost.bytes, constants)
+        memory_us, rule = delivered_us(nbytes, constants)
         ceiling = max(memory_us, tensor_us)
         source = {"declared": False,
                   "rule": rule if memory_us >= tensor_us else f"FLOPs / {tensor['value']} TFLOP/s [{tensor['tag']}]"}
-    n = invocation.count
-    return {"call_site": invocation.call_site, "count": n, "tensor": invocation.tensor,
-            "bytes": cost.bytes, "flops": cost.flops,
+    return {"call_site": call_site, "count": n, "tensor": fmt,
+            "bytes": nbytes, "flops": flops,
             "bound": "compute" if roof_tensor > roof_stream else "memory",
             "roofline_us_each": roofline, "roofline_us": roofline * n,
             "ceiling_us_each": ceiling, "ceiling_us": ceiling * n, "ceiling_source": source}
@@ -155,6 +172,13 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
     target = resolve(target)
     engine = build(target, plan or "shipped", seed=seed, **overrides)
     identity = engine.identity
+    depth = {axis: engine.shape[axis] for axis in ("steps", "layers")}
+    derived = work(get_target(target), workload=engine.workload,
+                   quantization=engine.quantization, **depth)
+    launches: dict[str, list[Invocation]] = {}
+    for invocation in derived.launch:
+        launches.setdefault(invocation.call_sites[0], []).append(invocation)
+    calls = {site: sum(1 for node in engine.graph.nodes if node.call_site == site) for site in launches}
     device_roofline = roofline_of(identity.hardware)
     constants, constants_version = load_constants(device_roofline.constants_file,
                                                   device_roofline.constant_tags)
@@ -165,13 +189,24 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
     engine.forward(**inputs)
     torch.cuda.synchronize()
     sm_count = torch.cuda.get_device_properties(0).multi_processor_count
-    costs = engine.costs
+    call_sites_of = {stage: tuple(dict.fromkeys(node.call_site for node in engine.graph.nodes_of(stage)
+                                                if not node.is_copy and node.call_site in launches))
+                     for stage in engine.graph.segment_names}
     groups = [frozenset(g) for g in engine.atomic_groups]
     tolerance = 1.0 - constants["noise_floor_pct"] / 100.0
     report_segments: dict[str, Any] = {}
     valid = True
     for name in segments(engine):
-        rows = [site_row(inv, peaks, constants) for inv in costs.get(name, ())]
+        rows = [site_row(site, launches[site], calls[site], engine.target.ceilings.get(site), peaks,
+                         constants)
+                for site in call_sites_of[name]]
+        flow_us = sum(i.seconds(device_roofline) for i in derived.flow if i.stage == name) * 1e6
+        # The same passes at what this machine was measured to deliver.
+        flow_ceiling_us = sum(
+            max((i.bytes_read + i.bytes_written) / (float(constants["stream"]["value"]) * 1e12),
+                sum(count / (float(constants[peaks["tensor_roles"][fmt]]["value"]) * 1e12)
+                    for fmt, count in i.flops.items()))
+            for i in derived.flow if i.stage == name) * 1e6
         roofline = sum(r["roofline_us"] for r in rows)
         ceiling = sum(r["ceiling_us"] for r in rows)
         profiled = attribute(engine, name, sm_count)
@@ -218,6 +253,8 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
             within_all &= row["within_ceiling"]
         valid &= seg_valid
         report_segments[name] = {
+            "flow_kernel_bound_us": flow_us,
+            "flow_kernel_ceiling_us": flow_ceiling_us,
             "roofline_us": roofline,
             "ceiling_us": ceiling,
             "measured_min_us": measured_us,
@@ -236,7 +273,8 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
             "call_sites": rows,
         }
     totals = {key: sum(seg[key] for seg in report_segments.values())
-              for key in ("roofline_us", "ceiling_us", "measured_min_us", "launches")}
+              for key in ("flow_kernel_bound_us", "flow_kernel_ceiling_us", "roofline_us",
+                          "ceiling_us", "measured_min_us", "launches")}
     totals["all_within_ceiling"] = all(seg["all_within_ceiling"] for seg in report_segments.values())
     totals["headroom_pct"] = headroom_pct
     report = {
@@ -249,7 +287,7 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
                         "version": f"{FORM_VERSION}+{constants_version}"},
         "config": {"reps": reps, "warmup": warmup, "seed": seed, "plan": plan},
         "segments": report_segments,
-        "declared": total(costs),
+        "work": summary(derived, device_roofline),
         "totals": totals,
         "valid": valid,
         "note": ("guidance, not an objective: roofline is the datasheet, ceiling is what the "

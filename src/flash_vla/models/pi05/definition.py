@@ -21,7 +21,7 @@ import torch
 from flash_vla.runtime.graph import Graph
 from flash_vla.runtime.vla import CheckpointReader, ConfigValue, Input, ModelDefinition, Workload
 
-from . import graph
+from . import graph, work
 from .graph import Pi05Layout
 from .ops import MASKED_OPS
 from .prompt import PrefixInputs
@@ -98,6 +98,8 @@ class Pi05Model(ModelDefinition[Pi05Config, PrefixInputs]):
         "encoder_dim", "encoder_ffn_dim", "query_heads", "kv_heads", "head_dim",
         "qkv_width", "expert_dim", "expert_ffn_dim",
     )
+    work_rules = work.RULES
+    reference_run = staticmethod(work.reference_run)
     workloads = (
         # RoboDojo's official Pi0.5 baseline: XPolicyLab `pi05_base_aloha_full_sim_arx-x5`,
         # three cameras and a 14-dim ALOHA state (docs/workloads.md).

@@ -8,7 +8,7 @@ variants are this model's extension ops.
 """
 from __future__ import annotations
 
-from flash_vla.runtime.ops import STANDARD, OpSpec, dual_gemm, gemm
+from flash_vla.runtime.ops import STANDARD, OpSpec
 
 #: The standard call sites: every one the unmasked Pi0.5 graph emits.
 CALL_SITES = frozenset(spec.name for spec in STANDARD)
@@ -26,14 +26,13 @@ MASKED_CALL_SITES = {
 MASKED_OPS = (
     OpSpec("llm_backbone_norm_gated_ffn_masked",
            ("x", "gate_w", "up_w", "out", "x_norm", "mask"),
-           outputs=("out", "x_norm"), weights=("gate_w", "up_w"), aux=("x_norm",),
-           flops=dual_gemm("x", "gate_w")),
+           outputs=("out", "x_norm"), weights=("gate_w", "up_w")),
     OpSpec("llm_backbone_ffn_down_residual_masked",
            ("x", "weight", "out", "mask"), outputs=("out",), inout=("out",),
-           weights=("weight",), flops=gemm("x", "weight")),
+           weights=("weight",)),
     OpSpec("llm_backbone_out_proj_residual_masked",
            ("x", "weight", "out", "mask"), outputs=("out",), inout=("out",),
-           weights=("weight",), flops=gemm("x", "weight")),
+           weights=("weight",)),
 )
 
 __all__ = ["CALL_SITES", "MASKED_CALL_SITES", "MASKED_OPS"]

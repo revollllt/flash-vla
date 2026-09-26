@@ -1,7 +1,8 @@
 """GEMM call sites of the VLA workloads the quantized-kernel survey times.
 
-(M, K, N) are the deployed shapes: GR00T N1.7 from lab/groot_n17/roofline.py
-(checked against a real forward's FLOPs), packed where the shipped route packs;
+(M, K, N) are the deployed shapes: GR00T N1.7 from the ablation's roofline
+(`git show e6869fd:lab/groot_n17/roofline.py`, checked against a real forward's
+FLOPs), packed where the shipped route packs;
 Pi0.5 from models/pi05/spec.py. Pi0.5's SigLIP FFN width 4304 is padded to
 4352, which satisfies the 32-, 128- and alignment requirements of every format.
 `count` is calls per observation.

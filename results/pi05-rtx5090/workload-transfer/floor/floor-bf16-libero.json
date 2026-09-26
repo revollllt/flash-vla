@@ -1,0 +1,949 @@
+{
+  "identity": {
+    "schema_version": 3,
+    "target": "hardware/nvidia/rtx5090/pi05",
+    "hardware": "rtx5090-32gb",
+    "model": "pi05",
+    "shape_profile": "action_dim32-batch1-chunk10-encoder_dim2048-encoder_ffn_dim16384-expert_dim1024-expert_ffn_dim4096-expert_tokens10-head_dim256-image_channels3-image_height224-image_width224-kv_heads1-layers18-num_views2-prefix_len712-prompt_len200-qkv_width2560-query_heads8-state_dim32-steps10-vision_dim1152-vision_ffn_dim4304-vision_head_dim72-vision_heads16-vision_layers27-visual_tokens512-visual_tokens_per_view256",
+    "shape": {
+      "batch": 1,
+      "num_views": 2,
+      "image_height": 224,
+      "image_width": 224,
+      "image_channels": 3,
+      "visual_tokens_per_view": 256,
+      "visual_tokens": 512,
+      "vision_dim": 1152,
+      "vision_ffn_dim": 4304,
+      "vision_heads": 16,
+      "vision_head_dim": 72,
+      "vision_layers": 27,
+      "prompt_len": 200,
+      "prefix_len": 712,
+      "chunk": 10,
+      "expert_tokens": 10,
+      "state_dim": 32,
+      "action_dim": 32,
+      "steps": 10,
+      "layers": 18,
+      "encoder_dim": 2048,
+      "encoder_ffn_dim": 16384,
+      "query_heads": 8,
+      "kv_heads": 1,
+      "head_dim": 256,
+      "qkv_width": 2560,
+      "expert_dim": 1024,
+      "expert_ffn_dim": 4096
+    },
+    "plan": {
+      "vision_encoder_patch_embed": "torch",
+      "vision_encoder_norm_qkv": "cutlass-vision",
+      "vision_encoder_attention": "torch",
+      "vision_encoder_out_proj_residual": "cutlass-vision",
+      "vision_encoder_norm_ffn_up": "cutlass-vision",
+      "vision_encoder_ffn_down_residual": "cutlass-vision",
+      "llm_backbone_projector": "torch",
+      "llm_backbone_embed_prompt": "torch",
+      "llm_backbone_norm_qkv_rope": "fused-prefix-qkv",
+      "llm_backbone_attention": "torch",
+      "llm_backbone_out_proj_residual_masked": "bucketed-backbone",
+      "llm_backbone_norm_gated_ffn_masked": "bucketed-backbone",
+      "llm_backbone_ffn_down_residual_masked": "bucketed-backbone",
+      "action_expert_action_in_proj": "torch",
+      "action_expert_norm_qkv_rope": "triton-qkv-finish",
+      "action_expert_attention": "triton-qk-attention",
+      "action_expert_out_proj_residual": "cutlass-expert-residual",
+      "action_expert_norm_gated_ffn": "dual-ffn",
+      "action_expert_ffn_down_residual": "cutlass-expert-residual",
+      "action_expert_action_out_proj": "fused-qkv"
+    },
+    "model_revision": "pi05-r1",
+    "engine_revision": null,
+    "inference_signature": "sha256:a79c1f62c3f14674ad87e88a89bb5f66ac650e1c497ccf5076e64017b55d9f6f",
+    "execution_variant": {
+      "quantization": {
+        "mode": "bf16"
+      },
+      "cache": {
+        "mode": "none"
+      }
+    }
+  },
+  "measurement_context": {
+    "weights": {
+      "checkpoint_id": "flash-vla/pi05-random-checkpoint/v2/seed-0",
+      "checkpoint_digest": "flash-vla/pi05-random-checkpoint/v2/seed-0"
+    },
+    "fixture": {
+      "id": "flash-vla/pi05-inputs-v2/seed-0",
+      "digest": "sha256:186266f9050d21a33ecfa4de7b9d54fe4851c8671f379edb5bc426c775184ce2"
+    },
+    "environment": {
+      "gpu_sku": "NVIDIA GeForce RTX 5090",
+      "driver": "580.142",
+      "cuda_runtime": "13.0",
+      "pytorch": "2.13.0+cu130",
+      "tilelang": "0.1.11",
+      "clock_policy": {
+        "benchmark_control": "inherit",
+        "slurm_gpu_freq_request": null,
+        "effective_locked_clocks": "unobserved"
+      },
+      "power_policy": {
+        "requested_limit_w": 600.0,
+        "enforced_limit_w": 600.0
+      },
+      "capture_regime": "cuda_graph",
+      "clock_observation": {
+        "application_graphics_mhz": "[N/A]",
+        "application_memory_mhz": "[N/A]"
+      }
+    },
+    "workload": "libero",
+    "hostname": "ubun",
+    "slurm_job_id": null,
+    "timestamp": 1790435235.4511232,
+    "reference_provenance": {}
+  },
+  "env": {
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "python": "3.12.13",
+    "torch": "2.13.0+cu130",
+    "torch_cuda": "13.0",
+    "tilelang": "0.1.11",
+    "gpu_uuid": "GPU-7fc626f4-bce7-9a11-81de-0eaedc93e242",
+    "runtime_observation": {
+      "clocks.sm": "2865",
+      "clocks.mem": "13801",
+      "pstate": "P1",
+      "temperature.gpu": "44",
+      "power.draw": "407.85",
+      "clocks_event_reasons.active": "0x0000000000000000"
+    },
+    "node": "ubun",
+    "job": null,
+    "driver": "580.142",
+    "clocks": "unlocked",
+    "clock_policy": {
+      "benchmark_control": "inherit",
+      "slurm_gpu_freq_request": null,
+      "effective_locked_clocks": "unobserved"
+    },
+    "clock_observation": {
+      "application_graphics_mhz": "[N/A]",
+      "application_memory_mhz": "[N/A]"
+    },
+    "power_policy": {
+      "requested_limit_w": 600.0,
+      "enforced_limit_w": 600.0
+    }
+  },
+  "floor_model": {
+    "form": "5",
+    "constants_file": "src/flash_vla/hardware/nvidia/rtx5090/measured/constants.yaml",
+    "constants_version": "743fe12bed3b",
+    "constants": {
+      "noise_floor_pct": 6.0,
+      "stream": {
+        "tag": "ld.bw.dev.dram",
+        "value": 1.524,
+        "units": "MB per us marginal (1.598 TB/s, 89% of the 1.792 TB/s datasheet peak) behind 3.35 us of fixed cost, fitted over 16-128 MB as a 1-node CUDA graph replay with L2 flushed outside the timed region. Launching the same kernel from a stream instead fits 3.93 + MB/1.539, agreeing within the 6% noise floor -- this fixed cost is the memory system's own spin-up, NOT launch overhead, because an event pair around a launch measures GPU-side kernel duration",
+        "short": "3.35us + MB/1.524",
+        "fixed_us": 3.35
+      },
+      "tensor": {
+        "tag": "mma.tflops.dev.bf16",
+        "value": 253,
+        "units": "TFLOP/s bf16 with fp32 accumulate, sustained across the whole device, from wall time rather than a clock assumption; 248.8 at 4 warps per SM rising to 253.2 at 12, register-resident operands. This is mma.rate.sm.bf16's 512 FLOP/cycle/SM at the 2.89 GHz this part was observed running (mma.clock.sm), and the two must move together",
+        "short": "253 TFLOP/s observed"
+      },
+      "tensor_mxfp8": {
+        "tag": "mma.tflops.dev.mxfp8",
+        "value": 990,
+        "units": "TFLOP/s block-scaled MXFP8 (mma kind::mxf8f6f4.block_scale, e4m3 x e4m3, ue8m0 scale per 32) with fp32 accumulate, sustained across the whole device from wall time, register-resident operands; 990.1 at 8 warps per SM and 985.0 at 16, 855.0 at 4. That is 2016 FLOP/cycle/SM at the 2.87-2.89 GHz observed, lab/quantization/mma_blockscale_clock.cu, 2026-09-23 (results/quant-kernel-survey-rtx5090/mma_blockscale_clock.txt)",
+        "short": "990 TFLOP/s observed"
+      },
+      "launch": {
+        "tag": "launch.lat.dev.ramp",
+        "value": 0.45,
+        "units": "us per launch INSIDE a CUDA graph, 256 threads, from a 64-node graph replayed under one event pair; 0.419 at 1 CTA, 0.449 at 170, 0.515 at 340, 0.802 at 1024 -- so unlike a stream launch it does rise with grid size. The same empty kernel launched back-to-back from a STREAM costs 2.05 us and is flat in grid size, the fixed submission cost hiding the ramp",
+        "short": "0.45 us/launch in-graph (2.05 in-stream)"
+      },
+      "knee": {
+        "tag": "ld.ctas.dev.knee",
+        "value": 340,
+        "units": "CTAs at which a cold 16 MB read reaches its best time (14.34 us); exactly 2x the 170 SMs, and flat from there to 2720",
+        "short": "knee @ 2x SM count"
+      }
+    },
+    "datasheet": {
+      "hbm_bps": 1792000000000.0,
+      "bf16_fps": 209600000000000.0,
+      "tensor_fps": {
+        "bf16": 209600000000000.0,
+        "mxfp8": 838000000000000.0
+      },
+      "tensor_roles": {
+        "bf16": "tensor",
+        "mxfp8": "tensor_mxfp8"
+      },
+      "source": "flash_vla.hardware.nvidia.rtx5090.spec.RTX5090Spec"
+    },
+    "version": "5+743fe12bed3b"
+  },
+  "config": {
+    "reps": 30,
+    "warmup": 3,
+    "seed": 0,
+    "plan": null
+  },
+  "segments": {
+    "vision_encoder": {
+      "flow_kernel_bound_us": 2089.3952390839695,
+      "flow_kernel_ceiling_us": 1730.9772415494072,
+      "roofline_us": 2089.3952390839695,
+      "ceiling_us": 1898.8082372004606,
+      "measured_min_us": 3179.903984069824,
+      "measured_median_us": 3184.783935546875,
+      "pct_of_ceiling": 167.46841106810072,
+      "all_within_ceiling": false,
+      "valid": false,
+      "groups": [],
+      "launches": 330,
+      "attribution_valid": true,
+      "kernel_time_us": 3133.568,
+      "copy_us": 38.178,
+      "under_one_wave_launches": 0,
+      "unattributed_us": 0.0,
+      "call_sites": [
+        {
+          "call_site": "vision_encoder_patch_embed",
+          "count": 1,
+          "tensor": "bf16",
+          "bytes": 3728640.0,
+          "flops": 693633024.0,
+          "bound": "compute",
+          "roofline_us_each": 3.3093178625954196,
+          "roofline_us": 3.3093178625954196,
+          "ceiling_us_each": 5.796614173228346,
+          "ceiling_us": 5.796614173228346,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+          },
+          "group": null,
+          "measured_us": 17.376,
+          "launches": 6,
+          "under_one_wave": 0,
+          "pct_of_ceiling": 299.76119646277357,
+          "within_ceiling": false,
+          "valid": true
+        },
+        {
+          "call_site": "vision_encoder_norm_qkv",
+          "count": 27,
+          "tensor": "bf16",
+          "bytes": 12692736.0,
+          "flops": 4076863488.0,
+          "bound": "compute",
+          "roofline_us_each": 19.45068458015267,
+          "roofline_us": 525.1684836641222,
+          "ceiling_us_each": 16.114084932806325,
+          "ceiling_us": 435.08029318577076,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+          },
+          "group": null,
+          "measured_us": 704.9009999999998,
+          "launches": 54,
+          "under_one_wave": 0,
+          "pct_of_ceiling": 162.01630159769633,
+          "within_ceiling": false,
+          "valid": false
+        },
+        {
+          "call_site": "vision_encoder_attention",
+          "count": 27,
+          "tensor": "bf16",
+          "bytes": 4718592.0,
+          "flops": 603979776.0,
+          "bound": "compute",
+          "roofline_us_each": 2.881582900763359,
+          "roofline_us": 77.80273832061069,
+          "ceiling_us_each": 6.446188976377953,
+          "ceiling_us": 174.04710236220473,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+          },
+          "group": null,
+          "measured_us": 403.13899999999967,
+          "launches": 81,
+          "under_one_wave": 0,
+          "pct_of_ceiling": 231.6263784507242,
+          "within_ceiling": false,
+          "valid": true
+        },
+        {
+          "call_site": "vision_encoder_out_proj_residual",
+          "count": 27,
+          "tensor": "bf16",
+          "bytes": 6195456.0,
+          "flops": 1358954496.0,
+          "bound": "compute",
+          "roofline_us_each": 6.4835615267175575,
+          "roofline_us": 175.05616122137405,
+          "ceiling_us_each": 7.415259842519685,
+          "ceiling_us": 200.2120157480315,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+          },
+          "group": null,
+          "measured_us": 346.27700000000016,
+          "launches": 54,
+          "under_one_wave": 0,
+          "pct_of_ceiling": 172.9551539183306,
+          "within_ceiling": false,
+          "valid": true
+        },
+        {
+          "call_site": "vision_encoder_norm_ffn_up",
+          "count": 27,
+          "tensor": "bf16",
+          "bytes": 15516576.0,
+          "flops": 5077204992.0,
+          "bound": "compute",
+          "roofline_us_each": 24.22330625954198,
+          "roofline_us": 654.0292690076335,
+          "ceiling_us_each": 20.068003920948616,
+          "ceiling_us": 541.8361058656126,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+          },
+          "group": null,
+          "measured_us": 897.7670000000002,
+          "launches": 81,
+          "under_one_wave": 0,
+          "pct_of_ceiling": 165.68977044557943,
+          "within_ceiling": false,
+          "valid": false
+        },
+        {
+          "call_site": "vision_encoder_ffn_down_residual",
+          "count": 27,
+          "tensor": "bf16",
+          "bytes": 16685312.0,
+          "flops": 5077204992.0,
+          "bound": "compute",
+          "roofline_us_each": 24.22330625954198,
+          "roofline_us": 654.0292690076335,
+          "ceiling_us_each": 20.068003920948616,
+          "ceiling_us": 541.8361058656126,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+          },
+          "group": null,
+          "measured_us": 764.1080000000001,
+          "launches": 54,
+          "under_one_wave": 0,
+          "pct_of_ceiling": 141.02197910552604,
+          "within_ceiling": false,
+          "valid": false
+        }
+      ]
+    },
+    "llm_backbone": {
+      "flow_kernel_bound_us": 13071.6629789313,
+      "flow_kernel_ceiling_us": 10829.330278197627,
+      "roofline_us": 13073.551058172368,
+      "ceiling_us": 10834.90038187217,
+      "measured_min_us": 14042.655944824219,
+      "measured_median_us": 14157.824039459229,
+      "pct_of_ceiling": 129.60576885708088,
+      "all_within_ceiling": false,
+      "valid": false,
+      "groups": [],
+      "launches": 233,
+      "attribution_valid": true,
+      "kernel_time_us": 13862.118,
+      "copy_us": 38.337,
+      "under_one_wave_launches": 20,
+      "unattributed_us": 0.0,
+      "call_sites": [
+        {
+          "call_site": "llm_backbone_projector",
+          "count": 1,
+          "tensor": "bf16",
+          "bytes": 8004096.0,
+          "flops": 2415919104.0,
+          "bound": "compute",
+          "roofline_us_each": 11.526331603053436,
+          "roofline_us": 11.526331603053436,
+          "ceiling_us_each": 9.549087367588932,
+          "ceiling_us": 9.549087367588932,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+          },
+          "group": null,
+          "measured_us": 31.040999999999997,
+          "launches": 7,
+          "under_one_wave": 2,
+          "pct_of_ceiling": 325.0677138566971,
+          "within_ceiling": false,
+          "valid": false
+        },
+        {
+          "call_site": "llm_backbone_embed_prompt",
+          "count": 1,
+          "tensor": "bf16",
+          "bytes": 3383438.0,
+          "flops": 0.0,
+          "bound": "memory",
+          "roofline_us_each": 1.8880792410714284,
+          "roofline_us": 1.8880792410714284,
+          "ceiling_us_each": 5.5701036745406824,
+          "ceiling_us": 5.5701036745406824,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+          },
+          "group": null,
+          "measured_us": 3.84,
+          "launches": 2,
+          "under_one_wave": 0,
+          "pct_of_ceiling": 68.9394708675086,
+          "within_ceiling": true,
+          "valid": false
+        },
+        {
+          "call_site": "llm_backbone_norm_qkv_rope",
+          "count": 18,
+          "tensor": "bf16",
+          "bytes": 17152682.666666668,
+          "flops": 7134045070.222222,
+          "bound": "compute",
+          "roofline_us_each": 34.03647457167091,
+          "roofline_us": 612.6565422900763,
+          "ceiling_us_each": 28.197806601668862,
+          "ceiling_us": 507.56051883003954,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+          },
+          "group": null,
+          "measured_us": 979.7189999999999,
+          "launches": 54,
+          "under_one_wave": 18,
+          "pct_of_ceiling": 193.02506078650813,
+          "within_ceiling": false,
+          "valid": false
+        },
+        {
+          "call_site": "llm_backbone_attention",
+          "count": 17,
+          "tensor": "bf16",
+          "bytes": 7575680.0,
+          "flops": 4152885248.0,
+          "bound": "compute",
+          "roofline_us_each": 19.813383816793895,
+          "roofline_us": 336.8275248854962,
+          "ceiling_us_each": 16.414566197628456,
+          "ceiling_us": 279.04762535968376,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+          },
+          "group": null,
+          "measured_us": 666.0169999999999,
+          "launches": 68,
+          "under_one_wave": 0,
+          "pct_of_ceiling": 238.67502873085718,
+          "within_ceiling": false,
+          "valid": false
+        },
+        {
+          "call_site": "llm_backbone_out_proj_residual_masked",
+          "count": 17,
+          "tensor": "bf16",
+          "bytes": 17137664.0,
+          "flops": 5972688896.0,
+          "bound": "compute",
+          "roofline_us_each": 28.49565312977099,
+          "roofline_us": 484.4261032061068,
+          "ceiling_us_each": 23.607465992094863,
+          "ceiling_us": 401.3269218656127,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+          },
+          "group": null,
+          "measured_us": 589.889,
+          "launches": 17,
+          "under_one_wave": 0,
+          "pct_of_ceiling": 146.98465711142316,
+          "within_ceiling": false,
+          "valid": false
+        },
+        {
+          "call_site": "llm_backbone_norm_gated_ffn_masked",
+          "count": 17,
+          "tensor": "bf16",
+          "bytes": 160468992.0,
+          "flops": 95563022336.0,
+          "bound": "compute",
+          "roofline_us_each": 455.93045007633583,
+          "roofline_us": 7750.817651297709,
+          "ceiling_us_each": 377.7194558735178,
+          "ceiling_us": 6421.230749849803,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+          },
+          "group": null,
+          "measured_us": 7916.9039999999995,
+          "launches": 68,
+          "under_one_wave": 0,
+          "pct_of_ceiling": 123.29262579740154,
+          "within_ceiling": false,
+          "valid": false
+        },
+        {
+          "call_site": "llm_backbone_ffn_down_residual_masked",
+          "count": 17,
+          "tensor": "bf16",
+          "bytes": 96272384.0,
+          "flops": 47781511168.0,
+          "bound": "compute",
+          "roofline_us_each": 227.96522503816792,
+          "roofline_us": 3875.4088256488544,
+          "ceiling_us_each": 188.8597279367589,
+          "ceiling_us": 3210.6153749249015,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "FLOPs / 253 TFLOP/s [mma.tflops.dev.bf16]"
+          },
+          "group": null,
+          "measured_us": 3674.7080000000005,
+          "launches": 17,
+          "under_one_wave": 0,
+          "pct_of_ceiling": 114.45494308348768,
+          "within_ceiling": false,
+          "valid": false
+        }
+      ]
+    },
+    "action_expert": {
+      "flow_kernel_bound_us": 3045.5650212053574,
+      "flow_kernel_ceiling_us": 3581.1368228346455,
+      "roofline_us": 3601.0299453125,
+      "ceiling_us": 7316.281930446194,
+      "measured_min_us": 9221.887588500977,
+      "measured_median_us": 9230.655670166016,
+      "pct_of_ceiling": 126.04609385164258,
+      "all_within_ceiling": false,
+      "valid": true,
+      "groups": [],
+      "launches": 1680,
+      "attribution_valid": true,
+      "kernel_time_us": 8955.189,
+      "copy_us": 7.167999999999999,
+      "under_one_wave_launches": 1320,
+      "unattributed_us": 0.0,
+      "call_sites": [
+        {
+          "call_site": "action_expert_action_in_proj",
+          "count": 10,
+          "tensor": "bf16",
+          "bytes": 91236.2,
+          "flops": 655360.0,
+          "bound": "memory",
+          "roofline_us_each": 0.05091305803571428,
+          "roofline_us": 0.5091305803571429,
+          "ceiling_us_each": 3.4098662729658793,
+          "ceiling_us": 34.09866272965879,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+          },
+          "group": null,
+          "measured_us": 49.088,
+          "launches": 30,
+          "under_one_wave": 30,
+          "pct_of_ceiling": 143.95872468424864,
+          "within_ceiling": false,
+          "valid": true
+        },
+        {
+          "call_site": "action_expert_norm_qkv_rope",
+          "count": 180,
+          "tensor": "bf16",
+          "bytes": 5328896.0,
+          "flops": 52428800.0,
+          "bound": "memory",
+          "roofline_us_each": 2.9737142857142858,
+          "roofline_us": 535.2685714285715,
+          "ceiling_us_each": 6.846650918635171,
+          "ceiling_us": 1232.3971653543308,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+          },
+          "group": null,
+          "measured_us": 1754.988999999999,
+          "launches": 360,
+          "under_one_wave": 360,
+          "pct_of_ceiling": 142.40449826865805,
+          "within_ceiling": false,
+          "valid": true
+        },
+        {
+          "call_site": "action_expert_attention",
+          "count": 180,
+          "tensor": "bf16",
+          "bytes": 835688.0,
+          "flops": 59146240.0,
+          "bound": "memory",
+          "roofline_us_each": 0.46634375,
+          "roofline_us": 83.941875,
+          "ceiling_us_each": 3.8983517060367454,
+          "ceiling_us": 701.7033070866141,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+          },
+          "group": null,
+          "measured_us": 1791.6940000000027,
+          "launches": 540,
+          "under_one_wave": 540,
+          "pct_of_ceiling": 255.33498016973812,
+          "within_ceiling": false,
+          "valid": true
+        },
+        {
+          "call_site": "action_expert_out_proj_residual",
+          "count": 180,
+          "tensor": "bf16",
+          "bytes": 4278272.0,
+          "flops": 41943040.0,
+          "bound": "memory",
+          "roofline_us_each": 2.3874285714285715,
+          "roofline_us": 429.7371428571429,
+          "ceiling_us_each": 6.1572650918635174,
+          "ceiling_us": 1108.3077165354332,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+          },
+          "group": null,
+          "measured_us": 1136.4160000000002,
+          "launches": 180,
+          "under_one_wave": 0,
+          "pct_of_ceiling": 102.53614434377786,
+          "within_ceiling": true,
+          "valid": true
+        },
+        {
+          "call_site": "action_expert_norm_gated_ffn",
+          "count": 180,
+          "tensor": "bf16",
+          "bytes": 16883712.0,
+          "flops": 167772160.0,
+          "bound": "memory",
+          "roofline_us_each": 9.421714285714286,
+          "roofline_us": 1695.9085714285713,
+          "ceiling_us_each": 14.42855118110236,
+          "ceiling_us": 2597.139212598425,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+          },
+          "group": null,
+          "measured_us": 2442.07,
+          "launches": 360,
+          "under_one_wave": 360,
+          "pct_of_ceiling": 94.02922986006288,
+          "within_ceiling": true,
+          "valid": true
+        },
+        {
+          "call_site": "action_expert_ffn_down_residual",
+          "count": 180,
+          "tensor": "bf16",
+          "bytes": 8513536.0,
+          "flops": 83886080.0,
+          "bound": "memory",
+          "roofline_us_each": 4.750857142857143,
+          "roofline_us": 855.1542857142857,
+          "ceiling_us_each": 8.93630971128609,
+          "ceiling_us": 1608.535748031496,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+          },
+          "group": null,
+          "measured_us": 1630.8840000000005,
+          "launches": 180,
+          "under_one_wave": 0,
+          "pct_of_ceiling": 101.38935376449383,
+          "within_ceiling": true,
+          "valid": true
+        },
+        {
+          "call_site": "action_expert_action_out_proj",
+          "count": 10,
+          "tensor": "bf16",
+          "bytes": 91458.0,
+          "flops": 655360.0,
+          "bound": "memory",
+          "roofline_us_each": 0.051036830357142855,
+          "roofline_us": 0.5103683035714286,
+          "ceiling_us_each": 3.410011811023622,
+          "ceiling_us": 34.10011811023622,
+          "ceiling_source": {
+            "declared": false,
+            "rule": "3.35 us + MB / 1.524 TB/s [ld.bw.dev.dram] (no burst curve measured on this axis)"
+          },
+          "group": null,
+          "measured_us": 150.04799999999997,
+          "launches": 30,
+          "under_one_wave": 30,
+          "pct_of_ceiling": 440.0219363315295,
+          "within_ceiling": false,
+          "valid": true
+        }
+      ]
+    }
+  },
+  "work": {
+    "target": "hardware/nvidia/rtx5090/pi05",
+    "model_revision": "pi05-r1",
+    "torch": "2.13.0+cu130",
+    "workload": "libero",
+    "shape": {
+      "batch": 1,
+      "num_views": 2,
+      "image_height": 224,
+      "image_width": 224,
+      "image_channels": 3,
+      "visual_tokens_per_view": 256,
+      "visual_tokens": 512,
+      "vision_dim": 1152,
+      "vision_ffn_dim": 4304,
+      "vision_heads": 16,
+      "vision_head_dim": 72,
+      "vision_layers": 27,
+      "prompt_len": 200,
+      "prefix_len": 712,
+      "chunk": 10,
+      "expert_tokens": 10,
+      "state_dim": 32,
+      "action_dim": 32,
+      "steps": 10,
+      "layers": 18,
+      "encoder_dim": 2048,
+      "encoder_ffn_dim": 16384,
+      "query_heads": 8,
+      "kv_heads": 1,
+      "head_dim": 256,
+      "qkv_width": 2560,
+      "expert_dim": 1024,
+      "expert_ffn_dim": 4096
+    },
+    "prompt_tokens": null,
+    "quantization": "bf16",
+    "rates": {
+      "dram_bytes_per_second": 1792000000000,
+      "l2_bytes": 100663296,
+      "tensor_flops_per_second": {
+        "bf16": 209600000000000,
+        "mxfp8": 838000000000000
+      },
+      "source": "flash_vla.hardware.nvidia.rtx5090.spec.RTX5090Spec"
+    },
+    "launch_kernel_bound": {
+      "us": 18763.97624256884,
+      "stages": {
+        "vision_encoder": {
+          "invocations": 136,
+          "flops": 437937242112,
+          "bytes": 1510562784.0,
+          "us": 2089.395239083967
+        },
+        "llm_backbone": {
+          "invocations": 88,
+          "flops": 2739820560384,
+          "bytes": 5104866062.0,
+          "us": 13073.55105817236
+        },
+        "action_expert": {
+          "invocations": 920,
+          "flops": 72944844800,
+          "bytes": 6453045662.0,
+          "us": 3601.0299453124812
+        }
+      },
+      "call_sites": {
+        "vision_encoder_patch_embed": {
+          "invocations": 1,
+          "flops": 693633024,
+          "bytes": 3728640.0,
+          "us": 3.3093178625954196
+        },
+        "vision_encoder_norm_qkv": {
+          "invocations": 27,
+          "flops": 110075314176,
+          "bytes": 342703872.0,
+          "us": 525.1684836641219
+        },
+        "vision_encoder_attention": {
+          "invocations": 27,
+          "flops": 16307453952,
+          "bytes": 127401984.0,
+          "us": 77.80273832061074
+        },
+        "vision_encoder_out_proj_residual": {
+          "invocations": 27,
+          "flops": 36691771392,
+          "bytes": 167277312.0,
+          "us": 175.05616122137394
+        },
+        "vision_encoder_norm_ffn_up": {
+          "invocations": 27,
+          "flops": 137084534784,
+          "bytes": 418947552.0,
+          "us": 654.0292690076336
+        },
+        "vision_encoder_ffn_down_residual": {
+          "invocations": 27,
+          "flops": 137084534784,
+          "bytes": 450503424.0,
+          "us": 654.0292690076336
+        },
+        "llm_backbone_projector": {
+          "invocations": 1,
+          "flops": 2415919104,
+          "bytes": 8004096.0,
+          "us": 11.526331603053436
+        },
+        "llm_backbone_embed_prompt": {
+          "invocations": 1,
+          "flops": 0,
+          "bytes": 3383438.0,
+          "us": 1.8880792410714284
+        },
+        "llm_backbone_norm_qkv_rope": {
+          "invocations": 18,
+          "flops": 128412811264,
+          "bytes": 308748288.0,
+          "us": 612.6565422900767
+        },
+        "llm_backbone_attention": {
+          "invocations": 17,
+          "flops": 70599049216,
+          "bytes": 128786560.0,
+          "us": 336.8275248854962
+        },
+        "llm_backbone_out_proj_residual_masked": {
+          "invocations": 17,
+          "flops": 101535711232,
+          "bytes": 291340288.0,
+          "us": 484.4261032061067
+        },
+        "llm_backbone_norm_gated_ffn_masked": {
+          "invocations": 17,
+          "flops": 1624571379712,
+          "bytes": 2727972864.0,
+          "us": 7750.817651297707
+        },
+        "llm_backbone_ffn_down_residual_masked": {
+          "invocations": 17,
+          "flops": 812285689856,
+          "bytes": 1636630528.0,
+          "us": 3875.4088256488535
+        },
+        "action_expert_action_in_proj": {
+          "invocations": 10,
+          "flops": 6553600,
+          "bytes": 912362.0,
+          "us": 0.5091305803571429
+        },
+        "action_expert_norm_qkv_rope": {
+          "invocations": 180,
+          "flops": 9437184000,
+          "bytes": 959201280.0,
+          "us": 535.2685714285702
+        },
+        "action_expert_attention": {
+          "invocations": 180,
+          "flops": 10646323200,
+          "bytes": 150423840.0,
+          "us": 83.9418749999997
+        },
+        "action_expert_out_proj_residual": {
+          "invocations": 180,
+          "flops": 7549747200,
+          "bytes": 770088960.0,
+          "us": 429.73714285714317
+        },
+        "action_expert_norm_gated_ffn": {
+          "invocations": 180,
+          "flops": 30198988800,
+          "bytes": 3039068160.0,
+          "us": 1695.9085714285654
+        },
+        "action_expert_ffn_down_residual": {
+          "invocations": 180,
+          "flops": 15099494400,
+          "bytes": 1532436480.0,
+          "us": 855.1542857142892
+        },
+        "action_expert_action_out_proj": {
+          "invocations": 10,
+          "flops": 6553600,
+          "bytes": 914580.0,
+          "us": 0.5103683035714286
+        }
+      }
+    },
+    "flow_kernel_bound": {
+      "us": 18206.623239220626,
+      "stages": {
+        "vision_encoder": {
+          "invocations": 1,
+          "flops": 437937242112,
+          "bytes": 826661856.0,
+          "us": 2089.3952390839695
+        },
+        "llm_backbone": {
+          "invocations": 1,
+          "flops": 2739820560384,
+          "bytes": 3765508622.0,
+          "us": 13071.6629789313
+        },
+        "action_expert": {
+          "invocations": 10,
+          "flops": 72944844800,
+          "bytes": 5457652518.0,
+          "us": 3045.565021205358
+        }
+      }
+    }
+  },
+  "totals": {
+    "flow_kernel_bound_us": 18206.623239220626,
+    "flow_kernel_ceiling_us": 16141.444342581679,
+    "roofline_us": 18763.97624256884,
+    "ceiling_us": 20049.990549518825,
+    "measured_min_us": 26444.44751739502,
+    "launches": 2243,
+    "all_within_ceiling": false,
+    "headroom_pct": 10
+  },
+  "valid": false,
+  "note": "guidance, not an objective: roofline is the datasheet, ceiling is what the machine delivered for the geometry, measured is the attributed in-graph time; a ceiling above a measured time by more than the noise floor, or a roofline above a ceiling, invalidates the report; an overlapping dependent-launch chain has no supported joint ceiling model; under-one-wave derating is reported, not applied"
+}

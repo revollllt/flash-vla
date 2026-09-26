@@ -141,10 +141,11 @@ dense workload, the conditional estimate is **8.261 ms**; 90% of that estimated
 performance corresponds to **latency ≤9.179 ms**. See the analysis for assumptions
 and omitted costs; this is not a measured attainable latency.
 
-Recompute with the GR00T environment, without model weights or a GPU:
+That estimate is superseded by the floor derived from the reference, for any
+declared workload and without weights or a GPU:
 
 ```bash
-PYTHONPATH=src:. python -m lab.groot_n17.roofline --out artifacts/groot-n17/roofline.json
+python -m measurement.work --target rtx5090/groot_n17 --workload libero
 ```
 
 ## Implementation details that preserve the official forward

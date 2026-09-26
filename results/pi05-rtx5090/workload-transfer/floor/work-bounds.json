@@ -1,0 +1,226 @@
+{
+ "bf16/robodojo/physical": {
+  "launch_us": 25107.011806880113,
+  "flow_us": 24144.591528301014,
+  "stages_flow_us": {
+   "vision_encoder": 3134.0928586259542,
+   "llm_backbone": 17937.856058625952,
+   "action_expert": 3072.642611049107
+  },
+  "stages_launch_us": {
+   "vision_encoder": 3134.092858625953,
+   "llm_backbone": 17940.370424139343,
+   "action_expert": 4032.5485241148144
+  }
+ },
+ "bf16/robodojo/valid-70": {
+  "launch_us": 22581.274592229758,
+  "flow_us": 21652.077094755827,
+  "stages_flow_us": {
+   "vision_encoder": 3134.0928586259542,
+   "llm_backbone": 15458.785670839696,
+   "action_expert": 3059.198565290179
+  },
+  "stages_launch_us": {
+   "vision_encoder": 3134.092858625953,
+   "llm_backbone": 15460.368780772718,
+   "action_expert": 3986.8129528311006
+  }
+ },
+ "bf16/robodojo/valid-43": {
+  "launch_us": 22059.519640613074,
+  "flow_us": 21137.217528188045,
+  "stages_flow_us": {
+   "vision_encoder": 3134.0928586259542,
+   "llm_backbone": 14946.718329160307,
+   "action_expert": 3056.4063404017866
+  },
+  "stages_launch_us": {
+   "vision_encoder": 3134.092858625953,
+   "llm_backbone": 14948.11275549959,
+   "action_expert": 3977.314026487529
+  }
+ },
+ "bf16/robodojo/valid-101": {
+  "launch_us": 23181.523221022697,
+  "flow_us": 22244.40679327767,
+  "stages_flow_us": {
+   "vision_encoder": 3134.0928586259542,
+   "llm_backbone": 16047.909481526716,
+   "action_expert": 3062.4044531249992
+  },
+  "stages_launch_us": {
+   "vision_encoder": 3134.092858625953,
+   "llm_backbone": 16049.71123487492,
+   "action_expert": 3997.7191275218324
+  }
+ },
+ "bf16/libero/physical": {
+  "launch_us": 18763.97624256884,
+  "flow_us": 18206.623239220626,
+  "stages_flow_us": {
+   "vision_encoder": 2089.3952390839695,
+   "llm_backbone": 13071.6629789313,
+   "action_expert": 3045.565021205358
+  },
+  "stages_launch_us": {
+   "vision_encoder": 2089.395239083967,
+   "llm_backbone": 13073.55105817236,
+   "action_expert": 3601.0299453124812
+  }
+ },
+ "bf16/libero/valid-12": {
+  "launch_us": 15229.114950062023,
+  "flow_us": 14673.347881981666,
+  "stages_flow_us": {
+   "vision_encoder": 2089.3952390839695,
+   "llm_backbone": 9557.745851603053,
+   "action_expert": 3026.2067912946427
+  },
+  "stages_launch_us": {
+   "vision_encoder": 2089.395239083967,
+   "llm_backbone": 9558.406790219125,
+   "action_expert": 3581.312920758932
+  }
+ },
+ "bf16/libero/valid-6": {
+  "launch_us": 15117.074920655668,
+  "flow_us": 14561.357168423527,
+  "stages_flow_us": {
+   "vision_encoder": 2089.3952390839695,
+   "llm_backbone": 9446.37295389313,
+   "action_expert": 3025.588975446428
+  },
+  "stages_launch_us": {
+   "vision_encoder": 2089.395239083967,
+   "llm_backbone": 9446.99602755384,
+   "action_expert": 3580.6836540178338
+  }
+ },
+ "bf16/libero/valid-22": {
+  "launch_us": 15415.954819374318,
+  "flow_us": 14860.105379642175,
+  "stages_flow_us": {
+   "vision_encoder": 2089.3952390839695,
+   "llm_backbone": 9743.473656183205,
+   "action_expert": 3027.2364843749992
+  },
+  "stages_launch_us": {
+   "vision_encoder": 2089.395239083967,
+   "llm_backbone": 9744.19788162963,
+   "action_expert": 3582.3616986607058
+  }
+ },
+ "mxfp8-llm-ffn/robodojo/physical": {
+  "launch_us": 13254.065963490288,
+  "flow_us": 12291.645684911193,
+  "stages_flow_us": {
+   "vision_encoder": 3134.0928586259542,
+   "llm_backbone": 6084.910215236131,
+   "action_expert": 3072.642611049107
+  },
+  "stages_launch_us": {
+   "vision_encoder": 3134.092858625953,
+   "llm_backbone": 6087.424580749532,
+   "action_expert": 4032.5485241148144
+  }
+ },
+ "mxfp8-llm-ffn/robodojo/valid-70": {
+  "launch_us": 12320.149988138153,
+  "flow_us": 11390.952490664224,
+  "stages_flow_us": {
+   "vision_encoder": 3134.0928586259542,
+   "llm_backbone": 5197.661066748092,
+   "action_expert": 3059.198565290179
+  },
+  "stages_launch_us": {
+   "vision_encoder": 3134.092858625953,
+   "llm_backbone": 5199.244176681127,
+   "action_expert": 3986.8129528311006
+  }
+ },
+ "mxfp8-llm-ffn/robodojo/valid-43": {
+  "launch_us": 12129.004063144946,
+  "flow_us": 11206.701950719918,
+  "stages_flow_us": {
+   "vision_encoder": 3134.0928586259542,
+   "llm_backbone": 5016.202751692179,
+   "action_expert": 3056.4063404017866
+  },
+  "stages_launch_us": {
+   "vision_encoder": 3134.092858625953,
+   "llm_backbone": 5017.597178031468,
+   "action_expert": 3977.314026487529
+  }
+ },
+ "mxfp8-llm-ffn/robodojo/valid-101": {
+  "launch_us": 12540.810475252287,
+  "flow_us": 11603.69404750726,
+  "stages_flow_us": {
+   "vision_encoder": 3134.0928586259542,
+   "llm_backbone": 5407.196735756308,
+   "action_expert": 3062.4044531249992
+  },
+  "stages_launch_us": {
+   "vision_encoder": 3134.092858625953,
+   "llm_backbone": 5408.998489104522,
+   "action_expert": 3997.7191275218324
+  }
+ },
+ "mxfp8-llm-ffn/libero/physical": {
+  "launch_us": 10045.693762720126,
+  "flow_us": 9488.340759371913,
+  "stages_flow_us": {
+   "vision_encoder": 2089.3952390839695,
+   "llm_backbone": 4353.380499082585,
+   "action_expert": 3045.565021205358
+  },
+  "stages_launch_us": {
+   "vision_encoder": 2089.395239083967,
+   "llm_backbone": 4355.268578323656,
+   "action_expert": 3601.0299453124812
+  }
+ },
+ "mxfp8-llm-ffn/libero/valid-12": {
+  "launch_us": 8812.850877813813,
+  "flow_us": 8257.083809733456,
+  "stages_flow_us": {
+   "vision_encoder": 2089.3952390839695,
+   "llm_backbone": 3141.4817793548436,
+   "action_expert": 3026.2067912946427
+  },
+  "stages_launch_us": {
+   "vision_encoder": 2089.395239083967,
+   "llm_backbone": 3142.1427179709135,
+   "action_expert": 3581.312920758932
+  }
+ },
+ "mxfp8-llm-ffn/libero/valid-6": {
+  "launch_us": 8774.279520990454,
+  "flow_us": 8218.561768758313,
+  "stages_flow_us": {
+   "vision_encoder": 2089.3952390839695,
+   "llm_backbone": 3103.577554227915,
+   "action_expert": 3025.588975446428
+  },
+  "stages_launch_us": {
+   "vision_encoder": 2089.395239083967,
+   "llm_backbone": 3104.20062788863,
+   "action_expert": 3580.6836540178338
+  }
+ },
+ "mxfp8-llm-ffn/libero/valid-22": {
+  "launch_us": 8877.242959487783,
+  "flow_us": 8321.393519755642,
+  "stages_flow_us": {
+   "vision_encoder": 2089.3952390839695,
+   "llm_backbone": 3204.7617962966715,
+   "action_expert": 3027.2364843749992
+  },
+  "stages_launch_us": {
+   "vision_encoder": 2089.395239083967,
+   "llm_backbone": 3205.486021743099,
+   "action_expert": 3582.3616986607058
+  }
+ }
+}

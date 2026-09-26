@@ -2,6 +2,8 @@
 
 [中文](README.md) | [English](README.en.md)
 
+**已被取代。** 现在 GR00T 的 floor 由 reference 推导，对任意 workload 都能计算：`python -m measurement.work --target rtx5090/groot_n17 --workload libero`（`docs/workloads.md`）。本页保留四组消融实验当时使用的条件估计及其出处；计算脚本依赖已删除的 `runtime.cost`，原文可用 `git show e6869fd:lab/groot_n17/roofline.py` 查看。
+
 2026-09-17；参考实现为 `cf2d196`。本目录随主仓库 Git 管理，由四组的共同起点提供，计算采用项目现有 `Cost`、`gemm`、`attention` 和 `tools.profiling.floor.site_row`，未修改推理代码。
 
 **当前 dense 计算路径的条件估计为 8.261 ms。达到该估计性能的 90%，对应完整模型延迟 ≤9.179 ms。** 这是优化目标，可达性尚未证实，预算耗尽仍停止。
@@ -32,7 +34,7 @@ Workload 为 `libero_10`、BF16、batch 1、两路 256×256、156 tokens、16 �
 复算（从任意 Flash-VLA checkout 根目录，使用 GR00T 环境；无需 GPU 或权重）：
 
 ```bash
-PYTHONPATH=src:. python -m lab.groot_n17.roofline --out artifacts/groot-n17/roofline.json
+git show e6869fd:lab/groot_n17/roofline.py > roofline.py   # 在 e6869fd 的 checkout 中运行
 ```
 
-共同数值记录为 [roofline.json](../../results/groot-n17-rtx5090/reference/roofline.json)，真实 forward 检查为 [roofline-execution-check.json](../../results/groot-n17-rtx5090/reference/roofline-execution-check.json)。脚本为 [roofline.py](roofline.py)。四组从同一共同提交继承这些文件；启动 prompt 统一引用本页，以 8.261 ms 为原始比较分母、≤9.179 ms 为目标。运行中若发现建模问题，应记录修正依据，汇总时统一处理，不能只替某一组更换比较分母。
+共同数值记录为 [roofline.json](../../results/groot-n17-rtx5090/reference/roofline.json)，真实 forward 检查为 [roofline-execution-check.json](../../results/groot-n17-rtx5090/reference/roofline-execution-check.json)。脚本见 `git show e6869fd:lab/groot_n17/roofline.py`。四组从同一共同提交继承这些文件；启动 prompt 统一引用本页，以 8.261 ms 为原始比较分母、≤9.179 ms 为目标。运行中若发现建模问题，应记录修正依据，汇总时统一处理，不能只替某一组更换比较分母。

@@ -28,7 +28,8 @@ python -m benchmarks kernels --target h100/pi05 --plan shipped \
 The runner records call-site arguments from the engine. Dependent producer and
 consumer calls declared as an atomic group form one benchmark case; timing a
 consumer alone would not represent a valid invocation. FLOP/byte rates use the
-Target's derived costs and are meaningful only for those stated counts.
+work the model's reference does per call (`measurement.work`) and are
+meaningful only for those stated counts.
 
 ## Standalone kernel or fusion
 

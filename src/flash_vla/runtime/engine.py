@@ -17,7 +17,6 @@ import torch
 
 from flash_vla.provenance import ImplementationProvenance
 
-from .cost import SegmentCosts
 from .cuda.program import Step
 from .graph import Graph
 from .identity import Identity
@@ -58,8 +57,6 @@ class Engine(Protocol):
     #: indexes layers where one exists. A correctness harness compares these
     #: and may inject an oracle's values into them.
     stage_outputs: Mapping[str, tuple[tuple[str, int | None], ...]]
-    #: Per stage, every call site with its minimal bytes and FLOPs, from the graph.
-    costs: SegmentCosts
     #: What the model's host slots keep across calls (`None` when it has none).
     host_state: object
     #: The op table in force: call site -> wrapper.

@@ -7,8 +7,7 @@ plan and the reference plan, and the measured ceilings of this machine.
 from __future__ import annotations
 
 from flash_vla.models.pi05.definition import Pi05Layout, Pi05Model
-from flash_vla.runtime.cost import Ceiling
-from flash_vla.runtime.vla import Target
+from flash_vla.runtime.vla import Ceiling, Target
 
 from .backends import REGISTRY
 

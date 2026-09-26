@@ -17,7 +17,7 @@ import torch
 from flash_vla.runtime.graph import Graph
 from flash_vla.runtime.vla import CheckpointReader, ConfigValue, Input, ModelDefinition, Workload
 
-from . import graph
+from . import graph, work
 from .ops import OPS
 from .spec import (
     ACTION_DIM,
@@ -108,6 +108,8 @@ class LingBotModel(ModelDefinition[LingBotConfig, None]):
         "action_expert": (("velocity_step_0", None), ("actions", None)),
     }
     ops = OPS
+    work_rules = work.RULES
+    reference_run = staticmethod(work.reference_run)
 
     def configure(self, **config: ConfigValue) -> LingBotConfig:
         return LingBotConfig(**config)

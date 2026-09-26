@@ -15,8 +15,7 @@ from __future__ import annotations
 
 from flash_vla.models.pi05.definition import Pi05Layout, Pi05Model
 from flash_vla.models.pi05.ops import MASKED_CALL_SITES
-from flash_vla.runtime.cost import Pricing
-from flash_vla.runtime.vla import QuantizationRecipe, Target
+from flash_vla.runtime.vla import Pricing, QuantizationRecipe, Target
 
 from .backends import REGISTRY
 
@@ -65,11 +64,12 @@ TARGET = Target(
             reference_plan={"llm_backbone_norm_gated_ffn_masked": "fake-quant-mxfp8",
                             "llm_backbone_ffn_down_residual_masked": "fake-quant-mxfp8"},
             backends=frozenset({"mxfp8-backbone", "fake-quant-mxfp8"}),
-            # The hidden is the gated call site's output and the down GEMM's input.
-            pricing={"llm_backbone_norm_gated_ffn_masked": Pricing("mxfp8", {
-                         "gate_w": MXFP8_ITEMSIZE, "up_w": MXFP8_ITEMSIZE, "out": MXFP8_ITEMSIZE}),
-                     "llm_backbone_ffn_down_residual_masked": Pricing("mxfp8", {
-                         "x": MXFP8_ITEMSIZE, "weight": MXFP8_ITEMSIZE})}),
+            # Both call sites read MXFP8 weights and pass each other the MXFP8
+            # hidden; everything else they read and write stays BF16.
+            pricing=Pricing(call_sites=frozenset({"llm_backbone_norm_gated_ffn_masked",
+                                                  "llm_backbone_ffn_down_residual_masked"}),
+                            tensor="mxfp8", weight_itemsize=MXFP8_ITEMSIZE,
+                            activation_itemsize=MXFP8_ITEMSIZE)),
     },
     # Plans saved against the standard backbone names still bind.
     call_site_aliases=MASKED_CALL_SITES,

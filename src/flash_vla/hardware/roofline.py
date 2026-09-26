@@ -28,8 +28,8 @@ class Roofline:
     """One device's datasheet peaks and measured table, as the floor model reads them.
 
     `spec` is the datasheet class the peaks come from, named in reports.
-    `tensor_peaks` maps a call site's tensor-core format (`Invocation.tensor`)
-    to its peak. `constant_tags` maps each floor role (`stream`, `burst`,
+    `tensor_peaks` maps a tensor-core format (the precision's, or a
+    quantization recipe's `Pricing.tensor`) to its peak. `constant_tags` maps each floor role (`stream`, `burst`,
     `tensor`, ...) to the tag of the `constants_file` row that fills it;
     `burst` is optional, and without a measured burst curve the ceiling falls
     back to the stream model at every size. `l2_bytes` is how much a repeated

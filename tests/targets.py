@@ -5,7 +5,6 @@ declaration path (no checkpoint, no capture, no CUDA) and checks what can be che
 node: the identity's shape keys, that every node's call site has a spec and
 the right argument count, that every output and every weight reference is
 declared, that the canonical stage outputs exist with the exposed shape their
-declaration implies, that the graph's derived costs are non-zero per stage,
 that the shipped and reference plans and every candidate plan under
 `lab/plans/` route every call site (a candidate's Target is read from its
 file-name prefix, `lab/plans/README.md`), and that each Target's binding
@@ -61,11 +60,6 @@ def check_target(target: str) -> list[dict[str, Any]]:
                 if axis is not None and (axis >= len(exposed) or exposed[axis] < 1):
                     outputs_ok = False
         _check(results, f"[{workload}] stage outputs declared", outputs_ok)
-        costs = runner.costs
-        _check(results, f"[{workload}] costs non-zero per stage",
-               all(sum(i.bytes for i in rows) > 0 and sum(i.flops for i in rows) > 0
-                   for rows in costs.values()),
-               {s: len(rows) for s, rows in costs.items()})
         for plan in ("shipped", "reference"):
             routed = declare(target, plan, workload=workload).identity.plan
             _check(results, f"[{workload}] plan {plan} routes every call site",
