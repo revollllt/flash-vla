@@ -31,6 +31,7 @@ import torch
 
 from flash_vla.provenance import FixtureProvenance, ImplementationProvenance, WeightsProvenance
 
+from .binding import Candidates
 from .cuda.arena import StaticArena
 from .cuda.program import Program, Segment, Step
 from .engine import StepScope, WrapOp, wrap_ops
@@ -139,8 +140,8 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
         if reader is not None:
             validate_weight_schema(reader.shapes, self.graph.weight_shapes)
         self.quantization: str = target.precision if quantization is None else quantization
-        self.plan: dict[str, str] = target.select_plan(plan, self.quantization)
-        routes = target.registry.resolve(self.plan, self.graph.call_sites)
+        self.plan: Candidates = target.select_plan(plan, self.quantization)
+        routes = target.registry.resolve(self.plan, self.graph.call_sites, self.shape)
         target.check_quantization(routes, self.quantization)
         variant = ExecutionVariant(
             quantization=target.quantization_recipe(self.quantization).identity())

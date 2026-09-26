@@ -93,7 +93,7 @@ def run(args):
     report = {
         "stage": "bucket-switch-official-parity",
         "identity": engine.identity.as_dict(),
-        "plan": engine.plan,
+        "plan": engine.identity.plan,
         "tolerance": limits,
         "captured_program_id": id(program),
         "forward_steps_id": id(steps),

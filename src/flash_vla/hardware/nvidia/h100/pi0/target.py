@@ -25,14 +25,14 @@ TARGET = Target(
     # TileLang: cuBLAS measured slower there in the graph, where the hidden
     # buffer is L2-resident.
     plan={
-        "llm_backbone_attention": "gemma-cuda",
-        "llm_backbone_out_proj_residual": "gemma-cuda",
-        "action_expert_norm_gated_ffn": "tilelang-fused",
-        "action_expert_action_out_proj": "tilelang-fused",
-        "action_expert_attention": "tilelang-fused",
-        "vision_encoder_norm_qkv": "siglip-cuda",
-        "vision_encoder_norm_ffn_up": "siglip-cuda",
-        "vision_encoder_attention": "siglip-cuda",
+        "llm_backbone_attention": ("gemma-cuda",),
+        "llm_backbone_out_proj_residual": ("gemma-cuda",),
+        "action_expert_norm_gated_ffn": ("tilelang-fused",),
+        "action_expert_action_out_proj": ("tilelang-fused",),
+        "action_expert_attention": ("tilelang-fused",),
+        "vision_encoder_norm_qkv": ("siglip-cuda",),
+        "vision_encoder_norm_ffn_up": ("siglip-cuda",),
+        "vision_encoder_attention": ("siglip-cuda",),
     },
     workloads=("robodojo",),
     # The reference route: every call site on the unfused TileLang wrappers.

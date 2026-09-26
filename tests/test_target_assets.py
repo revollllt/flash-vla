@@ -245,8 +245,8 @@ def test_pi05_parity_refuses_an_oracle_built_on_another_prompt(tmp_path, monkeyp
                "prefix_v": torch.zeros(1), "actions": torch.zeros(1)}
     monkeypatch.setattr(parity, "load_file", lambda path: tensors)
     engine = SimpleNamespace(
-        identity=SimpleNamespace(as_dict=lambda: {}, precision="bf16"),
-        measurement_context={}, plan="shipped", buffers={"prompt_ids": staged},
+        identity=SimpleNamespace(as_dict=lambda: {}, precision="bf16", plan={}),
+        measurement_context={}, buffers={"prompt_ids": staged},
         forward=lambda **kw: torch.zeros(1))
     monkeypatch.setattr(parity, "build", lambda *a, **kw: engine)
     monkeypatch.setattr(torch.cuda, "synchronize", lambda: None)

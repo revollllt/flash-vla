@@ -21,9 +21,9 @@ TARGET = Target(
     model=LingBotModel(),
     registry=REGISTRY,
     plan={
-        "lingbot_vision": "vision-attention",
-        "lingbot_prefix": "vision-attention",
-        "lingbot_action": "vision-attention",
+        "lingbot_vision": ("vision-attention",),
+        "lingbot_prefix": ("vision-attention",),
+        "lingbot_action": ("vision-attention",),
     },
     workloads=("robodojo",),
     reference_plan={},

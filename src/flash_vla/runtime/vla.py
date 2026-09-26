@@ -45,6 +45,7 @@ from typing import Callable, Generic, Mapping, TypeVar
 
 import torch
 
+from .binding import Candidates
 from .graph import Graph
 from .ops import OpSpec, Vocabulary
 from .registry import Registry
@@ -68,7 +69,10 @@ DTYPES = {"bf16": torch.bfloat16}
 #: A construction option a runner forwards to `ModelDefinition.configure`.
 ConfigValue = int | str | bool | None
 #: What names a plan: "shipped", "reference", a mapping, a JSON object or a path to one.
-PlanSpec = str | Mapping[str, str] | None
+#: A caller's mapping or JSON plan may give a call site one backend name or a
+#: candidate list; a resolved route (`Identity.plan`) is a plan whose every call
+#: site has one. Declared plans (`Target.plan`, recipes) are `Candidates`.
+PlanSpec = str | Mapping[str, str | tuple[str, ...]] | None
 
 ConfigT = TypeVar("ConfigT")
 HostStateT = TypeVar("HostStateT")
@@ -180,8 +184,8 @@ class QuantizationRecipe:
     Agents optimize the kernels; changing `spec` or the call sites needs approval.
     """
     spec: Mapping[str, str]
-    plan: Mapping[str, str]
-    reference_plan: Mapping[str, str]
+    plan: Candidates
+    reference_plan: Candidates
     backends: frozenset[str]
     pricing: Pricing | None = None
 
@@ -190,7 +194,9 @@ class QuantizationRecipe:
             raise ValueError("a recipe's plan and reference plan must name the same call sites")
         if self.pricing is not None and self.pricing.call_sites != set(self.plan):
             raise ValueError("a recipe prices exactly its own call sites")
-        if not {*self.plan.values(), *self.reference_plan.values()} <= self.backends:
+        named = {name for names in (*self.plan.values(), *self.reference_plan.values())
+                 for name in names}
+        if not named <= self.backends:
             raise ValueError(f"a recipe routes only to its own backends {sorted(self.backends)}")
 
     def identity(self) -> dict[str, str | list[str]]:
@@ -319,9 +325,9 @@ class Target(Generic[ConfigT, HostStateT]):
     hardware: str
     model: ModelDefinition[ConfigT, HostStateT]
     registry: Registry
-    plan: Mapping[str, str]
+    plan: Candidates
     workloads: tuple[str, ...]
-    reference_plan: Mapping[str, str] = field(default_factory=dict)
+    reference_plan: Candidates = field(default_factory=dict)
     precision: str = "bf16"
     quantization: Mapping[str, QuantizationRecipe] = field(default_factory=dict)
     ceilings: Mapping[str, Ceiling] = field(default_factory=dict)
@@ -376,13 +382,14 @@ class Target(Generic[ConfigT, HostStateT]):
                              f"{sorted(recipe.backends)} and no other call site on a quantized "
                              f"backend; misrouted: {misrouted}")
 
-    def select_plan(self, plan: PlanSpec, quantization: str) -> dict[str, str]:
-        """The routes `plan` names, with this Target's call-site aliases applied.
+    def select_plan(self, plan: PlanSpec, quantization: str) -> Candidates:
+        """The candidates `plan` names, with this Target's call-site aliases applied.
 
         `"shipped"` (or `None`) and `"reference"` take `quantization`'s routes
-        for its call sites; a mapping, a JSON object or the path of a JSON file
-        is used as given. An aliased old name yields to the current name when
-        a plan names both.
+        for its call sites; a caller's mapping, JSON object or JSON file is used
+        as given, a single backend name read as the one candidate (saved plans
+        and identities name one backend per call site). An aliased old name
+        yields to the current name when a plan names both.
         """
         recipe = self.quantization_recipe(quantization)
         if plan is None or plan == "shipped":
@@ -405,8 +412,9 @@ class Target(Generic[ConfigT, HostStateT]):
             if old not in routes:
                 continue
             routes.setdefault(new, routes.pop(old))
-        return routes
+        return {site: (names,) if isinstance(names, str) else tuple(names)
+                for site, names in routes.items()}
 
 
-__all__ = ["CheckpointReader", "ConfigT", "ConfigValue", "HostStateT", "DTYPES", "Input", "ModelDefinition", "PlanSpec",
+__all__ = ["CheckpointReader", "ConfigT", "ConfigValue", "HostStateT", "DTYPES", "Input", "ModelDefinition", "PlanSpec", "Candidates",
            "Ceiling", "Pricing", "QuantizationRecipe", "STAGES", "STAGE_OUTPUTS", "Target", "TensorCheckpoint", "Workload"]

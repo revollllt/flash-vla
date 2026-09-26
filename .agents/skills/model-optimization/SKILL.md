@@ -26,19 +26,21 @@ it, the time it should recover, and the cheapest experiment separating it from
 the alternative; an ambiguous result revises it rather than adding a candidate.
 
 1. **Prepare.** Project root, target GPU, the model's own Python environment,
-   real checkpoint, fixed inputs and run parameters. The workload is the
-   Target's default unless the run names another (`--workload`,
-   [workloads](../../../docs/workloads.md)); every measurement of a run uses
-   the same one. Use an existing Target;
+   real checkpoint, fixed inputs and run parameters. Name the run's workloads
+   ([workloads](../../../docs/workloads.md)): the primary one it optimizes (the
+   Target's default unless the run names another, `--workload`) and the others
+   the Target builds, which it must not slow down. Use an existing Target;
    onboard a new one with [target-onboarding](../target-onboarding/SKILL.md).
    LingBot resolves checkpoint and fixture through `FLASH_VLA_ASSETS`, a JSON
    map of asset ids to local paths; synthetic-weight Targets need none.
 
 2. **Measure the current model and check its output.** `shipped` is the
-   comparison point.
+   comparison point. With more than one workload, measure the transfer matrix:
+   every workload's latency, routes and share of its floor, per stage.
 
    ```bash
    python -m benchmarks latency --target h100/lingbot_vla --plan shipped --seed 42 --out results/lingbot-h100/run-name/measurements/000.json
+   python -m benchmarks latency --target rtx5090/pi05 --workloads robodojo,libero --out results/pi05-rtx5090/run-name/measurements/matrix-000.json
    ```
 
    Two versions are comparable only under the conditions in
@@ -52,7 +54,10 @@ the alternative; an ambiguous result revises it rather than adding a candidate.
    timeline with [gpu-profiler-analysis](../gpu-profiler-analysis/SKILL.md) for
    the costly module or host/sync gap, then down to call sites and kernels;
    [ncu-report](../ncu-report/SKILL.md) where counters settle compute- against
-   memory- against pipeline-bound. Size the headroom from the floor of this
+   memory- against pipeline-bound. Pick by the time left above the floor:
+   the primary workload's first, then a call site the matrix shows much further
+   from its floor on another workload than on the primary one (a kernel tuned
+   at one shape). Size the headroom from the floor of each
    workload (`tools.profiling.floor --workload`, the work read from the model's
    reference by `measurement.work`) and the measured constants in
    [hardware-unit-test](../hardware-unit-test/SKILL.md). Per call site, far from
@@ -89,8 +94,12 @@ the alternative; an ambiguous result revises it rather than adding a candidate.
    best model and plan; run the correctness checks it affects, plus a task
    quality check if it approximates; deploy to the real inference path; re-run
    step 2 against the plan actually loaded, saved beside it as `001.json`. Keep
-   it on an end-to-end gain, else revert or record it as uncertain. After K1 is
-   accepted, K2 compares `M+K1` against `M+K1+K2`.
+   it on an end-to-end gain on the workload it targets with no other workload
+   slower beyond noise (A/B per workload); a backend that wins on some shapes
+   and loses on others declares where it runs (`Backend.supports`) and goes
+   first in the plan's candidates, the previous backend after it. Else revert
+   or record it as uncertain. After K1 is accepted, K2 compares `M+K1` against
+   `M+K1+K2`.
 
    **A local gain that does not reach the model returns to step 4** with the
    analysis, and 4-5-6-7 runs again; one that does picks the next hotspot from

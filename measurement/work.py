@@ -75,6 +75,7 @@ from flash_vla.inference import build_runner, get_target
 from flash_vla.runtime.vla import DTYPES, ConfigValue, Pricing, Target
 from flash_vla.runtime.work import CallSiteRule, ReferenceRun
 from measurement.cli import WORKLOAD_HELP
+from measurement.constants import ConstantRow
 
 #: Ops that gather rows of their first tensor: they read as many of its elements as they write.
 GATHERS = frozenset({"aten.embedding", "aten.index_select", "aten.index", "aten.gather"})
@@ -462,6 +463,35 @@ def work(target: Target, *, workload: str | None = None, prompt_tokens: int | No
                       workload=runner.workload, shape=dict(runner.shape),
                       prompt_tokens=prompt_tokens, quantization=recipe_name,
                       launch=bounds[KernelBound.LAUNCH], flow=bounds[KernelBound.FLOW])
+
+
+def stage_floors(report: WorkReport, roofline: Roofline,
+                 constants: Mapping[str, ConstantRow]) -> dict[str, dict[str, float]]:
+    """Per stage, its flow bound in microseconds at datasheet rates, at the rates
+    this machine was measured to deliver (`measurement.constants`), and the floor:
+    each invocation at the better of the two rates per resource. A part that runs
+    above its rated clock outruns its datasheet FLOPs (RTX 5090 BF16) while
+    falling short of its rated bandwidth, so neither column alone bounds a stage
+    that mixes GEMMs with streaming kernels."""
+    stream = constants["stream"]["value"] * 1e12
+    tensor = {fmt: constants[peak.role]["value"] * 1e12
+              for fmt, peak in roofline.tensor_peaks.items()}
+    best_stream = max(stream, roofline.dram_bytes_per_second)
+    best_tensor = {fmt: max(rate, roofline.tensor_peaks[fmt].flops_per_second)
+                   for fmt, rate in tensor.items()}
+    floors: dict[str, dict[str, float]] = {}
+    for invocation in report.flow:
+        nbytes = invocation.bytes_read + invocation.bytes_written
+        measured = max(nbytes / stream,
+                       sum(count / tensor[fmt] for fmt, count in invocation.flops.items()))
+        best = max(nbytes / best_stream,
+                   sum(count / best_tensor[fmt] for fmt, count in invocation.flops.items()))
+        entry = floors.setdefault(invocation.stage,
+                                  {"datasheet_us": 0.0, "measured_us": 0.0, "floor_us": 0.0})
+        entry["datasheet_us"] += invocation.seconds(roofline) * 1e6
+        entry["measured_us"] += measured * 1e6
+        entry["floor_us"] += best * 1e6
+    return floors
 
 
 def summary(report: WorkReport, roofline: Roofline) -> dict[str, object]:

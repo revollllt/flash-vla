@@ -137,56 +137,64 @@ _ROUTE_ORACLES: dict[str, Callable[[Mapping[str, str]], bool]] = {
 
 
 def check_routes(target: str) -> list[dict[str, Any]]:
-    """Every route combination over the constrained call sites, and every
-    plan-selectable call site alone on each backend that provides it:
-    accepted iff the Target's oracle says so, and every rejection is named."""
+    """Per workload of the Target: every route combination over the constrained
+    call sites, and every plan-selectable call site alone on each backend that
+    provides it and supports the workload's shape: accepted iff the Target's
+    oracle says so, and every rejection is named."""
     target = resolve(target)
-    runner = declare(target)
-    registry = runner.target.registry
-    provided = registry.provided()
-    call_sites = list(runner.graph.call_sites)
+    registered = get_target(target)
+    registry = registered.registry
+    oracle = _ROUTE_ORACLES.get(target)
     constrained = set()
     for declared in registry.constraints().values():
         for constraint in declared:
             constrained |= set(constraint.members)
-    selectable = [s for s in call_sites
-                  if sum(s in names for names in provided.values()) > 1]
-    oracle = _ROUTE_ORACLES.get(target)
     if constrained and oracle is None:
         return [{"check": f"{target} route combinations", "passed": False,
                  "detail": "backends declare route constraints but tests/targets.py has no "
                            "route oracle for this Target"}]
     oracle = oracle or (lambda plan: True)
+    results = []
+    for workload in registered.workloads:
+        runner = declare(target, workload=workload)
+        provided = {name: names for name, names in registry.provided().items()
+                    if registry.backends[name].supports(runner.shape)}
+        call_sites = list(runner.graph.call_sites)
+        selectable = [s for s in call_sites
+                      if sum(s in names for names in provided.values()) > 1]
 
-    def bind(plan: dict[str, str]):
-        try:
-            registry.resolve(plan, call_sites)
-            return True, None
-        except ValueError as exc:
-            return False, str(exc)
+        def bind(plan: dict[str, str]) -> tuple[bool, str | None]:
+            try:
+                registry.resolve({site: (backend,) for site, backend in plan.items()},
+                                 call_sites, runner.shape)
+                return True, None
+            except ValueError as exc:
+                return False, str(exc)
 
-    trials: list[tuple[dict[str, str], bool, str | None]] = []
-    cluster = [s for s in selectable if s in constrained]
-    choices = [sorted(b for b, names in provided.items() if s in names) for s in cluster]
-    for combo in itertools.product(*choices):
-        plan = dict(zip(cluster, combo))
-        ok, message = bind(plan)
-        trials.append((plan, ok, message))
-    for site in selectable:
-        if site in cluster:
-            continue
-        for backend, names in provided.items():
-            if site in names:
-                plan = {site: backend}
-                ok, message = bind(plan)
-                trials.append((plan, ok, message))
-    mismatches = [plan for plan, ok, _ in trials if ok != oracle(plan)]
-    rejected = [(plan, message) for plan, ok, message in trials if not ok]
-    named = all(message is not None and "requires" in message for _, message in rejected)
-    return [{"check": f"{target} route combinations", "passed": not mismatches and named,
-             "detail": {"backends": sorted(provided), "cluster": cluster,
-                        "trials": len(trials), "accepted": len(trials) - len(rejected),
-                        "rejected": len(rejected), "mismatches": mismatches[:5]}}]
+        trials: list[tuple[dict[str, str], bool, str | None]] = []
+        cluster = [s for s in selectable if s in constrained]
+        choices = [sorted(b for b, names in provided.items() if s in names) for s in cluster]
+        for combo in itertools.product(*choices):
+            plan = dict(zip(cluster, combo))
+            ok, message = bind(plan)
+            trials.append((plan, ok, message))
+        for site in selectable:
+            if site in cluster:
+                continue
+            for backend, names in provided.items():
+                if site in names:
+                    plan = {site: backend}
+                    ok, message = bind(plan)
+                    trials.append((plan, ok, message))
+        mismatches = [plan for plan, ok, _ in trials if ok != oracle(plan)]
+        rejected = [(plan, message) for plan, ok, message in trials if not ok]
+        named = all(message is not None and "requires" in message for _, message in rejected)
+        results.append({"check": f"{target} route combinations at {workload}",
+                        "passed": not mismatches and named,
+                        "detail": {"backends": sorted(provided), "cluster": cluster,
+                                   "trials": len(trials), "accepted": len(trials) - len(rejected),
+                                   "rejected": len(rejected), "mismatches": mismatches[:5]}})
+    return results
 
 
 def main(argv=None) -> int:

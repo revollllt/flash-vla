@@ -1,6 +1,7 @@
 """Plan validation against backend-declared route constraints.
 
-A plan maps call sites to backends and is resolved once, before capture. Some
+A plan maps call sites to ordered candidate backends and is resolved once,
+before capture, to one backend per call site (`Registry.resolve`). Some
 call sites share a buffer contract that only holds when they resolve to the
 same backend -- a Q that crosses two call sites in implementation-owned
 scratch, a producer/consumer pair joined by a readiness counter. The backend
@@ -13,6 +14,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable, Mapping
+
+#: A plan: per call site, the backends that may run it, in preference order.
+Candidates = Mapping[str, tuple[str, ...]]
 
 
 @dataclass(frozen=True)
@@ -35,10 +39,11 @@ class RouteConstraint:
         return cls(frozenset({anchor}), frozenset(needs) | {anchor}, reason)
 
 
-def resolve(plan: Mapping[str, str] | None, default: str,
+def resolve(plan: Candidates | None, default: tuple[str, ...],
             call_sites: Iterable[str], *,
-            known_call_sites: Iterable[str] | None = None) -> dict[str, str]:
-    """Resolve routes, rejecting unknown call sites before backend construction."""
+            known_call_sites: Iterable[str] | None = None) -> dict[str, tuple[str, ...]]:
+    """Every call site's candidate backends, `default` where the plan names none;
+    unknown call sites are rejected before any backend is built."""
     plan = dict(plan or {})
     call_sites = tuple(call_sites)
     known = set(call_sites if known_call_sites is None else known_call_sites)
@@ -68,13 +73,15 @@ def validate(routes: Mapping[str, str],
                     f"together ({constraint.reason}); got {stray}")
 
 
-def check_backends_provide(routes: Mapping[str, str],
+def check_backends_provide(candidates: Candidates,
                            provided: Mapping[str, Iterable[str]]) -> None:
-    """Raise `KeyError` when a route names an unknown backend or an unprovided call site."""
-    for name, backend in routes.items():
-        if backend not in provided:
-            raise KeyError(f"plan names unknown backend {backend!r} for {name!r}; "
-                           f"known: {sorted(provided)}")
-        if name not in set(provided[backend]):
-            raise KeyError(f"backend {backend!r} does not implement call site {name!r}; "
-                           f"it provides {sorted(provided[backend])}")
+    """Raise `KeyError` when any candidate is an unknown backend or does not
+    implement its call site."""
+    for name, backends in candidates.items():
+        for backend in backends:
+            if backend not in provided:
+                raise KeyError(f"plan names unknown backend {backend!r} for {name!r}; "
+                               f"known: {sorted(provided)}")
+            if name not in set(provided[backend]):
+                raise KeyError(f"backend {backend!r} does not implement call site {name!r}; "
+                               f"it provides {sorted(provided[backend])}")

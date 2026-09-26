@@ -104,12 +104,13 @@ def test_runner_observes_each_replay_and_host_slot_then_restores(monkeypatch):
 def test_each_device_roofline_reads_its_measured_table(hardware):
     """A device's roofline names rows its own table has, and a rate for every format."""
     from flash_vla.hardware.nvidia import HARDWARE_ROOFLINES
-    from tools.profiling.floor import datasheet, load_constants
+    from measurement.constants import load_constants
+    from tools.profiling.floor import datasheet
 
     roofline = HARDWARE_ROOFLINES[hardware]
-    constants, _ = load_constants(roofline.constants_file, roofline.constant_tags)
+    constants = load_constants(roofline.constants_file, roofline.constant_tags)
     assert "bf16" in roofline.tensor_peaks
-    assert {peak.role for peak in roofline.tensor_peaks.values()} <= set(constants)
+    assert {peak.role for peak in roofline.tensor_peaks.values()} <= set(constants.rows)
     assert all(rate > 0 for rate in datasheet(roofline)["tensor_fps"].values())
 
 

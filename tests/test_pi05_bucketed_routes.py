@@ -90,6 +90,16 @@ def test_saved_outproj_control_and_explicit_candidate_route(tmp_path):
     assert candidate.identity.plan[_MASKED_OUT] == "bucketed-backbone"
 
 
-def test_outproj_does_not_add_an_unsupported_cutlass_dense_route():
-    with pytest.raises(KeyError, match="does not implement"):
-        declare("rtx5090/pi05", {_OUT: "cutlass-backbone"})
+def test_the_buckets_run_only_the_prefix_they_were_built_for():
+    """The shipped plan names the bucketed backbone first and full-row CUTLASS
+    after it: the three-view 968-row prefix takes the buckets, the two-view
+    712-row one falls back, and a plan with no fallback is refused there."""
+    robodojo = declare("rtx5090/pi05", workload="robodojo").identity.plan
+    libero = declare("rtx5090/pi05", workload="libero").identity.plan
+    for site in (_MASKED_UP, _MASKED_DOWN, _MASKED_OUT):
+        assert (robodojo[site], libero[site]) == ("bucketed-backbone", "cutlass-backbone")
+    only_buckets = {site: "bucketed-backbone" for site in (_MASKED_UP, _MASKED_DOWN, _MASKED_OUT)}
+    assert declare("rtx5090/pi05", only_buckets, workload="robodojo").identity.plan[_MASKED_OUT] \
+        == "bucketed-backbone"
+    with pytest.raises(ValueError, match="supports shape"):
+        declare("rtx5090/pi05", only_buckets, workload="libero")

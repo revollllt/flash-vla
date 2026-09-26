@@ -206,7 +206,7 @@ def run_backbone(tokenizer_path: str | None = None, checkpoint: str | None = Non
         "openpi_config": openpi_config,
         "reference_model_config": asdict(config),
         "reference_provenance": provenance,
-        "plan": engine.plan,
+        "plan": engine.identity.plan,
         "exact_rope": exact_rope,
         "reference_inv_freq": [round(float(v), 7) for v in rope_freqs[:4]],
     }

@@ -15,26 +15,26 @@ spec.loader.exec_module(binding)
 class ResolveTests(unittest.TestCase):
     def test_typo_rejected(self):
         with self.assertRaisesRegex(KeyError, "qvk"):
-            binding.resolve({"qvk": "cuda"}, "reference", ["qkv"])
+            binding.resolve({"qvk": ("cuda",)}, ("reference",), ["qkv"])
 
     def test_default_and_override_with_generator(self):
         self.assertEqual(
-            binding.resolve({"qkv": "cuda"}, "reference", iter(["norm", "qkv"])),
-            {"norm": "reference", "qkv": "cuda"})
+            binding.resolve({"qkv": ("cuda",)}, ("reference",), iter(["norm", "qkv"])),
+            {"norm": ("reference",), "qkv": ("cuda",)})
 
     def test_registered_but_pruned_site_is_not_a_typo(self):
-        self.assertEqual(binding.resolve({"qkv": "cuda"}, "reference", [],
+        self.assertEqual(binding.resolve({"qkv": ("cuda",)}, ("reference",), [],
                                          known_call_sites=["qkv"]), {})
         with self.assertRaisesRegex(KeyError, "qvk"):
-            binding.resolve({"qvk": "cuda"}, "reference", [], known_call_sites=["qkv"])
+            binding.resolve({"qvk": ("cuda",)}, ("reference",), [], known_call_sites=["qkv"])
 
     def test_empty_plan(self):
-        self.assertEqual(binding.resolve(None, "reference", ["qkv"]),
-                         {"qkv": "reference"})
+        self.assertEqual(binding.resolve(None, ("reference",), ["qkv"]),
+                         {"qkv": ("reference",)})
 
     def test_nonempty_plan_for_empty_graph_rejected(self):
         with self.assertRaisesRegex(KeyError, "qkv"):
-            binding.resolve({"qkv": "cuda"}, "reference", [])
+            binding.resolve({"qkv": ("cuda",)}, ("reference",), [])
 
 
 if __name__ == "__main__":

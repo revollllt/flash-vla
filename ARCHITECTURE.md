@@ -120,11 +120,16 @@ host slots, its `workloads`, and `build`, which writes the graph
 the model object with its layout, a backend registry, two plans (`shipped` and
 `reference`), the workloads it is built and checked for (its default first),
 quantization recipes, measured ceilings and the logical IDs of its assets.
-`build_runner` constructs one workload: its options fix the shape profile, and
-a harness's own options (seed, checkpoint, depth cut for bisection) may not
-override them. A Target declares any workload its model declares, for its graph
-and floor, but builds only the ones it names. Candidate
-plans stay under `lab/plans/`. OpenPI loading/conversion belongs to
+A plan names, per call site, candidate backends in order of preference; the
+registry routes each to the first that supports the runner's shape
+(`Backend.supports`), so a kernel specialized to one prefix length sits in
+front of a general one and every other workload falls back by name, in the
+identity. Selection is greedy per call site: a fallback that splits a
+constrained group is an error. `build_runner` constructs one workload: its
+options fix the shape profile, and a harness's own options (seed, checkpoint,
+depth cut for bisection) may not override them. A Target declares any workload
+its model declares, for its graph and floor, but builds only the ones it names.
+Candidate plans stay under `lab/plans/`. OpenPI loading/conversion belongs to
 `models/pi0/openpi.py` and `models/pi05/openpi.py`; evaluation adds official
 forward adapters.
 

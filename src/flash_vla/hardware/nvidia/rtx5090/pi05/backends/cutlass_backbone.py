@@ -21,6 +21,9 @@ from . import fused_backbone
 NAMES = frozenset({
     "llm_backbone_norm_gated_ffn", "llm_backbone_ffn_down_residual",
     "llm_backbone_norm_gated_ffn_masked", "llm_backbone_ffn_down_residual_masked",
+    # The attention output projection is the same residual GEMM shape family:
+    # the full-row fallback of the bucketed backbone at every prefix it does not bucket.
+    "llm_backbone_out_proj_residual_masked",
 })
 SOURCE = Path(__file__).with_suffix(".cu")
 
@@ -144,6 +147,7 @@ def make_wrappers(scratch, selected_names=None) -> dict:
         "llm_backbone_ffn_down_residual": llm_backbone_ffn_down_residual,
         "llm_backbone_norm_gated_ffn_masked": llm_backbone_norm_gated_ffn_masked,
         "llm_backbone_ffn_down_residual_masked": llm_backbone_ffn_down_residual_masked,
+        "llm_backbone_out_proj_residual_masked": llm_backbone_ffn_down_residual_masked,
     }
     return {name: wrappers[name] for name in names}
 

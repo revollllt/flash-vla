@@ -3,6 +3,7 @@
     python -m benchmarks latency --target h100/pi05
     python -m benchmarks latency --target h100/pi05 --plan reference --plan shipped
     python -m benchmarks latency --target h100/pi05 --plan shipped --calibrate   # shipped x3
+    python -m benchmarks latency --target rtx5090/pi05 --workloads robodojo,libero   # transfer matrix
 
 One request, batch 1, the Target's fixed shapes, inherited device clock state.
 The default measures only chunk_latency: wall time including input staging,
@@ -28,6 +29,12 @@ clocks and of the other compute processes on it. A tail is then attributable
 from the record instead of argued about. `--breakdown` retains the complete metric
 set expected by explicit legacy qualification.
 
+`--workloads` measures one plan on several of the Target's workloads, one after
+another, each in its own processes with the segment breakdown, and sets each
+beside its floor (`measurement.work`, the smaller of the datasheet and measured
+flow bound per stage): the transfer matrix. A change that helps one workload
+is read off it for every other.
+
 The runner contains no model or stage names: it builds the engine through
 `flash_vla.inference`, takes the program from the engine, and samples inputs
 from it. This runner reports measurements; it does not promote code.
@@ -49,13 +56,17 @@ import torch
 from benchmarks.config import LATENCY_DEFAULTS
 from flash_vla.runtime.identity import Identity
 from flash_vla.runtime.engine import host_slots, segments
+from flash_vla.runtime.vla import ConfigValue
 
-from flash_vla.inference import PLAN_NAMES, resolve
+from flash_vla.hardware.nvidia import HARDWARE_ROOFLINES
+from flash_vla.inference import PLAN_NAMES, get_target, resolve
 from measurement.attribution import Attribution, LoopTrace, summary as attribution_summary
 from measurement.cli import WORKLOAD_HELP, parse_options
+from measurement.constants import load_constants
 from measurement.environment import collect_environment, device_selector, require_cuda, report_context
 from measurement.provenance import MeasurementContext
 from measurement.source_checkout import build
+from measurement.work import stage_floors, work
 from measurement.timing import event_samples, summarize, wall_samples
 
 _LAT = LATENCY_DEFAULTS
@@ -281,6 +292,58 @@ def run(target: str, plans: list[str | None], reps: int = _LAT["reps"],
     return report
 
 
+def matrix(target: str, workloads: list[str], plan: str | None = None, *,
+           reps: int = _LAT["reps"], warmup: int = _LAT["warmup"], seed: int = 0,
+           soak_s: float = _LAT["soak_s"], **overrides: ConfigValue) -> dict[str, object]:
+    """`plan` on each of `workloads`, measured one after another with the segment
+    breakdown, beside each workload's floor per stage and in total.
+
+    `share_of_floor` is the floor divided by the measured median: 1 is at the
+    floor. The total's median also holds host work and launch gaps, which have
+    no floor. `overrides` are construction options every workload shares (a
+    quantization recipe, a cut depth); the floor is traced with them too. Rows
+    differ in workload only: one GPU, one environment."""
+    registered = get_target(target)
+    unknown = [workload for workload in workloads if workload not in registered.workloads]
+    if unknown:
+        raise ValueError(f"{registered.name} builds {list(registered.workloads)}, not {unknown}")
+    roofline = HARDWARE_ROOFLINES[registered.hardware]
+    constants = load_constants(roofline.constants_file, roofline.constant_tags)
+    rows: dict[str, dict[str, object]] = {}
+    for workload in workloads:
+        report = run(target, [plan], reps=reps, warmup=warmup, seed=seed, soak_s=soak_s,
+                     breakdown=True, workload=workload, **overrides)
+        first = next(iter(rows.values()), None)
+        if first is not None:
+            if report["legs"][0]["gpu_uuid"] != first["report"]["legs"][0]["gpu_uuid"]:
+                raise ValueError("a transfer matrix requires one physical GPU")
+            if (report["measurement_context"]["environment"]
+                    != first["report"]["measurement_context"]["environment"]):
+                raise ValueError("the environment changed between workloads; measure again")
+        metrics = report["legs"][0]["metrics"]
+        floors = stage_floors(work(registered, workload=workload, **overrides), roofline,
+                              constants.rows)
+        segments_ms = {name: stats["median"] for name, stats in metrics["segment_latency"].items()}
+        latency_ms = metrics["chunk_latency"]["median"]
+        floor_ms = sum(entry["floor_us"] for entry in floors.values()) / 1e3
+        rows[workload] = {
+            "identity": report["identity"],
+            "routes": report["identity"]["plan"],
+            "latency_ms": latency_ms,
+            "floor_ms": floor_ms,
+            "share_of_floor": floor_ms / latency_ms,
+            "stages": {name: {"measured_ms": segments_ms[name],
+                              "floor_ms": floors[name]["floor_us"] / 1e3,
+                              "datasheet_flow_ms": floors[name]["datasheet_us"] / 1e3,
+                              "measured_rate_flow_ms": floors[name]["measured_us"] / 1e3,
+                              "share_of_floor": floors[name]["floor_us"] / 1e3 / segments_ms[name]}
+                       for name in segments_ms},
+            "report": report,
+        }
+    return {"protocol": "transfer-matrix-v1", "target": resolve(target), "plan": plan or "shipped",
+            "options": overrides, "constants_version": constants.version, "workloads": rows}
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -298,6 +361,9 @@ def main(argv=None) -> int:
     parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--layers", type=int, default=None)
     parser.add_argument("--workload", default=None, help=WORKLOAD_HELP)
+    parser.add_argument("--workloads", default=None,
+                        help="comma-separated workloads: measure the (one) plan on each, "
+                             "beside its floor (the transfer matrix)")
     parser.add_argument("--option", action="append", default=[],
                         help="target-local construction option as key=value, every leg")
     parser.add_argument("--breakdown", action="store_true",
@@ -312,17 +378,28 @@ def main(argv=None) -> int:
     overrides = {k: v for k, v in (("steps", args.steps), ("layers", args.layers))
                  if v is not None}
     overrides.update(parse_options(args.option))
-    overrides["workload"] = args.workload
-    report = run(args.target, args.plan or [None], reps=args.reps, warmup=args.warmup,
-                 seed=args.seed, calibrate=args.calibrate, attribution=args.attribution,
-                 soak_s=args.soak_seconds, breakdown=args.breakdown,
-                 **overrides)
-    text = json.dumps(report, indent=2)
-    print(text)
+    if args.workloads is not None:
+        if (args.workload is not None or len(args.plan or [None]) != 1 or args.calibrate
+                or args.attribution or args.breakdown):
+            parser.error("--workloads measures one plan with its segment breakdown and names "
+                         "the workloads itself: no --workload, --calibrate or --attribution")
+        report = matrix(args.target, args.workloads.split(","), (args.plan or [None])[0],
+                        reps=args.reps, warmup=args.warmup, seed=args.seed,
+                        soak_s=args.soak_seconds, **overrides)
+        print(json.dumps({workload: {key: row[key] for key in ("latency_ms", "floor_ms",
+                                                                "share_of_floor")}
+                          for workload, row in report["workloads"].items()}, indent=2))
+    else:
+        overrides["workload"] = args.workload
+        report = run(args.target, args.plan or [None], reps=args.reps, warmup=args.warmup,
+                     seed=args.seed, calibrate=args.calibrate, attribution=args.attribution,
+                     soak_s=args.soak_seconds, breakdown=args.breakdown,
+                     **overrides)
+        print(json.dumps(report, indent=2))
     if args.out:
         os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
         with open(args.out, "w") as f:
-            f.write(text)
+            f.write(json.dumps(report, indent=2))
     return 0
 
 

@@ -84,7 +84,7 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
     registered_target = get_target(target)
     oracle = dict(reference.identity.as_dict(), plan=registered_target.registry.resolve(
         registered_target.select_plan("reference", reference.quantization),
-        reference.graph.call_sites))
+        reference.graph.call_sites, reference.shape))
     if reference.identity.plan != oracle["plan"]:
         raise ValueError("reference runner does not use the Target reference route")
     tol = tolerances(reference.identity.precision)

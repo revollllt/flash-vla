@@ -17,6 +17,7 @@ import torch
 
 from flash_vla.provenance import ImplementationProvenance
 
+from .binding import Candidates
 from .cuda.program import Step
 from .graph import Graph
 from .identity import Identity
@@ -45,8 +46,8 @@ class Engine(Protocol):
     #: The shape numbers of the identity, and derived numbers (a prefix length).
     shape: Mapping[str, int]
     derived: Mapping[str, int]
-    #: The raw plan the runner was built with (before route resolution).
-    plan: Mapping[str, str]
+    #: The candidate routes the runner was built with (before route resolution).
+    plan: Candidates
     #: The explicit computation graph: stages, nodes, buffer declarations.
     graph: Graph
     #: Named static buffers, the views the graph runs on.

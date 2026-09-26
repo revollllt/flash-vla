@@ -2,14 +2,16 @@
 
 The mask is an explicit op argument. Both static plans are warmed and captured;
 their native entries select the active bucket from mask[896] on every replay.
-The bucketed tensors remain BF16 M968. Other row counts use the existing
-full-row CUTLASS plan without bucket masking. This module only loads native libraries
-on the first real invocation, so declaration needs no CUDA context or compiler.
+The bucketed tensors remain BF16 M968. The buckets exist only for that prefix
+(`supports`); a Target routes any other to `cutlass_backbone`'s full-row plan.
+This module only loads native libraries on the first real invocation, so
+declaration needs no CUDA context or compiler.
 """
 from __future__ import annotations
 
 import ctypes
 from functools import lru_cache
+from typing import Mapping
 import weakref
 
 import torch
@@ -21,7 +23,14 @@ from . import cutlass_backbone, fused_backbone
 
 NAMES = frozenset(MASKED_CALL_SITES.values())
 # Adjacent M128 tile boundaries for this Target's 968 physical prefix rows.
-_BUCKET_ROWS = (896, 968)
+BUCKET_ROWS = (896, 968)
+#: The one prefix the buckets are built for: three views of 256 tokens and 200 prompt slots.
+PREFIX_ROWS = BUCKET_ROWS[-1]
+
+
+def supports(shape: Mapping[str, int]) -> bool:
+    """Whether the buckets were built for this prefix."""
+    return shape["prefix_len"] == PREFIX_ROWS
 
 
 @lru_cache(maxsize=1)
@@ -48,7 +57,7 @@ class _Plan:
         k, n = a.shape[1], b.shape[1]
         self.tensors = (a, b, output)
         self.handles, self.workspaces, self.destroy = [], [], []
-        for m in _BUCKET_ROWS:
+        for m in BUCKET_ROWS:
             size = native.backbone_bucket_workspace(m, k, n)
             if size < 0:
                 cutlass_backbone.check(-size, "backbone_bucket_workspace")
@@ -85,17 +94,12 @@ def make_wrappers(scratch, selected_names=None) -> dict:
                 raise RuntimeError("bucketed backbone pointer set was not warmed before capture")
             if native is None:
                 native = library()
-            plan_type = _Plan if a.shape[0] == 968 else cutlass_backbone._Plan
-            plan = plan_type(native, scratch, a, b, output, beta, stream)
+            plan = _Plan(native, scratch, a, b, output, beta, stream)
             plans[key] = plan
-        if a.shape[0] == 968:
-            for handle in plan.handles:
-                cutlass_backbone.check(
-                    native.backbone_bucket_run(handle, mask.data_ptr(), stream),
-                    "backbone_bucket_run")
-        else:
-            cutlass_backbone.check(native.backbone_gemm_run(plan.handle, stream),
-                                    "backbone_gemm_run")
+        for handle in plan.handles:
+            cutlass_backbone.check(
+                native.backbone_bucket_run(handle, mask.data_ptr(), stream),
+                "backbone_bucket_run")
 
     def llm_backbone_norm_gated_ffn_masked(x, gate_w, up_w, out, x_norm, mask):
         nonlocal pointwise
@@ -115,13 +119,9 @@ def make_wrappers(scratch, selected_names=None) -> dict:
         run_gemm(normed, gate_w, gate, mask, beta=0.0, stream=stream)
         run_gemm(normed, up_w, result, mask, beta=0.0, stream=stream)
         # The short bucket zeroes the tail before any stale gate/up load.
-        if rows == 968:
-            status = pointwise.backbone_masked_gelu_mul(
-                gate.data_ptr(), result.data_ptr(), result.numel(), mask.data_ptr(), stream)
-        else:
-            status = pointwise.backbone_gelu_mul(
-                gate.data_ptr(), result.data_ptr(), result.numel(), stream)
-        cutlass_backbone.check(status, "backbone_gelu_mul")
+        status = pointwise.backbone_masked_gelu_mul(
+            gate.data_ptr(), result.data_ptr(), result.numel(), mask.data_ptr(), stream)
+        cutlass_backbone.check(status, "backbone_masked_gelu_mul")
         return out
 
     def llm_backbone_ffn_down_residual_masked(x, weight, out, mask):
@@ -138,4 +138,4 @@ def make_wrappers(scratch, selected_names=None) -> dict:
 
 
 #: What the Target's registry routes to (`flash_vla.runtime.registry`).
-BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers)
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers, supports=supports)

@@ -1,0 +1,14 @@
+== leg 0: hardware/nvidia/rtx5090/pi05 plan=shipped
+== leg 0: hardware/nvidia/rtx5090/pi05 plan=shipped
+{
+  "robodojo": {
+    "latency_ms": 21.751933498308063,
+    "floor_ms": 10.781391302847789,
+    "share_of_floor": 0.49565209013196004
+  },
+  "libero": {
+    "latency_ms": 19.121783319860697,
+    "floor_ms": 8.435498203620115,
+    "share_of_floor": 0.4411459989120705
+  }
+}

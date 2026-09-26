@@ -46,10 +46,8 @@ class they came from.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
-from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import torch
@@ -62,14 +60,13 @@ from flash_vla.runtime.vla import Ceiling
 from measurement.cli import WORKLOAD_HELP, parse_options
 from measurement.environment import collect_environment, record_path, report_context, require_cuda
 from measurement.timing import event_samples, summarize
-from measurement.work import Invocation, summary, work
+from measurement.constants import ConstantRow, load_constants
+from measurement.work import Invocation, stage_floors, summary, work
 
 from .model import attribute
 
 #: The model form; bump when a column or a term changes. 5: work from the reference.
 FORM_VERSION = "5"
-#: Machine-readable fields a row may carry beside value/units/short/rule.
-ROW_FIELDS = ("fixed_us", "curve_mb_gbs", "derate_at_32")
 
 
 def roofline_of(hardware: str) -> Roofline:
@@ -77,26 +74,6 @@ def roofline_of(hardware: str) -> Roofline:
     if hardware not in HARDWARE_ROOFLINES:
         raise KeyError(f"no hardware axis known for {hardware!r}; known: {sorted(HARDWARE_ROOFLINES)}")
     return HARDWARE_ROOFLINES[hardware]
-
-
-def load_constants(path: Path, tags: Mapping[str, str]) -> tuple[dict[str, Any], str]:
-    """The tagged rows the ceiling uses (plus the machine's noise floor), and the table's version."""
-    import yaml
-    raw = path.read_bytes()
-    doc = yaml.safe_load(raw)
-    rows = {row["tag"]: row for row in doc.get("constants", [])}
-    picked: dict[str, Any] = {"noise_floor_pct": float(doc["machine"]["noise_floor_pct"])}
-    for role, tag in tags.items():
-        if tag not in rows:
-            raise KeyError(f"constant {tag!r} ({role}) not in {path}")
-        row = rows[tag]
-        picked[role] = {"tag": tag, "value": row["value"], "units": row.get("units"),
-                        "short": row.get("short"),
-                        **{f: row[f] for f in ROW_FIELDS if f in row}}
-    for role, field in (("stream", "fixed_us"), ("burst", "curve_mb_gbs")):
-        if role in picked and field not in picked[role]:
-            raise KeyError(f"row {tags[role]!r} in {path} lacks the machine-readable {field!r}")
-    return picked, hashlib.sha1(raw).hexdigest()[:12]
 
 
 def datasheet(roofline: Roofline) -> dict[str, Any]:
@@ -109,7 +86,7 @@ def datasheet(roofline: Roofline) -> dict[str, Any]:
             "source": f"{roofline.spec.__module__}.{roofline.spec.__name__}"}
 
 
-def delivered_us(nbytes: int, constants: dict[str, Any]) -> tuple[float, str]:
+def delivered_us(nbytes: int, constants: Mapping[str, ConstantRow]) -> tuple[float, str]:
     """Cold delivery time for `nbytes` from the measured rows, and the rule applied."""
     mb = nbytes / 1e6
     stream = constants["stream"]
@@ -131,7 +108,7 @@ def delivered_us(nbytes: int, constants: dict[str, Any]) -> tuple[float, str]:
 
 
 def site_row(call_site: str, invocations: Sequence[Invocation], n: int, ceiling_declared: Ceiling | None,
-             peaks: dict[str, Any], constants: dict[str, Any]) -> dict[str, Any]:
+             peaks: dict[str, Any], constants: Mapping[str, ConstantRow]) -> dict[str, Any]:
     """One call site's roofline and ceiling columns, per call and times its count.
 
     `invocations` are the reference's launches of the site, `n` the engine's
@@ -180,9 +157,9 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
         launches.setdefault(invocation.call_sites[0], []).append(invocation)
     calls = {site: sum(1 for node in engine.graph.nodes if node.call_site == site) for site in launches}
     device_roofline = roofline_of(identity.hardware)
-    constants, constants_version = load_constants(device_roofline.constants_file,
-                                                  device_roofline.constant_tags)
+    constants = load_constants(device_roofline.constants_file, device_roofline.constant_tags)
     peaks = datasheet(device_roofline)
+    floors = stage_floors(derived, device_roofline, constants.rows)
     limit = 1.0 + headroom_pct / 100.0
 
     inputs = engine.sample_inputs(seed)
@@ -193,20 +170,15 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
                                                 if not node.is_copy and node.call_site in launches))
                      for stage in engine.graph.segment_names}
     groups = [frozenset(g) for g in engine.atomic_groups]
-    tolerance = 1.0 - constants["noise_floor_pct"] / 100.0
+    tolerance = 1.0 - constants.noise_floor_pct / 100.0
     report_segments: dict[str, Any] = {}
     valid = True
     for name in segments(engine):
         rows = [site_row(site, launches[site], calls[site], engine.target.ceilings.get(site), peaks,
-                         constants)
+                         constants.rows)
                 for site in call_sites_of[name]]
-        flow_us = sum(i.seconds(device_roofline) for i in derived.flow if i.stage == name) * 1e6
-        # The same passes at what this machine was measured to deliver.
-        flow_ceiling_us = sum(
-            max((i.bytes_read + i.bytes_written) / (float(constants["stream"]["value"]) * 1e12),
-                sum(count / (float(constants[peaks["tensor_roles"][fmt]]["value"]) * 1e12)
-                    for fmt, count in i.flops.items()))
-            for i in derived.flow if i.stage == name) * 1e6
+        flow_us = floors[name]["datasheet_us"]
+        flow_ceiling_us = floors[name]["measured_us"]
         roofline = sum(r["roofline_us"] for r in rows)
         ceiling = sum(r["ceiling_us"] for r in rows)
         profiled = attribute(engine, name, sm_count)
@@ -282,9 +254,9 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
         "measurement_context": report_context(engine, collect_environment()),
         "env": collect_environment(),
         "floor_model": {"form": FORM_VERSION, "constants_file": record_path(device_roofline.constants_file),
-                        "constants_version": constants_version, "constants": constants,
+                        "constants_version": constants.version, "constants": constants.as_dict(),
                         "datasheet": peaks,
-                        "version": f"{FORM_VERSION}+{constants_version}"},
+                        "version": f"{FORM_VERSION}+{constants.version}"},
         "config": {"reps": reps, "warmup": warmup, "seed": seed, "plan": plan},
         "segments": report_segments,
         "work": summary(derived, device_roofline),

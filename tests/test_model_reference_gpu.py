@@ -5,9 +5,10 @@ seeded random official-layout weights (or the Target's own checkpoint, where
 it has one configured), against the float32 reference -- every routed
 kernel, the weight conversion and fold, and the graph, held to the model
 itself within the shared shallow tolerances. The cases are every registered
-Target, plan and quantization recipe; a case runs on the device its kernels
-are built for, with the assets it needs, and a plan that runs the reference
-itself in plain PyTorch (`PORTABLE`) runs on any.
+Target, every workload it builds (`Target.workloads`), plan and quantization
+recipe; a case runs on the device its kernels are built for, with the assets
+it needs, and a plan that runs the reference itself in plain PyTorch
+(`PORTABLE`) runs on any.
 
 Bit for bit: GR00T's plans and LingBot's reference plan bind the runner's
 weights to the reference's own modules and only stage the tables capture
@@ -47,7 +48,7 @@ def configured(asset: str) -> bool:
     return path is not None and asset in json.loads(Path(path).read_text())
 
 
-def gate_case(name: str, plan: str, recipe: str | None) -> ParameterSet:
+def gate_case(name: str, workload: str, plan: str, recipe: str | None) -> ParameterSet:
     """One gate case and what it needs: any CUDA device for a portable plan,
     else the Target's own device and, for a Target of frozen assets, its
     checkpoint in the asset map."""
@@ -56,16 +57,18 @@ def gate_case(name: str, plan: str, recipe: str | None) -> ParameterSet:
     capability = CAPABILITIES[target.hardware]
     ready = DEVICE is not None and (portable or (
         DEVICE == capability and (not target.assets or configured(target.assets["checkpoint"]))))
-    options = {**PORTABLE.get((name, plan), {}),
+    options = {**PORTABLE.get((name, plan), {}), "workload": workload,
                **({} if recipe is None else {"quantization": recipe})}
     need = "a CUDA device" if portable else f"sm_{capability[0]}{capability[1]} and the Target's assets"
-    return pytest.param(name, plan, options, id=f"{name}-{plan}-{recipe or target.precision}",
+    return pytest.param(name, plan, options,
+                        id=f"{name}-{workload}-{plan}-{recipe or target.precision}",
                         marks=pytest.mark.skipif(not ready, reason=f"needs {need}"))
 
 
 @pytest.mark.parametrize("target,plan,options", [
-    gate_case(name, plan, recipe)
+    gate_case(name, workload, plan, recipe)
     for name in sorted(TARGETS) if name not in EXEMPT
+    for workload in get_target(name).workloads
     for plan in ("shipped", "reference")
     for recipe in (None, *get_target(name).quantization)])
 def test_target_passes_its_model_reference_gate(target: str, plan: str,

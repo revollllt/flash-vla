@@ -198,7 +198,7 @@ def compare(oracle: str, checkpoint: str, *, target: str = "rtx5090/pi05",
         "stage": "official-parity",
         "identity": engine.identity.as_dict(),
         "measurement_context": engine.measurement_context,
-        "plan": engine.plan,
+        "plan": engine.identity.plan,
         "oracle": metadata,
         "layers_compared": depth,
     }

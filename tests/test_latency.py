@@ -2,6 +2,8 @@ from contextlib import nullcontext
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 from benchmarks import latency
 
 
@@ -237,3 +239,38 @@ def test_cli_default_and_diagnostics(monkeypatch, capsys):
     latency.main(["--target", "h100/pi05"])
     latency.main(["--target", "h100/pi05", "--breakdown", "--attribution"])
     assert [(c["breakdown"], c["attribution"]) for c in calls] == [(False, False), (True, True)]
+
+
+def test_transfer_matrix_sets_each_workload_beside_its_floor(monkeypatch):
+    """One row per workload: routes, latency, floor and their share, per stage too;
+    the rows share one GPU and environment, and every workload is the Target's."""
+    from benchmarks import latency
+
+    environments = {"robodojo": {"clocks": "unlocked"}, "libero": {"clocks": "unlocked"}}
+
+    def fake_run(target, plans, **kwargs):
+        stage_ms = {"robodojo": 3.0, "libero": 2.0}[kwargs["workload"]]
+        return {"identity": {"plan": {"site": kwargs["workload"]}},
+                "measurement_context": {"environment": environments[kwargs["workload"]]},
+                "legs": [{"gpu_uuid": "GPU-0",
+                          "metrics": {"chunk_latency": {"median": 2 * stage_ms},
+                                      "segment_latency": {"a": {"median": stage_ms},
+                                                          "b": {"median": stage_ms}}}}]}
+
+    monkeypatch.setattr(latency, "run", fake_run)
+    monkeypatch.setattr(latency, "work", lambda target, **kwargs: kwargs["workload"])
+    monkeypatch.setattr(latency, "stage_floors", lambda workload, roofline, constants: {
+        stage: {"floor_us": 1000.0, "datasheet_us": 1000.0, "measured_us": 1200.0}
+        for stage in ("a", "b")})
+    report = latency.matrix("rtx5090/pi05", ["robodojo", "libero"])
+    assert report["protocol"] == "transfer-matrix-v1"
+    robodojo, libero = report["workloads"]["robodojo"], report["workloads"]["libero"]
+    assert robodojo["routes"] == {"site": "robodojo"}
+    assert (robodojo["latency_ms"], robodojo["floor_ms"], robodojo["share_of_floor"]) == (6.0, 2.0, 1 / 3)
+    assert libero["stages"]["a"] == {"measured_ms": 2.0, "floor_ms": 1.0, "datasheet_flow_ms": 1.0,
+                                     "measured_rate_flow_ms": 1.2, "share_of_floor": 0.5}
+    with pytest.raises(ValueError, match="builds"):
+        latency.matrix("rtx5090/pi05", ["robodojo", "unknown"])
+    environments["libero"] = {"clocks": "locked"}
+    with pytest.raises(ValueError, match="environment changed"):
+        latency.matrix("rtx5090/pi05", ["robodojo", "libero"])

@@ -21,12 +21,12 @@ TARGET = Target(
     # the same kernel source, job 599788), and the decoder's attention and FFN
     # halves on the CUDA backend with the PDL chain armed.
     plan={
-        "llm_backbone_attention": "gemma-cuda",
-        "action_expert_norm_qkv_rope": "cuda-pdl",
-        "action_expert_attention": "cuda-pdl",
-        "action_expert_out_proj_residual": "cuda-pdl",
-        "action_expert_norm_gated_ffn": "cuda-pdl",
-        "action_expert_ffn_down_residual": "cuda-pdl",
+        "llm_backbone_attention": ("gemma-cuda",),
+        "action_expert_norm_qkv_rope": ("cuda-pdl",),
+        "action_expert_attention": ("cuda-pdl",),
+        "action_expert_out_proj_residual": ("cuda-pdl",),
+        "action_expert_norm_gated_ffn": ("cuda-pdl",),
+        "action_expert_ffn_down_residual": ("cuda-pdl",),
     },
     workloads=("robodojo",),
     # The reference route: every call site on TileLang, the backbone attention
