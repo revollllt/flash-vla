@@ -86,9 +86,18 @@ images → vision_encoder → [host work] → llm_backbone → action_expert →
 The explicit graph names inputs, outputs, weights and call sites. `ModelRunner`
 materializes that graph and binds each call site to the selected plan. Model
 shape and control-flow differences belong to the model definition rather than
-branches inside the runner; a device's layout needs (row padding, which call
-sites take the prefix mask) are parameters the Target passes to the model. Shared kernels accept the arguments and layout of their
-call-site interface.
+branches inside the runner; a device's layout needs (row padding) are
+parameters the Target passes to the model. Shared kernels accept the arguments
+and layout of their call-site interface.
+
+A length that changes with every inference (the prompt a host slot tokenizes)
+is the model's replay-time axis (`runtime/replay.py`). A Target that declares
+a row granularity has the runner build and capture the stages the axis reaches
+once per bucket its workloads' ranges reach, over the same buffers; the slot
+that decides the axis selects the bucket, and a backend whose kernel runs the
+exact length receives it through a hook before the replay (`Scratch.on_replay`).
+Inside a bucket every shape is static, so every kernel plans for the rows it
+runs.
 
 A host slot can overlap with the preceding GPU segment when dependencies allow.
 Input copies, host work, graph replay and the final synchronization are part of
@@ -129,6 +138,7 @@ constrained group is an error. `build_runner` constructs one workload: its
 options fix the shape profile, and a harness's own options (seed, checkpoint,
 depth cut for bisection) may not override them. A Target declares any workload
 its model declares, for its graph and floor, but builds only the ones it names.
+The replay buckets it captures are recorded in the identity beside the plan.
 Candidate plans stay under `lab/plans/`. OpenPI loading/conversion belongs to
 `models/pi0/openpi.py` and `models/pi05/openpi.py`; evaluation adds official
 forward adapters.

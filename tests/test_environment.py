@@ -99,7 +99,7 @@ def test_last_leg_environment_drift_rejects_complete_run(field, before, after):
          patch.object(latency, "require_cuda"), \
          patch.object(latency.torch.cuda, "init"), \
          patch.object(latency.torch.cuda, "empty_cache"), \
-         patch.object(latency, "_run_leg", side_effect=latency._measure_leg), \
+         patch.object(latency, "_run_leg", side_effect=latency.measure_leg), \
          patch.object(latency, "resolve", side_effect=lambda value: value), \
          patch.object(latency, "build", side_effect=lambda target, plan, **kwargs: _Engine(plan)), \
          patch.object(latency, "collect_environment", side_effect=[initial] * 5 + [changed]), \
@@ -131,7 +131,7 @@ def test_explicit_device_is_used_for_every_latency_leg_and_collector():
          patch.object(latency, "require_cuda"), \
          patch.object(latency.torch.cuda, "init"), \
          patch.object(latency.torch.cuda, "empty_cache"), \
-         patch.object(latency, "_run_leg", side_effect=latency._measure_leg), \
+         patch.object(latency, "_run_leg", side_effect=latency.measure_leg), \
          patch.object(latency, "resolve", side_effect=lambda value: value), \
          patch.object(latency, "build", return_value=engine), \
          patch.object(latency, "collect_environment", return_value={}) as environment, \

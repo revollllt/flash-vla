@@ -36,7 +36,7 @@ from flash_vla.runtime.workspace import Scratch
 
 from .torch_ops import RMS_EPS
 
-NAMES = frozenset({"llm_backbone_norm_gated_ffn_masked", "llm_backbone_ffn_down_residual_masked"})
+NAMES = frozenset({"llm_backbone_norm_gated_ffn", "llm_backbone_ffn_down_residual"})
 LayerFormat = Literal["bf16", "mxfp8", "nvfp4"]
 LAYER_FORMATS = ("bf16", "mxfp8", "nvfp4")
 
@@ -90,10 +90,9 @@ class FakeQuantFFN:
             weights[weight_kn.data_ptr()] = FakeQuantized(values, decode_scale)
             return weights[weight_kn.data_ptr()]
 
-        def llm_backbone_norm_gated_ffn_masked(x: torch.Tensor, gate_w: torch.Tensor,
-                                               up_w: torch.Tensor, out: torch.Tensor,
-                                               x_norm: torch.Tensor, mask: torch.Tensor
-                                               ) -> torch.Tensor:
+        def llm_backbone_norm_gated_ffn(x: torch.Tensor, gate_w: torch.Tensor,
+                                        up_w: torch.Tensor, out: torch.Tensor,
+                                        x_norm: torch.Tensor) -> torch.Tensor:
             rows = x.shape[0]
             fmt = recipe["gate_up"][_layer("gate_up", gate_w)]
             x_fp32 = x.float()
@@ -109,9 +108,8 @@ class FakeQuantFFN:
             out[:rows].copy_((F.gelu(gate.float(), approximate="tanh") * up.float()).to(out.dtype))
             return out
 
-        def llm_backbone_ffn_down_residual_masked(x: torch.Tensor, weight: torch.Tensor,
-                                                  out: torch.Tensor, mask: torch.Tensor
-                                                  ) -> torch.Tensor:
+        def llm_backbone_ffn_down_residual(x: torch.Tensor, weight: torch.Tensor,
+                                           out: torch.Tensor) -> torch.Tensor:
             fmt = recipe["down"][_layer("down", weight)]
             if fmt == "bf16":
                 return out.addmm_(x, weight)
@@ -119,8 +117,8 @@ class FakeQuantFFN:
             out.copy_((out.float() + product).to(out.dtype))
             return out
 
-        wrappers = {"llm_backbone_norm_gated_ffn_masked": llm_backbone_norm_gated_ffn_masked,
-                    "llm_backbone_ffn_down_residual_masked": llm_backbone_ffn_down_residual_masked}
+        wrappers = {"llm_backbone_norm_gated_ffn": llm_backbone_norm_gated_ffn,
+                    "llm_backbone_ffn_down_residual": llm_backbone_ffn_down_residual}
         return {name: wrapper for name, wrapper in wrappers.items()
                 if selected_names is None or name in selected_names}
 

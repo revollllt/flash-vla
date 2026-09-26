@@ -48,6 +48,7 @@ import torch
 from .binding import Candidates
 from .graph import Graph
 from .ops import OpSpec, Vocabulary
+from .replay import ReplayAxis
 from .registry import Registry
 from .work import CallSiteRule, ReferenceRun
 
@@ -89,9 +90,15 @@ class Workload:
     and depth, which stays the model's and is cut only to bisect) but never
     overrides these. `docs/workloads.md` records where every value comes from:
     the benchmark, the upstream configuration and revision.
+
+    `replay_range` bounds the model's replay-time axis (`ModelDefinition.replay_axis`)
+    over the workload's observations, in axis units: the prompt tokens a
+    RoboDojo state and instruction tokenize to. It decides the row buckets a
+    Target captures (`runtime/replay.py`); `None` leaves only the full one.
     """
     name: str
     options: Mapping[str, ConfigValue]
+    replay_range: tuple[int, int] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
@@ -235,6 +242,9 @@ class ModelDefinition(ABC, Generic[ConfigT, HostStateT]):
     #: (`models/<model>/work.py`; `measurement.work` reads the floor from them).
     work_rules: tuple[CallSiteRule, ...]
     reference_run: Callable[[Mapping[str, int], int | None], ReferenceRun]
+    #: The length that changes with every inference (`runtime/replay.py`), or
+    #: `None` for a model whose every length is fixed at construction.
+    replay_axis: ReplayAxis | None = None
 
     def workload(self, name: str) -> Workload:
         """The declared workload called `name`."""
@@ -333,6 +343,10 @@ class Target(Generic[ConfigT, HostStateT]):
     ceilings: Mapping[str, Ceiling] = field(default_factory=dict)
     assets: Mapping[str, str] = field(default_factory=dict)
     call_site_aliases: Mapping[str, str] = field(default_factory=dict)
+    #: Rows of the kernels' tile along the model's replay axis: the stages the
+    #: axis reaches are captured once per bucket of this many rows a workload's
+    #: `replay_range` reaches (`runtime/replay.py`); `None` captures the full one.
+    replay_granularity: int | None = None
 
     def __post_init__(self) -> None:
         declared = {workload.name for workload in self.model.workloads}
@@ -347,12 +361,16 @@ class Target(Generic[ConfigT, HostStateT]):
         object.__setattr__(self, "assets", MappingProxyType(dict(self.assets)))
         object.__setattr__(self, "call_site_aliases", MappingProxyType(dict(self.call_site_aliases)))
 
-    def graph(self, shape: Mapping[str, int]) -> Graph:
-        """The model's checked computation graph at `shape`."""
+    def graph(self, shape: Mapping[str, int], bucket: int | None = None) -> Graph:
+        """The model's checked computation graph at `shape`, with the replay axis
+        (if the model has one) at `bucket`, or at its limit when `None`."""
         model = self.model
+        axis = model.replay_axis
+        built = (shape if axis is None
+                 else axis.at(shape, shape[axis.limit] if bucket is None else bucket))
         g = Graph(Vocabulary(model.ops), model.weight_shapes(shape), model.stages,
                   weight_dtype=DTYPES[self.precision])
-        model.build(g, shape)
+        model.build(g, built)
         g.check()
         undeclared = [(stage, buffer) for stage, outputs in model.stage_outputs.items()
                       for buffer, _axis in outputs if buffer not in g.buffers]
@@ -417,4 +435,5 @@ class Target(Generic[ConfigT, HostStateT]):
 
 
 __all__ = ["CheckpointReader", "ConfigT", "ConfigValue", "HostStateT", "DTYPES", "Input", "ModelDefinition", "PlanSpec", "Candidates",
-           "Ceiling", "Pricing", "QuantizationRecipe", "STAGES", "STAGE_OUTPUTS", "Target", "TensorCheckpoint", "Workload"]
+           "Ceiling", "Pricing", "QuantizationRecipe", "ReplayAxis", "STAGES", "STAGE_OUTPUTS", "Target",
+           "TensorCheckpoint", "Workload"]

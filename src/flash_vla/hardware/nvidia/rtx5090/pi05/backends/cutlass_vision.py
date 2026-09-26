@@ -80,12 +80,12 @@ def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
     plans all pointer sets and scratch before capture; replay allocates nothing.
     """
     names = NAMES if selected_names is None else set(selected_names)
-    plans: dict[tuple[int, int, int, int], VisionPlan] = {}
+    plans: dict[tuple[int, int, int, int, int, int], VisionPlan] = {}
     role = f"pi05_vision_streamk_{id(plans)}"
 
     def gemm(a: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, output: torch.Tensor,
              stream: int) -> None:
-        key = (a.data_ptr(), weight.data_ptr(), bias.data_ptr(), output.data_ptr())
+        key = (*a.shape, a.data_ptr(), weight.data_ptr(), bias.data_ptr(), output.data_ptr())
         plan = plans[key] if key in plans else plans.setdefault(
             key, VisionPlan(scratch, role, a, weight, bias, output, stream))
         cutlass_backbone.check(library().vision_bias_gemm_run(plan.handle, stream),

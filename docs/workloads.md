@@ -25,8 +25,12 @@ Two kinds of axis:
   length) fix the graph. A different value is another construction, and
   another routing decision.
 - **Replay-time** axes (how many prompt slots a given observation fills) vary
-  per inference inside one captured graph. They matter where a kernel selects
-  a row bucket from them.
+  per inference inside one construction. A model declares its one replay-time
+  axis (`ModelDefinition.replay_axis`, `runtime/replay.py`) and each workload
+  the axis's range over its observations (`Workload.replay_range`). A Target
+  with a row granularity (`Target.replay_granularity`) captures the stages the
+  axis reaches once per bucket of that many rows the range reaches, plus the
+  full one, and each inference replays the bucket its length falls in.
 
 Sources, read-only:
 
@@ -60,10 +64,13 @@ code under each table.
 `robot_state_dim` and `discrete_state` shape the prompt, and so the valid rows.
 The identity does not record them; the fixture's digest does.
 
-On `rtx5090/pi05` the backbone buckets its prefix at the first 128-row tile
-boundary past the image tokens and at the full prefix (`bucketed_backbone.py`):
-M896/M968 for `robodojo`, M640/M712 for `libero`. Every observation of either
-workload lands in the short bucket.
+The replay-time axis is `prompt_tokens`, the valid prompt tokens after the
+image tokens; `replay_range` is the valid token range above. On
+`rtx5090/pi05` (64-row granularity) the backbone is captured at 832, 896 and
+968 prefix rows for `robodojo` (prompt buckets 64, 128, 200) and at 576 and 712
+for `libero` (64, 200). The construction option
+`prompt_tokens=N` replaces the tokenized prompt by N seeded tokens, to measure
+or check one bucket.
 
 The bounds combine the per-value token length (2 to 4, over bins -1..255) with
 the shortest and longest instructions:
@@ -96,6 +103,7 @@ libero.set_task(task); print(int(libero.mask.sum()))
 | Action chunk | 50 (expert rows 51 with the state token) |
 | Prompt | the instruction and a newline, 7-37 tokens. OpenPI pads to 48 and masks the padding; this engine bakes the prompt into `language_embeds` at load time and runs its valid rows only. The workload declares the longest instruction's 37 |
 | Prefix rows | 805 = 3 x 256 + 37; the range 775-805 lies inside one 128-row tile (768-896) |
+| Replay-time axis | none: the prompt is baked in at load time |
 
 ```python
 import sentencepiece
@@ -112,6 +120,7 @@ tokens = len(tokenizer.encode(instruction, add_bos=True) + tokenizer.encode("\n"
 | Vision patches / visual tokens | 768 / 192 | 512 / 128 |
 | Text sequence (construction-time) | 206-237; declared 237, the longest instruction | 141-157 over the 40 tasks; declared 156, the prepared fixture's |
 | Action horizon | 40 model rows. The data's 16-step horizon is padded to the model's `action_horizon=40` (`Gr00tN1d7.get_action` samples `[B, 40, action_dim]`) | 40 |
+| Replay-time axis | `valid_sequence_tokens`, the valid tokens of `attention_mask`; no Target buckets it | same |
 
 No Target builds `robodojo`: only the LIBERO observation is prepared as a
 fixture. `robodojo` is declared for its graph and floor.
@@ -135,6 +144,7 @@ sequence = views * 64 + 9 + len(tokenizer(instruction, add_special_tokens=False)
 | Cameras | 3 at 224x224, 64 visual tokens each |
 | Prefix | 264 = 192 visual + 72 language slots |
 | Action chunk / suffix rows | 50 / 51 |
+| Replay-time axis | `valid_language_tokens`, the valid slots of `language_masks`; no Target buckets it |
 
 These are the shapes `models/lingbot/spec.py` already fixes, so the workload
 names no option. The recorded fixture (`synthetic=False`) and the seeded one

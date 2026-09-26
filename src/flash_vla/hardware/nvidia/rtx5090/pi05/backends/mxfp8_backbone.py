@@ -1,7 +1,8 @@
 """Pi0.5 backbone FFN under the mxfp8-llm-ffn recipe: quant_ops producers
 around CUTLASS block-scaled GEMMs (mxfp8_backbone.cu).
 
-Per layer, on the M prefix rows (968 with three views, 712 with two):
+Per layer, on the M rows the backbone runs (a replay-time bucket's,
+`runtime/replay.py`):
 
     x --quant_ops.rms_norm--> MXFP8 [M, 2048]
       --GEMM with gate|up [32768, 2048]--> BF16 [M, 32768], gate and up halves
@@ -18,17 +19,9 @@ The MXFP8 hidden stays in this backend's scratch and the down call site reads
 it instead of its `x` argument, so the two call sites route here together;
 neither `out` of the gated call site nor its `x_norm` is written. Weights are
 quantized once, on a layer's first call (warmup, before capture), into scratch
-as [N, K] with K contiguous; the runner's BF16 weights stay allocated but are
-not read.
-
-Each GEMM is planned for both row buckets of `row_buckets.bucket_rows`
-(M896 and M968 with three views, M640 and M712 with two), and both plans run
-on every call: the kernel the prefix mask does not select exits at once
-(mxfp8_backbone.cu, RowBucket). Under the short bucket, the rows past it of the
-residual keep their values and those of the hidden are stale; they are padding
-either way. A prefix the buckets do not support runs one plan over all its
-rows. A prefix whose buckets have no screened down configuration
-(`DOWN_CONFIGS`) is not supported. The two producers always cover every row.
+as [N, K] with K contiguous, and serve every bucket; the runner's BF16 weights
+stay allocated but are not read. A bucket's rows need a screened down
+configuration (`DOWN_CONFIGS`; `supports`).
 """
 from __future__ import annotations
 
@@ -43,34 +36,33 @@ import torch
 from flash_vla.hardware.nvidia.native import CUTLASS_DIR, CUTLASS_VERSION_HEADER, NativeLibrary
 from flash_vla.hardware.nvidia.quant_ops import ops
 from flash_vla.runtime.binding import RouteConstraint
-from flash_vla.runtime.registry import Backend
+from flash_vla.runtime.registry import Backend, Wrapper
 from flash_vla.runtime.workspace import Scratch
 
-from .row_buckets import bucket_rows, has_short_bucket
 from .torch_ops import RMS_EPS
 
-NAMES = frozenset({"llm_backbone_norm_gated_ffn_masked", "llm_backbone_ffn_down_residual_masked"})
+NAMES = frozenset({"llm_backbone_norm_gated_ffn", "llm_backbone_ffn_down_residual"})
 ROUTE_CONSTRAINTS = (RouteConstraint.atomic(
     NAMES, "the down GEMM reads the MXFP8 hidden the gated FFN leaves in scratch"),)
 SOURCE = Path(__file__).with_suffix(".cu")
 # Tile configuration of mxfp8_backbone.cu (the index its extern "C" entries take)
-# per row bucket, from `lab/pi05/mxfp8_gemm_screen.py --workload <each>`; a new
-# workload's buckets are screened before they run.
+# per row count, from `lab/pi05/mxfp8_gemm_screen.py --rows ...`; a new bucket's
+# rows are screened before they run.
 GATE_UP_CONFIG = 8          # 128x128x128 pingpong, at every row count
-# Down, by bucket rows: 128x128 persistent fills the SMs at 968 rows (128 output
-# tiles for 170 SMs); 896 and 712 rows (112, 96 tiles) split K in three; at 640
-# (80 tiles) stream-K beats that split by 18%.
-DOWN_CONFIGS = {968: 0, 896: 6, 712: 6, 640: 3}
-
-
-def planned_rows(shape: Mapping[str, int]) -> tuple[int, ...]:
-    """The rows each GEMM is planned for: both row buckets, or every prefix row."""
-    return bucket_rows(shape) if has_short_bucket(shape) else (shape["prefix_len"],)
+# Down, by rows (results/pi05-rtx5090/replay-extent/v0/mxfp8-gemm-screen.json):
+# 128x128 persistent fills the SMs at 968 rows (128 output tiles for 170 SMs);
+# 712-896 rows (96-112 tiles) split K in three; at 576-640 (72-80 tiles)
+# stream-K beats that split by 18%.
+# 640 is libero's short bucket at a 128-row granularity, kept with its screen.
+DOWN_CONFIGS = {968: 0, 896: 6, 832: 6, 712: 6, 640: 3, 576: 3}
 
 
 def supports(shape: Mapping[str, int]) -> bool:
-    """Whether every planned row count has a screened down configuration."""
-    return set(planned_rows(shape)) <= DOWN_CONFIGS.keys()
+    """Whether the down GEMM has a screened configuration for the rows the
+    backbone runs at `shape` (a replay bucket's prompt tokens after the image tokens)."""
+    return shape["visual_tokens"] + shape["prompt_tokens"] in DOWN_CONFIGS
+
+
 CUTLASS_ERROR = 1000  # mxfp8_backbone.cu: status values at or above are CUTLASS's
 
 
@@ -98,8 +90,8 @@ def library() -> ctypes.CDLL:
     pointer, int32 = ctypes.c_void_p, ctypes.c_int32
     kernels.mxfp8_gemm_workspace.argtypes = [int32] * 4
     kernels.mxfp8_gemm_workspace.restype = ctypes.c_int64
-    kernels.mxfp8_gemm_plan.argtypes = ([int32] * 4 + [ctypes.c_float] + [pointer] * 6
-                                        + [int32] + [pointer] * 2 + [ctypes.POINTER(pointer)])
+    kernels.mxfp8_gemm_plan.argtypes = ([int32] * 4 + [ctypes.c_float] + [pointer] * 7
+                                        + [ctypes.POINTER(pointer)])
     kernels.mxfp8_gemm_plan.restype = int32
     kernels.mxfp8_gemm_run.argtypes = [pointer, pointer]
     kernels.mxfp8_gemm_run.restype = int32
@@ -109,23 +101,16 @@ def library() -> ctypes.CDLL:
 
 
 class GemmPlan:
-    """output[:rows] bf16 = activation[:rows] * weight^T + beta * output[:rows], with
-    activation [M, K] and weight [N, K] in MXFP8, bound to fixed addresses and one
-    tile configuration. With a prefix `mask`, `rows` is a row bucket and the kernel
-    runs only when the mask selects it: the short bucket, of `short_rows`, when
-    the mask pads row `short_rows`, the full one otherwise. Without a mask it
-    always runs."""
+    """output bf16 = activation * weight^T + beta * output, with activation [M, K]
+    and weight [N, K] in MXFP8, bound to fixed addresses and one tile configuration."""
 
     def __init__(self, config: int, activation: ops.Activation, weight: ops.Activation,
-                 output: torch.Tensor, beta: float, scratch: Scratch, *, rows: int,
-                 mask: torch.Tensor | None, short_rows: int) -> None:
-        depth, cols = activation.cols, weight.rows
-        if (weight.cols != depth or tuple(output.shape) != (activation.rows, cols)
-                or output.stride() != (cols, 1) or output.dtype != torch.bfloat16
-                or rows > activation.rows):
-            raise ValueError(f"GEMM [{rows} of {activation.rows}, {depth}] x [{weight.rows}, "
-                             f"{weight.cols}]^T cannot write {output.dtype} "
-                             f"{tuple(output.shape)} {output.stride()}")
+                 output: torch.Tensor, beta: float, scratch: Scratch) -> None:
+        rows, depth, cols = activation.rows, activation.cols, weight.rows
+        if (weight.cols != depth or tuple(output.shape) != (rows, cols)
+                or output.stride() != (cols, 1) or output.dtype != torch.bfloat16):
+            raise ValueError(f"GEMM [{rows}, {depth}] x [{weight.rows}, {weight.cols}]^T "
+                             f"cannot write {output.dtype} {tuple(output.shape)} {output.stride()}")
         kernels = library()
         size = kernels.mxfp8_gemm_workspace(config, rows, cols, depth)
         if size < 0:
@@ -134,14 +119,13 @@ class GemmPlan:
         # Launches are serial on one stream, so plans of one size share a workspace.
         self.workspace = scratch(f"mxfp8_backbone_workspace_{config}", (max(size, 1),),
                                  torch.uint8, output.device)
-        self.tensors = (activation, weight, output, mask)
+        self.tensors = (activation, weight, output)
         self.handle = ctypes.c_void_p()
         check_status(kernels.mxfp8_gemm_plan(
             config, rows, cols, depth, beta, activation.values.data_ptr(),
             activation.scale.data_ptr(), weight.values.data_ptr(), weight.scale.data_ptr(),
-            output.data_ptr(), None if mask is None else mask.data_ptr(), short_rows,
-            self.workspace.data_ptr(), torch.cuda.current_stream(output.device).cuda_stream,
-            ctypes.byref(self.handle)),
+            output.data_ptr(), self.workspace.data_ptr(),
+            torch.cuda.current_stream(output.device).cuda_stream, ctypes.byref(self.handle)),
             f"mxfp8_gemm_plan config={config} M={rows} N={cols} K={depth} beta={beta}")
         self.run_native = kernels.mxfp8_gemm_run
         self.destroy = weakref.finalize(self, kernels.mxfp8_gemm_destroy, self.handle)
@@ -152,84 +136,64 @@ class GemmPlan:
 
 
 def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
-                  ) -> dict[str, Callable[..., torch.Tensor]]:
-    """Wrappers for both FFN call sites; a layer's plans and quantized weights are
-    built on its first call, which the runner's warmup makes before capture."""
-    gate_up_plans: dict[int, list[GemmPlan]] = {}   # gate weight address -> bucket plans
-    down_plans: dict[int, list[GemmPlan]] = {}      # down weight address -> bucket plans
-    bucketed = has_short_bucket(scratch.shape)
-    buckets = planned_rows(scratch.shape)
-    short_rows = buckets[0]
+                  ) -> dict[str, Wrapper]:
+    """Wrappers for both FFN call sites. A layer's weights are quantized on its
+    first call and its plans built on the first call at each bucket's rows, all
+    in the runner's warmup, before capture."""
+    quantized: dict[int, ops.Activation] = {}        # bf16 weight address -> MXFP8 [N, K]
+    plans: dict[tuple[int, int], GemmPlan] = {}      # (weight address, rows) -> plan
 
-    def _allocator(role: str, device: torch.device) -> ops.Allocator:
+    def allocator(role: str, device: torch.device) -> ops.Allocator:
         return lambda name, shape, dtype: scratch(role + name, shape, dtype, device)
 
-    def _activation(role: str, rows: int, cols: int, device: torch.device) -> ops.Activation:
-        """MXFP8 [rows, cols] in scratch; every layer gets the same buffers."""
-        return ops.empty(rows, cols, "mxfp8", device, allocate=_allocator(role, device))
+    def activation(role: str, rows: int, cols: int, device: torch.device) -> ops.Activation:
+        """MXFP8 [rows, cols] in scratch; every layer at one bucket gets the same buffers."""
+        return ops.empty(rows, cols, "mxfp8", device, allocate=allocator(role, device))
 
-    def _quantized_weight(weight_kn: torch.Tensor, role: str) -> ops.Activation:
-        """weight [K, N] bf16 as the GEMM's B operand: MXFP8 [N, K], blocks along K."""
-        depth, cols = weight_kn.shape
-        return ops.quantize(weight_kn.t().contiguous(), ops.empty(
-            cols, depth, "mxfp8", weight_kn.device, allocate=_allocator(role, weight_kn.device)))
-
-    def _layer_buckets(plans: dict[int, list[GemmPlan]], weight: torch.Tensor,
-                       quantize: Callable[[], ops.Activation],
-                       build: Callable[[ops.Activation, int], GemmPlan]) -> list[GemmPlan]:
-        """The plans of the layer `weight` belongs to, one per row bucket (a single
-        full-row plan for an unbucketed prefix); on the layer's first call its
-        weight is quantized and the plans are built."""
-        cached = plans.get(weight.data_ptr())
-        if cached is not None:
-            return cached
+    def operand(weight: torch.Tensor, weight_kn: Callable[[], torch.Tensor]) -> ops.Activation:
+        """The MXFP8 B operand [N, K], blocks along K, of the layer `weight` belongs
+        to, quantized from `weight_kn()` ([K, N] bf16) on the layer's first call."""
+        address = weight.data_ptr()
+        if address in quantized:
+            return quantized[address]
         if torch.cuda.is_current_stream_capturing():
             raise RuntimeError("an MXFP8 backbone layer was not warmed before capture")
-        quantized = quantize()
-        return plans.setdefault(weight.data_ptr(), [build(quantized, rows) for rows in buckets])
+        kn = weight_kn()
+        depth, cols = kn.shape
+        return quantized.setdefault(address, ops.quantize(kn.t().contiguous(), ops.empty(
+            cols, depth, "mxfp8", kn.device,
+            allocate=allocator(f"mxfp8_backbone_weight_{address}", kn.device))))
 
-    def llm_backbone_norm_gated_ffn_masked(x: torch.Tensor, gate_w: torch.Tensor,
-                                           up_w: torch.Tensor, out: torch.Tensor,
-                                           x_norm: torch.Tensor, mask: torch.Tensor
-                                           ) -> torch.Tensor:
-        rows, width = x.shape                      # prefix 968 (712 with two views), 2048
+    def llm_backbone_norm_gated_ffn(x: torch.Tensor, gate_w: torch.Tensor, up_w: torch.Tensor,
+                                    out: torch.Tensor, x_norm: torch.Tensor) -> torch.Tensor:
+        rows, width = x.shape                      # a bucket's rows, 2048
         hidden_width = gate_w.shape[1]             # 16384
-        bucket_mask = mask if bucketed else None
-        normed = _activation("mxfp8_backbone_normed", rows, width, x.device)
-        hidden = _activation("mxfp8_backbone_hidden", rows, hidden_width, x.device)
+        normed = activation("mxfp8_backbone_normed", rows, width, x.device)
+        hidden = activation("mxfp8_backbone_hidden", rows, hidden_width, x.device)
         # bf16 [M, 2 * 16384]: gate | up.
         projected = scratch("mxfp8_backbone_gate_up", (rows, 2 * hidden_width), torch.bfloat16,
                             x.device)
-        layer_plans = _layer_buckets(
-            gate_up_plans, gate_w,
-            lambda: _quantized_weight(torch.cat((gate_w, up_w), dim=1),
-                                      f"mxfp8_backbone_gate_up_{gate_w.data_ptr()}"),
-            lambda gate_up, rows_used: GemmPlan(GATE_UP_CONFIG, normed, gate_up, projected,
-                                                0.0, scratch, rows=rows_used, mask=bucket_mask,
-                                                short_rows=short_rows))
+        key = (gate_w.data_ptr(), rows)
+        plan = plans[key] if key in plans else plans.setdefault(key, GemmPlan(
+            GATE_UP_CONFIG, normed, operand(gate_w, lambda: torch.cat((gate_w, up_w), dim=1)),
+            projected, 0.0, scratch))
         ops.rms_norm(x, normed, eps=RMS_EPS)
-        for plan in layer_plans:
-            plan.run()
+        plan.run()
         ops.gated_act(projected[:, :hidden_width], projected[:, hidden_width:], hidden)
         return out
 
-    def llm_backbone_ffn_down_residual_masked(x: torch.Tensor, weight: torch.Tensor,
-                                              out: torch.Tensor, mask: torch.Tensor
-                                              ) -> torch.Tensor:
-        rows, hidden_width = x.shape               # prefix rows, 16384; x itself is not read
-        hidden = _activation("mxfp8_backbone_hidden", rows, hidden_width, x.device)
-        bucket_mask = mask if bucketed else None
-        for plan in _layer_buckets(
-                down_plans, weight,
-                lambda: _quantized_weight(weight, f"mxfp8_backbone_down_{weight.data_ptr()}"),
-                lambda down, rows_used: GemmPlan(
-                    DOWN_CONFIGS[rows_used], hidden, down, out, 1.0, scratch, rows=rows_used,
-                    mask=bucket_mask, short_rows=short_rows)):
-            plan.run()
+    def llm_backbone_ffn_down_residual(x: torch.Tensor, weight: torch.Tensor,
+                                       out: torch.Tensor) -> torch.Tensor:
+        rows, hidden_width = x.shape               # a bucket's rows, 16384; x itself is not read
+        hidden = activation("mxfp8_backbone_hidden", rows, hidden_width, x.device)
+        key = (weight.data_ptr(), rows)
+        plan = plans[key] if key in plans else plans.setdefault(key, GemmPlan(
+            DOWN_CONFIGS[rows], hidden, operand(weight, lambda: weight), out, 1.0, scratch))
+        plan.run()
         return out
 
-    wrappers = {"llm_backbone_norm_gated_ffn_masked": llm_backbone_norm_gated_ffn_masked,
-                "llm_backbone_ffn_down_residual_masked": llm_backbone_ffn_down_residual_masked}
+    wrappers = {"llm_backbone_norm_gated_ffn": llm_backbone_norm_gated_ffn,
+                "llm_backbone_ffn_down_residual": llm_backbone_ffn_down_residual}
     return {name: wrapper for name, wrapper in wrappers.items()
             if selected_names is None or name in selected_names}
 

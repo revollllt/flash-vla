@@ -18,8 +18,12 @@ state while vision runs, `llm_backbone` needs the prompt embeddings, and
 
 Two things differ from Pi0 and both come from the state moving into the
 prompt. The prefix is longer and partly padding: only the first
-`768 + n_valid` rows carry data on any call, and padding is masked rather than
-skipped so the addresses stay static. The action expert's RoPE offset is
+`768 + n_valid` rows carry data on any call. The buffers keep the full prefix,
+so the addresses stay static, and the backbone runs its first
+`image_tokens + prompt_tokens` rows, where `prompt_tokens` is the replay-time
+bucket the runner builds this graph at (`runtime/replay.py`; the full
+`prompt_len` by default). Keys past the valid rows inside the bucket stay
+masked. The action expert's RoPE offset is
 data-dependent (`n_valid + 0..chunk-1`), so `action_expert_rope` is filled per
 inference by `PrefixInputs`; the backbone table stays static because padding
 sits at the end of the language block.
@@ -31,9 +35,8 @@ it from the view's storage; generic kernels see the 50-row / 1018-key views.
 Pad rows are zero or masked (`MASK_NEG` on keys `[cache_len, cache_pad)`) so
 any kernel reading them computes finite garbage that nothing consumes.
 
-The layout is the Target's choice, not the model's: padding and whether the
-backbone's dense call sites receive the prefix mask (`Pi05Layout`) change the
-buffers and call sites a device's kernels see, never the math.
+The layout is the Target's choice, not the model's: padding (`Pi05Layout`)
+changes the buffers a device's kernels see, never the math.
 """
 from __future__ import annotations
 
@@ -62,8 +65,6 @@ from .spec import (
 )
 from flash_vla.runtime.graph import Graph
 
-from .ops import MASKED_CALL_SITES
-
 
 @dataclass(frozen=True)
 class Pi05Layout:
@@ -71,12 +72,9 @@ class Pi05Layout:
 
     `row_pad`: leading extents of the action-expert buffers and of the KV cache
     are padded to this multiple (64 on H100: one wgmma m64 tile of query rows,
-    one 64-key attention stage). `masked_backbone`: the backbone's dense call
-    sites take the prefix mask as a last argument (`ops.MASKED_CALL_SITES`), so
-    kernels can skip the padded prompt rows.
+    one 64-key attention stage).
     """
     row_pad: int
-    masked_backbone: bool
 
 
 def rope_table(seq_len: int, offset: int, head_dim: int, device: torch.device) -> torch.Tensor:
@@ -91,12 +89,16 @@ def rope_table(seq_len: int, offset: int, head_dim: int, device: torch.device) -
 
 
 def build(g: Graph, shape: Mapping[str, int], layout: Pi05Layout) -> None:
-    """Write the Pi0.5 graph at `shape` (num_views, chunk, steps, layers, prompt_len)."""
+    """Write the Pi0.5 graph at `shape` (num_views, chunk, steps, layers, prompt_len),
+    with the backbone over `prompt_tokens` of the prompt slots."""
     num_views, chunk, steps = shape["num_views"], shape["chunk"], shape["steps"]
     layers, prompt_len = shape["layers"], shape["prompt_len"]
 
     image_tokens = num_views * VISION_TOKENS
     prefix_len = image_tokens + prompt_len
+    # The backbone's rows at this bucket; the prefix buffers keep all `prefix_len`.
+    tokens = shape["prompt_tokens"]
+    rows = image_tokens + tokens
     cache_len = prefix_len + chunk
     chunk_pad = -(-chunk // layout.row_pad) * layout.row_pad
     cache_pad = -(-cache_len // layout.row_pad) * layout.row_pad
@@ -108,8 +110,12 @@ def build(g: Graph, shape: Mapping[str, int], layout: Pi05Layout) -> None:
         return bias
 
     # -- inputs and the prompt buffers the host slot fills ------------------
-    images = g.buf("images", (num_views, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS))
-    actions = g.buf("actions", (chunk, ACTION_DIM))
+    # Zeroed, so the runner's warmup computes finite values everywhere: a smaller
+    # replay bucket never rewrites the KV rows past it, which the action expert
+    # still reads under the mask, so they must hold finite values from the first
+    # inference on.
+    images = g.buf("images", (num_views, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS), init="zero")
+    actions = g.buf("actions", (chunk, ACTION_DIM), init="zero")
     # `prompt_scale` carries sqrt(width) on valid rows and zero on padding, so
     # one multiply both scales the embedding and zeroes the padded rows. Both
     # start zeroed: warmup runs the graph before the first `forward`, and an
@@ -176,31 +182,27 @@ def build(g: Graph, shape: Mapping[str, int], layout: Pi05Layout) -> None:
          norm_w=g.w("vision_final_norm_w"), norm_b=g.w("vision_final_norm_b"),
          proj_w=g.w("encoder_multi_modal_projector_w"),
          proj_b=g.w("encoder_multi_modal_projector_b"), out=bx, x_norm=vnorm)
-    g.op("llm_backbone_embed_prompt", token_ids=prompt_ids, table=g.w("vocab_embeddings"),
-         scale=prompt_scale, out=bx[image_tokens:prefix_len])
+    g.op("llm_backbone_embed_prompt", token_ids=prompt_ids[:tokens], table=g.w("vocab_embeddings"),
+         scale=prompt_scale[:tokens], out=bx[image_tokens:rows])
     scale = HEAD_DIM ** -0.5
-    mask = mask_bias[:prefix_len]
-    # The dense backbone call sites, standard or taking the prefix mask as a
-    # last argument; the arguments are otherwise the same.
-    dense = {name: (MASKED_CALL_SITES[name], {"mask": mask}) if layout.masked_backbone
-             else (name, {}) for name in MASKED_CALL_SITES}
+    # The bucket's rows of every prefix buffer; the rows past it are neither read
+    # nor written by this graph.
+    x, x_norm, hidden = bx[:rows], bnorm[:rows], bhidden[:rows]
+    q, attended = bq[:rows * DECODER_HEADS], battn[:rows * DECODER_HEADS]
     for i in range(layers):
-        g.op("llm_backbone_norm_qkv_rope", x=bx, weight_qkv=g.w("encoder_attn_qkv_w")[i],
-             rope=brope, q=bq, k=kv_k[i, :prefix_len], v=kv_v[i, :prefix_len], x_norm=bnorm)
+        g.op("llm_backbone_norm_qkv_rope", x=x, weight_qkv=g.w("encoder_attn_qkv_w")[i],
+             rope=brope[:rows], q=q, k=kv_k[i, :rows], v=kv_v[i, :rows], x_norm=x_norm)
         # The last layer runs only its QKV projection: nothing downstream reads
         # its output, only its K and V, which the action expert attends over.
         if i == layers - 1:
             break
-        g.op("llm_backbone_attention", q=bq, k=kv_k[i, :prefix_len], v=kv_v[i, :prefix_len],
-             scale=scale, mask=mask, out=battn)
-        call_site, masked = dense["llm_backbone_out_proj_residual"]
-        g.op(call_site, x=battn.view(prefix_len, DECODER_HEADS * HEAD_DIM),
-             weight=g.w("encoder_attn_o_w")[i], out=bx, **masked)
-        call_site, masked = dense["llm_backbone_norm_gated_ffn"]
-        g.op(call_site, x=bx, gate_w=g.w("encoder_ffn_gate_w")[i],
-             up_w=g.w("encoder_ffn_up_w")[i], out=bhidden, x_norm=bnorm, **masked)
-        call_site, masked = dense["llm_backbone_ffn_down_residual"]
-        g.op(call_site, x=bhidden, weight=g.w("encoder_ffn_down_w")[i], out=bx, **masked)
+        g.op("llm_backbone_attention", q=q, k=kv_k[i, :rows], v=kv_v[i, :rows],
+             scale=scale, mask=mask_bias[:rows], out=attended)
+        g.op("llm_backbone_out_proj_residual", x=attended.view(rows, DECODER_HEADS * HEAD_DIM),
+             weight=g.w("encoder_attn_o_w")[i], out=x)
+        g.op("llm_backbone_norm_gated_ffn", x=x, gate_w=g.w("encoder_ffn_gate_w")[i],
+             up_w=g.w("encoder_ffn_up_w")[i], out=hidden, x_norm=x_norm)
+        g.op("llm_backbone_ffn_down_residual", x=hidden, weight=g.w("encoder_ffn_down_w")[i], out=x)
 
     # -- action expert: denoise the chunk over the KV cache -----------------
     # No state token, so the sequence is the action chunk alone. AdaRMSNorm

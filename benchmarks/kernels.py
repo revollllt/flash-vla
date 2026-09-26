@@ -76,7 +76,8 @@ def run(target: str, plan: str | None = None, seed: int = 0, only_segments: list
     torch.cuda.synchronize()
     depth = {axis: engine.shape[axis] for axis in ("steps", "layers")}
     derived = work(get_target(target), workload=engine.workload,
-                   quantization=engine.quantization, **depth)
+                   quantization=engine.quantization,
+                   extent=engine.extent, **depth)
     # Per call site, its total work; one call does its share of the engine's calls.
     totals: dict[str, tuple[float, float]] = {}
     for launch in derived.launch:

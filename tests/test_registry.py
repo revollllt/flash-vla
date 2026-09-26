@@ -23,7 +23,7 @@ def long_prefix(shape: Mapping[str, int]) -> bool:
 
 REGISTRY = Registry({
     "general": Backend(names=frozenset(SITES), make_wrappers=no_wrappers),
-    "bucketed": Backend(names=frozenset(SITES), make_wrappers=no_wrappers, supports=long_prefix),
+    "long-prefix": Backend(names=frozenset(SITES), make_wrappers=no_wrappers, supports=long_prefix),
     "paired": Backend(names=frozenset(SITES), make_wrappers=no_wrappers,
                       route_constraints=(RouteConstraint.atomic(SITES, "one scratch"),)),
     "up-only": Backend(names=frozenset({"up"}), make_wrappers=no_wrappers),
@@ -31,8 +31,8 @@ REGISTRY = Registry({
 
 
 def test_the_first_candidate_that_supports_the_shape_runs() -> None:
-    plan = {"up": ("bucketed", "general")}
-    assert REGISTRY.resolve(plan, SITES, {"prefix_len": 968}) == {"up": "bucketed",
+    plan = {"up": ("long-prefix", "general")}
+    assert REGISTRY.resolve(plan, SITES, {"prefix_len": 968}) == {"up": "long-prefix",
                                                                   "down": "general"}
     assert REGISTRY.resolve(plan, SITES, {"prefix_len": 712}) == {"up": "general",
                                                                   "down": "general"}
@@ -52,13 +52,13 @@ def test_a_plan_for_a_pruned_call_site_is_still_checked() -> None:
 
 def test_no_supporting_candidate_names_the_shape() -> None:
     with pytest.raises(ValueError, match="supports shape {'prefix_len': 712}"):
-        REGISTRY.resolve({"up": ("bucketed",)}, SITES, {"prefix_len": 712})
+        REGISTRY.resolve({"up": ("long-prefix",)}, SITES, {"prefix_len": 712})
 
 
 def test_a_fallback_that_splits_a_constrained_group_names_the_candidates() -> None:
-    split = {"up": ("bucketed", "paired"), "down": ("general",)}
-    assert REGISTRY.resolve(split, SITES, {"prefix_len": 968}) == {"up": "bucketed",
+    split = {"up": ("long-prefix", "paired"), "down": ("general",)}
+    assert REGISTRY.resolve(split, SITES, {"prefix_len": 968}) == {"up": "long-prefix",
                                                                    "down": "general"}
     with pytest.raises(ValueError,
-                       match=r"requires .*\(after shape fallback: \{'up': \('bucketed', 'paired'\)\}"):
+                       match=r"requires .*\(after shape fallback: \{'up': \('long-prefix', 'paired'\)\}"):
         REGISTRY.resolve(split, SITES, {"prefix_len": 712})

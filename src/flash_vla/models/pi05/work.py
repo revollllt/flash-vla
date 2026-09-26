@@ -28,15 +28,16 @@ RULES = (
 )
 
 
-def reference_run(shape: Mapping[str, int], prompt_tokens: int | None) -> ReferenceRun:
-    """The reference at `shape`, prompted with `prompt_tokens` valid tokens, or
-    with every one of the `prompt_len` slots (the physical layout) when `None`.
+def reference_run(shape: Mapping[str, int], extent: int | None) -> ReferenceRun:
+    """The reference at `shape`, prompted with `extent` valid tokens (the replay
+    axis, `prompt_tokens`), or with every one of the `prompt_len` slots (the
+    physical layout) when `None`.
     The prompt is an inference input: it carries the state."""
     meta = torch.device("meta")
     schema = official_schema(make_reference().parts(), prefixes=PREFIXES)
     model = load({name: torch.empty(dims, dtype=torch.bfloat16, device=meta)
                   for name, dims in schema.items()})
-    prompt = shape["prompt_len"] if prompt_tokens is None else prompt_tokens
+    prompt = shape["prompt_len"] if extent is None else extent
     views = shape["num_views"]
     images = torch.empty(views, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS, device=meta)
     image_masks = torch.ones(views, dtype=torch.bool, device=meta)

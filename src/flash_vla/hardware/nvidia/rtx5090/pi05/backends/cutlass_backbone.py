@@ -1,7 +1,9 @@
-"""Pi0.5 backbone FFN on one CUTLASS Stream-K tile and CUDA pointwise stages.
+"""Pi0.5 backbone FFN and attention output projection on CUTLASS Stream-K tiles
+and CUDA pointwise stages.
 
-The measured 128x128x64 tile serves both gate/up and down GEMMs. All nonlinear
-rounding matches fused_backbone; only its two torch GEMMs are replaced.
+Each GEMM plans for the rows its call runs: a replay-time bucket's rows
+(`runtime/replay.py`), so a smaller bucket computes fewer row tiles. All
+nonlinear rounding matches fused_backbone; only its torch GEMMs are replaced.
 Native plans are instance-owned and bind the runner's stable tensor pointers.
 """
 from __future__ import annotations
@@ -21,15 +23,13 @@ from . import fused_backbone
 
 NAMES = frozenset({
     "llm_backbone_norm_gated_ffn", "llm_backbone_ffn_down_residual",
-    "llm_backbone_norm_gated_ffn_masked", "llm_backbone_ffn_down_residual_masked",
-    # The attention output projection is the same residual GEMM shape family:
-    # the full-row fallback of the bucketed backbone at every prefix it does not bucket.
-    "llm_backbone_out_proj_residual_masked",
+    # The attention output projection is the down projection's residual GEMM.
+    "llm_backbone_out_proj_residual",
 })
 SOURCE = Path(__file__).with_suffix(".cu")
 
 
-#: The CUTLASS backbone and expert GEMMs, stream-K and row-bucketed.
+#: The CUTLASS backbone, vision and expert GEMMs, stream-K.
 LIBRARY = NativeLibrary(
     name="rtx5090_pi05_cutlass_backbone",
     sources=(SOURCE,),
@@ -99,12 +99,14 @@ class GemmPlan:
         self.destroy = weakref.finalize(self, native.backbone_gemm_destroy, self.handle)
 
 
-def run_gemm(plans: dict[tuple[int, int, int, int, float], GemmPlan], scratch: Scratch,
+def run_gemm(plans: dict[tuple[int, int, int, int, int, int, int, float], GemmPlan], scratch: Scratch,
              a: torch.Tensor, b: torch.Tensor, output: torch.Tensor, *, beta: float,
              stream: int, config: int) -> None:
     """output = a @ b + beta * output on family tile `config`, planned in `plans` on
-    the first call with these addresses (the runner's warmup)."""
-    key = (config, a.data_ptr(), b.data_ptr(), output.data_ptr(), beta)
+    the first call with this geometry at these addresses (the runner's warmup).
+    Replay buckets share addresses (each slices its rows from row 0), so the
+    rows are part of the key."""
+    key = (config, *a.shape, b.shape[1], a.data_ptr(), b.data_ptr(), output.data_ptr(), beta)
     plan = plans[key] if key in plans else plans.setdefault(
         key, GemmPlan(scratch, a, b, output, beta, stream, config))
     check(library().backbone_gemm_run(plan.handle, stream),
@@ -120,7 +122,7 @@ def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
     The runner warms each pointer set before capture and owns all scratch.
     """
     names = NAMES if selected_names is None else set(selected_names)
-    plans: dict[tuple[int, int, int, int, float], GemmPlan] = {}
+    plans: dict[tuple[int, int, int, int, int, int, int, float], GemmPlan] = {}
 
     def gemm(a: torch.Tensor, b: torch.Tensor, output: torch.Tensor, *, beta: float,
              stream: int) -> None:
@@ -145,18 +147,10 @@ def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
         gemm(x, weight, out, beta=1.0, stream=torch.cuda.current_stream().cuda_stream)
         return out
 
-    def llm_backbone_norm_gated_ffn_masked(x, gate_w, up_w, out, x_norm, mask):
-        return llm_backbone_norm_gated_ffn(x, gate_w, up_w, out, x_norm)
-
-    def llm_backbone_ffn_down_residual_masked(x, weight, out, mask):
-        return llm_backbone_ffn_down_residual(x, weight, out)
-
     wrappers = {
         "llm_backbone_norm_gated_ffn": llm_backbone_norm_gated_ffn,
         "llm_backbone_ffn_down_residual": llm_backbone_ffn_down_residual,
-        "llm_backbone_norm_gated_ffn_masked": llm_backbone_norm_gated_ffn_masked,
-        "llm_backbone_ffn_down_residual_masked": llm_backbone_ffn_down_residual_masked,
-        "llm_backbone_out_proj_residual_masked": llm_backbone_ffn_down_residual_masked,
+        "llm_backbone_out_proj_residual": llm_backbone_ffn_down_residual,
     }
     return {name: wrappers[name] for name in names}
 

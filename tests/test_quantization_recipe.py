@@ -6,8 +6,8 @@ import pytest
 from flash_vla.inference import declare, get_target
 from measurement.work import work
 
-GATED = "llm_backbone_norm_gated_ffn_masked"
-DOWN = "llm_backbone_ffn_down_residual_masked"
+GATED = "llm_backbone_norm_gated_ffn"
+DOWN = "llm_backbone_ffn_down_residual"
 RECIPE = "mxfp8-llm-ffn"
 
 
@@ -30,7 +30,7 @@ def test_recipe_routes_its_call_sites_and_is_its_own_workload() -> None:
 
 
 @pytest.mark.parametrize("plan, quantization", [
-    ({GATED: "bucketed-backbone", DOWN: "bucketed-backbone"}, RECIPE),   # BF16 kernels
+    ({GATED: "cutlass-backbone", DOWN: "cutlass-backbone"}, RECIPE),     # BF16 kernels
     ({GATED: "mxfp8-backbone", DOWN: "mxfp8-backbone"}, "bf16"),         # unrecorded MXFP8
     ({GATED: "fake-quant-mxfp8", DOWN: "fake-quant-mxfp8"}, "bf16"),
 ])

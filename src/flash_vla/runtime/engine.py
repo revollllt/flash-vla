@@ -48,8 +48,16 @@ class Engine(Protocol):
     derived: Mapping[str, int]
     #: The candidate routes the runner was built with (before route resolution).
     plan: Candidates
-    #: The explicit computation graph: stages, nodes, buffer declarations.
+    #: The explicit computation graph at the full replay bucket: stages, nodes,
+    #: buffer declarations.
     graph: Graph
+    #: The replay-axis values the stages it reaches are captured at, the last the
+    #: axis limit (`runtime/replay.py`); empty for a model without one.
+    replay_buckets: tuple[int, ...]
+    #: The bucket those stages replay at next, and this inference's value of the
+    #: axis; both the full bucket until an inference selects them (`None` without an axis).
+    bucket: int | None
+    extent: int | None
     #: Named static buffers, the views the graph runs on.
     buffers: Mapping[str, torch.Tensor]
     #: The forward pass as an ordered list of stages and host slots.
@@ -84,8 +92,13 @@ class Engine(Protocol):
     def capture(self, *, warmup: int = 3) -> None:
         """Capture fresh graph/stream pairs without reloading weights."""
 
+    def select_replay(self, extent: int) -> None:
+        """Replay the stages the replay axis reaches at the bucket holding `extent`,
+        and tell the backends its exact rows; the deciding host slot does this."""
+
     def replay(self, segment: str) -> None:
-        """Replay one stage on its capture stream, ordered with the caller."""
+        """Replay one stage on its capture stream, ordered with the caller, at the
+        selected bucket when the replay axis reaches it."""
 
     def host(self, slot: str, **inputs: torch.Tensor) -> None:
         """Run one host slot: the host work that sits between two stages."""

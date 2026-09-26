@@ -19,11 +19,11 @@ from typing import Mapping
 import torch
 
 from flash_vla.runtime.graph import Graph
-from flash_vla.runtime.vla import CheckpointReader, ConfigValue, Input, ModelDefinition, Workload
+from flash_vla.runtime.vla import (CheckpointReader, ConfigValue, Input, ModelDefinition,
+                                   ReplayAxis, Workload)
 
 from . import graph, work
 from .graph import Pi05Layout
-from .ops import MASKED_OPS
 from .prompt import PrefixInputs
 from .spec import (
     ACTION_DIM,
@@ -50,7 +50,7 @@ from .spec import (
     VISION_TOKENS,
     runtime_shapes,
 )
-from .tokenize import Pi05Tokenizer, TaskTokenizer
+from .tokenize import Pi05Tokenizer, SyntheticTokenizer, TaskTokenizer
 
 
 @dataclass(frozen=True)
@@ -71,6 +71,10 @@ class Pi05Config:
     #: (`TokenizePrompt` precedes `PadStatesAndActions`), so a 14-dim ALOHA
     #: state puts 14 values in the prompt, not 32.
     robot_state_dim: int = STATE_DIM
+    #: A synthetic prompt of exactly this many seeded tokens in place of the
+    #: tokenized one (`tokenize.SyntheticTokenizer`; `prompt` is then unused), to
+    #: measure or check one replay-time length; `None` tokenizes as the workload does.
+    prompt_tokens: int | None = None
 
     def __post_init__(self) -> None:
         if not 1 <= self.robot_state_dim <= STATE_DIM:
@@ -100,14 +104,24 @@ class Pi05Model(ModelDefinition[Pi05Config, PrefixInputs]):
     )
     work_rules = work.RULES
     reference_run = staticmethod(work.reference_run)
+    #: The valid prompt tokens the host slot's tokenizer fills, after the image
+    #: tokens: the backbone runs a bucket's rows. The action expert's graph does
+    #: not follow it (it attends over the cache under the mask).
+    replay_axis = ReplayAxis(name="prompt_tokens", limit="prompt_len", offset="visual_tokens",
+                             slot="prompt", stages=("llm_backbone",),
+                             extent=lambda host_state, inputs: (host_state.n_valid
+                                                                - host_state.image_tokens))
     workloads = (
         # RoboDojo's official Pi0.5 baseline: XPolicyLab `pi05_base_aloha_full_sim_arx-x5`,
-        # three cameras and a 14-dim ALOHA state (docs/workloads.md).
+        # three cameras and a 14-dim ALOHA state; its instructions and states tokenize
+        # to 43-101 prompt tokens (docs/workloads.md).
         Workload("robodojo", {"num_views": 3, "chunk_size": 50, "prompt_len": MAX_TOKEN_LEN,
-                              "discrete_state": True, "robot_state_dim": 14}),
-        # OpenPI `pi05_libero`: two cameras, action horizon 10, task-only prompt.
+                              "discrete_state": True, "robot_state_dim": 14},
+                 replay_range=(43, 101)),
+        # OpenPI `pi05_libero`: two cameras, action horizon 10, task-only prompts of
+        # 6-22 tokens.
         Workload("libero", {"num_views": 2, "chunk_size": 10, "prompt_len": MAX_TOKEN_LEN,
-                            "discrete_state": False}),
+                            "discrete_state": False}, replay_range=(6, 22)),
     )
     inputs = (
         Input("images", lambda s: (s["num_views"], IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS),
@@ -119,7 +133,6 @@ class Pi05Model(ModelDefinition[Pi05Config, PrefixInputs]):
 
     def __init__(self, layout: Pi05Layout) -> None:
         self.layout = layout
-        self.ops = MASKED_OPS if layout.masked_backbone else ()
 
     def configure(self, **config: ConfigValue) -> Pi05Config:
         return Pi05Config(**config)
@@ -166,6 +179,10 @@ class Pi05Model(ModelDefinition[Pi05Config, PrefixInputs]):
 
     def host_state(self, config: Pi05Config, shape: Mapping[str, int],
                    assets: Mapping[str, Path]) -> PrefixInputs:
+        if config.prompt_tokens is not None:
+            return PrefixInputs(SyntheticTokenizer(config.prompt_len, config.prompt_tokens, seed=0),
+                                config.num_views, config.chunk_size,
+                                robot_state_dim=config.robot_state_dim)
         tokenizer_type = Pi05Tokenizer if config.discrete_state else TaskTokenizer
         tokenizer = tokenizer_type(assets["tokenizer"], max_token_len=config.prompt_len)
         prefix = PrefixInputs(tokenizer, config.num_views, config.chunk_size,

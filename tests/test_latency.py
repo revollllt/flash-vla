@@ -28,6 +28,7 @@ class _Engine:
         }
         self.implementation_source = None
         self.workload = None
+        self.extent = self.bucket = None
 
     def capture(self):
         raise AssertionError("measurement must use the initial capture")
@@ -38,7 +39,7 @@ class _Engine:
 
 class LatencyRunTests(unittest.TestCase):
     def setUp(self):
-        worker = patch.object(latency, "_run_leg", side_effect=latency._measure_leg)
+        worker = patch.object(latency, "_run_leg", side_effect=latency.measure_leg)
         worker.start()
         self.addCleanup(worker.stop)
 
@@ -250,15 +251,17 @@ def test_transfer_matrix_sets_each_workload_beside_its_floor(monkeypatch):
 
     def fake_run(target, plans, **kwargs):
         stage_ms = {"robodojo": 3.0, "libero": 2.0}[kwargs["workload"]]
-        return {"identity": {"plan": {"site": kwargs["workload"]}},
+        extent = {"robodojo": 70, "libero": 12}[kwargs["workload"]]
+        return {"identity": {"plan": {"site": kwargs["workload"]}, "replay_buckets": [64, 128, 200]},
                 "measurement_context": {"environment": environments[kwargs["workload"]]},
-                "legs": [{"gpu_uuid": "GPU-0",
+                "legs": [{"gpu_uuid": "GPU-0", "replay": {"extent": extent, "bucket": 128},
                           "metrics": {"chunk_latency": {"median": 2 * stage_ms},
                                       "segment_latency": {"a": {"median": stage_ms},
                                                           "b": {"median": stage_ms}}}}]}
 
     monkeypatch.setattr(latency, "run", fake_run)
-    monkeypatch.setattr(latency, "work", lambda target, **kwargs: kwargs["workload"])
+    traced = []
+    monkeypatch.setattr(latency, "work", lambda target, **kwargs: traced.append(kwargs) or kwargs)
     monkeypatch.setattr(latency, "stage_floors", lambda workload, roofline, constants: {
         stage: {"floor_us": 1000.0, "datasheet_us": 1000.0, "measured_us": 1200.0}
         for stage in ("a", "b")})
@@ -266,6 +269,9 @@ def test_transfer_matrix_sets_each_workload_beside_its_floor(monkeypatch):
     assert report["protocol"] == "transfer-matrix-v1"
     robodojo, libero = report["workloads"]["robodojo"], report["workloads"]["libero"]
     assert robodojo["routes"] == {"site": "robodojo"}
+    # The floor is traced at the length each workload's legs ran.
+    assert [(kwargs["workload"], kwargs["extent"]) for kwargs in traced] \
+        == [("robodojo", 70), ("libero", 12)]
     assert (robodojo["latency_ms"], robodojo["floor_ms"], robodojo["share_of_floor"]) == (6.0, 2.0, 1 / 3)
     assert libero["stages"]["a"] == {"measured_ms": 2.0, "floor_ms": 1.0, "datasheet_flow_ms": 1.0,
                                      "measured_rate_flow_ms": 1.2, "share_of_floor": 0.5}

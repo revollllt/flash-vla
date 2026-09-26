@@ -149,9 +149,14 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
     target = resolve(target)
     engine = build(target, plan or "shipped", seed=seed, **overrides)
     identity = engine.identity
+    inputs = engine.sample_inputs(seed)
+    engine.forward(**inputs)
+    torch.cuda.synchronize()
     depth = {axis: engine.shape[axis] for axis in ("steps", "layers")}
+    # The work at the replay-time length the forward ran (the axis limit when
+    # the engine never reads it: every slot).
     derived = work(get_target(target), workload=engine.workload,
-                   quantization=engine.quantization, **depth)
+                   quantization=engine.quantization, extent=engine.extent, **depth)
     launches: dict[str, list[Invocation]] = {}
     for invocation in derived.launch:
         launches.setdefault(invocation.call_sites[0], []).append(invocation)
@@ -162,9 +167,6 @@ def run(target: str, plan: str | None = None, reps: int = 30, warmup: int = 3, s
     floors = stage_floors(derived, device_roofline, constants.rows)
     limit = 1.0 + headroom_pct / 100.0
 
-    inputs = engine.sample_inputs(seed)
-    engine.forward(**inputs)
-    torch.cuda.synchronize()
     sm_count = torch.cuda.get_device_properties(0).multi_processor_count
     call_sites_of = {stage: tuple(dict.fromkeys(node.call_site for node in engine.graph.nodes_of(stage)
                                                 if not node.is_copy and node.call_site in launches))

@@ -14,7 +14,8 @@ from typing import Mapping
 import torch
 
 from flash_vla.runtime.graph import Graph
-from flash_vla.runtime.vla import CheckpointReader, ConfigValue, Input, ModelDefinition, Workload
+from flash_vla.runtime.vla import (CheckpointReader, ConfigValue, Input, ModelDefinition,
+                                   ReplayAxis, Workload)
 
 from . import graph, work
 from .ops import OPS
@@ -60,6 +61,12 @@ class GrootModel(ModelDefinition[GrootConfig, None]):
     inference_signature = INFERENCE_SIGNATURE
     shape_axes = ("batch", "views", "image_height", "image_width", "sequence_length",
                   "visual_tokens", "state_dim", "action_dim", "chunk", "steps", "layers")
+    #: The valid tokens of the sequence (`attention_mask`): the workload declares
+    #: its longest instruction, and every stage runs the whole sequence (no Target
+    #: buckets it).
+    replay_axis = ReplayAxis(name="valid_sequence_tokens", limit="sequence_length", offset=None,
+                             slot=None, stages=("llm_backbone", "action_expert"),
+                             extent=lambda host_state, inputs: int(inputs["attention_mask"].sum()))
     workloads = (
         # RoboDojo: XPolicyLab `GR00T_N17` with `robodojo_arx_x5_config`, three
         # cameras; the sequence holds its longest task instruction (docs/workloads.md).

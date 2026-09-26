@@ -7,15 +7,18 @@ A backend is a `Backend` value, declared once next to its implementation:
                        selected call sites; `scratch` is the runner's workspace
                        allocator (`runtime/workspace.py`), which the backend
                        uses for any device memory that outlives one call,
-                       `scratch.assets` its read-only asset paths and
-                       `scratch.shape` the shape numbers it is built for
+                       `scratch.assets` its read-only asset paths, and
+                       `scratch.on_replay` where it registers the hook that
+                       plans a kernel at each inference's replay-time length
     route_constraints  `RouteConstraint`s over its call sites (`runtime/binding.py`)
     graph_contract     the kernel-name patterns the captured program must and
                        must not contain, given the call sites routed to it
     supports           whether it runs correctly at a model's shape numbers
                        (a kernel specialized to one prefix length); a plan names
                        candidates per call site, and the first that supports the
-                       shape runs it
+                       shape runs it. With replay buckets the shape carries the
+                       replay axis at each bucket (`ReplayAxis.at`), and one
+                       route must support every bucket
 
 A variant of a backend (the same wrappers with a launch attribute armed) is
 `dataclasses.replace(backend, make_wrappers=...)`: the registry never needs to

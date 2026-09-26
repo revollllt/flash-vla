@@ -7,12 +7,12 @@ import torch
 import torch.nn.functional as F
 
 from flash_vla.models.pi05 import attention as attention_kernels
-from flash_vla.models.pi05.ops import CALL_SITES, MASKED_CALL_SITES
+from flash_vla.models.pi05.ops import CALL_SITES
 from flash_vla.models.pi05.spec import VISION_DIM, VISION_FFN, VISION_TOKENS
 from flash_vla.runtime.registry import Backend
 
-#: Every Pi0.5 call site, standard and prefix-masked.
-NAMES = CALL_SITES | frozenset(MASKED_CALL_SITES.values())
+#: Every Pi0.5 call site.
+NAMES = CALL_SITES
 
 #: Features of one 14x14 RGB patch.
 PATCH_FEATURES = 14 * 14 * 3
@@ -259,18 +259,6 @@ def action_expert_action_out_proj(x, weight, bias, out, norm_factor):
     out.copy_((((x @ weight).float() * factor[:, None].float()
                 + bias.float() + out.float())).to(out.dtype))
     return out
-
-
-def llm_backbone_norm_gated_ffn_masked(x, gate_w, up_w, out, x_norm, mask):
-    return llm_backbone_norm_gated_ffn(x, gate_w, up_w, out, x_norm)
-
-
-def llm_backbone_ffn_down_residual_masked(x, weight, out, mask):
-    return llm_backbone_ffn_down_residual(x, weight, out)
-
-
-def llm_backbone_out_proj_residual_masked(x, weight, out, mask):
-    return llm_backbone_out_proj_residual(x, weight, out)
 
 
 ALL_WRAPPERS = {

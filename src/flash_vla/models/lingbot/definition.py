@@ -15,7 +15,8 @@ from safetensors.torch import load_file
 import torch
 
 from flash_vla.runtime.graph import Graph
-from flash_vla.runtime.vla import CheckpointReader, ConfigValue, Input, ModelDefinition, Workload
+from flash_vla.runtime.vla import (CheckpointReader, ConfigValue, Input, ModelDefinition,
+                                   ReplayAxis, Workload)
 
 from . import graph, work
 from .ops import OPS
@@ -85,6 +86,12 @@ class LingBotModel(ModelDefinition[LingBotConfig, None]):
         "suffix_len", "steps", "layers", "backbone_dim", "backbone_ffn_dim",
         "expert_dim", "expert_ffn_dim", "query_heads", "kv_heads", "head_dim",
     )
+    #: The valid language tokens after the image tokens: the prefix masks the
+    #: rest, and every stage runs all 72 slots (no Target buckets them).
+    replay_axis = ReplayAxis(name="valid_language_tokens", limit="language_slots",
+                             offset="visual_tokens", slot=None,
+                             stages=("llm_backbone", "action_expert"),
+                             extent=lambda host_state, inputs: int(inputs["language_masks"].sum()))
     workloads = (
         # RoboDojo: XPolicyLab `LingBot_VLA` (`train_multinode_robodojo.sh`): three
         # 224x224 cameras, 72 language slots, chunk 50 -- the shapes `spec` fixes,

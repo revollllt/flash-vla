@@ -46,7 +46,8 @@ def vision_encoder_attention(QKV: torch.Tensor, out: torch.Tensor) -> None:
     out.copy_(attn.transpose(1, 2).reshape(Q.shape[0], VISION_TOKENS, VISION_HEADS * VISION_HEAD_DIM))
 
 
-@torch.compile
+# Each replay bucket is its own static shape, never a symbolic one.
+@torch.compile(dynamic=False)
 def llm_backbone_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, scale: float,
                            mask_bias: torch.Tensor, out: torch.Tensor) -> None:
     """Multi-query attention with an additive per-key mask, written into `out`.

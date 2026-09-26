@@ -427,18 +427,19 @@ class WorkReport:
     model_revision: str
     workload: str
     shape: Mapping[str, int]
-    prompt_tokens: int | None
+    extent: int | None
     quantization: str
     launch: tuple[Invocation, ...]
     flow: tuple[Invocation, ...]
 
 
-def work(target: Target, *, workload: str | None = None, prompt_tokens: int | None = None,
+def work(target: Target, *, workload: str | None = None, extent: int | None = None,
          quantization: str | None = None, **options: ConfigValue) -> WorkReport:
     """Trace `target`'s model reference at `workload`'s shape and derive both bounds.
 
-    `prompt_tokens` fills that many of the prompt's slots (the replay-time
-    axis); `None` traces every slot, as the physical layout computes them.
+    `extent` is the model's replay-time axis value (`runtime/replay.py`: the
+    valid prompt tokens of Pi0.5); `None` traces every slot, as the physical
+    layout computes them.
     `options` are further construction options (a cut depth: `steps`, `layers`)."""
     recipe_name = target.precision if quantization is None else quantization
     runner = build_runner(target, workload=workload, quantization=recipe_name, declare=True,
@@ -446,7 +447,7 @@ def work(target: Target, *, workload: str | None = None, prompt_tokens: int | No
     stage_of = {node.call_site: stage for stage in runner.graph.segment_names
                 for node in runner.graph.nodes_of(stage) if not node.is_copy}
     model = target.model
-    ops, output_keys, parameter_keys = trace(model.reference_run(runner.shape, prompt_tokens))
+    ops, output_keys, parameter_keys = trace(model.reference_run(runner.shape, extent))
     # The rules name standard call sites; a Target that renames them says how.
     sites = tuple(None if site is None else target.call_site_aliases.get(site, site)
                   for site in call_sites(ops, model.work_rules))
@@ -461,7 +462,7 @@ def work(target: Target, *, workload: str | None = None, prompt_tokens: int | No
               for bound in KernelBound}
     return WorkReport(target=target.name, model_revision=model.model_revision,
                       workload=runner.workload, shape=dict(runner.shape),
-                      prompt_tokens=prompt_tokens, quantization=recipe_name,
+                      extent=extent, quantization=recipe_name,
                       launch=bounds[KernelBound.LAUNCH], flow=bounds[KernelBound.FLOW])
 
 
@@ -511,7 +512,7 @@ def summary(report: WorkReport, roofline: Roofline) -> dict[str, object]:
     return {
         "target": report.target, "model_revision": report.model_revision, "torch": torch.__version__,
         "workload": report.workload, "shape": dict(report.shape),
-        "prompt_tokens": report.prompt_tokens, "quantization": report.quantization,
+        "extent": report.extent, "quantization": report.quantization,
         "rates": {"dram_bytes_per_second": roofline.dram_bytes_per_second,
                   "l2_bytes": roofline.l2_bytes,
                   "tensor_flops_per_second": {fmt: peak.flops_per_second
@@ -532,13 +533,13 @@ def main(argv: list[str] | None = None) -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--target", required=True)
     parser.add_argument("--workload", default=None, help=WORKLOAD_HELP)
-    parser.add_argument("--prompt-tokens", type=int, default=None,
+    parser.add_argument("--extent", type=int, default=None,
                         help="valid prompt tokens (replay-time); default: every slot")
     parser.add_argument("--quantization", default=None, help="one of the Target's recipes")
     parser.add_argument("--out", default=None, help="write the JSON report here")
     args = parser.parse_args(argv)
     target = get_target(args.target)
-    report = work(target, workload=args.workload, prompt_tokens=args.prompt_tokens,
+    report = work(target, workload=args.workload, extent=args.extent,
                   quantization=args.quantization)
     text = json.dumps(summary(report, HARDWARE_ROOFLINES[target.hardware]), indent=2)
     print(text)

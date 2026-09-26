@@ -184,7 +184,7 @@ def _deltas(legs: list[dict[str, Any]], control_spread_max_ms: float | None = No
     return out
 
 
-def _measure_leg(target, plan, *, reps, warmup, seed, soak_s, attribution, options, breakdown=False):
+def measure_leg(target, plan, *, reps, warmup, seed, soak_s, attribution, options, breakdown=False):
     """Build once and measure the initial capture in a fresh worker process."""
     require_cuda()
     torch.cuda.init()
@@ -211,6 +211,8 @@ def _measure_leg(target, plan, *, reps, warmup, seed, soak_s, attribution, optio
     if after.segment_key != MeasurementContext.from_dict(context).segment_key:
         raise ValueError("latency measurement context changed during a leg; repeat that measurement")
     leg = {"plan": plan, "identity": engine.identity.as_dict(),
+           # The replay-time length the measured forwards ran, and its bucket.
+           "replay": {"extent": engine.extent, "bucket": engine.bucket},
            "measurement_context": context, "metrics": metrics, "attribution": evidence,
            "runtime_observation": {"before": runtime_before,
                                    "after": environment.get("runtime_observation")},
@@ -321,14 +323,17 @@ def matrix(target: str, workloads: list[str], plan: str | None = None, *,
                     != first["report"]["measurement_context"]["environment"]):
                 raise ValueError("the environment changed between workloads; measure again")
         metrics = report["legs"][0]["metrics"]
-        floors = stage_floors(work(registered, workload=workload, **overrides), roofline,
-                              constants.rows)
+        # The work at the replay-time length the legs ran (the fixture's).
+        replay = report["legs"][0]["replay"]
+        floors = stage_floors(work(registered, workload=workload, extent=replay["extent"],
+                                   **overrides), roofline, constants.rows)
         segments_ms = {name: stats["median"] for name, stats in metrics["segment_latency"].items()}
         latency_ms = metrics["chunk_latency"]["median"]
         floor_ms = sum(entry["floor_us"] for entry in floors.values()) / 1e3
         rows[workload] = {
             "identity": report["identity"],
             "routes": report["identity"]["plan"],
+            "replay": replay,
             "latency_ms": latency_ms,
             "floor_ms": floor_ms,
             "share_of_floor": floor_ms / latency_ms,
@@ -406,6 +411,6 @@ def main(argv=None) -> int:
 if __name__ == "__main__":
     if sys.argv[1:2] == ["--worker"]:
         request, response = map(Path, sys.argv[2:])
-        response.write_text(json.dumps(_measure_leg(**json.loads(request.read_text()))))
+        response.write_text(json.dumps(measure_leg(**json.loads(request.read_text()))))
     else:
         raise SystemExit(main())

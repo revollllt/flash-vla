@@ -82,7 +82,7 @@ def action_expert_norm_qkv_rope(
 def action_expert_action_out_proj(
         x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, out: torch.Tensor,
         norm_factor: torch.Tensor, *, scratch: Scratch,
-        plans: dict[tuple[int, int, int, int, float], cutlass_backbone.GemmPlan]) -> torch.Tensor:
+        plans: dict[tuple[int, int, int, int, int, int, int, float], cutlass_backbone.GemmPlan]) -> torch.Tensor:
     """Update BF16 actions after FP32 factor/bias/residual; do not write norm_factor."""
     rows = x.shape[0]
     factor = scratch("pi05_action_out_factor", (rows,), x.dtype, x.device)

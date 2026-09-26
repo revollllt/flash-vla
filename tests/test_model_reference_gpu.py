@@ -26,7 +26,7 @@ import pytest
 import torch
 from _pytest.mark.structures import ParameterSet
 
-from flash_vla.inference import TARGETS, get_target
+from flash_vla.inference import TARGETS, declare, get_target
 from flash_vla.runtime.vla import ConfigValue
 
 DEVICE = torch.cuda.get_device_capability() if torch.cuda.is_available() else None
@@ -42,35 +42,48 @@ EXEMPT = {"hardware/nvidia/rtx5090/groot_n17": "a fixed-depth workload; its plan
                                                "reference bit for bit (below)"}
 
 
+#: The replay buckets each Target captures for each workload it builds.
+BUCKETS = {(name, workload): declare(name, workload=workload).replay_buckets
+           for name in TARGETS if name not in EXEMPT for workload in get_target(name).workloads}
+
+
 def configured(asset: str) -> bool:
     """Whether the machine's asset map (`FLASH_VLA_ASSETS`) locates `asset`."""
     path = os.environ.get("FLASH_VLA_ASSETS")
     return path is not None and asset in json.loads(Path(path).read_text())
 
 
-def gate_case(name: str, workload: str, plan: str, recipe: str | None) -> ParameterSet:
+def gate_case(name: str, workload: str, plan: str, recipe: str | None,
+              extent: int | None) -> ParameterSet:
     """One gate case and what it needs: any CUDA device for a portable plan,
     else the Target's own device and, for a Target of frozen assets, its
-    checkpoint in the asset map."""
+    checkpoint in the asset map. `extent` fixes the replay axis at a bucket's
+    last value (the axis's name is the construction option that does), `None`
+    runs the fixture's own length."""
     target = get_target(name)
     portable = (name, plan) in PORTABLE
     capability = CAPABILITIES[target.hardware]
     ready = DEVICE is not None and (portable or (
         DEVICE == capability and (not target.assets or configured(target.assets["checkpoint"]))))
+    axis = target.model.replay_axis
     options = {**PORTABLE.get((name, plan), {}), "workload": workload,
-               **({} if recipe is None else {"quantization": recipe})}
+               **({} if recipe is None else {"quantization": recipe}),
+               **({} if extent is None else {axis.name: extent})}
     need = "a CUDA device" if portable else f"sm_{capability[0]}{capability[1]} and the Target's assets"
     return pytest.param(name, plan, options,
-                        id=f"{name}-{workload}-{plan}-{recipe or target.precision}",
+                        id=f"{name}-{workload}-{plan}-{recipe or target.precision}"
+                           + ("" if extent is None else f"-{axis.name}{extent}"),
                         marks=pytest.mark.skipif(not ready, reason=f"needs {need}"))
 
 
 @pytest.mark.parametrize("target,plan,options", [
-    gate_case(name, workload, plan, recipe)
+    gate_case(name, workload, plan, recipe, extent)
     for name in sorted(TARGETS) if name not in EXEMPT
     for workload in get_target(name).workloads
     for plan in ("shipped", "reference")
-    for recipe in (None, *get_target(name).quantization)])
+    for recipe in (None, *get_target(name).quantization)
+    # Every bucket of a Target that captures more than one, at its last value.
+    for extent in (None, *(BUCKETS[name, workload] if len(BUCKETS[name, workload]) > 1 else ()))])
 def test_target_passes_its_model_reference_gate(target: str, plan: str,
                                                 options: dict[str, ConfigValue]) -> None:
     from eval.model_reference import run

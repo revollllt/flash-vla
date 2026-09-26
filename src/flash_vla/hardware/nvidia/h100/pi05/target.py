@@ -14,7 +14,7 @@ from .backends import REGISTRY
 TARGET = Target(
     name="hardware/nvidia/h100/pi05",
     hardware="h100-sxm5-80gb",
-    model=Pi05Model(Pi05Layout(row_pad=64, masked_backbone=False)),
+    model=Pi05Model(Pi05Layout(row_pad=64)),
     registry=REGISTRY,
     # The shipped plan: the fused backbone attention from the shared Gemma
     # component package (proven bit-identical to this Target's former copy of

@@ -74,10 +74,18 @@ the alternative; an ambiguous result revises it rather than adding a candidate.
    what the screen cannot fix (padding rows, a kernel specialized to one
    shape) goes on to step 5.
 
+   A replay-time axis (a prompt whose valid length changes per inference) is
+   captured once per bucket (`runtime/replay.py`, `Target.replay_granularity`):
+   measure at the ends of the workload's `replay_range` and at each bucket's
+   last value (`--option prompt_tokens=N` on Pi0.5), and tune a GEMM at each
+   bucket's rows. A kernel that can run the exact length (attention) plans it
+   per inference through `Scratch.on_replay` rather than computing the bucket's
+   padding.
+
    ```bash
    python -m tools.profiling.model --target h100/lingbot_vla --plan shipped --seed 42 --overview --trace-dir artifacts/profile/overview
    # Descend only when the overview points at action_expert: --segment action_expert
-   python -m measurement.work --target rtx5090/pi05 --workload libero --prompt-tokens 12   # no GPU
+   python -m measurement.work --target rtx5090/pi05 --workload libero --extent 12   # no GPU
    ```
 
 5. **Design and implement, in parallel.** One agent and worktree per kernel or

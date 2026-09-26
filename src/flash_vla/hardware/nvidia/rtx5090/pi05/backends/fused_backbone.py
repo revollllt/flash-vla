@@ -36,11 +36,6 @@ def library() -> ctypes.CDLL:
         ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64, ctypes.c_void_p,
     ]
     kernels.backbone_gelu_mul.restype = ctypes.c_int32
-    kernels.backbone_masked_gelu_mul.argtypes = [
-        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64, ctypes.c_void_p, ctypes.c_int32,
-        ctypes.c_void_p,
-    ]
-    kernels.backbone_masked_gelu_mul.restype = ctypes.c_int32
     return kernels
 
 

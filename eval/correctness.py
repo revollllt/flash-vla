@@ -82,9 +82,12 @@ def run(target: str, plan: str | None = "shipped", steps: int | None = 1,
     reference = build(target, "reference", seed=seed, **depth, **overrides)
     candidate = build(target, plan or "shipped", seed=seed, **depth, **overrides)
     registered_target = get_target(target)
+    axis = reference.replay_axis
+    # The routes at the full replay bucket, which every bucket's routes equal.
     oracle = dict(reference.identity.as_dict(), plan=registered_target.registry.resolve(
         registered_target.select_plan("reference", reference.quantization),
-        reference.graph.call_sites, reference.shape))
+        reference.graph.call_sites,
+        reference.shape if axis is None else axis.at(reference.shape, reference.full_bucket)))
     if reference.identity.plan != oracle["plan"]:
         raise ValueError("reference runner does not use the Target reference route")
     tol = tolerances(reference.identity.precision)

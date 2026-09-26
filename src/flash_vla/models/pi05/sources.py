@@ -39,7 +39,8 @@ FIXTURE_PRODUCER = "flash-vla/pi05-inputs-v2"
 
 def runner_source(target: Target[Pi05Config, PrefixInputs], *, device: str, declare: bool,
                   num_views: int, chunk_size: int, prompt_len: int, discrete_state: bool,
-                  robot_state_dim: int = STATE_DIM, seed: int = 0, steps: int = 10,
+                  robot_state_dim: int = STATE_DIM, prompt_tokens: int | None = None,
+                  seed: int = 0, steps: int = 10,
                   layers: int = 18, prompt: str = DEFAULT_PROMPT, tokenizer_path: str | None = None,
                   checkpoint: str | None = None, converted_checkpoint: str | None = None,
                   checkpoint_id: str | None = None, checkpoint_digest: str | None = None,
@@ -47,7 +48,8 @@ def runner_source(target: Target[Pi05Config, PrefixInputs], *, device: str, decl
     """The weights, fixture and configuration of one Pi0.5 construction.
 
     `declare` reads no weight values and no assets; an OpenPI checkpoint's
-    config is still resolved, since it fixes the shape.
+    config is still resolved, since it fixes the shape. `prompt_tokens`
+    replaces the tokenized prompt by that many seeded tokens (`Pi05Config`).
     """
     if checkpoint is not None and converted_checkpoint is not None:
         raise ValueError("pass checkpoint or converted_checkpoint, not both")
@@ -73,7 +75,7 @@ def runner_source(target: Target[Pi05Config, PrefixInputs], *, device: str, decl
 
     config = dict(num_views=num_views, chunk_size=chunk_size, steps=steps, layers=layers,
                   prompt_len=prompt_len, prompt=prompt, discrete_state=discrete_state,
-                  robot_state_dim=robot_state_dim)
+                  robot_state_dim=robot_state_dim, prompt_tokens=prompt_tokens)
     named_weights = WeightsProvenance(checkpoint_id=checkpoint_id,
                                       checkpoint_digest=checkpoint_digest)
     # The seeded inputs of `sample_inputs(seed)`, prompted with the construction's
@@ -82,7 +84,9 @@ def runner_source(target: Target[Pi05Config, PrefixInputs], *, device: str, decl
         id=f"{FIXTURE_PRODUCER}/seed-{seed}",
         digest=canonical_digest({"producer": FIXTURE_PRODUCER, "seed": seed, "prompt": prompt,
                                  "discrete_state": discrete_state,
-                                 "robot_state_dim": robot_state_dim}))
+                                 "robot_state_dim": robot_state_dim,
+                                 **({} if prompt_tokens is None
+                                    else {"prompt_tokens": prompt_tokens})}))
     if declare:
         return RunnerSource(checkpoint=None, weights_provenance=named_weights,
                             fixture_provenance=named_fixture, assets={}, config=config)

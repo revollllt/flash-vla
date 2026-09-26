@@ -34,9 +34,9 @@ RULES = (
 )
 
 
-def reference_run(shape: Mapping[str, int], prompt_tokens: int | None) -> ReferenceRun:
+def reference_run(shape: Mapping[str, int], extent: int | None) -> ReferenceRun:
     """The reference at `shape`. Pi0's prompt has no padding slots
-    (`prompt_len` are all valid), so `prompt_tokens` selects nothing."""
+    (`prompt_len` are all valid), so `extent` selects nothing."""
     meta = torch.device("meta")
     schema = official_schema(make_reference().parts(), prefixes=PREFIXES)
     model = load({name: torch.empty(dims, dtype=torch.bfloat16, device=meta)

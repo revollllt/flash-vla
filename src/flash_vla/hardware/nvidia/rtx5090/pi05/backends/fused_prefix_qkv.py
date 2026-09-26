@@ -59,7 +59,7 @@ def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
     unknown = names - set(NAMES)
     if unknown:
         raise KeyError(f"prefix QKV backend does not implement {sorted(unknown)}")
-    plans: dict[tuple[int, int, int, int, float], cutlass_backbone.GemmPlan] = {}
+    plans: dict[tuple[int, int, int, int, int, int, int, float], cutlass_backbone.GemmPlan] = {}
     role = f"pi05_prefix_qkv_{id(plans)}"
 
     def llm_backbone_norm_qkv_rope(x: torch.Tensor, weight_qkv: torch.Tensor,

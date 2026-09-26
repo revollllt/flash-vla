@@ -1,0 +1,355 @@
+{
+  "reps": 30,
+  "rows": [
+    576,
+    640,
+    832,
+    896
+  ],
+  "sites": {
+    "llm_backbone_norm_qkv_rope": [
+      {
+        "rows": 576,
+        "best": {
+          "us": 31.255,
+          "config": 10
+        },
+        "top": [
+          {
+            "us": 31.255,
+            "config": 10
+          },
+          {
+            "us": 31.47,
+            "config": 2
+          },
+          {
+            "us": 32.667,
+            "config": 8
+          }
+        ]
+      },
+      {
+        "rows": 640,
+        "best": {
+          "us": 34.786,
+          "config": 10
+        },
+        "top": [
+          {
+            "us": 34.786,
+            "config": 10
+          },
+          {
+            "us": 34.805,
+            "config": 5
+          },
+          {
+            "us": 35.175,
+            "config": 0
+          }
+        ]
+      },
+      {
+        "rows": 832,
+        "best": {
+          "us": 43.084,
+          "config": 10
+        },
+        "top": [
+          {
+            "us": 43.084,
+            "config": 10
+          },
+          {
+            "us": 44.148,
+            "config": 2
+          },
+          {
+            "us": 45.415,
+            "config": 5
+          }
+        ]
+      },
+      {
+        "rows": 896,
+        "best": {
+          "us": 45.596,
+          "config": 5
+        },
+        "top": [
+          {
+            "us": 45.596,
+            "config": 5
+          },
+          {
+            "us": 46.06,
+            "config": 10
+          },
+          {
+            "us": 47.29,
+            "config": 1
+          }
+        ]
+      }
+    ],
+    "llm_backbone_out_proj_residual": [
+      {
+        "rows": 576,
+        "best": {
+          "us": 26.979,
+          "config": 10
+        },
+        "top": [
+          {
+            "us": 26.979,
+            "config": 10
+          },
+          {
+            "us": 27.143,
+            "config": 8
+          },
+          {
+            "us": 27.166,
+            "config": "torch"
+          }
+        ]
+      },
+      {
+        "rows": 640,
+        "best": {
+          "us": 27.097,
+          "config": 10
+        },
+        "top": [
+          {
+            "us": 27.097,
+            "config": 10
+          },
+          {
+            "us": 27.172,
+            "config": "torch"
+          },
+          {
+            "us": 27.67,
+            "config": 2
+          }
+        ]
+      },
+      {
+        "rows": 832,
+        "best": {
+          "us": 36.653,
+          "config": 10
+        },
+        "top": [
+          {
+            "us": 36.653,
+            "config": 10
+          },
+          {
+            "us": 37.332,
+            "config": 2
+          },
+          {
+            "us": 38.353,
+            "config": 8
+          }
+        ]
+      },
+      {
+        "rows": 896,
+        "best": {
+          "us": 38.652,
+          "config": 5
+        },
+        "top": [
+          {
+            "us": 38.652,
+            "config": 5
+          },
+          {
+            "us": 39.176,
+            "config": 10
+          },
+          {
+            "us": 39.802,
+            "config": 0
+          }
+        ]
+      }
+    ],
+    "llm_backbone_norm_gated_ffn (gate or up)": [
+      {
+        "rows": 576,
+        "best": {
+          "us": 179.017,
+          "config": "torch"
+        },
+        "top": [
+          {
+            "us": 179.017,
+            "config": "torch"
+          },
+          {
+            "us": 185.67,
+            "config": 10
+          },
+          {
+            "us": 187.266,
+            "config": 5
+          }
+        ]
+      },
+      {
+        "rows": 640,
+        "best": {
+          "us": 189.068,
+          "config": 5
+        },
+        "top": [
+          {
+            "us": 189.068,
+            "config": 5
+          },
+          {
+            "us": 196.854,
+            "config": 0
+          },
+          {
+            "us": 205.812,
+            "config": 10
+          }
+        ]
+      },
+      {
+        "rows": 832,
+        "best": {
+          "us": 260.709,
+          "config": "torch"
+        },
+        "top": [
+          {
+            "us": 260.709,
+            "config": "torch"
+          },
+          {
+            "us": 262.411,
+            "config": 5
+          },
+          {
+            "us": 266.069,
+            "config": 10
+          }
+        ]
+      },
+      {
+        "rows": 896,
+        "best": {
+          "us": 263.324,
+          "config": 5
+        },
+        "top": [
+          {
+            "us": 263.324,
+            "config": 5
+          },
+          {
+            "us": 267.004,
+            "config": 0
+          },
+          {
+            "us": 282.92,
+            "config": "torch"
+          }
+        ]
+      }
+    ],
+    "llm_backbone_ffn_down_residual": [
+      {
+        "rows": 576,
+        "best": {
+          "us": 177.168,
+          "config": 10
+        },
+        "top": [
+          {
+            "us": 177.168,
+            "config": 10
+          },
+          {
+            "us": 178.308,
+            "config": 2
+          },
+          {
+            "us": 194.325,
+            "config": 0
+          }
+        ]
+      },
+      {
+        "rows": 640,
+        "best": {
+          "us": 195.918,
+          "config": 0
+        },
+        "top": [
+          {
+            "us": 195.918,
+            "config": 0
+          },
+          {
+            "us": 196.052,
+            "config": 5
+          },
+          {
+            "us": 200.979,
+            "config": "torch"
+          }
+        ]
+      },
+      {
+        "rows": 832,
+        "best": {
+          "us": 254.169,
+          "config": 10
+        },
+        "top": [
+          {
+            "us": 254.169,
+            "config": 10
+          },
+          {
+            "us": 255.163,
+            "config": 2
+          },
+          {
+            "us": 258.681,
+            "config": 0
+          }
+        ]
+      },
+      {
+        "rows": 896,
+        "best": {
+          "us": 260.595,
+          "config": 5
+        },
+        "top": [
+          {
+            "us": 260.595,
+            "config": 5
+          },
+          {
+            "us": 261.424,
+            "config": 0
+          },
+          {
+            "us": 275.273,
+            "config": 10
+          }
+        ]
+      }
+    ]
+  }
+}

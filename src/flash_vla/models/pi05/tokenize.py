@@ -112,6 +112,11 @@ def _load_processor(tokenizer_path: str | Path | None):
         return sentencepiece.SentencePieceProcessor(model_proto=handle.read())
 
 
+#: The first id past the ordinary text vocabulary of the PaliGemma tokenizer
+#: (the image and location tokens follow it).
+SYNTHETIC_TOKEN_LIMIT = 256000
+
+
 class PromptTokenizer(Protocol):
     """What the prompt host slot needs of a tokenizer (`prompt.PrefixInputs`)."""
 
@@ -276,5 +281,30 @@ class TaskTokenizer:
         return self.tokens, self.mask
 
 
-__all__ = ["MAX_TOKEN_LEN", "Pi05Tokenizer", "PromptTokenizer", "TaskTokenizer", "clean_prompt",
-           "discretize"]
+class SyntheticTokenizer:
+    """A prompt of exactly `token_count` seeded token ids, not tokenized from
+    anything: it fixes the replay-time prompt length a measurement runs at.
+    Latency does not depend on the ids, and the correctness harnesses feed the
+    reference the ids the engine staged, so both hold at any length."""
+
+    def __init__(self, max_token_len: int, token_count: int, seed: int) -> None:
+        if not 1 <= token_count <= max_token_len:
+            raise ValueError(f"token_count must be in [1, {max_token_len}], got {token_count}")
+        self.max_token_len = max_token_len
+        self.tokens = np.zeros(max_token_len, dtype=np.int32)
+        self.mask = np.zeros(max_token_len, dtype=bool)
+        # Ordinary text ids: below the image and special tokens at the vocabulary's end.
+        self.tokens[:token_count] = np.random.default_rng(seed).integers(
+            2, SYNTHETIC_TOKEN_LIMIT, token_count)
+        self.mask[:token_count] = True
+
+    def set_task(self, prompt: str) -> None:
+        raise ValueError("a synthetic prompt has no task text")
+
+    def encode(self, state: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """The seeded tokens and their validity mask; `state` is not part of the prompt."""
+        return self.tokens, self.mask
+
+
+__all__ = ["MAX_TOKEN_LEN", "Pi05Tokenizer", "PromptTokenizer", "SyntheticTokenizer",
+           "TaskTokenizer", "clean_prompt", "discretize"]

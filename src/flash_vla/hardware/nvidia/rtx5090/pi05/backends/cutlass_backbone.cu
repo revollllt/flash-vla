@@ -41,53 +41,6 @@ typename Linear::Arguments linear_arguments(int32_t m, int32_t k, int32_t n, flo
 // Keep CUTLASS status values distinct from cudaError_t at the C boundary.
 constexpr int32_t kCutlassError = 1000;
 
-// Both static row buckets reuse cfg0's exact mainloop and linear epilogue.
-// A distinct Kernel2 type gives this entry its own shared-memory/occupancy init.
-// The short bucket plans M = short_rows, the full one every prefix row; each
-// launch runs only when the prefix mask selects its bucket: the short one when
-// row short_rows is padding.
-struct BucketKernel : Gemm::GemmKernel {
-  using Original = Gemm::GemmKernel;
-
-  struct Params : Original::Params {
-    using Original::Params::Params;
-    Element const* mask = nullptr;
-    int32_t short_rows = 0;
-    bool short_bucket = false;
-  };
-
-  CUTLASS_DEVICE static void invoke(Params const& params, SharedStorage& shared) {
-    // The graph orders the mask producer before both launches; every CTA,
-    // including Stream-K reduction CTAs, must make the same selection.
-    if ((float(params.mask[params.short_rows]) < 0.f) == params.short_bucket)
-      Original::invoke(params, shared);
-  }
-};
-
-class BucketGemm : public cutlass::gemm::device::GemmUniversalBase<BucketKernel> {
-  using Base = cutlass::gemm::device::GemmUniversalBase<BucketKernel>;
-
- public:
-  static int64_t workspace_bytes(Arguments const& args) {
-    BucketGemm plan;
-    const cutlass::Status status = plan.init_params(args);
-    if (status != cutlass::Status::kSuccess)
-      return -(kCutlassError + static_cast<int32_t>(status));
-    return static_cast<int64_t>(plan.params_.get_workspace_size());
-  }
-
-  // After initialize, which builds params_; nothing rebuilds it afterwards.
-  void select(int32_t short_rows, bool short_bucket) {
-    this->params_.short_rows = short_rows;
-    this->params_.short_bucket = short_bucket;
-  }
-
-  cutlass::Status run(const void* mask, cudaStream_t stream) {
-    this->params_.mask = static_cast<Element const*>(mask);
-    return Base::run(stream);
-  }
-};
-
 // The Stream-K broadcast epilogue receives the fully reduced FP32 accumulator.
 // Preserve the separate BF16 GEMM store numerically before gate/residual math.
 class RoundedGatedResidual {
@@ -281,41 +234,6 @@ extern "C" int32_t backbone_gemm_run(void* handle, void* stream) {
 
 extern "C" void backbone_gemm_destroy(void* handle) {
   delete static_cast<Plan*>(handle);
-}
-
-extern "C" int64_t backbone_bucket_workspace(int32_t m, int32_t k, int32_t n) {
-  return BucketGemm::workspace_bytes(linear_arguments<Gemm>(m, k, n, 1.f, nullptr, nullptr, nullptr));
-}
-
-// short_rows: the short bucket's M; this plan is that bucket when m == short_rows.
-extern "C" int32_t backbone_bucket_plan(
-    int32_t m, int32_t k, int32_t n, int32_t short_rows, float beta, const void* a,
-    const void* b, void* output, void* workspace, void* stream, void** handle) {
-  const auto args = linear_arguments<Gemm>(m, k, n, beta, a, b, output);
-  cutlass::Status status = BucketGemm::can_implement(args);
-  if (status != cutlass::Status::kSuccess)
-    return kCutlassError + static_cast<int32_t>(status);
-  auto* plan = new BucketGemm;
-  status = plan->initialize(args, workspace, static_cast<cudaStream_t>(stream));
-  if (status != cutlass::Status::kSuccess) {
-    delete plan;
-    return kCutlassError + static_cast<int32_t>(status);
-  }
-  plan->select(short_rows, m == short_rows);
-  *handle = plan;
-  return 0;
-}
-
-extern "C" int32_t backbone_bucket_run(void* handle, const void* mask, void* stream) {
-  const cutlass::Status status =
-      static_cast<BucketGemm*>(handle)->run(mask, static_cast<cudaStream_t>(stream));
-  if (status != cutlass::Status::kSuccess)
-    return kCutlassError + static_cast<int32_t>(status);
-  return static_cast<int32_t>(cudaGetLastError());
-}
-
-extern "C" void backbone_bucket_destroy(void* handle) {
-  delete static_cast<BucketGemm*>(handle);
 }
 
 extern "C" int64_t expert_down_workspace(int32_t m, int32_t k) {

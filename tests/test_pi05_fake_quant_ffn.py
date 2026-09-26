@@ -33,8 +33,8 @@ def test_fake_quant_ffn_follows_its_recipe_per_layer(tmp_path: Path) -> None:
     (tmp_path / "recipe.json").write_text(json.dumps(recipe))
     wrappers = FakeQuantFFN("bf16").make_wrappers(
         Scratch(torch.device("cuda"), assets={"quantization_recipe": tmp_path / "recipe.json"}))
-    gated, down = (wrappers["llm_backbone_norm_gated_ffn_masked"],
-                   wrappers["llm_backbone_ffn_down_residual_masked"])
+    gated, down = (wrappers["llm_backbone_norm_gated_ffn"],
+                   wrappers["llm_backbone_ffn_down_residual"])
     x = random_bf16(rows, dim, scale=2.0, seed=1)
     stacked_gate, stacked_up = (random_bf16(2, dim, ffn, scale=0.05, seed=2),
                                 random_bf16(2, dim, ffn, scale=0.05, seed=3))
@@ -47,8 +47,8 @@ def test_fake_quant_ffn_follows_its_recipe_per_layer(tmp_path: Path) -> None:
 
     def _forward() -> None:
         for layer in range(2):   # the forward's order numbers the layers
-            gated(x, stacked_gate[layer], stacked_up[layer], gated_out[layer], x_norm, None)
-            down(hidden, stacked_down[layer], summed[layer], None)
+            gated(x, stacked_gate[layer], stacked_up[layer], gated_out[layer], x_norm)
+            down(hidden, stacked_down[layer], summed[layer])
 
     # Eager warmup quantizes the weights; the captured replay must match it.
     stream = torch.cuda.Stream()

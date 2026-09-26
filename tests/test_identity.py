@@ -318,3 +318,12 @@ def test_git_revision_reports_dirty_source(tmp_path):
         ["git", "-C", str(tmp_path), "rev-parse", "HEAD"], text=True).strip()
     source.write_text("value = 2\n")
     assert git_revision(source) is None
+
+
+def test_replay_buckets_round_trip_and_reports_before_them_name_none():
+    unbucketed = Identity.from_dict(payload())
+    bucketed = Identity.from_dict(payload(replay_buckets=[64, 128, 200]))
+    assert unbucketed.replay_buckets == ()
+    assert Identity.from_dict(bucketed.as_dict()).replay_buckets == (64, 128, 200)
+    # The buckets are an execution choice, like the plan: same workload, not comparable.
+    assert bucketed.same_workload(unbucketed) and not bucketed.comparable(unbucketed)

@@ -124,8 +124,8 @@ def pi05_rtx5090_routes(plan: Mapping[str, str]) -> bool:
     """The MXFP8 backbone FFN's down GEMM reads the hidden its gated call site
     leaves in scratch: the pair moves to mxfp8-backbone together or not at all.
     Every other call site routes freely."""
-    return ((plan.get("llm_backbone_norm_gated_ffn_masked") == "mxfp8-backbone")
-            == (plan.get("llm_backbone_ffn_down_residual_masked") == "mxfp8-backbone"))
+    return ((plan.get("llm_backbone_norm_gated_ffn") == "mxfp8-backbone")
+            == (plan.get("llm_backbone_ffn_down_residual") == "mxfp8-backbone"))
 
 
 _ROUTE_ORACLES: dict[str, Callable[[Mapping[str, str]], bool]] = {
@@ -157,16 +157,21 @@ def check_routes(target: str) -> list[dict[str, Any]]:
     results = []
     for workload in registered.workloads:
         runner = declare(target, workload=workload)
+        axis = runner.replay_axis
+        # Every bucket's shape: one op table serves them all.
+        shapes = [runner.shape] if axis is None else [
+            axis.at(runner.shape, bucket) for bucket in runner.replay_buckets]
         provided = {name: names for name, names in registry.provided().items()
-                    if registry.backends[name].supports(runner.shape)}
+                    if all(registry.backends[name].supports(shape) for shape in shapes)}
         call_sites = list(runner.graph.call_sites)
         selectable = [s for s in call_sites
                       if sum(s in names for names in provided.values()) > 1]
 
         def bind(plan: dict[str, str]) -> tuple[bool, str | None]:
             try:
-                registry.resolve({site: (backend,) for site, backend in plan.items()},
-                                 call_sites, runner.shape)
+                for shape in shapes:
+                    registry.resolve({site: (backend,) for site, backend in plan.items()},
+                                     call_sites, shape)
                 return True, None
             except ValueError as exc:
                 return False, str(exc)

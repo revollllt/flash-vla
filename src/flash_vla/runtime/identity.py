@@ -78,6 +78,10 @@ class Identity:
     inference_signature: str | None = None
     execution_variant: ExecutionVariant | Mapping | None = None
     schema_version: int = IDENTITY_SCHEMA_VERSION
+    #: The replay-axis values the stages the axis reaches are captured at
+    #: (`runtime/replay.py`), the last its limit; empty for a model without one.
+    #: A construction choice like `plan`: part of `comparable`, not of `same_workload`.
+    replay_buckets: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         version = self.schema_version
@@ -112,7 +116,8 @@ class Identity:
         if self.schema_version == 2:
             return dict(value, precision=self.precision)
         return dict(value, inference_signature=self.inference_signature,
-                    execution_variant=self.execution_variant.as_dict())
+                    execution_variant=self.execution_variant.as_dict(),
+                    replay_buckets=list(self.replay_buckets))
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> Identity:
@@ -126,7 +131,9 @@ class Identity:
                    engine_revision=value.get("revision") if version == 1 else value.get("engine_revision"),
                    inference_signature=value["inference_signature"] if version == 3 else None,
                    execution_variant=value["execution_variant"] if version == 3 else None,
-                   schema_version=version)
+                   schema_version=version,
+                   # Reports written before replay buckets existed name none.
+                   replay_buckets=tuple(value.get("replay_buckets", ())))
 
     def same_workload(self, other: Identity) -> bool:
         """The same model and hardware at the same shape (the declared workload,
@@ -140,4 +147,5 @@ class Identity:
                 and self.execution_variant == other.execution_variant)
 
     def comparable(self, other: Identity) -> bool:
-        return self.same_workload(other) and dict(self.plan) == dict(other.plan)
+        return (self.same_workload(other) and dict(self.plan) == dict(other.plan)
+                and self.replay_buckets == other.replay_buckets)

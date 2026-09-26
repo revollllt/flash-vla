@@ -27,9 +27,9 @@ RULES = (
 )
 
 
-def reference_run(shape: Mapping[str, int], prompt_tokens: int | None) -> ReferenceRun:
+def reference_run(shape: Mapping[str, int], extent: int | None) -> ReferenceRun:
     """The reference at `shape`. The engine computes every one of the 72 language
-    slots, masked or not, so the trace does too and `prompt_tokens` selects nothing."""
+    slots, masked or not, so the trace does too and `extent` selects nothing."""
     meta = torch.device("meta")
     schema = official_schema(make_reference().parts(), prefixes=PREFIXES)
     model = load({name: torch.empty(dims, dtype=torch.bfloat16, device=meta)
