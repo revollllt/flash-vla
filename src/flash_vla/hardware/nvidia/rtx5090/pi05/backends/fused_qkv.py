@@ -8,7 +8,7 @@ subsequent calls are CUDA Graph safe on the current stream. The action output
 wrapper uses weight(1024,32), bias(32), and out(M,32); it privately computes the
 BF16 RMS factor and leaves its norm_factor argument unchanged. Its GEMM is
 cuBLAS, or `cutlass_backbone`'s small stream-K tile at the geometries of
-`CUTLASS_GEOMETRIES`, where cuBLAS runs one CTA along K
+`CUTLASS_CONFIGS`, where cuBLAS runs one CTA along K
 (`lab/pi05/geometry_screen.py`).
 """
 from __future__ import annotations
@@ -28,7 +28,7 @@ from . import cutlass_backbone
 NAMES = frozenset({"action_expert_norm_qkv_rope", "action_expert_action_out_proj"})
 #: (M, K, N) -> family tile: a 10-row chunk, 5.0 against 14.0 us per step
 #: (`results/pi05-rtx5090/workload-generalization/g1/geometry-screen.json`).
-CUTLASS_GEOMETRIES = {(10, 1024, 32): 9}
+CUTLASS_CONFIGS = {(10, 1024, 32): 9}
 
 
 SOURCE = Path(__file__).with_suffix(".cu")
@@ -92,7 +92,7 @@ def action_expert_action_out_proj(
     rc = lib.pi05_action_out_factor_launch(x.data_ptr(), factor.data_ptr(), rows, stream)
     if rc:
         raise RuntimeError(f"pi05_action_out_factor rows={rows}, threads=256: CUDA error {rc}")
-    tile = CUTLASS_GEOMETRIES.get((rows, *weight.shape))
+    tile = CUTLASS_CONFIGS.get((rows, *weight.shape))
     if tile is None:
         torch.mm(x, weight, out=projected)
     else:

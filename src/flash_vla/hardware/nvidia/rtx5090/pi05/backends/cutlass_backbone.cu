@@ -21,11 +21,17 @@ using LinearGemm = cutlass::gemm::device::GemmUniversal<
     cutlass::gemm::GemmShape<16, 8, 16>, Epilogue,
     cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, Stages, 8, 8>;
 // Family config 0: 128x128x64, three stages.
-using Gemm = LinearGemm<cutlass::gemm::GemmShape<128, 128, 64>,
+using Tile0 = LinearGemm<cutlass::gemm::GemmShape<128, 128, 64>,
                         cutlass::gemm::GemmShape<64, 64, 64>, 3>;
 // Family config 9: 32x64x32, eight stages.
-using SmallGemm = LinearGemm<cutlass::gemm::GemmShape<32, 64, 32>,
+using Tile9 = LinearGemm<cutlass::gemm::GemmShape<32, 64, 32>,
                              cutlass::gemm::GemmShape<32, 32, 32>, 8>;
+// Family config 5: 128x128x32, four stages.
+using Tile5 = LinearGemm<cutlass::gemm::GemmShape<128, 128, 32>,
+                         cutlass::gemm::GemmShape<64, 64, 32>, 4>;
+// Family config 10: 64x128x32, five stages.
+using Tile10 = LinearGemm<cutlass::gemm::GemmShape<64, 128, 32>,
+                          cutlass::gemm::GemmShape<32, 64, 32>, 5>;
 
 template <class Linear>
 typename Linear::Arguments linear_arguments(int32_t m, int32_t k, int32_t n, float beta,
@@ -201,14 +207,20 @@ int32_t plan_of(typename Tile::Arguments const& args, void* workspace, void* str
 constexpr int32_t kUnknownConfig = kCutlassError + static_cast<int32_t>(cutlass::Status::kInvalid);
 }  // namespace
 
-// config: the family config of the tile, 0 or 9.
+// config: the family config of the tile, 0, 5, 9 or 10.
 extern "C" int64_t backbone_gemm_workspace(int32_t config, int32_t m, int32_t k, int32_t n) {
   if (config == 0)
-    return static_cast<int64_t>(Gemm::get_workspace_size(
-        linear_arguments<Gemm>(m, k, n, 1.f, nullptr, nullptr, nullptr)));
+    return static_cast<int64_t>(Tile0::get_workspace_size(
+        linear_arguments<Tile0>(m, k, n, 1.f, nullptr, nullptr, nullptr)));
+  if (config == 5)
+    return static_cast<int64_t>(Tile5::get_workspace_size(
+        linear_arguments<Tile5>(m, k, n, 1.f, nullptr, nullptr, nullptr)));
   if (config == 9)
-    return static_cast<int64_t>(SmallGemm::get_workspace_size(
-        linear_arguments<SmallGemm>(m, k, n, 1.f, nullptr, nullptr, nullptr)));
+    return static_cast<int64_t>(Tile9::get_workspace_size(
+        linear_arguments<Tile9>(m, k, n, 1.f, nullptr, nullptr, nullptr)));
+  if (config == 10)
+    return static_cast<int64_t>(Tile10::get_workspace_size(
+        linear_arguments<Tile10>(m, k, n, 1.f, nullptr, nullptr, nullptr)));
   return -kUnknownConfig;
 }
 
@@ -216,11 +228,17 @@ extern "C" int32_t backbone_gemm_plan(
     int32_t config, int32_t m, int32_t k, int32_t n, float beta, const void* a, const void* b,
     void* output, void* workspace, void* stream, void** handle) {
   if (config == 0)
-    return plan_of<Gemm>(linear_arguments<Gemm>(m, k, n, beta, a, b, output), workspace,
+    return plan_of<Tile0>(linear_arguments<Tile0>(m, k, n, beta, a, b, output), workspace,
                          stream, handle);
+  if (config == 5)
+    return plan_of<Tile5>(linear_arguments<Tile5>(m, k, n, beta, a, b, output), workspace,
+                          stream, handle);
   if (config == 9)
-    return plan_of<SmallGemm>(linear_arguments<SmallGemm>(m, k, n, beta, a, b, output),
+    return plan_of<Tile9>(linear_arguments<Tile9>(m, k, n, beta, a, b, output),
                               workspace, stream, handle);
+  if (config == 10)
+    return plan_of<Tile10>(linear_arguments<Tile10>(m, k, n, beta, a, b, output), workspace,
+                           stream, handle);
   return kUnknownConfig;
 }
 

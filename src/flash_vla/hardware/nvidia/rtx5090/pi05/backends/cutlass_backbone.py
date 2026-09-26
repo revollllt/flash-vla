@@ -2,7 +2,8 @@
 and CUDA pointwise stages.
 
 Each GEMM plans for the rows its call runs: a replay-time bucket's rows
-(`runtime/replay.py`), so a smaller bucket computes fewer row tiles. All
+(`runtime/replay.py`), so a smaller bucket computes fewer row tiles, on the
+tile (or cuBLAS) its geometry is fastest on (`CUTLASS_CONFIGS`, `CUBLAS_GEOMETRIES`). All
 nonlinear rounding matches fused_backbone; only its torch GEMMs are replaced.
 Native plans are instance-owned and bind the runner's stable tensor pointers.
 """
@@ -27,6 +28,19 @@ NAMES = frozenset({
     "llm_backbone_out_proj_residual",
 })
 SOURCE = Path(__file__).with_suffix(".cu")
+#: The stream-K family config (`cutlass_backbone.cu`) of each backbone GEMM
+#: geometry (M, K, N) where the fastest candidate at a replay bucket's rows is
+#: that family tile and beats config 0 by more than 5%; config 0 elsewhere. Per-call us, config 0 against the entry
+#: (`results/pi05-rtx5090/replay-extent/t/bucket-gemm-screen.json`).
+CUTLASS_CONFIGS: dict[tuple[int, int, int], int] = {
+    (576, 2048, 2048): 10,    # out_proj: 32.0 -> 27.1
+    (832, 2048, 2048): 10,    # 39.9 -> 37.0
+    (968, 2048, 2048): 5,     # 50.9 -> 43.1
+    (576, 16384, 2048): 10,   # down: 196.5 -> 178.4
+}
+#: Geometries where cuBLAS beats config 0 by more than 5%: the gate and up
+#: projections of LIBERO's 576-row bucket, 199.1 -> 182.4 us.
+CUBLAS_GEOMETRIES: frozenset[tuple[int, int, int]] = frozenset({(576, 2048, 16384)})
 
 
 #: The CUTLASS backbone, vision and expert GEMMs, stream-K.
@@ -74,7 +88,7 @@ def check(status, operation):
 
 class GemmPlan:
     """output = a @ b + beta * output on a family tile (`cutlass_backbone.cu`: config
-    0, 128x128x64, or 9, 32x64x32), bound to these tensors' addresses. Planning
+    0, 5, 9 or 10), bound to these tensors' addresses. Planning
     allocates, so it happens in warmup, never during capture."""
 
     def __init__(self, scratch: Scratch, a: torch.Tensor, b: torch.Tensor,
@@ -126,7 +140,13 @@ def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
 
     def gemm(a: torch.Tensor, b: torch.Tensor, output: torch.Tensor, *, beta: float,
              stream: int) -> None:
-        run_gemm(plans, scratch, a, b, output, beta=beta, stream=stream, config=0)
+        geometry = (*a.shape, b.shape[1])
+        if geometry in CUBLAS_GEOMETRIES:
+            # `stream` is torch's current stream, which cuBLAS runs on.
+            torch.addmm(output, a, b, beta=beta, out=output)
+        else:
+            run_gemm(plans, scratch, a, b, output, beta=beta, stream=stream,
+                     config=CUTLASS_CONFIGS.get(geometry, 0))
 
     def llm_backbone_norm_gated_ffn(x, gate_w, up_w, out, x_norm):
         pointwise = fused_backbone.library()

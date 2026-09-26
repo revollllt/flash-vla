@@ -1,9 +1,9 @@
 """Pi0.5 RTX 5090 backbone RMSNorm, BF16 QKV GEMM and fused RoPE/scatter.
 
-The GEMM is cuBLAS, which takes about 50 us at both 712 and 968 rows, or
-`cutlass_backbone`'s stream-K config 0, which scales with the rows: at the
-geometries of `CUTLASS_GEOMETRIES` it is more than 5% faster
-(`lab/pi05/geometry_screen.py`).
+The GEMM is cuBLAS, about 40 us at 576 rows and 50 to 52 above, or a
+`cutlass_backbone` stream-K tile, which scales with them: at the geometries of
+`CUTLASS_CONFIGS` it is more than 5% faster (`lab/pi05/geometry_screen.py` and,
+at the replay buckets' rows, `lab/pi05/bucket_gemm_screen.py`).
 """
 from __future__ import annotations
 
@@ -20,9 +20,15 @@ from flash_vla.runtime.workspace import Scratch
 from . import cutlass_backbone, fused_backbone
 
 NAMES = ("llm_backbone_norm_qkv_rope",)
-#: (M, K, N): two views' 712-row prefix, 41 against 50 us per layer
-#: (`results/pi05-rtx5090/workload-generalization/g1/geometry-screen.json`).
-CUTLASS_GEOMETRIES = frozenset({(712, 2048, 2560)})
+#: (M, K, N) -> the stream-K family config, and per-call us of cuBLAS against it
+#: (`results/pi05-rtx5090/workload-generalization/g1/geometry-screen.json`,
+#: `results/pi05-rtx5090/replay-extent/t/bucket-gemm-screen.json`).
+CUTLASS_CONFIGS: dict[tuple[int, int, int], int] = {
+    (576, 2048, 2560): 10,    # 39.5 -> 31.5
+    (712, 2048, 2560): 0,     # 50 -> 41
+    (832, 2048, 2560): 10,    # 51.9 -> 43.7
+    (896, 2048, 2560): 5,     # 50.5 -> 46.1
+}
 SOURCE = Path(__file__).with_suffix(".cu")
 
 
@@ -73,9 +79,10 @@ def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
             x.data_ptr(), normed.data_ptr(), rows, stream)
         if status:
             raise RuntimeError(f"backbone_rms_norm M={rows} K=2048: cudaError {status}")
-        if (rows, *weight_qkv.shape) in CUTLASS_GEOMETRIES:
+        geometry = (rows, *weight_qkv.shape)
+        if geometry in CUTLASS_CONFIGS:
             cutlass_backbone.run_gemm(plans, scratch, normed, weight_qkv, projected, beta=0.0,
-                                      stream=stream, config=0)
+                                      stream=stream, config=CUTLASS_CONFIGS[geometry])
         else:
             torch.mm(normed, weight_qkv, out=projected)
         status = library().prefix_rope_scatter(

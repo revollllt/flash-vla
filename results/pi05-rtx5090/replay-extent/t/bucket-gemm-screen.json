@@ -1,0 +1,1341 @@
+{
+  "reps": 30,
+  "rows": [
+    576,
+    712,
+    832,
+    896,
+    968
+  ],
+  "margin": 0.05,
+  "sites": {
+    "llm_backbone_norm_qkv_rope": [
+      {
+        "rows": 576,
+        "deployed": {
+          "config": 10,
+          "us": 31.673
+        },
+        "best": {
+          "us": 31.673,
+          "config": 10
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 31.673,
+            "config": 10
+          },
+          {
+            "us": 32.164,
+            "config": 2
+          },
+          {
+            "us": 33.006,
+            "config": 8
+          },
+          {
+            "us": 34.836,
+            "config": 5
+          },
+          {
+            "us": 35.656,
+            "config": 0
+          },
+          {
+            "us": 36.284,
+            "config": 1
+          },
+          {
+            "us": 36.544,
+            "config": 3
+          },
+          {
+            "us": 39.118,
+            "config": 11
+          },
+          {
+            "us": 39.255,
+            "config": "torch"
+          },
+          {
+            "us": 50.589,
+            "config": 9
+          },
+          {
+            "us": 56.826,
+            "config": 6
+          },
+          {
+            "us": 61.484,
+            "config": 4
+          },
+          {
+            "us": 68.391,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 712,
+        "deployed": {
+          "config": 0,
+          "us": 41.333
+        },
+        "best": {
+          "us": 40.284,
+          "config": 5
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 40.284,
+            "config": 5
+          },
+          {
+            "us": 40.374,
+            "config": 10
+          },
+          {
+            "us": 41.199,
+            "config": 1
+          },
+          {
+            "us": 41.333,
+            "config": 0
+          },
+          {
+            "us": 41.664,
+            "config": 2
+          },
+          {
+            "us": 41.822,
+            "config": 8
+          },
+          {
+            "us": 45.126,
+            "config": 3
+          },
+          {
+            "us": 47.844,
+            "config": 11
+          },
+          {
+            "us": 50.152,
+            "config": "torch"
+          },
+          {
+            "us": 65.592,
+            "config": 9
+          },
+          {
+            "us": 71.31,
+            "config": 6
+          },
+          {
+            "us": 77.184,
+            "config": 4
+          },
+          {
+            "us": 84.204,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 832,
+        "deployed": {
+          "config": 10,
+          "us": 43.713
+        },
+        "best": {
+          "us": 43.713,
+          "config": 10
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 43.713,
+            "config": 10
+          },
+          {
+            "us": 44.412,
+            "config": 2
+          },
+          {
+            "us": 45.764,
+            "config": 5
+          },
+          {
+            "us": 47.01,
+            "config": 1
+          },
+          {
+            "us": 49.862,
+            "config": 3
+          },
+          {
+            "us": 50.606,
+            "config": 0
+          },
+          {
+            "us": 52.014,
+            "config": "torch"
+          },
+          {
+            "us": 53.06,
+            "config": 8
+          },
+          {
+            "us": 59.651,
+            "config": 11
+          },
+          {
+            "us": 67.838,
+            "config": 9
+          },
+          {
+            "us": 79.298,
+            "config": 6
+          },
+          {
+            "us": 87.238,
+            "config": 4
+          },
+          {
+            "us": 96.396,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 896,
+        "deployed": {
+          "config": 5,
+          "us": 45.875
+        },
+        "best": {
+          "us": 45.875,
+          "config": 5
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 45.875,
+            "config": 5
+          },
+          {
+            "us": 46.571,
+            "config": 10
+          },
+          {
+            "us": 47.354,
+            "config": 1
+          },
+          {
+            "us": 47.819,
+            "config": 2
+          },
+          {
+            "us": 50.545,
+            "config": "torch"
+          },
+          {
+            "us": 51.205,
+            "config": 0
+          },
+          {
+            "us": 53.958,
+            "config": 3
+          },
+          {
+            "us": 54.696,
+            "config": 8
+          },
+          {
+            "us": 61.692,
+            "config": 11
+          },
+          {
+            "us": 74.439,
+            "config": 9
+          },
+          {
+            "us": 86.041,
+            "config": 6
+          },
+          {
+            "us": 92.86,
+            "config": 4
+          },
+          {
+            "us": 103.111,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 968,
+        "deployed": {
+          "config": "torch",
+          "us": 51.18
+        },
+        "best": {
+          "us": 50.553,
+          "config": 5
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 50.553,
+            "config": 5
+          },
+          {
+            "us": 51.18,
+            "config": "torch"
+          },
+          {
+            "us": 51.221,
+            "config": 0
+          },
+          {
+            "us": 52.614,
+            "config": 10
+          },
+          {
+            "us": 53.272,
+            "config": 1
+          },
+          {
+            "us": 53.281,
+            "config": 2
+          },
+          {
+            "us": 55.705,
+            "config": 8
+          },
+          {
+            "us": 59.454,
+            "config": 3
+          },
+          {
+            "us": 63.513,
+            "config": 11
+          },
+          {
+            "us": 84.687,
+            "config": 9
+          },
+          {
+            "us": 93.777,
+            "config": 6
+          },
+          {
+            "us": 102.422,
+            "config": 4
+          },
+          {
+            "us": 112.087,
+            "config": 7
+          }
+        ]
+      }
+    ],
+    "llm_backbone_out_proj_residual": [
+      {
+        "rows": 576,
+        "deployed": {
+          "config": 10,
+          "us": 27.329
+        },
+        "best": {
+          "us": 27.329,
+          "config": 10
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 27.329,
+            "config": 10
+          },
+          {
+            "us": 27.333,
+            "config": "torch"
+          },
+          {
+            "us": 27.342,
+            "config": 8
+          },
+          {
+            "us": 27.509,
+            "config": 2
+          },
+          {
+            "us": 28.025,
+            "config": 1
+          },
+          {
+            "us": 29.39,
+            "config": 3
+          },
+          {
+            "us": 31.546,
+            "config": 11
+          },
+          {
+            "us": 32.107,
+            "config": 5
+          },
+          {
+            "us": 32.108,
+            "config": 0
+          },
+          {
+            "us": 39.638,
+            "config": 9
+          },
+          {
+            "us": 46.438,
+            "config": 6
+          },
+          {
+            "us": 53.948,
+            "config": 4
+          },
+          {
+            "us": 57.479,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 712,
+        "deployed": {
+          "config": 0,
+          "us": 35.62
+        },
+        "best": {
+          "us": 34.836,
+          "config": 10
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 34.836,
+            "config": 10
+          },
+          {
+            "us": 34.843,
+            "config": 5
+          },
+          {
+            "us": 35.001,
+            "config": 2
+          },
+          {
+            "us": 35.481,
+            "config": 8
+          },
+          {
+            "us": 35.62,
+            "config": 0
+          },
+          {
+            "us": 36.313,
+            "config": 1
+          },
+          {
+            "us": 39.734,
+            "config": 3
+          },
+          {
+            "us": 40.42,
+            "config": 11
+          },
+          {
+            "us": 50.54,
+            "config": "torch"
+          },
+          {
+            "us": 52.891,
+            "config": 9
+          },
+          {
+            "us": 59.413,
+            "config": 6
+          },
+          {
+            "us": 66.928,
+            "config": 4
+          },
+          {
+            "us": 71.026,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 832,
+        "deployed": {
+          "config": 10,
+          "us": 36.961
+        },
+        "best": {
+          "us": 36.961,
+          "config": 10
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 36.961,
+            "config": 10
+          },
+          {
+            "us": 37.572,
+            "config": 2
+          },
+          {
+            "us": 38.93,
+            "config": 5
+          },
+          {
+            "us": 38.942,
+            "config": 8
+          },
+          {
+            "us": 40.3,
+            "config": 0
+          },
+          {
+            "us": 41.074,
+            "config": 1
+          },
+          {
+            "us": 43.031,
+            "config": 3
+          },
+          {
+            "us": 45.09,
+            "config": 11
+          },
+          {
+            "us": 50.534,
+            "config": "torch"
+          },
+          {
+            "us": 59.694,
+            "config": 9
+          },
+          {
+            "us": 66.35,
+            "config": 6
+          },
+          {
+            "us": 73.174,
+            "config": 4
+          },
+          {
+            "us": 81.26,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 896,
+        "deployed": {
+          "config": 0,
+          "us": 40.289
+        },
+        "best": {
+          "us": 38.936,
+          "config": 5
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 38.936,
+            "config": 5
+          },
+          {
+            "us": 39.617,
+            "config": 10
+          },
+          {
+            "us": 40.289,
+            "config": 0
+          },
+          {
+            "us": 40.583,
+            "config": 2
+          },
+          {
+            "us": 41.112,
+            "config": 8
+          },
+          {
+            "us": 41.669,
+            "config": 1
+          },
+          {
+            "us": 46.455,
+            "config": 3
+          },
+          {
+            "us": 48.504,
+            "config": 11
+          },
+          {
+            "us": 50.54,
+            "config": "torch"
+          },
+          {
+            "us": 59.423,
+            "config": 9
+          },
+          {
+            "us": 70.568,
+            "config": 6
+          },
+          {
+            "us": 81.353,
+            "config": 4
+          },
+          {
+            "us": 87.393,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 968,
+        "deployed": {
+          "config": 5,
+          "us": 43.192
+        },
+        "best": {
+          "us": 43.192,
+          "config": 5
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 43.192,
+            "config": 5
+          },
+          {
+            "us": 43.916,
+            "config": 10
+          },
+          {
+            "us": 45.976,
+            "config": 2
+          },
+          {
+            "us": 46.596,
+            "config": 1
+          },
+          {
+            "us": 50.511,
+            "config": "torch"
+          },
+          {
+            "us": 51.205,
+            "config": 3
+          },
+          {
+            "us": 51.218,
+            "config": 0
+          },
+          {
+            "us": 52.414,
+            "config": 8
+          },
+          {
+            "us": 60.544,
+            "config": 11
+          },
+          {
+            "us": 64.433,
+            "config": 9
+          },
+          {
+            "us": 77.852,
+            "config": 6
+          },
+          {
+            "us": 86.88,
+            "config": 4
+          },
+          {
+            "us": 94.25,
+            "config": 7
+          }
+        ]
+      }
+    ],
+    "llm_backbone_norm_gated_ffn (gate or up)": [
+      {
+        "rows": 576,
+        "deployed": {
+          "config": "torch",
+          "us": 181.041
+        },
+        "best": {
+          "us": 181.041,
+          "config": "torch"
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 181.041,
+            "config": "torch"
+          },
+          {
+            "us": 187.081,
+            "config": 10
+          },
+          {
+            "us": 189.154,
+            "config": 2
+          },
+          {
+            "us": 190.972,
+            "config": 5
+          },
+          {
+            "us": 195.284,
+            "config": 8
+          },
+          {
+            "us": 197.367,
+            "config": 0
+          },
+          {
+            "us": 205.83,
+            "config": 1
+          },
+          {
+            "us": 212.419,
+            "config": 3
+          },
+          {
+            "us": 243.752,
+            "config": 11
+          },
+          {
+            "us": 282.5,
+            "config": 9
+          },
+          {
+            "us": 336.831,
+            "config": 6
+          },
+          {
+            "us": 361.914,
+            "config": 4
+          },
+          {
+            "us": 411.179,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 712,
+        "deployed": {
+          "config": 0,
+          "us": 230.397
+        },
+        "best": {
+          "us": 226.422,
+          "config": 5
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 226.422,
+            "config": 5
+          },
+          {
+            "us": 230.397,
+            "config": 0
+          },
+          {
+            "us": 246.46,
+            "config": 10
+          },
+          {
+            "us": 248.88,
+            "config": 1
+          },
+          {
+            "us": 249.197,
+            "config": 2
+          },
+          {
+            "us": 249.471,
+            "config": "torch"
+          },
+          {
+            "us": 254.758,
+            "config": 8
+          },
+          {
+            "us": 277.851,
+            "config": 3
+          },
+          {
+            "us": 301.015,
+            "config": 11
+          },
+          {
+            "us": 353.396,
+            "config": 9
+          },
+          {
+            "us": 429.422,
+            "config": 6
+          },
+          {
+            "us": 459.444,
+            "config": 4
+          },
+          {
+            "us": 509.295,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 832,
+        "deployed": {
+          "config": 0,
+          "us": 269.86
+        },
+        "best": {
+          "us": 262.156,
+          "config": "torch"
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 262.156,
+            "config": "torch"
+          },
+          {
+            "us": 266.694,
+            "config": 5
+          },
+          {
+            "us": 267.23,
+            "config": 10
+          },
+          {
+            "us": 269.86,
+            "config": 0
+          },
+          {
+            "us": 269.908,
+            "config": 2
+          },
+          {
+            "us": 284.88,
+            "config": 8
+          },
+          {
+            "us": 290.154,
+            "config": 1
+          },
+          {
+            "us": 302.49,
+            "config": 3
+          },
+          {
+            "us": 350.705,
+            "config": 11
+          },
+          {
+            "us": 408.642,
+            "config": 9
+          },
+          {
+            "us": 484.698,
+            "config": 6
+          },
+          {
+            "us": 516.813,
+            "config": 4
+          },
+          {
+            "us": 585.061,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 896,
+        "deployed": {
+          "config": 0,
+          "us": 269.739
+        },
+        "best": {
+          "us": 264.355,
+          "config": 5
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 264.355,
+            "config": 5
+          },
+          {
+            "us": 269.739,
+            "config": 0
+          },
+          {
+            "us": 285.893,
+            "config": "torch"
+          },
+          {
+            "us": 287.691,
+            "config": 10
+          },
+          {
+            "us": 289.166,
+            "config": 2
+          },
+          {
+            "us": 291.326,
+            "config": 1
+          },
+          {
+            "us": 305.014,
+            "config": 8
+          },
+          {
+            "us": 326.448,
+            "config": 3
+          },
+          {
+            "us": 365.988,
+            "config": 11
+          },
+          {
+            "us": 434.22,
+            "config": 9
+          },
+          {
+            "us": 521.842,
+            "config": 6
+          },
+          {
+            "us": 557.796,
+            "config": 4
+          },
+          {
+            "us": 628.291,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 968,
+        "deployed": {
+          "config": 0,
+          "us": 305.863
+        },
+        "best": {
+          "us": 301.532,
+          "config": 5
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 301.532,
+            "config": 5
+          },
+          {
+            "us": 305.863,
+            "config": 0
+          },
+          {
+            "us": 325.647,
+            "config": 10
+          },
+          {
+            "us": 326.36,
+            "config": 2
+          },
+          {
+            "us": 329.368,
+            "config": 1
+          },
+          {
+            "us": 334.604,
+            "config": "torch"
+          },
+          {
+            "us": 341.083,
+            "config": 8
+          },
+          {
+            "us": 366.339,
+            "config": 3
+          },
+          {
+            "us": 403.147,
+            "config": 11
+          },
+          {
+            "us": 475.16,
+            "config": 9
+          },
+          {
+            "us": 576.185,
+            "config": 6
+          },
+          {
+            "us": 613.794,
+            "config": 4
+          },
+          {
+            "us": 683.37,
+            "config": 7
+          }
+        ]
+      }
+    ],
+    "llm_backbone_ffn_down_residual": [
+      {
+        "rows": 576,
+        "deployed": {
+          "config": 10,
+          "us": 178.335
+        },
+        "best": {
+          "us": 178.335,
+          "config": 10
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 178.335,
+            "config": 10
+          },
+          {
+            "us": 178.813,
+            "config": 2
+          },
+          {
+            "us": 195.267,
+            "config": 0
+          },
+          {
+            "us": 195.945,
+            "config": 5
+          },
+          {
+            "us": 198.715,
+            "config": 3
+          },
+          {
+            "us": 198.766,
+            "config": "torch"
+          },
+          {
+            "us": 201.095,
+            "config": 1
+          },
+          {
+            "us": 203.969,
+            "config": 8
+          },
+          {
+            "us": 245.459,
+            "config": 11
+          },
+          {
+            "us": 293.106,
+            "config": 9
+          },
+          {
+            "us": 320.218,
+            "config": 6
+          },
+          {
+            "us": 330.477,
+            "config": 4
+          },
+          {
+            "us": 395.969,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 712,
+        "deployed": {
+          "config": 0,
+          "us": 224.148
+        },
+        "best": {
+          "us": 224.148,
+          "config": 0
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 224.148,
+            "config": 0
+          },
+          {
+            "us": 224.609,
+            "config": 5
+          },
+          {
+            "us": 235.848,
+            "config": 2
+          },
+          {
+            "us": 236.565,
+            "config": 10
+          },
+          {
+            "us": 237.739,
+            "config": 1
+          },
+          {
+            "us": 244.762,
+            "config": "torch"
+          },
+          {
+            "us": 258.54,
+            "config": 8
+          },
+          {
+            "us": 260.172,
+            "config": 3
+          },
+          {
+            "us": 308.1,
+            "config": 11
+          },
+          {
+            "us": 372.206,
+            "config": 9
+          },
+          {
+            "us": 410.215,
+            "config": 6
+          },
+          {
+            "us": 420.791,
+            "config": 4
+          },
+          {
+            "us": 492.344,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 832,
+        "deployed": {
+          "config": 0,
+          "us": 260.834
+        },
+        "best": {
+          "us": 256.091,
+          "config": 10
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 256.091,
+            "config": 10
+          },
+          {
+            "us": 256.932,
+            "config": 2
+          },
+          {
+            "us": 260.392,
+            "config": 5
+          },
+          {
+            "us": 260.834,
+            "config": 0
+          },
+          {
+            "us": 260.967,
+            "config": "torch"
+          },
+          {
+            "us": 275.668,
+            "config": 1
+          },
+          {
+            "us": 290.385,
+            "config": 8
+          },
+          {
+            "us": 290.74,
+            "config": 3
+          },
+          {
+            "us": 346.84,
+            "config": 11
+          },
+          {
+            "us": 442.572,
+            "config": 9
+          },
+          {
+            "us": 462.849,
+            "config": 6
+          },
+          {
+            "us": 474.616,
+            "config": 4
+          },
+          {
+            "us": 568.382,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 896,
+        "deployed": {
+          "config": 0,
+          "us": 262.858
+        },
+        "best": {
+          "us": 262.176,
+          "config": 5
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 262.176,
+            "config": 5
+          },
+          {
+            "us": 262.858,
+            "config": 0
+          },
+          {
+            "us": 275.168,
+            "config": 2
+          },
+          {
+            "us": 275.833,
+            "config": 10
+          },
+          {
+            "us": 277.938,
+            "config": 1
+          },
+          {
+            "us": 298.237,
+            "config": "torch"
+          },
+          {
+            "us": 309.307,
+            "config": 3
+          },
+          {
+            "us": 309.974,
+            "config": 8
+          },
+          {
+            "us": 373.502,
+            "config": 11
+          },
+          {
+            "us": 448.592,
+            "config": 9
+          },
+          {
+            "us": 496.997,
+            "config": 6
+          },
+          {
+            "us": 512.069,
+            "config": 4
+          },
+          {
+            "us": 613.268,
+            "config": 7
+          }
+        ]
+      },
+      {
+        "rows": 968,
+        "deployed": {
+          "config": 0,
+          "us": 298.342
+        },
+        "best": {
+          "us": 297.412,
+          "config": 5
+        },
+        "adopt": false,
+        "candidates": [
+          {
+            "us": 297.412,
+            "config": 5
+          },
+          {
+            "us": 298.342,
+            "config": 0
+          },
+          {
+            "us": 312.038,
+            "config": 2
+          },
+          {
+            "us": 312.821,
+            "config": 10
+          },
+          {
+            "us": 313.744,
+            "config": 1
+          },
+          {
+            "us": 340.36,
+            "config": "torch"
+          },
+          {
+            "us": 350.717,
+            "config": 3
+          },
+          {
+            "us": 401.453,
+            "config": 8
+          },
+          {
+            "us": 463.104,
+            "config": 11
+          },
+          {
+            "us": 482.697,
+            "config": 9
+          },
+          {
+            "us": 562.89,
+            "config": 6
+          },
+          {
+            "us": 565.289,
+            "config": 4
+          },
+          {
+            "us": 661.776,
+            "config": 7
+          }
+        ]
+      }
+    ]
+  }
+}
