@@ -73,9 +73,9 @@ def qkv_chain(calls, library):
     norm_library = fused_backbone.library()
     rope_library = fused_prefix_qkv.library()
     stream = torch.cuda.current_stream().cuda_stream
-    plans = [cutlass_backbone._Plan(
-        library, scratch, normed[:SHORT_ROWS], call["weight"],
-        projected[:SHORT_ROWS], 0.0, stream) for call in calls]
+    plans = [cutlass_backbone.GemmPlan(
+        scratch, normed[:SHORT_ROWS], call["weight"],
+        projected[:SHORT_ROWS], 0.0, stream, 0) for call in calls]
 
     def candidate(call, plan):
         stream = torch.cuda.current_stream().cuda_stream
@@ -113,9 +113,9 @@ def outproj_chain(calls, library, control):
     out = torch.empty_like(calls[0]["expected"])
     scratch = Scratch(out.device)
     stream = torch.cuda.current_stream().cuda_stream
-    plans = [cutlass_backbone._Plan(
-        library, scratch, call["x"][:SHORT_ROWS], call["weight"], out[:SHORT_ROWS],
-        1.0, stream) for call in calls]
+    plans = [cutlass_backbone.GemmPlan(
+        scratch, call["x"][:SHORT_ROWS], call["weight"], out[:SHORT_ROWS],
+        1.0, stream, 0) for call in calls]
 
     def original(call):
         out.copy_(call["residual"])

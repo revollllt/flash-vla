@@ -1,0 +1,1064 @@
+{
+  "target": "rtx5090/pi05",
+  "reps": 30,
+  "workloads": {
+    "robodojo": {
+      "gemm": {
+        "vision_encoder_norm_qkv": {
+          "rows": 768,
+          "k": 1152,
+          "n": 3456,
+          "layers": 27,
+          "calls": 27,
+          "deployed_config": 10,
+          "results": [
+            {
+              "us": 31.128,
+              "config": 5
+            },
+            {
+              "us": 31.169,
+              "config": 0
+            },
+            {
+              "us": 32.509,
+              "config": 10
+            },
+            {
+              "us": 33.263,
+              "config": 2
+            },
+            {
+              "us": 33.415,
+              "config": 1
+            },
+            {
+              "us": 34.203,
+              "config": "torch"
+            },
+            {
+              "us": 34.628,
+              "config": 8
+            },
+            {
+              "us": 38.875,
+              "config": 3
+            },
+            {
+              "us": 40.998,
+              "config": 11
+            },
+            {
+              "us": 52.825,
+              "config": 9
+            },
+            {
+              "us": 60.793,
+              "config": 6
+            },
+            {
+              "us": 69.382,
+              "config": 4
+            },
+            {
+              "us": 75.856,
+              "config": 7
+            }
+          ],
+          "failed": {}
+        },
+        "vision_encoder_out_proj_residual": {
+          "rows": 768,
+          "k": 1152,
+          "n": 1152,
+          "layers": 27,
+          "calls": 27,
+          "deployed_config": 10,
+          "results": [
+            {
+              "us": 14.724,
+              "config": 10
+            },
+            {
+              "us": 16.119,
+              "config": 3
+            },
+            {
+              "us": 16.859,
+              "config": 1
+            },
+            {
+              "us": 16.873,
+              "config": 2
+            },
+            {
+              "us": 17.335,
+              "config": 8
+            },
+            {
+              "us": 18.251,
+              "config": 11
+            },
+            {
+              "us": 19.74,
+              "config": 5
+            },
+            {
+              "us": 19.988,
+              "config": "torch"
+            },
+            {
+              "us": 20.053,
+              "config": 0
+            },
+            {
+              "us": 20.972,
+              "config": 9
+            },
+            {
+              "us": 22.948,
+              "config": 6
+            },
+            {
+              "us": 26.319,
+              "config": 4
+            },
+            {
+              "us": 27.897,
+              "config": 7
+            }
+          ],
+          "failed": {}
+        },
+        "vision_encoder_norm_ffn_up": {
+          "rows": 768,
+          "k": 1152,
+          "n": 4304,
+          "layers": 27,
+          "calls": 27,
+          "deployed_config": 10,
+          "results": [
+            {
+              "us": 41.429,
+              "config": 5
+            },
+            {
+              "us": 41.577,
+              "config": 10
+            },
+            {
+              "us": 42.798,
+              "config": 0
+            },
+            {
+              "us": 43.291,
+              "config": 2
+            },
+            {
+              "us": 43.704,
+              "config": 1
+            },
+            {
+              "us": 45.24,
+              "config": 8
+            },
+            {
+              "us": 45.528,
+              "config": "torch"
+            },
+            {
+              "us": 47.554,
+              "config": 3
+            },
+            {
+              "us": 52.996,
+              "config": 11
+            },
+            {
+              "us": 58.306,
+              "config": 9
+            },
+            {
+              "us": 75.13,
+              "config": 6
+            },
+            {
+              "us": 84.67,
+              "config": 4
+            },
+            {
+              "us": 90.123,
+              "config": 7
+            }
+          ],
+          "failed": {}
+        },
+        "vision_encoder_ffn_down_residual": {
+          "rows": 768,
+          "k": 4304,
+          "n": 1152,
+          "layers": 27,
+          "calls": 27,
+          "deployed_config": 10,
+          "results": [
+            {
+              "us": 38.399,
+              "config": 10
+            },
+            {
+              "us": 38.731,
+              "config": 1
+            },
+            {
+              "us": 38.812,
+              "config": 2
+            },
+            {
+              "us": 41.451,
+              "config": 3
+            },
+            {
+              "us": 43.326,
+              "config": 5
+            },
+            {
+              "us": 44.161,
+              "config": 0
+            },
+            {
+              "us": 48.089,
+              "config": "torch"
+            },
+            {
+              "us": 54.647,
+              "config": 8
+            },
+            {
+              "us": 57.857,
+              "config": 11
+            },
+            {
+              "us": 62.551,
+              "config": 9
+            },
+            {
+              "us": 68.281,
+              "config": 6
+            },
+            {
+              "us": 71.923,
+              "config": 4
+            },
+            {
+              "us": 81.933,
+              "config": 7
+            }
+          ],
+          "failed": {}
+        },
+        "action_expert_out_proj_residual": {
+          "rows": 50,
+          "k": 2048,
+          "n": 1024,
+          "layers": 18,
+          "calls": 18,
+          "deployed_config": 9,
+          "results": [
+            {
+              "us": 6.325,
+              "config": "torch"
+            },
+            {
+              "us": 6.956,
+              "config": 9
+            },
+            {
+              "us": 7.539,
+              "config": 8
+            },
+            {
+              "us": 8.208,
+              "config": 11
+            },
+            {
+              "us": 8.419,
+              "config": 4
+            },
+            {
+              "us": 8.812,
+              "config": 7
+            },
+            {
+              "us": 9.605,
+              "config": 3
+            },
+            {
+              "us": 12.331,
+              "config": 6
+            },
+            {
+              "us": 13.701,
+              "config": 2
+            },
+            {
+              "us": 14.38,
+              "config": 1
+            },
+            {
+              "us": 14.492,
+              "config": 10
+            },
+            {
+              "us": 23.242,
+              "config": 0
+            },
+            {
+              "us": 23.939,
+              "config": 5
+            }
+          ],
+          "failed": {}
+        },
+        "action_expert_ffn_down_residual": {
+          "rows": 50,
+          "k": 4096,
+          "n": 1024,
+          "layers": 18,
+          "calls": 18,
+          "deployed_config": 9,
+          "results": [
+            {
+              "us": 10.308,
+              "config": 9
+            },
+            {
+              "us": 10.978,
+              "config": 8
+            },
+            {
+              "us": 11.047,
+              "config": 11
+            },
+            {
+              "us": 11.05,
+              "config": "torch"
+            },
+            {
+              "us": 13.036,
+              "config": 7
+            },
+            {
+              "us": 13.164,
+              "config": 4
+            },
+            {
+              "us": 15.09,
+              "config": 3
+            },
+            {
+              "us": 17.341,
+              "config": 6
+            },
+            {
+              "us": 20.111,
+              "config": 2
+            },
+            {
+              "us": 20.61,
+              "config": 10
+            },
+            {
+              "us": 21.188,
+              "config": 1
+            },
+            {
+              "us": 33.638,
+              "config": 0
+            },
+            {
+              "us": 34.153,
+              "config": 5
+            }
+          ],
+          "failed": {}
+        },
+        "action_expert_action_out_proj": {
+          "rows": 50,
+          "k": 1024,
+          "n": 32,
+          "layers": 1,
+          "calls": 10,
+          "deployed_config": "torch",
+          "results": [
+            {
+              "us": 3.984,
+              "config": "torch"
+            },
+            {
+              "us": 5.178,
+              "config": 9
+            },
+            {
+              "us": 5.298,
+              "config": 8
+            },
+            {
+              "us": 5.384,
+              "config": 11
+            },
+            {
+              "us": 6.442,
+              "config": 4
+            },
+            {
+              "us": 6.459,
+              "config": 7
+            },
+            {
+              "us": 7.371,
+              "config": 3
+            },
+            {
+              "us": 8.67,
+              "config": 6
+            },
+            {
+              "us": 8.91,
+              "config": 2
+            },
+            {
+              "us": 9.083,
+              "config": 1
+            },
+            {
+              "us": 9.098,
+              "config": 10
+            },
+            {
+              "us": 13.79,
+              "config": 5
+            },
+            {
+              "us": 14.005,
+              "config": 0
+            }
+          ],
+          "failed": {}
+        },
+        "llm_backbone_norm_qkv_rope": {
+          "rows": 968,
+          "k": 2048,
+          "n": 2560,
+          "layers": 18,
+          "calls": 18,
+          "deployed_config": "torch",
+          "results": [
+            {
+              "us": 50.545,
+              "config": 5
+            },
+            {
+              "us": 50.572,
+              "config": "torch"
+            },
+            {
+              "us": 50.588,
+              "config": 0
+            },
+            {
+              "us": 52.122,
+              "config": 10
+            },
+            {
+              "us": 52.623,
+              "config": 1
+            },
+            {
+              "us": 53.305,
+              "config": 2
+            },
+            {
+              "us": 56.037,
+              "config": 8
+            },
+            {
+              "us": 59.453,
+              "config": 3
+            },
+            {
+              "us": 62.867,
+              "config": 11
+            },
+            {
+              "us": 84.745,
+              "config": 9
+            },
+            {
+              "us": 93.541,
+              "config": 6
+            },
+            {
+              "us": 101.759,
+              "config": 4
+            },
+            {
+              "us": 112.007,
+              "config": 7
+            }
+          ],
+          "failed": {}
+        }
+      },
+      "vision_encoder_attention": {
+        "views": 3,
+        "layers": 27,
+        "deployed": "torch default",
+        "results": [
+          {
+            "us": 16.955,
+            "backend": "flash"
+          },
+          {
+            "us": 18.792,
+            "backend": "cudnn"
+          },
+          {
+            "us": 35.991,
+            "backend": "efficient"
+          }
+        ],
+        "failed": {},
+        "errors": {}
+      }
+    },
+    "libero": {
+      "gemm": {
+        "vision_encoder_norm_qkv": {
+          "rows": 512,
+          "k": 1152,
+          "n": 3456,
+          "layers": 27,
+          "calls": 27,
+          "deployed_config": 10,
+          "results": [
+            {
+              "us": 24.592,
+              "config": 10
+            },
+            {
+              "us": 24.673,
+              "config": 5
+            },
+            {
+              "us": 25.056,
+              "config": 8
+            },
+            {
+              "us": 25.54,
+              "config": 2
+            },
+            {
+              "us": 25.679,
+              "config": 1
+            },
+            {
+              "us": 28.23,
+              "config": 3
+            },
+            {
+              "us": 28.84,
+              "config": 11
+            },
+            {
+              "us": 30.508,
+              "config": 0
+            },
+            {
+              "us": 31.729,
+              "config": "torch"
+            },
+            {
+              "us": 34.923,
+              "config": 9
+            },
+            {
+              "us": 41.582,
+              "config": 6
+            },
+            {
+              "us": 48.402,
+              "config": 4
+            },
+            {
+              "us": 51.965,
+              "config": 7
+            }
+          ],
+          "failed": {}
+        },
+        "vision_encoder_out_proj_residual": {
+          "rows": 512,
+          "k": 1152,
+          "n": 1152,
+          "layers": 27,
+          "calls": 27,
+          "deployed_config": 10,
+          "results": [
+            {
+              "us": 10.036,
+              "config": 8
+            },
+            {
+              "us": 10.489,
+              "config": 3
+            },
+            {
+              "us": 10.596,
+              "config": "torch"
+            },
+            {
+              "us": 11.471,
+              "config": 11
+            },
+            {
+              "us": 12.763,
+              "config": 10
+            },
+            {
+              "us": 12.983,
+              "config": 2
+            },
+            {
+              "us": 13.219,
+              "config": 1
+            },
+            {
+              "us": 13.679,
+              "config": 9
+            },
+            {
+              "us": 16.399,
+              "config": 6
+            },
+            {
+              "us": 18.68,
+              "config": 4
+            },
+            {
+              "us": 19.553,
+              "config": 0
+            },
+            {
+              "us": 19.669,
+              "config": 5
+            },
+            {
+              "us": 20.046,
+              "config": 7
+            }
+          ],
+          "failed": {}
+        },
+        "vision_encoder_norm_ffn_up": {
+          "rows": 512,
+          "k": 1152,
+          "n": 4304,
+          "layers": 27,
+          "calls": 27,
+          "deployed_config": 10,
+          "results": [
+            {
+              "us": 29.103,
+              "config": 10
+            },
+            {
+              "us": 30.132,
+              "config": 2
+            },
+            {
+              "us": 30.513,
+              "config": 1
+            },
+            {
+              "us": 30.663,
+              "config": 5
+            },
+            {
+              "us": 30.965,
+              "config": 0
+            },
+            {
+              "us": 32.796,
+              "config": 8
+            },
+            {
+              "us": 34.6,
+              "config": 3
+            },
+            {
+              "us": 37.304,
+              "config": "torch"
+            },
+            {
+              "us": 38.715,
+              "config": 11
+            },
+            {
+              "us": 42.449,
+              "config": 9
+            },
+            {
+              "us": 51.974,
+              "config": 6
+            },
+            {
+              "us": 58.382,
+              "config": 4
+            },
+            {
+              "us": 66.462,
+              "config": 7
+            }
+          ],
+          "failed": {}
+        },
+        "vision_encoder_ffn_down_residual": {
+          "rows": 512,
+          "k": 4304,
+          "n": 1152,
+          "layers": 27,
+          "calls": 27,
+          "deployed_config": 10,
+          "results": [
+            {
+              "us": 28.69,
+              "config": 3
+            },
+            {
+              "us": 28.831,
+              "config": 8
+            },
+            {
+              "us": 29.294,
+              "config": 10
+            },
+            {
+              "us": 30.588,
+              "config": 1
+            },
+            {
+              "us": 30.664,
+              "config": 2
+            },
+            {
+              "us": 33.285,
+              "config": 11
+            },
+            {
+              "us": 37.788,
+              "config": 5
+            },
+            {
+              "us": 37.903,
+              "config": 0
+            },
+            {
+              "us": 39.785,
+              "config": 9
+            },
+            {
+              "us": 41.676,
+              "config": "torch"
+            },
+            {
+              "us": 46.445,
+              "config": 6
+            },
+            {
+              "us": 48.334,
+              "config": 4
+            },
+            {
+              "us": 55.087,
+              "config": 7
+            }
+          ],
+          "failed": {}
+        },
+        "action_expert_out_proj_residual": {
+          "rows": 10,
+          "k": 2048,
+          "n": 1024,
+          "layers": 18,
+          "calls": 18,
+          "deployed_config": 9,
+          "results": [
+            {
+              "us": 5.503,
+              "config": "torch"
+            },
+            {
+              "us": 6.465,
+              "config": 9
+            },
+            {
+              "us": 6.853,
+              "config": 11
+            },
+            {
+              "us": 7.19,
+              "config": 8
+            },
+            {
+              "us": 8.231,
+              "config": 4
+            },
+            {
+              "us": 8.364,
+              "config": 7
+            },
+            {
+              "us": 9.012,
+              "config": 3
+            },
+            {
+              "us": 11.796,
+              "config": 6
+            },
+            {
+              "us": 13.691,
+              "config": 2
+            },
+            {
+              "us": 13.707,
+              "config": 1
+            },
+            {
+              "us": 14.413,
+              "config": 10
+            },
+            {
+              "us": 22.596,
+              "config": 0
+            },
+            {
+              "us": 23.545,
+              "config": 5
+            }
+          ],
+          "failed": {}
+        },
+        "action_expert_ffn_down_residual": {
+          "rows": 10,
+          "k": 4096,
+          "n": 1024,
+          "layers": 18,
+          "calls": 18,
+          "deployed_config": 9,
+          "results": [
+            {
+              "us": 9.848,
+              "config": "torch"
+            },
+            {
+              "us": 10.518,
+              "config": 9
+            },
+            {
+              "us": 10.948,
+              "config": 11
+            },
+            {
+              "us": 10.968,
+              "config": 8
+            },
+            {
+              "us": 12.46,
+              "config": 7
+            },
+            {
+              "us": 13.071,
+              "config": 4
+            },
+            {
+              "us": 14.001,
+              "config": 3
+            },
+            {
+              "us": 16.522,
+              "config": 6
+            },
+            {
+              "us": 19.383,
+              "config": 2
+            },
+            {
+              "us": 19.805,
+              "config": 1
+            },
+            {
+              "us": 19.912,
+              "config": 10
+            },
+            {
+              "us": 32.155,
+              "config": 0
+            },
+            {
+              "us": 32.31,
+              "config": 5
+            }
+          ],
+          "failed": {}
+        },
+        "action_expert_action_out_proj": {
+          "rows": 10,
+          "k": 1024,
+          "n": 32,
+          "layers": 1,
+          "calls": 10,
+          "deployed_config": "torch",
+          "results": [
+            {
+              "us": 5.014,
+              "config": 9
+            },
+            {
+              "us": 5.315,
+              "config": 11
+            },
+            {
+              "us": 5.4,
+              "config": 8
+            },
+            {
+              "us": 6.219,
+              "config": 7
+            },
+            {
+              "us": 6.224,
+              "config": 4
+            },
+            {
+              "us": 6.624,
+              "config": 3
+            },
+            {
+              "us": 8.678,
+              "config": 6
+            },
+            {
+              "us": 8.896,
+              "config": 10
+            },
+            {
+              "us": 9.078,
+              "config": 2
+            },
+            {
+              "us": 9.086,
+              "config": 1
+            },
+            {
+              "us": 13.597,
+              "config": 5
+            },
+            {
+              "us": 13.995,
+              "config": "torch"
+            },
+            {
+              "us": 14.005,
+              "config": 0
+            }
+          ],
+          "failed": {}
+        },
+        "llm_backbone_norm_qkv_rope": {
+          "rows": 712,
+          "k": 2048,
+          "n": 2560,
+          "layers": 18,
+          "calls": 18,
+          "deployed_config": "torch",
+          "results": [
+            {
+              "us": 40.336,
+              "config": 10
+            },
+            {
+              "us": 40.97,
+              "config": 5
+            },
+            {
+              "us": 41.079,
+              "config": 1
+            },
+            {
+              "us": 41.445,
+              "config": 0
+            },
+            {
+              "us": 41.653,
+              "config": 2
+            },
+            {
+              "us": 42.387,
+              "config": 8
+            },
+            {
+              "us": 45.073,
+              "config": 3
+            },
+            {
+              "us": 48.532,
+              "config": 11
+            },
+            {
+              "us": 49.849,
+              "config": "torch"
+            },
+            {
+              "us": 65.596,
+              "config": 9
+            },
+            {
+              "us": 70.328,
+              "config": 6
+            },
+            {
+              "us": 76.623,
+              "config": 4
+            },
+            {
+              "us": 84.049,
+              "config": 7
+            }
+          ],
+          "failed": {}
+        }
+      },
+      "vision_encoder_attention": {
+        "views": 2,
+        "layers": 27,
+        "deployed": "torch default",
+        "results": [
+          {
+            "us": 16.875,
+            "backend": "flash"
+          },
+          {
+            "us": 17.78,
+            "backend": "cudnn"
+          },
+          {
+            "us": 20.513,
+            "backend": "efficient"
+          }
+        ],
+        "failed": {},
+        "errors": {}
+      }
+    }
+  }
+}

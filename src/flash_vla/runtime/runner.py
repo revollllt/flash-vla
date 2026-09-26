@@ -155,7 +155,7 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
                               for stage, outputs in model.stage_outputs.items()}
         self.derived: dict[str, int] = dict(self.graph.derived)
         self.device = torch.device(device)
-        self.scratch = Scratch(self.device, assets=assets)
+        self.scratch = Scratch(self.device, assets=assets, shape=self.shape)
         self.assets = self.scratch.assets
         #: The op table in force: the routed wrappers, wrapped while `instrument` is active.
         self.ops: Mapping[str, Wrapper] = target.registry.op_table(routes, self.scratch)

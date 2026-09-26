@@ -49,11 +49,11 @@ __global__ void rms_norm(const __nv_bfloat16* __restrict__ input,
 template <bool Masked>
 __global__ void gelu_mul(const __nv_bfloat16* __restrict__ gate,
                          __nv_bfloat16* __restrict__ up_output,
-                         int64_t vectors, const __nv_bfloat16* mask) {
+                         int64_t vectors, const __nv_bfloat16* mask, int32_t short_rows) {
   int64_t active_vectors = vectors;
   if constexpr (Masked)
-    if (__bfloat162float(mask[896]) < 0.f)
-      active_vectors = int64_t(896) * 16384 / 8;
+    if (__bfloat162float(mask[short_rows]) < 0.f)
+      active_vectors = int64_t(short_rows) * 16384 / 8;
   for (int64_t index = int64_t(blockIdx.x) * blockDim.x + threadIdx.x;
        index < vectors; index += int64_t(gridDim.x) * blockDim.x) {
     if constexpr (Masked) {
@@ -98,12 +98,14 @@ extern "C" int32_t backbone_gelu_mul(const void* gate, void* up_output,
   const int32_t blocks = required < max_blocks ? required : max_blocks;
   gelu_mul<false><<<blocks, threads, 0, static_cast<cudaStream_t>(stream)>>>(
       static_cast<const __nv_bfloat16*>(gate),
-      static_cast<__nv_bfloat16*>(up_output), vectors, nullptr);
+      static_cast<__nv_bfloat16*>(up_output), vectors, nullptr, 0);
   return static_cast<int32_t>(cudaGetLastError());
 }
 
+// Rows from short_rows on are left zero when the mask pads row short_rows.
 extern "C" int32_t backbone_masked_gelu_mul(
-    const void* gate, void* up_output, int64_t elements, const void* mask, void* stream) {
+    const void* gate, void* up_output, int64_t elements, const void* mask, int32_t short_rows,
+    void* stream) {
   constexpr int32_t threads = 256;
   constexpr int32_t max_blocks = 680;
   const int64_t vectors = elements / 8;
@@ -112,6 +114,6 @@ extern "C" int32_t backbone_masked_gelu_mul(
   gelu_mul<true><<<blocks, threads, 0, static_cast<cudaStream_t>(stream)>>>(
       static_cast<const __nv_bfloat16*>(gate),
       static_cast<__nv_bfloat16*>(up_output), vectors,
-      static_cast<const __nv_bfloat16*>(mask));
+      static_cast<const __nv_bfloat16*>(mask), short_rows);
   return static_cast<int32_t>(cudaGetLastError());
 }

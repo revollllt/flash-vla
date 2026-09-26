@@ -78,8 +78,8 @@ def main():
     norm_library = fused_backbone.library()
     rope_library = fused_prefix_qkv.library()
     stream = torch.cuda.current_stream().cuda_stream
-    plans = [cutlass_backbone._Plan(
-        gemm_library, scratch, normed, call["weight"], projected, 0.0, stream)
+    plans = [cutlass_backbone.GemmPlan(
+        scratch, normed, call["weight"], projected, 0.0, stream, 0)
         for call in calls]
 
     def candidate(call, plan):

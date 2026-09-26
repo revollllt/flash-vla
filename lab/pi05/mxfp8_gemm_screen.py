@@ -3,11 +3,12 @@
 Each GEMM runs once per layer on that layer's own weights, 18 layers in one
 CUDA graph, as the forward runs them: weights cold (18 x 64 MiB gate|up and
 18 x 32 MiB down against a 96 MiB L2), the activation warm, one output buffer
-for every layer, at both prefix row buckets (M = 896 and 968). Reports the
-median time per GEMM over graph replays and each configuration's output against
-configuration 0 (all compute the same product).
+for every layer, at both row buckets of a workload's prefix
+(`row_buckets.bucket_rows`: M = 896 and 968 for robodojo, 640 and 712 for
+libero). Reports the median time per GEMM over graph replays and each
+configuration's output against configuration 0 (all compute the same product).
 
-    python lab/pi05/mxfp8_gemm_screen.py --out results/pi05-rtx5090/<run>/gemm-screen.json
+    python lab/pi05/mxfp8_gemm_screen.py --workload libero --out results/pi05-rtx5090/<run>/gemm-screen.json
 """
 from __future__ import annotations
 
@@ -19,12 +20,12 @@ import statistics
 import torch
 
 from flash_vla.hardware.nvidia.quant_ops import ops
+from flash_vla.hardware.nvidia.rtx5090.pi05.backends.row_buckets import bucket_rows
 from flash_vla.hardware.nvidia.rtx5090.pi05.backends.mxfp8_backbone import GemmPlan, library
+from flash_vla.inference import declare
 from flash_vla.runtime.cuda.graph import StreamGraph
 from flash_vla.runtime.runner import Scratch
 
-ROWS, LAYERS = 968, 18
-BUCKET_ROWS = (896, 968)
 # GEMM -> (N, K, beta): gate|up writes bf16 [M, 2 x 16384]; down adds [M, 2048] to the residual.
 SHAPES = {"gate_up": (32768, 2048, 0.0), "down": (2048, 16384, 1.0)}
 CONFIGS = {0: "128x128x128 persistent", 1: "128x64x128 persistent", 2: "128x32x128 persistent",
@@ -36,28 +37,33 @@ CONFIGS = {0: "128x128x128 persistent", 1: "128x64x128 persistent", 2: "128x32x1
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--reps", type=int, default=30)
+    parser.add_argument("--workload", default="robodojo")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     device = torch.device("cuda")
     if library().mxfp8_gemm_configs() != len(CONFIGS):
         raise RuntimeError("CONFIGS no longer describes mxfp8_backbone.cu")
     scratch = Scratch(device)
+    shape = declare("rtx5090/pi05", workload=args.workload).shape
+    buckets, layers = bucket_rows(shape), shape["layers"]
+    prefix_rows = buckets[-1]
     generator = torch.Generator(device=device).manual_seed(0)
     rows = []
     for gemm, (cols, depth, beta) in SHAPES.items():
         activation = ops.quantize(
-            torch.randn(ROWS, depth, generator=generator, device=device).bfloat16(),
-            ops.empty(ROWS, depth, "mxfp8", device))
+            torch.randn(prefix_rows, depth, generator=generator, device=device).bfloat16(),
+            ops.empty(prefix_rows, depth, "mxfp8", device))
         weights = [ops.quantize(
             (torch.randn(cols, depth, generator=generator, device=device) * 0.02).bfloat16(),
-            ops.empty(cols, depth, "mxfp8", device)) for _ in range(LAYERS)]
-        residual = torch.randn(ROWS, cols, generator=generator, device=device).bfloat16()
-        output = torch.empty(ROWS, cols, dtype=torch.bfloat16, device=device)   # bf16 [M, N]
-        for rows_used in BUCKET_ROWS:
+            ops.empty(cols, depth, "mxfp8", device)) for _ in range(layers)]
+        residual = torch.randn(prefix_rows, cols, generator=generator, device=device).bfloat16()
+        output = torch.empty(prefix_rows, cols, dtype=torch.bfloat16, device=device)   # bf16 [M, N]
+        for rows_used in buckets:
             first_layer: torch.Tensor | None = None                            # config 0's
             for config, tiles in CONFIGS.items():
                 plans = [GemmPlan(config, activation, weight, output, beta, scratch,
-                                  rows=rows_used, mask=None) for weight in weights]
+                                  rows=rows_used, mask=None, short_rows=0)
+                         for weight in weights]
                 output.copy_(residual)
                 plans[0].run()
                 layer_output = output[:rows_used].float()
@@ -80,7 +86,7 @@ def main() -> None:
                         graph.replay()
                         end.record()
                         end.synchronize()
-                        samples_us.append(start.elapsed_time(end) * 1e3 / LAYERS)
+                        samples_us.append(start.elapsed_time(end) * 1e3 / layers)
                 median_us = statistics.median(samples_us)
                 row = dict(gemm=gemm, m=rows_used, n=cols, k=depth, beta=beta, config=config,
                            tiles=tiles, median_us=median_us, min_us=min(samples_us),
@@ -95,7 +101,8 @@ def main() -> None:
                 del graph, plans
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(dict(
-        device=torch.cuda.get_device_name(device), layers=LAYERS, reps=args.reps, rows=rows),
+        device=torch.cuda.get_device_name(device), workload=args.workload, layers=layers,
+        reps=args.reps, rows=rows),
         indent=1) + "\n")
 
 

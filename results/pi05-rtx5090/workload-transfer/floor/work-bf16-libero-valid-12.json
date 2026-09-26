@@ -1,0 +1,215 @@
+{
+  "target": "hardware/nvidia/rtx5090/pi05",
+  "model_revision": "pi05-r1",
+  "torch": "2.13.0+cu130",
+  "workload": "libero",
+  "shape": {
+    "batch": 1,
+    "num_views": 2,
+    "image_height": 224,
+    "image_width": 224,
+    "image_channels": 3,
+    "visual_tokens_per_view": 256,
+    "visual_tokens": 512,
+    "vision_dim": 1152,
+    "vision_ffn_dim": 4304,
+    "vision_heads": 16,
+    "vision_head_dim": 72,
+    "vision_layers": 27,
+    "prompt_len": 200,
+    "prefix_len": 712,
+    "chunk": 10,
+    "expert_tokens": 10,
+    "state_dim": 32,
+    "action_dim": 32,
+    "steps": 10,
+    "layers": 18,
+    "encoder_dim": 2048,
+    "encoder_ffn_dim": 16384,
+    "query_heads": 8,
+    "kv_heads": 1,
+    "head_dim": 256,
+    "qkv_width": 2560,
+    "expert_dim": 1024,
+    "expert_ffn_dim": 4096
+  },
+  "prompt_tokens": 12,
+  "quantization": "bf16",
+  "rates": {
+    "dram_bytes_per_second": 1792000000000,
+    "l2_bytes": 100663296,
+    "tensor_flops_per_second": {
+      "bf16": 209600000000000,
+      "mxfp8": 838000000000000
+    },
+    "source": "flash_vla.hardware.nvidia.rtx5090.spec.RTX5090Spec"
+  },
+  "launch_kernel_bound": {
+    "us": 15229.114950062023,
+    "stages": {
+      "vision_encoder": {
+        "invocations": 136,
+        "flops": 437937242112,
+        "bytes": 1510562784.0,
+        "us": 2089.395239083967
+      },
+      "llm_backbone": {
+        "invocations": 88,
+        "flops": 2003303530496,
+        "bytes": 4743432114.0,
+        "us": 9558.406790219125
+      },
+      "action_expert": {
+        "invocations": 920,
+        "flops": 70172672000,
+        "bytes": 6417712754.0,
+        "us": 3581.312920758932
+      }
+    },
+    "call_sites": {
+      "vision_encoder_patch_embed": {
+        "invocations": 1,
+        "flops": 693633024,
+        "bytes": 3728640.0,
+        "us": 3.3093178625954196
+      },
+      "vision_encoder_norm_qkv": {
+        "invocations": 27,
+        "flops": 110075314176,
+        "bytes": 342703872.0,
+        "us": 525.1684836641219
+      },
+      "vision_encoder_attention": {
+        "invocations": 27,
+        "flops": 16307453952,
+        "bytes": 127401984.0,
+        "us": 77.80273832061074
+      },
+      "vision_encoder_out_proj_residual": {
+        "invocations": 27,
+        "flops": 36691771392,
+        "bytes": 167277312.0,
+        "us": 175.05616122137394
+      },
+      "vision_encoder_norm_ffn_up": {
+        "invocations": 27,
+        "flops": 137084534784,
+        "bytes": 418947552.0,
+        "us": 654.0292690076336
+      },
+      "vision_encoder_ffn_down_residual": {
+        "invocations": 27,
+        "flops": 137084534784,
+        "bytes": 450503424.0,
+        "us": 654.0292690076336
+      },
+      "llm_backbone_projector": {
+        "invocations": 1,
+        "flops": 2415919104,
+        "bytes": 8004096.0,
+        "us": 11.526331603053436
+      },
+      "llm_backbone_embed_prompt": {
+        "invocations": 1,
+        "flops": 0,
+        "bytes": 1184402.0,
+        "us": 0.6609386160714286
+      },
+      "llm_backbone_norm_qkv_rope": {
+        "invocations": 18,
+        "flops": 94506057728,
+        "bytes": 274866176.0,
+        "us": 450.88768000000016
+      },
+      "llm_backbone_attention": {
+        "invocations": 17,
+        "flops": 38238552064,
+        "bytes": 91431712.0,
+        "us": 182.43583999999996
+      },
+      "llm_backbone_out_proj_residual_masked": {
+        "invocations": 17,
+        "flops": 74725720064,
+        "bytes": 252067840.0,
+        "us": 356.51583999999997
+      },
+      "llm_backbone_norm_gated_ffn_masked": {
+        "invocations": 17,
+        "flops": 1195611521024,
+        "bytes": 2610155520.0,
+        "us": 5704.2534399999995
+      },
+      "llm_backbone_ffn_down_residual_masked": {
+        "invocations": 17,
+        "flops": 597805760512,
+        "bytes": 1505722368.0,
+        "us": 2852.1267199999998
+      },
+      "action_expert_action_in_proj": {
+        "invocations": 10,
+        "flops": 6553600,
+        "bytes": 908414.0,
+        "us": 0.5069274553571428
+      },
+      "action_expert_norm_qkv_rope": {
+        "invocations": 180,
+        "flops": 9437184000,
+        "bytes": 959201280.0,
+        "us": 535.2685714285702
+      },
+      "action_expert_attention": {
+        "invocations": 180,
+        "flops": 7874150400,
+        "bytes": 115094880.0,
+        "us": 64.2270535714284
+      },
+      "action_expert_out_proj_residual": {
+        "invocations": 180,
+        "flops": 7549747200,
+        "bytes": 770088960.0,
+        "us": 429.73714285714317
+      },
+      "action_expert_norm_gated_ffn": {
+        "invocations": 180,
+        "flops": 30198988800,
+        "bytes": 3039068160.0,
+        "us": 1695.9085714285654
+      },
+      "action_expert_ffn_down_residual": {
+        "invocations": 180,
+        "flops": 15099494400,
+        "bytes": 1532436480.0,
+        "us": 855.1542857142892
+      },
+      "action_expert_action_out_proj": {
+        "invocations": 10,
+        "flops": 6553600,
+        "bytes": 914580.0,
+        "us": 0.5103683035714286
+      }
+    }
+  },
+  "flow_kernel_bound": {
+    "us": 14673.347881981666,
+    "stages": {
+      "vision_encoder": {
+        "invocations": 1,
+        "flops": 437937242112,
+        "bytes": 826661856.0,
+        "us": 2089.3952390839695
+      },
+      "llm_backbone": {
+        "invocations": 1,
+        "flops": 2003303530496,
+        "bytes": 3761271666.0,
+        "us": 9557.745851603053
+      },
+      "action_expert": {
+        "invocations": 10,
+        "flops": 70172672000,
+        "bytes": 5422962570.0,
+        "us": 3026.2067912946427
+      }
+    }
+  }
+}

@@ -68,7 +68,6 @@ def prepare(args):
 def profile(args):
     """Load only the saved actual operand values and cached production native library."""
     from flash_vla.hardware.nvidia.rtx5090.pi05.backends import cutlass_backbone
-    from flash_vla.runtime.runner import Scratch
 
     with safe_open(str(args.snapshot), framework="pt", device="cpu") as stored:
         if args.site == "gate":
@@ -85,10 +84,10 @@ def profile(args):
     nvtx_range = f"pi05_backbone_{args.site}"
     # CDLL loads the existing deployment artifact; this driver never calls nvcc.
     library = ctypes.CDLL(str(args.library))
-    library.backbone_gemm_workspace.argtypes = [ctypes.c_int32] * 3
+    library.backbone_gemm_workspace.argtypes = [ctypes.c_int32] * 4
     library.backbone_gemm_workspace.restype = ctypes.c_int64
     library.backbone_gemm_plan.argtypes = (
-        [ctypes.c_int32] * 3 + [ctypes.c_float] + [ctypes.c_void_p] * 5
+        [ctypes.c_int32] * 4 + [ctypes.c_float] + [ctypes.c_void_p] * 5
         + [ctypes.POINTER(ctypes.c_void_p)])
     library.backbone_gemm_plan.restype = ctypes.c_int32
     library.backbone_gemm_run.argtypes = [ctypes.c_void_p] * 2
@@ -96,13 +95,19 @@ def profile(args):
     library.backbone_gemm_destroy.argtypes = [ctypes.c_void_p]
     library.backbone_gemm_destroy.restype = None
     stream = torch.cuda.current_stream().cuda_stream
-    scratch = Scratch(a.device)
-    plan = cutlass_backbone._Plan(library, scratch, a, b, output, beta=beta, stream=stream)
+    # Config 0, the backbone tile; the library must be built at this revision's ABI.
+    rows, depth = a.shape
+    workspace = torch.zeros(max(library.backbone_gemm_workspace(0, rows, depth, b.shape[1]), 1),
+                            dtype=torch.uint8, device=a.device)
+    handle = ctypes.c_void_p()
+    cutlass_backbone.check(library.backbone_gemm_plan(
+        0, rows, depth, b.shape[1], beta, a.data_ptr(), b.data_ptr(), output.data_ptr(),
+        workspace.data_ptr(), stream, ctypes.byref(handle)), f"{args.site} plan")
     for _ in range(50):
         if residual is not None:
             output.copy_(residual)
         cutlass_backbone.check(
-            library.backbone_gemm_run(plan.handle, stream), f"{args.site} warmup")
+            library.backbone_gemm_run(handle, stream), f"{args.site} warmup")
     if residual is not None:
         output.copy_(residual)
     torch.cuda.synchronize()
@@ -115,7 +120,7 @@ def profile(args):
         "nvtx_range": nvtx_range}), flush=True)
     with torch.cuda.nvtx.range(nvtx_range):
         cutlass_backbone.check(
-            library.backbone_gemm_run(plan.handle, stream), f"{args.site} measured launch")
+            library.backbone_gemm_run(handle, stream), f"{args.site} measured launch")
     torch.cuda.synchronize()
 
 

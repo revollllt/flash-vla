@@ -36,8 +36,8 @@ TARGET = Target(
         "action_expert_norm_gated_ffn": ("dual-ffn",),
         "action_expert_norm_qkv_rope": ("triton-qkv-finish",),
         "llm_backbone_norm_qkv_rope": ("fused-prefix-qkv",),
-        # The buckets are built for the 968-row prefix of three views; any other
-        # prefix runs the full-row CUTLASS plan.
+        # The row buckets follow the prefix (row_buckets.bucket_rows); a
+        # prefix with no tile to skip runs the full-row CUTLASS plan.
         "llm_backbone_out_proj_residual_masked": ("bucketed-backbone", "cutlass-backbone"),
         "llm_backbone_norm_gated_ffn_masked": ("bucketed-backbone", "cutlass-backbone"),
         "llm_backbone_ffn_down_residual_masked": ("bucketed-backbone", "cutlass-backbone"),

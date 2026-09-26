@@ -1,0 +1,14 @@
+iteration,step,change,recipe,workload,baseline,stage,stage_a_ms,stage_b_ms,stage_delta_ms,total_a_ms,total_b_ms,total_delta_ms,control_spread_ms,evidence
+1,G1,vision out_proj tile by geometry: config 8 at M=512,bf16,robodojo,main (R),vision_encoder,4.133,4.13,-0.003,30.307,30.315,0.008,0.023,abba/g1-vision-tile/
+1,G1,vision out_proj tile by geometry: config 8 at M=512,bf16,libero,main (R),vision_encoder,3.156,3.102,-0.054,26.158,26.122,-0.037,0.12,abba/g1-vision-tile/
+2,G2,backbone row buckets from the shape (M640/M712 for two views); MXFP8 down config 3 at M640,bf16,robodojo,main (R),llm_backbone,17.152,17.151,-0.001,30.293,30.297,0.005,0.013,abba/g2-buckets-bf16/
+2,G2,backbone row buckets from the shape (M640/M712 for two views); MXFP8 down config 3 at M640,bf16,libero,main (R),llm_backbone,14.355,12.757,-1.599,26.159,24.568,-1.592,0.134,abba/g2-buckets-bf16/
+2,G2,backbone row buckets from the shape (M640/M712 for two views); MXFP8 down config 3 at M640,mxfp8-llm-ffn,robodojo,main (R),llm_backbone,8.798,8.803,0.005,21.816,21.833,0.017,0.036,abba/g2-buckets-mxfp8/
+2,G2,backbone row buckets from the shape (M640/M712 for two views); MXFP8 down config 3 at M640,mxfp8-llm-ffn,libero,main (R),llm_backbone,7.399,6.568,-0.83,19.121,18.28,-0.841,0.004,abba/g2-buckets-mxfp8/
+3,G1,prefix QKV GEMM by geometry: CUTLASS config 0 at M=712,bf16,libero,iteration 2,llm_backbone,12.751,12.635,-0.117,24.581,24.458,-0.123,0.026,abba/g1-prefix-qkv/
+3,G1,prefix QKV GEMM by geometry: CUTLASS config 0 at M=712,mxfp8-llm-ffn,libero,iteration 2,llm_backbone,6.547,6.427,-0.12,18.278,18.131,-0.147,0.02,abba/g1-prefix-qkv-mxfp8/
+4,G1,action_out_proj GEMM by geometry: CUTLASS config 9 at M=10,bf16,libero,iteration 3,action_expert,8.996,8.907,-0.09,24.415,24.317,-0.098,0.011,abba/g1-action-out/
+total,G,all of the above,bf16,robodojo,main (R),total,30.145,30.178,0.033,30.145,30.178,0.033,0.196,abba/g-total-bf16/
+total,G,all of the above,bf16,libero,main (R),total,26.184,24.41,-1.773,26.184,24.41,-1.773,0.004,abba/g-total-bf16/
+total,G,all of the above,mxfp8-llm-ffn,robodojo,main (R),total,21.83,21.834,0.003,21.83,21.834,0.003,0.014,abba/g-total-mxfp8/
+total,G,all of the above,mxfp8-llm-ffn,libero,main (R),total,19.139,18.045,-1.095,19.139,18.045,-1.095,0.02,abba/g-total-mxfp8/

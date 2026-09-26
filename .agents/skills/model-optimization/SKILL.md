@@ -63,9 +63,16 @@ the alternative; an ambiguous result revises it rather than adding a candidate.
    [hardware-unit-test](../hardware-unit-test/SKILL.md). Per call site, far from
    `launch_kernel_bound` means the kernel itself has room; near it but far from
    its stage's `flow_kernel_bound` means only fusion across call sites recovers
-   the rest; near both means stop. The floor is the smaller of the stage's
-   `flow_kernel_bound_us` (datasheet) and `flow_kernel_ceiling_us` (measured
-   rates).
+   the rest; near both means stop. The floor takes each launch at the faster of
+   its datasheet and measured rate per resource (`measurement.work.stage_floors`).
+
+   A call site slow only at another workload's shape first gets the fast path:
+   screen the implementations the Target already builds at that geometry
+   (cuBLAS and the compiled tiles; `lab/pi05/geometry_screen.py` is the
+   pattern). A winner goes into its backend's table keyed by the geometry it
+   was screened at (M, K, N, or the rows of a row bucket), chosen at plan time, and leaves the primary workload's geometry as it was. Only
+   what the screen cannot fix (padding rows, a kernel specialized to one
+   shape) goes on to step 5.
 
    ```bash
    python -m tools.profiling.model --target h100/lingbot_vla --plan shipped --seed 42 --overview --trace-dir artifacts/profile/overview

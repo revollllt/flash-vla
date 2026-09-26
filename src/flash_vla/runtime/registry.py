@@ -6,8 +6,9 @@ A backend is a `Backend` value, declared once next to its implementation:
     make_wrappers      (scratch, selected) -> {call_site: wrapper} for the
                        selected call sites; `scratch` is the runner's workspace
                        allocator (`runtime/workspace.py`), which the backend
-                       uses for any device memory that outlives one call, and
-                       `scratch.assets` its read-only asset paths
+                       uses for any device memory that outlives one call,
+                       `scratch.assets` its read-only asset paths and
+                       `scratch.shape` the shape numbers it is built for
     route_constraints  `RouteConstraint`s over its call sites (`runtime/binding.py`)
     graph_contract     the kernel-name patterns the captured program must and
                        must not contain, given the call sites routed to it

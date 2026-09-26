@@ -110,9 +110,9 @@ def main():
             a, weight = call["a"], call["weight"]
             call["out"] = torch.empty((968, weight.shape[1]), dtype=a.dtype, device=a.device)
             for route, rows in (("A", 968), ("B", 896)):
-                plans[route].append(cutlass_backbone._Plan(
-                    library, scratch[route], a[:rows], weight, call["out"][:rows],
-                    float(call["residual"] is not None), stream))
+                plans[route].append(cutlass_backbone.GemmPlan(
+                    scratch[route], a[:rows], weight, call["out"][:rows],
+                    float(call["residual"] is not None), stream, 0))
         for allocator in scratch.values():
             allocator.freeze()
         report.update(native_library=library._name,

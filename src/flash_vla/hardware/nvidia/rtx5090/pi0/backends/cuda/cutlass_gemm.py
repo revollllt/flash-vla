@@ -163,4 +163,12 @@ def gemm(a: torch.Tensor, b: torch.Tensor, d: torch.Tensor, *, config: int,
     return True
 
 
-__all__ = ["build", "library", "plan", "run", "gemm"]
+def release() -> None:
+    """Destroy every planned operator, as a screen does between candidates;
+    never while a graph that launches one is alive."""
+    for handle, _workspace in _PLANS.values():
+        _check(library().cutlass_gemm_destroy(handle), "cutlass_gemm_destroy")
+    _PLANS.clear()
+
+
+__all__ = ["build", "library", "plan", "run", "gemm", "release"]

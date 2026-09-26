@@ -119,10 +119,10 @@ def main():
     for index, (a, gate_w, up_w, expected) in enumerate(calls):
         gate = scratch(f"gelu_up_gate_{index}", out.shape, a.dtype, a.device)
         stream = torch.cuda.current_stream().cuda_stream
-        gate_plan = cutlass_backbone._Plan(library, scratch, a, gate_w, gate, 0.0, stream)
+        gate_plan = cutlass_backbone.GemmPlan(scratch, a, gate_w, gate, 0.0, stream, 0)
         gate_plans.append(gate_plan)
         linear(gate_plan)
-        up_plan = cutlass_backbone._Plan(library, scratch, a, up_w, out, 0.0, stream)
+        up_plan = cutlass_backbone.GemmPlan(scratch, a, up_w, out, 0.0, stream, 0)
         fused_plan = _FusedUpPlan(library, scratch, a, up_w, gate, out)
         up_plans.append(up_plan)
         fused_plans.append(fused_plan)

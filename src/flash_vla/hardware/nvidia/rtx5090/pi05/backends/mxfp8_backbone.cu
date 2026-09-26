@@ -9,12 +9,13 @@
 // also covers sm_120: the kernels wait on their predecessor before the first
 // global read and launch with programmatic dependent launch.
 //
-// Row buckets: the prefix has 968 rows, 3 x 256 image tokens and 200 prompt
-// slots. When the prompt leaves row 896 masked, the last 128-row tile is all
-// padding. A GEMM is then planned twice, M = 896 and M = 968, both plans are
-// launched, and the one the bf16 prefix mask (mask[896] < 0: short) does not
-// select exits at once. The scale layout is 128-row-block major, so the
-// 896-row operands are prefixes of the 968-row ones.
+// Row buckets: the prefix holds the image tokens and the prompt slots. When the
+// prompt leaves row `short_rows` (a 128-row tile boundary) masked, every tile
+// from there on is padding. A GEMM is then planned twice, M = short_rows and
+// M = all prefix rows, both plans are launched, and the one the bf16 prefix
+// mask (mask[short_rows] < 0: short) does not select exits at once. The scale
+// layout is 128-row-block major, so the short operands are prefixes of the
+// full ones.
 #include <cstdint>
 #include <memory>
 
@@ -31,7 +32,6 @@
 // device_kernel<RowBucket<...>> cannot be generated inside an anonymous namespace.
 namespace flash_vla_mxfp8 {
 using Output = cutlass::bfloat16_t;
-constexpr int32_t kShortRows = 896;
 
 // Base, run only when the prefix mask selects its row bucket; without a mask
 // it always runs. An exiting kernel still waits on its predecessor, so the
@@ -40,10 +40,12 @@ template <class Base>
 struct RowBucket : Base {
   using BaseArguments = typename Base::Arguments;
   struct Arguments : BaseArguments {
-    Output const* mask = nullptr;   // bf16 [968] additive prefix mask, or null
+    Output const* mask = nullptr;   // bf16 additive prefix mask, or null
+    int32_t short_rows = 0;         // the short bucket's M
   };
   struct Params : Base::Params {
     Output const* mask = nullptr;
+    int32_t short_rows = 0;
     bool short_bucket = false;
   };
 
@@ -51,13 +53,14 @@ struct RowBucket : Base {
     Params params;
     static_cast<typename Base::Params&>(params) = Base::to_underlying_arguments(args, workspace);
     params.mask = args.mask;
-    params.short_bucket = cute::get<0>(args.problem_shape) == kShortRows;
+    params.short_rows = args.short_rows;
+    params.short_bucket = cute::get<0>(args.problem_shape) == args.short_rows;
     return params;
   }
 
   CUTLASS_DEVICE void operator()(Params const& params, char* smem) {
     if (params.mask != nullptr &&
-        (float(params.mask[kShortRows]) < 0.f) != params.short_bucket) {
+        (float(params.mask[params.short_rows]) < 0.f) != params.short_bucket) {
       cutlass::arch::wait_on_dependent_grids();
       cutlass::arch::launch_dependent_grids();
       return;
@@ -111,7 +114,7 @@ constexpr int32_t kCutlassError = 1000;
 template <class Gemm>
 typename Gemm::Arguments arguments(int32_t m, int32_t n, int32_t k, float beta, const void* a,
                                    const void* a_scale, const void* b, const void* b_scale,
-                                   void* d, const void* mask) {
+                                   void* d, const void* mask, int32_t short_rows) {
   using Kernel = typename Gemm::GemmKernel;
   using ScaleLayout = typename Kernel::CollectiveMainloop::Sm1xxBlkScaledConfig;
   auto problem = make_shape(m, n, k, 1);
@@ -130,6 +133,7 @@ typename Gemm::Arguments arguments(int32_t m, int32_t n, int32_t k, float beta, 
       {{1.f, beta}, static_cast<Output const*>(d), output_stride, static_cast<Output*>(d),
        output_stride}};
   args.mask = static_cast<Output const*>(mask);
+  args.short_rows = short_rows;
   return args;
 }
 
@@ -157,7 +161,7 @@ struct BoundPlan final : Plan {
 
 template <class Gemm, int32_t Splits = 1>
 int64_t workspace_of(int32_t m, int32_t n, int32_t k) {
-  auto args = arguments<Gemm>(m, n, k, 0.f, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+  auto args = arguments<Gemm>(m, n, k, 0.f, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, 0);
   if constexpr (Splits > 1) args.scheduler.splits = Splits;
   const cutlass::Status status = Gemm::can_implement(args);
   if (status != cutlass::Status::kSuccess) return -(kCutlassError + static_cast<int32_t>(status));
@@ -167,10 +171,10 @@ int64_t workspace_of(int32_t m, int32_t n, int32_t k) {
 // Splits > 1 makes a Stream-K scheduler decompose K into that many equal parts.
 template <class Gemm, bool IsStreamK, int32_t Splits = 1>
 int32_t plan_of(int32_t m, int32_t n, int32_t k, float beta, const void* a, const void* a_scale,
-                const void* b, const void* b_scale, void* d, const void* mask, void* workspace,
-                cudaStream_t stream, void** handle) {
+                const void* b, const void* b_scale, void* d, const void* mask, int32_t short_rows,
+                void* workspace, cudaStream_t stream, void** handle) {
   auto plan = std::make_unique<BoundPlan<Gemm>>();
-  auto args = arguments<Gemm>(m, n, k, beta, a, a_scale, b, b_scale, d, mask);
+  auto args = arguments<Gemm>(m, n, k, beta, a, a_scale, b, b_scale, d, mask, short_rows);
   if constexpr (IsStreamK) args.scheduler.splits = Splits;
   plan->workspace = workspace;
   plan->workspace_bytes = Gemm::get_workspace_size(args);
@@ -178,7 +182,7 @@ int32_t plan_of(int32_t m, int32_t n, int32_t k, float beta, const void* a, cons
   cutlass::Status status = Gemm::can_implement(args);
   if (status == cutlass::Status::kSuccess) status = plan->gemm.initialize(args, workspace, stream);
   if (status != cutlass::Status::kSuccess) return kCutlassError + static_cast<int32_t>(status);
-  *handle = plan.release();
+  *handle = static_cast<Plan*>(plan.release());
   return 0;
 }
 
@@ -193,7 +197,7 @@ using Config8 = Config<128, 128, Pingpong, Persistent>::Gemm;
 
 using WorkspaceOf = int64_t (*)(int32_t, int32_t, int32_t);
 using PlanOf = int32_t (*)(int32_t, int32_t, int32_t, float, const void*, const void*, const void*,
-                           const void*, void*, const void*, void*, cudaStream_t, void**);
+                           const void*, void*, const void*, int32_t, void*, cudaStream_t, void**);
 // Configs 5, 6 and 7 are Config3 with K split in 2, 3 and 4.
 constexpr WorkspaceOf kWorkspaces[] = {
     workspace_of<Config0>, workspace_of<Config1>, workspace_of<Config2>,
@@ -215,13 +219,17 @@ extern "C" int64_t mxfp8_gemm_workspace(int32_t config, int32_t m, int32_t n, in
   return kWorkspaces[config](m, n, k);
 }
 
-// mask: the bf16 prefix mask for a row-bucket plan (M = 896 or 968), else null.
+// mask: the bf16 prefix mask for a row-bucket plan, else null; short_rows: the
+// short bucket's M, the row the mask is read at (this plan is that bucket when
+// m == short_rows).
 extern "C" int32_t mxfp8_gemm_plan(int32_t config, int32_t m, int32_t n, int32_t k, float beta,
                                    const void* a, const void* a_scale, const void* b,
                                    const void* b_scale, void* d, const void* mask,
-                                   void* workspace, cudaStream_t stream, void** handle) {
+                                   int32_t short_rows, void* workspace, cudaStream_t stream,
+                                   void** handle) {
   if (config < 0 || config >= kConfigs) return kUnknownConfig;
-  return kPlans[config](m, n, k, beta, a, a_scale, b, b_scale, d, mask, workspace, stream, handle);
+  return kPlans[config](m, n, k, beta, a, a_scale, b, b_scale, d, mask, short_rows, workspace,
+                        stream, handle);
 }
 
 extern "C" int32_t mxfp8_gemm_run(void* handle, cudaStream_t stream) {

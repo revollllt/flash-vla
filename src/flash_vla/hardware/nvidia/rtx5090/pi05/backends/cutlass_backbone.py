@@ -14,7 +14,8 @@ import weakref
 import torch
 
 from flash_vla.hardware.nvidia.native import CUTLASS_DIR, CUTLASS_VERSION_HEADER, NativeLibrary
-from flash_vla.runtime.registry import Backend
+from flash_vla.runtime.registry import Backend, Wrapper
+from flash_vla.runtime.workspace import Scratch
 
 from . import fused_backbone
 
@@ -42,10 +43,10 @@ LIBRARY = NativeLibrary(
 def library() -> ctypes.CDLL:
     """The loaded library with its C ABI declared; build it before graph capture."""
     kernels = LIBRARY.load()
-    kernels.backbone_gemm_workspace.argtypes = [ctypes.c_int32] * 3
+    kernels.backbone_gemm_workspace.argtypes = [ctypes.c_int32] * 4
     kernels.backbone_gemm_workspace.restype = ctypes.c_int64
     kernels.backbone_gemm_plan.argtypes = (
-        [ctypes.c_int32] * 3 + [ctypes.c_float] + [ctypes.c_void_p] * 5
+        [ctypes.c_int32] * 4 + [ctypes.c_float] + [ctypes.c_void_p] * 5
         + [ctypes.POINTER(ctypes.c_void_p)])
     kernels.backbone_gemm_plan.restype = ctypes.c_int32
     kernels.backbone_gemm_run.argtypes = [ctypes.c_void_p] * 2
@@ -71,11 +72,20 @@ def check(status, operation):
         raise RuntimeError(f"{operation}: cudaError {status}")
 
 
-class _Plan:
-    def __init__(self, native, scratch, a, b, output, beta, stream):
+class GemmPlan:
+    """output = a @ b + beta * output on a family tile (`cutlass_backbone.cu`: config
+    0, 128x128x64, or 9, 32x64x32), bound to these tensors' addresses. Planning
+    allocates, so it happens in warmup, never during capture."""
+
+    def __init__(self, scratch: Scratch, a: torch.Tensor, b: torch.Tensor,
+                 output: torch.Tensor, beta: float, stream: int, config: int) -> None:
+        if torch.cuda.is_current_stream_capturing():
+            raise RuntimeError(f"backbone GEMM config={config} pointer set was not warmed "
+                               "before capture")
+        native = library()
         m, k = a.shape
         n = b.shape[1]
-        size = native.backbone_gemm_workspace(m, k, n)
+        size = native.backbone_gemm_workspace(config, m, k, n)
         # These backbone GEMMs run serially on one stream. Stream-K resets its
         # barriers after each launch, so plans can share the same scratch role.
         self.workspace = scratch("cutlass_backbone_workspace", (max(size, 1),),
@@ -83,13 +93,26 @@ class _Plan:
         self.tensors = (a, b, output)
         self.handle = ctypes.c_void_p()
         check(native.backbone_gemm_plan(
-            m, k, n, beta, a.data_ptr(), b.data_ptr(), output.data_ptr(),
+            config, m, k, n, beta, a.data_ptr(), b.data_ptr(), output.data_ptr(),
             self.workspace.data_ptr(), stream, ctypes.byref(self.handle)),
-            f"backbone_gemm_plan M={m} K={k} N={n} beta={beta}")
+            f"backbone_gemm_plan config={config} M={m} K={k} N={n} beta={beta}")
         self.destroy = weakref.finalize(self, native.backbone_gemm_destroy, self.handle)
 
 
-def make_wrappers(scratch, selected_names=None) -> dict:
+def run_gemm(plans: dict[tuple[int, int, int, int, float], GemmPlan], scratch: Scratch,
+             a: torch.Tensor, b: torch.Tensor, output: torch.Tensor, *, beta: float,
+             stream: int, config: int) -> None:
+    """output = a @ b + beta * output on family tile `config`, planned in `plans` on
+    the first call with these addresses (the runner's warmup)."""
+    key = (config, a.data_ptr(), b.data_ptr(), output.data_ptr(), beta)
+    plan = plans[key] if key in plans else plans.setdefault(
+        key, GemmPlan(scratch, a, b, output, beta, stream, config))
+    check(library().backbone_gemm_run(plan.handle, stream),
+          f"backbone_gemm_run config={config} M={a.shape[0]} K={a.shape[1]} N={b.shape[1]}")
+
+
+def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
+                  ) -> dict[str, Wrapper]:
     """Build capture-safe BF16 wrappers for contiguous CUDA backbone tensors.
 
     FFN: x/x_norm (M, 2048), weights (2048, 16384), output (M, 16384).
@@ -97,28 +120,14 @@ def make_wrappers(scratch, selected_names=None) -> dict:
     The runner warms each pointer set before capture and owns all scratch.
     """
     names = NAMES if selected_names is None else set(selected_names)
-    # Declaration builds the op table without a compiler or CUDA context.
-    native = pointwise = None
-    plans = {}
+    plans: dict[tuple[int, int, int, int, float], GemmPlan] = {}
 
-    def gemm(a, b, output, *, beta, stream):
-        nonlocal native
-        key = (a.data_ptr(), b.data_ptr(), output.data_ptr(), beta)
-        plan = plans.get(key)
-        if plan is None:
-            if torch.cuda.is_current_stream_capturing():
-                raise RuntimeError("backbone GEMM pointer set was not warmed before capture")
-            if native is None:
-                native = library()
-            plan = _Plan(native, scratch, a, b, output, beta, stream)
-            plans[key] = plan
-        check(native.backbone_gemm_run(plan.handle, stream),
-               f"backbone_gemm_run M={a.shape[0]} K={a.shape[1]} N={b.shape[1]}")
+    def gemm(a: torch.Tensor, b: torch.Tensor, output: torch.Tensor, *, beta: float,
+             stream: int) -> None:
+        run_gemm(plans, scratch, a, b, output, beta=beta, stream=stream, config=0)
 
     def llm_backbone_norm_gated_ffn(x, gate_w, up_w, out, x_norm):
-        nonlocal pointwise
-        if pointwise is None:
-            pointwise = fused_backbone.library()
+        pointwise = fused_backbone.library()
         rows = x.shape[0]
         normed, result = x_norm[:rows], out[:rows]
         gate = scratch("backbone_ffn_gate", result.shape, x.dtype, x.device)

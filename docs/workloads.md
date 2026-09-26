@@ -60,8 +60,10 @@ code under each table.
 `robot_state_dim` and `discrete_state` shape the prompt, and so the valid rows.
 The identity does not record them; the fixture's digest does.
 
-On `rtx5090/pi05`, whose backbone buckets a 968-row prefix at M896 and M968
-(`bucketed_backbone.py`), every RoboDojo observation lands in the M896 bucket.
+On `rtx5090/pi05` the backbone buckets its prefix at the first 128-row tile
+boundary past the image tokens and at the full prefix (`bucketed_backbone.py`):
+M896/M968 for `robodojo`, M640/M712 for `libero`. Every observation of either
+workload lands in the short bucket.
 
 The bounds combine the per-value token length (2 to 4, over bins -1..255) with
 the shortest and longest instructions:

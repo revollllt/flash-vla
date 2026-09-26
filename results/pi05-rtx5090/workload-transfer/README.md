@@ -50,9 +50,11 @@ bf16. The last column is libero's time divided by robodojo's:
 With mxfp8-llm-ffn, `llm_backbone_ffn_down_residual_masked` scales by 0.94
 (1797 against 1688 us), and the rest matches bf16 within 1%.
 
-## Routes named against paths run
+## Routes named against paths run (at W0)
 
-The identity names the same routes on both workloads. What runs differs inside
+The code this section describes was replaced in R (routes by `Backend.supports`)
+and G (buckets from the shape, `backends/row_buckets.py`). At W0 the identity
+named the same routes on both workloads. What ran differed inside
 two backends:
 
 - `bucketed-backbone` plans its M896/M968 buckets only when the prefix has 968
@@ -110,3 +112,67 @@ stage's datasheet `flow_kernel_bound_us` and measured-rate
 
 These are physical-layout floors. Counting only libero's valid rows lowers its
 backbone floor by a further 3.5 ms at datasheet rates.
+
+## G0: where libero sits further from its floor than robodojo
+
+Per call site, the floor is the work the reference must do at the fixture's
+valid prompt (`floor/work-bf16-<workload>-valid-<tokens>.json`, from
+`python -m measurement.work --prompt-tokens`), each launch at the faster of
+the datasheet and measured rate per resource: `max(bytes / 1.792 TB/s,
+FLOPs / 253 TFLOP/s)`. The measured time is the attributed kernel time of the
+F-phase floor reports (`floor/floor-bf16-*.json`, `measured_us`). Share is
+floor / measured; gap is measured - floor on libero. Sorted by the gap, bf16:
+
+| Stage | Call site | robodojo us | floor | share | libero us | floor | share | gap |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| backbone | `norm_gated_ffn_masked` | 9336 | 7558 | 0.81 | 7917 | 4726 | **0.60** | 3191 |
+| expert | `attention` | 2029 | 259 | 0.13 | 1792 | 64 | 0.04 | 1727 |
+| backbone | `ffn_down_residual_masked` | 4290 | 3779 | 0.88 | 3675 | 2363 | **0.64** | 1312 |
+| expert | `norm_qkv_rope` | 1784 | 568 | 0.32 | 1755 | 535 | 0.30 | 1220 |
+| expert | `ffn_down_residual` | 1525 | 905 | 0.59 | 1631 | 855 | **0.52** | 776 |
+| expert | `norm_gated_ffn` | 2765 | 1737 | 0.63 | 2442 | 1696 | 0.69 | 746 |
+| expert | `out_proj_residual` | 1166 | 463 | 0.40 | 1136 | 430 | 0.38 | 707 |
+| backbone | `norm_qkv_rope` | 1017 | 597 | 0.59 | 980 | 374 | **0.38** | 606 |
+| backbone | `attention` | 1118 | 387 | 0.35 | 666 | 151 | **0.23** | 515 |
+| vision | `norm_ffn_up` | 1261 | 813 | 0.64 | 898 | 542 | 0.60 | 356 |
+| vision | `attention` | 404 | 107 | 0.26 | 403 | 71 | **0.18** | 332 |
+| backbone | `out_proj_residual_masked` | 679 | 472 | 0.70 | 590 | 295 | **0.50** | 295 |
+| vision | `norm_qkv` | 926 | 653 | 0.71 | 705 | 435 | **0.62** | 270 |
+| vision | `ffn_down_residual` | 1016 | 813 | 0.80 | 764 | 542 | **0.71** | 222 |
+| vision | `out_proj_residual` | 413 | 218 | 0.53 | 346 | 145 | **0.42** | 201 |
+| expert | `action_out_proj` | 50 | 1 | 0.02 | 150 | 1 | 0.00 | 150 |
+
+Bold: libero's share is more than 0.05 below robodojo's. The ranked list, with
+the cause each item's evidence points at and the step that takes it:
+
+1. **Backbone GEMMs on the 712-row prefix** (`norm_gated_ffn`, `ffn_down`,
+   `out_proj`; gap 4.8 ms). libero's valid rows (518-534) need 5 row tiles of
+   128; the full-row plan computes 6. Time follows the tile count: 896 rows
+   (7 tiles) against 712 (6) measure 9336 against 7917 us, 0.85 for 6/7 =
+   0.86. A bucket at 640 rows would save about 1/6 of 12.2 ms, 2.0 ms. The
+   buckets are hard-coded at 896/968 in three kernels (`cutlass_backbone.cu`,
+   `fused_backbone.cu`'s masked GELU, `mxfp8_backbone.cu`): **G2**, bucket
+   boundaries from the shape.
+2. **Backbone `norm_qkv_rope`** (gap 0.6 ms): a cuBLAS GEMM over every one of
+   the 712 rows (M=712, N=2560, K=2048: 120 output tiles of 128x128 on 170
+   SMs, as 968 rows give 160), so it barely shrinks (0.96). Same padding as 1;
+   **G2** if the bucket mechanism extends to it cheaply, else left.
+3. **Vision attention** (gap 0.3 ms, ratio 1.00): SDPA over (views, 16 heads,
+   256, 72). With 2 views its grid is two thirds of 3 views' and both sit under
+   one wave, so it takes the same time. **G1**: the SDPA backend by geometry.
+4. **Vision GEMMs** (`norm_qkv`, `out_proj`, `ffn_down`; gap 0.7 ms): one
+   CUTLASS tile configuration measured at 768 rows runs 512. **G1**: the tile
+   by M.
+5. **Expert `ffn_down`** (+7% at chunk 10 against chunk 50) and
+   **`action_out_proj`** (3x): a CUTLASS tile and a cuBLAS heuristic chosen at
+   M=50. **G1** for the tile; `action_out_proj` is a `torch.mm` with no
+   configuration to tune, so **G2** if G1 leaves it.
+6. **Robodojo's replay-time distribution against the 896/968 buckets**: no
+   item. Every RoboDojo observation (811-869 valid rows) lands in the M896
+   bucket (W0.2).
+
+Not generalization items: the expert's `attention`, `norm_qkv_rope`,
+`norm_gated_ffn` and `out_proj` take the same time on both workloads and sit
+equally far from their floors (the attention is 540 launches of about 3 us:
+launch-bound at any chunk). They belong to the robodojo main line
+(`model-optimization`), not to G.

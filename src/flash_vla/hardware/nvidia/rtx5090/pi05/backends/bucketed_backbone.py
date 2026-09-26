@@ -1,36 +1,29 @@
-"""Pi0.5 backbone GEMMs with device-selected M896/M968 and fixed graph addresses.
+"""Pi0.5 backbone GEMMs with a device-selected short or full row bucket.
 
-The mask is an explicit op argument. Both static plans are warmed and captured;
-their native entries select the active bucket from mask[896] on every replay.
-The bucketed tensors remain BF16 M968. The buckets exist only for that prefix
-(`supports`); a Target routes any other to `cutlass_backbone`'s full-row plan.
-This module only loads native libraries on the first real invocation, so
-declaration needs no CUDA context or compiler.
+The buckets are `row_buckets.bucket_rows` of the runner's shape. Both static
+plans are warmed and captured, and their native entries select the active
+bucket from the mask at the short bucket's row on every replay. A prefix with
+no tile to skip (`row_buckets.has_short_bucket`) is not supported; a Target
+routes it to `cutlass_backbone`'s full-row plan. This module only loads native
+libraries on the first real invocation, so declaration needs no CUDA context or
+compiler.
 """
 from __future__ import annotations
 
 import ctypes
 from functools import lru_cache
-from typing import Mapping
 import weakref
 
 import torch
 
 from flash_vla.models.pi05.ops import MASKED_CALL_SITES
-from flash_vla.runtime.registry import Backend
+from flash_vla.runtime.registry import Backend, Wrapper
+from flash_vla.runtime.workspace import Scratch
 
 from . import cutlass_backbone, fused_backbone
+from .row_buckets import bucket_rows, has_short_bucket
 
 NAMES = frozenset(MASKED_CALL_SITES.values())
-# Adjacent M128 tile boundaries for this Target's 968 physical prefix rows.
-BUCKET_ROWS = (896, 968)
-#: The one prefix the buckets are built for: three views of 256 tokens and 200 prompt slots.
-PREFIX_ROWS = BUCKET_ROWS[-1]
-
-
-def supports(shape: Mapping[str, int]) -> bool:
-    """Whether the buckets were built for this prefix."""
-    return shape["prefix_len"] == PREFIX_ROWS
 
 
 @lru_cache(maxsize=1)
@@ -40,7 +33,7 @@ def library() -> ctypes.CDLL:
     kernels.backbone_bucket_workspace.argtypes = [ctypes.c_int32] * 3
     kernels.backbone_bucket_workspace.restype = ctypes.c_int64
     kernels.backbone_bucket_plan.argtypes = (
-        [ctypes.c_int32] * 3 + [ctypes.c_float] + [ctypes.c_void_p] * 5
+        [ctypes.c_int32] * 4 + [ctypes.c_float] + [ctypes.c_void_p] * 5
         + [ctypes.POINTER(ctypes.c_void_p)])
     kernels.backbone_bucket_plan.restype = ctypes.c_int32
     kernels.backbone_bucket_run.argtypes = [ctypes.c_void_p] * 3
@@ -50,14 +43,23 @@ def library() -> ctypes.CDLL:
     return kernels
 
 
-class _Plan:
-    """Own both static native plans and scratch workspaces for one pointer set."""
+class BucketPlan:
+    """Both static native plans of output = a @ b + beta * output, one per row
+    bucket, and their scratch workspaces, bound to one pointer set. Planning
+    allocates, so it happens in warmup, never during capture."""
 
-    def __init__(self, native, scratch, a, b, output, beta, stream):
+    def __init__(self, scratch: Scratch, a: torch.Tensor, b: torch.Tensor,
+                 output: torch.Tensor, beta: float, stream: int) -> None:
+        if torch.cuda.is_current_stream_capturing():
+            raise RuntimeError("bucketed backbone pointer set was not warmed before capture")
+        native = library()
         k, n = a.shape[1], b.shape[1]
+        buckets = bucket_rows(scratch.shape)
         self.tensors = (a, b, output)
-        self.handles, self.workspaces, self.destroy = [], [], []
-        for m in BUCKET_ROWS:
+        self.handles: list[ctypes.c_void_p] = []
+        self.workspaces: list[torch.Tensor] = []
+        self.destroy: list[weakref.finalize] = []
+        for m in buckets:
             size = native.backbone_bucket_workspace(m, k, n)
             if size < 0:
                 cutlass_backbone.check(-size, "backbone_bucket_workspace")
@@ -66,7 +68,7 @@ class _Plan:
                                 torch.uint8, a.device)
             handle = ctypes.c_void_p()
             cutlass_backbone.check(native.backbone_bucket_plan(
-                m, k, n, beta, a.data_ptr(), b.data_ptr(), output.data_ptr(),
+                m, k, n, buckets[0], beta, a.data_ptr(), b.data_ptr(), output.data_ptr(),
                 workspace.data_ptr(), stream, ctypes.byref(handle)),
                 f"backbone_bucket_plan M={m} K={k} N={n} beta={beta}")
             self.handles.append(handle)
@@ -74,42 +76,34 @@ class _Plan:
             self.destroy.append(weakref.finalize(self, native.backbone_bucket_destroy, handle))
 
 
-def make_wrappers(scratch, selected_names=None) -> dict:
-    """Build M968 BF16 backbone wrappers with a BF16 prefix mask of length 968.
+def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
+                  ) -> dict[str, Wrapper]:
+    """Build BF16 backbone wrappers over the prefix rows with a BF16 prefix mask.
 
-    Up writes out (968,16384) and x_norm (968,2048); down/out-projection add to
-    out (968,2048). The explicit mask stays at one address but may change
-    between graph replays. Both plans and all workspace are created in warmup.
+    Up writes out (prefix,16384) and x_norm (prefix,2048); down/out-projection
+    add to out (prefix,2048). The explicit mask stays at one address but may
+    change between graph replays. Both plans and all workspace are created in
+    warmup.
     """
-    names = NAMES if selected_names is None else set(selected_names)
-    native = pointwise = None
-    plans = {}
+    names = NAMES if selected_names is None else selected_names
+    short_rows = bucket_rows(scratch.shape)[0]
+    plans: dict[tuple[int, int, int, float], BucketPlan] = {}
 
-    def run_gemm(a, b, output, mask, *, beta, stream):
-        nonlocal native
+    def run_gemm(a: torch.Tensor, b: torch.Tensor, output: torch.Tensor, mask: torch.Tensor,
+                 *, beta: float, stream: int) -> None:
         key = (a.data_ptr(), b.data_ptr(), output.data_ptr(), beta)
-        plan = plans.get(key)
-        if plan is None:
-            if torch.cuda.is_current_stream_capturing():
-                raise RuntimeError("bucketed backbone pointer set was not warmed before capture")
-            if native is None:
-                native = library()
-            plan = _Plan(native, scratch, a, b, output, beta, stream)
-            plans[key] = plan
+        plan = plans[key] if key in plans else plans.setdefault(
+            key, BucketPlan(scratch, a, b, output, beta, stream))
         for handle in plan.handles:
             cutlass_backbone.check(
-                native.backbone_bucket_run(handle, mask.data_ptr(), stream),
+                library().backbone_bucket_run(handle, mask.data_ptr(), stream),
                 "backbone_bucket_run")
 
-    def llm_backbone_norm_gated_ffn_masked(x, gate_w, up_w, out, x_norm, mask):
-        nonlocal pointwise
-        if pointwise is None:
-            pointwise = fused_backbone.library()
-            pointwise.backbone_masked_gelu_mul.argtypes = [
-                ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64,
-                ctypes.c_void_p, ctypes.c_void_p,
-            ]
-            pointwise.backbone_masked_gelu_mul.restype = ctypes.c_int32
+    def llm_backbone_norm_gated_ffn_masked(x: torch.Tensor, gate_w: torch.Tensor,
+                                           up_w: torch.Tensor, out: torch.Tensor,
+                                           x_norm: torch.Tensor, mask: torch.Tensor
+                                           ) -> torch.Tensor:
+        pointwise = fused_backbone.library()
         rows = x.shape[0]
         normed, result = x_norm[:rows], out[:rows]
         gate = scratch("backbone_ffn_gate", result.shape, x.dtype, x.device)
@@ -119,12 +113,14 @@ def make_wrappers(scratch, selected_names=None) -> dict:
         run_gemm(normed, gate_w, gate, mask, beta=0.0, stream=stream)
         run_gemm(normed, up_w, result, mask, beta=0.0, stream=stream)
         # The short bucket zeroes the tail before any stale gate/up load.
-        status = pointwise.backbone_masked_gelu_mul(
-            gate.data_ptr(), result.data_ptr(), result.numel(), mask.data_ptr(), stream)
-        cutlass_backbone.check(status, "backbone_masked_gelu_mul")
+        cutlass_backbone.check(pointwise.backbone_masked_gelu_mul(
+            gate.data_ptr(), result.data_ptr(), result.numel(), mask.data_ptr(), short_rows,
+            stream), "backbone_masked_gelu_mul")
         return out
 
-    def llm_backbone_ffn_down_residual_masked(x, weight, out, mask):
+    def llm_backbone_ffn_down_residual_masked(x: torch.Tensor, weight: torch.Tensor,
+                                              out: torch.Tensor, mask: torch.Tensor
+                                              ) -> torch.Tensor:
         run_gemm(x, weight, out, mask, beta=1.0,
                  stream=torch.cuda.current_stream().cuda_stream)
         return out
@@ -138,4 +134,4 @@ def make_wrappers(scratch, selected_names=None) -> dict:
 
 
 #: What the Target's registry routes to (`flash_vla.runtime.registry`).
-BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers, supports=supports)
+BACKEND = Backend(names=frozenset(NAMES), make_wrappers=make_wrappers, supports=has_short_bucket)

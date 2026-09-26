@@ -1,6 +1,7 @@
 // BF16 backbone GEMMs with a linear FP32 epilogue, alpha=1 and beta=0 or 1.
-// Config 0 of lab/pi05/cutlass_gemm_screen.py: one Sm80 Stream-K collective
-// compiled for sm_120a. Gate/up output rounds to BF16 before the separate GELU.
+// Tiles of the stream-K family (rtx5090/pi0 cutlass_gemm.cu), Sm80 collectives
+// compiled for sm_120a: config 0 for the backbone, chosen per geometry where
+// another is faster. Gate/up output rounds to BF16 before the separate GELU.
 #include <cstdint>
 
 #include "cutlass/cutlass.h"
@@ -13,45 +14,52 @@ namespace {
 using Element = cutlass::bfloat16_t;
 using RowMajor = cutlass::layout::RowMajor;
 using Epilogue = cutlass::epilogue::thread::LinearCombination<Element, 8, float, float>;
-using Gemm = cutlass::gemm::device::GemmUniversal<
+template <class ThreadblockShape, class WarpShape, int Stages>
+using LinearGemm = cutlass::gemm::device::GemmUniversal<
     Element, RowMajor, Element, RowMajor, Element, RowMajor, float,
-    cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
-    cutlass::gemm::GemmShape<128, 128, 64>,
-    cutlass::gemm::GemmShape<64, 64, 64>,
+    cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80, ThreadblockShape, WarpShape,
     cutlass::gemm::GemmShape<16, 8, 16>, Epilogue,
-    cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, 3, 8, 8>;
+    cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, Stages, 8, 8>;
+// Family config 0: 128x128x64, three stages.
+using Gemm = LinearGemm<cutlass::gemm::GemmShape<128, 128, 64>,
+                        cutlass::gemm::GemmShape<64, 64, 64>, 3>;
+// Family config 9: 32x64x32, eight stages.
+using SmallGemm = LinearGemm<cutlass::gemm::GemmShape<32, 64, 32>,
+                             cutlass::gemm::GemmShape<32, 32, 32>, 8>;
 
-Gemm::Arguments arguments(int32_t m, int32_t k, int32_t n, float beta,
-                          const void* a, const void* b, void* output) {
-  return Gemm::Arguments(
+template <class Linear>
+typename Linear::Arguments linear_arguments(int32_t m, int32_t k, int32_t n, float beta,
+                                            const void* a, const void* b, void* output) {
+  return typename Linear::Arguments(
       cutlass::gemm::GemmUniversalMode::kGemm, {m, n, k}, 1,
       {1.f, beta}, a, b, output, output,
       int64_t(m) * k, int64_t(k) * n, int64_t(m) * n, int64_t(m) * n,
       int64_t(k), int64_t(n), int64_t(n), int64_t(n));
 }
 
+
 // Keep CUTLASS status values distinct from cudaError_t at the C boundary.
 constexpr int32_t kCutlassError = 1000;
 
 // Both static row buckets reuse cfg0's exact mainloop and linear epilogue.
 // A distinct Kernel2 type gives this entry its own shared-memory/occupancy init.
+// The short bucket plans M = short_rows, the full one every prefix row; each
+// launch runs only when the prefix mask selects its bucket: the short one when
+// row short_rows is padding.
 struct BucketKernel : Gemm::GemmKernel {
   using Original = Gemm::GemmKernel;
 
   struct Params : Original::Params {
+    using Original::Params::Params;
     Element const* mask = nullptr;
+    int32_t short_rows = 0;
     bool short_bucket = false;
-
-    Params() = default;
-    Params(Arguments const& args, int device_sms, int sm_occupancy)
-        : Original::Params(args, device_sms, sm_occupancy),
-          short_bucket(args.problem_size.m() == 896) {}
   };
 
   CUTLASS_DEVICE static void invoke(Params const& params, SharedStorage& shared) {
     // The graph orders the mask producer before both launches; every CTA,
     // including Stream-K reduction CTAs, must make the same selection.
-    if ((float(params.mask[896]) < 0.f) == params.short_bucket)
+    if ((float(params.mask[params.short_rows]) < 0.f) == params.short_bucket)
       Original::invoke(params, shared);
   }
 };
@@ -66,6 +74,12 @@ class BucketGemm : public cutlass::gemm::device::GemmUniversalBase<BucketKernel>
     if (status != cutlass::Status::kSuccess)
       return -(kCutlassError + static_cast<int32_t>(status));
     return static_cast<int64_t>(plan.params_.get_workspace_size());
+  }
+
+  // After initialize, which builds params_; nothing rebuilds it afterwards.
+  void select(int32_t short_rows, bool short_bucket) {
+    this->params_.short_rows = short_rows;
+    this->params_.short_bucket = short_bucket;
   }
 
   cutlass::Status run(const void* mask, cudaStream_t stream) {
@@ -175,69 +189,109 @@ DownGemm::Arguments down_arguments(int32_t m, int32_t k, const void* a, const vo
   args.ldr = 0;  // One gate vector broadcast over every output row.
   return args;
 }
-// Config 10 serves both vision FFN projections. Bias is converted to FP32
-// and added before the one BF16 store; GELU/residual remain separate stages.
+// Vision projections: bias is converted to FP32 and added before the one BF16
+// store; GELU/residual remain separate stages. The tile is a stream-K family
+// config (rtx5090/pi0 cutlass_gemm.cu) chosen per geometry by cutlass_vision.py.
+template <class ThreadblockShape, class WarpShape, int Stages>
 using VisionBiasGemm = cutlass::gemm::device::GemmUniversal<
     Element, RowMajor, Element, RowMajor, Element, RowMajor, float,
-    cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
-    cutlass::gemm::GemmShape<64, 128, 32>,
-    cutlass::gemm::GemmShape<32, 64, 32>,
+    cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80, ThreadblockShape, WarpShape,
     cutlass::gemm::GemmShape<16, 8, 16>, Epilogue,
-    cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, 5, 8, 8>;
+    cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, Stages, 8, 8>;
+// Family config 10: 64x128x32, five stages.
+using VisionTile10 = VisionBiasGemm<cutlass::gemm::GemmShape<64, 128, 32>,
+                                    cutlass::gemm::GemmShape<32, 64, 32>, 5>;
+// Family config 8: 64x64x32, six stages.
+using VisionTile8 = VisionBiasGemm<cutlass::gemm::GemmShape<64, 64, 32>,
+                                   cutlass::gemm::GemmShape<32, 32, 32>, 6>;
 
-VisionBiasGemm::Arguments vision_bias_arguments(
+template <class Tile>
+typename Tile::Arguments vision_bias_arguments(
     int32_t m, int32_t k, int32_t n, const void* a, const void* b,
     const void* bias, void* output) {
-  return VisionBiasGemm::Arguments(
+  return typename Tile::Arguments(
       cutlass::gemm::GemmUniversalMode::kGemm, {m, n, k}, 1,
       {1.f, 1.f}, a, b, bias, output,
       int64_t(m) * k, int64_t(k) * n, 0, int64_t(m) * n,
       int64_t(k), int64_t(n), 0, int64_t(n));
 }
-}  // namespace
 
-extern "C" int64_t backbone_gemm_workspace(int32_t m, int32_t k, int32_t n) {
-  return static_cast<int64_t>(
-      Gemm::get_workspace_size(arguments(m, k, n, 1.f, nullptr, nullptr, nullptr)));
-}
+// A planned GEMM of any tile, run and destroyed through one handle.
+struct Plan {
+  virtual ~Plan() = default;
+  virtual cutlass::Status run(cudaStream_t stream) = 0;
+};
 
-extern "C" int32_t backbone_gemm_plan(
-    int32_t m, int32_t k, int32_t n, float beta, const void* a, const void* b,
-    void* output, void* workspace, void* stream, void** handle) {
-  auto args = arguments(m, k, n, beta, a, b, output);
-  cutlass::Status status = Gemm::can_implement(args);
+template <class Tile>
+struct BoundPlan : Plan {
+  Tile gemm;
+  cutlass::Status run(cudaStream_t stream) override { return gemm.run(stream); }
+};
+
+template <class Tile>
+int32_t plan_of(typename Tile::Arguments const& args, void* workspace, void* stream,
+                void** handle) {
+  cutlass::Status status = Tile::can_implement(args);
   if (status != cutlass::Status::kSuccess)
     return kCutlassError + static_cast<int32_t>(status);
-  auto* plan = new Gemm;
-  status = plan->initialize(args, workspace, static_cast<cudaStream_t>(stream));
+  auto* plan = new BoundPlan<Tile>;
+  status = plan->gemm.initialize(args, workspace, static_cast<cudaStream_t>(stream));
   if (status != cutlass::Status::kSuccess) {
     delete plan;
     return kCutlassError + static_cast<int32_t>(status);
   }
-  *handle = plan;
+  *handle = static_cast<Plan*>(plan);
   return 0;
+}
+
+// Status for a config this library does not compile.
+constexpr int32_t kUnknownConfig = kCutlassError + static_cast<int32_t>(cutlass::Status::kInvalid);
+}  // namespace
+
+// config: the family config of the tile, 0 or 9.
+extern "C" int64_t backbone_gemm_workspace(int32_t config, int32_t m, int32_t k, int32_t n) {
+  if (config == 0)
+    return static_cast<int64_t>(Gemm::get_workspace_size(
+        linear_arguments<Gemm>(m, k, n, 1.f, nullptr, nullptr, nullptr)));
+  if (config == 9)
+    return static_cast<int64_t>(SmallGemm::get_workspace_size(
+        linear_arguments<SmallGemm>(m, k, n, 1.f, nullptr, nullptr, nullptr)));
+  return -kUnknownConfig;
+}
+
+extern "C" int32_t backbone_gemm_plan(
+    int32_t config, int32_t m, int32_t k, int32_t n, float beta, const void* a, const void* b,
+    void* output, void* workspace, void* stream, void** handle) {
+  if (config == 0)
+    return plan_of<Gemm>(linear_arguments<Gemm>(m, k, n, beta, a, b, output), workspace,
+                         stream, handle);
+  if (config == 9)
+    return plan_of<SmallGemm>(linear_arguments<SmallGemm>(m, k, n, beta, a, b, output),
+                              workspace, stream, handle);
+  return kUnknownConfig;
 }
 
 extern "C" int32_t backbone_gemm_run(void* handle, void* stream) {
   const cutlass::Status status =
-      static_cast<Gemm*>(handle)->run(static_cast<cudaStream_t>(stream));
+      static_cast<Plan*>(handle)->run(static_cast<cudaStream_t>(stream));
   if (status != cutlass::Status::kSuccess)
     return kCutlassError + static_cast<int32_t>(status);
   return static_cast<int32_t>(cudaGetLastError());
 }
 
 extern "C" void backbone_gemm_destroy(void* handle) {
-  delete static_cast<Gemm*>(handle);
+  delete static_cast<Plan*>(handle);
 }
 
 extern "C" int64_t backbone_bucket_workspace(int32_t m, int32_t k, int32_t n) {
-  return BucketGemm::workspace_bytes(arguments(m, k, n, 1.f, nullptr, nullptr, nullptr));
+  return BucketGemm::workspace_bytes(linear_arguments<Gemm>(m, k, n, 1.f, nullptr, nullptr, nullptr));
 }
 
+// short_rows: the short bucket's M; this plan is that bucket when m == short_rows.
 extern "C" int32_t backbone_bucket_plan(
-    int32_t m, int32_t k, int32_t n, float beta, const void* a, const void* b,
-    void* output, void* workspace, void* stream, void** handle) {
-  const auto args = arguments(m, k, n, beta, a, b, output);
+    int32_t m, int32_t k, int32_t n, int32_t short_rows, float beta, const void* a,
+    const void* b, void* output, void* workspace, void* stream, void** handle) {
+  const auto args = linear_arguments<Gemm>(m, k, n, beta, a, b, output);
   cutlass::Status status = BucketGemm::can_implement(args);
   if (status != cutlass::Status::kSuccess)
     return kCutlassError + static_cast<int32_t>(status);
@@ -247,6 +301,7 @@ extern "C" int32_t backbone_bucket_plan(
     delete plan;
     return kCutlassError + static_cast<int32_t>(status);
   }
+  plan->select(short_rows, m == short_rows);
   *handle = plan;
   return 0;
 }
@@ -297,36 +352,38 @@ extern "C" void expert_down_destroy(void* handle) {
   delete static_cast<DownGemm*>(handle);
 }
 
-extern "C" int64_t vision_bias_gemm_workspace(int32_t m, int32_t k, int32_t n) {
-  return static_cast<int64_t>(VisionBiasGemm::get_workspace_size(
-      vision_bias_arguments(m, k, n, nullptr, nullptr, nullptr, nullptr)));
+// config: the family config of the tile, 8 or 10.
+extern "C" int64_t vision_bias_gemm_workspace(int32_t config, int32_t m, int32_t k, int32_t n) {
+  if (config == 8)
+    return static_cast<int64_t>(VisionTile8::get_workspace_size(
+        vision_bias_arguments<VisionTile8>(m, k, n, nullptr, nullptr, nullptr, nullptr)));
+  if (config == 10)
+    return static_cast<int64_t>(VisionTile10::get_workspace_size(
+        vision_bias_arguments<VisionTile10>(m, k, n, nullptr, nullptr, nullptr, nullptr)));
+  return -kUnknownConfig;
 }
 
 extern "C" int32_t vision_bias_gemm_plan(
-    int32_t m, int32_t k, int32_t n, const void* a, const void* b,
+    int32_t config, int32_t m, int32_t k, int32_t n, const void* a, const void* b,
     const void* bias, void* output, void* workspace, void* stream, void** handle) {
-  const auto args = vision_bias_arguments(m, k, n, a, b, bias, output);
-  cutlass::Status status = VisionBiasGemm::can_implement(args);
-  if (status != cutlass::Status::kSuccess)
-    return kCutlassError + static_cast<int32_t>(status);
-  auto* plan = new VisionBiasGemm;
-  status = plan->initialize(args, workspace, static_cast<cudaStream_t>(stream));
-  if (status != cutlass::Status::kSuccess) {
-    delete plan;
-    return kCutlassError + static_cast<int32_t>(status);
-  }
-  *handle = plan;
-  return 0;
+  if (config == 8)
+    return plan_of<VisionTile8>(vision_bias_arguments<VisionTile8>(m, k, n, a, b, bias, output),
+                                workspace, stream, handle);
+  if (config == 10)
+    return plan_of<VisionTile10>(
+        vision_bias_arguments<VisionTile10>(m, k, n, a, b, bias, output), workspace, stream,
+        handle);
+  return kUnknownConfig;
 }
 
 extern "C" int32_t vision_bias_gemm_run(void* handle, void* stream) {
   const cutlass::Status status =
-      static_cast<VisionBiasGemm*>(handle)->run(static_cast<cudaStream_t>(stream));
+      static_cast<Plan*>(handle)->run(static_cast<cudaStream_t>(stream));
   if (status != cutlass::Status::kSuccess)
     return kCutlassError + static_cast<int32_t>(status);
   return static_cast<int32_t>(cudaGetLastError());
 }
 
 extern "C" void vision_bias_gemm_destroy(void* handle) {
-  delete static_cast<VisionBiasGemm*>(handle);
+  delete static_cast<Plan*>(handle);
 }

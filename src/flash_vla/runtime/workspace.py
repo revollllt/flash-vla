@@ -4,7 +4,8 @@ A backend's wrapper factory receives one `Scratch` and takes every piece of
 device memory that outlives a single call from it, so the runner accounts for
 it and forbids allocation once capture begins. `assets` is the runner's
 read-only mapping of asset roles to local paths, for backends that initialize
-from files.
+from files; `shape` its shape numbers, for backends whose plans follow them
+(a row bucket).
 """
 from __future__ import annotations
 
@@ -27,9 +28,11 @@ class Scratch:
     allocating during graph capture.
     """
 
-    def __init__(self, device: torch.device, *, assets: Mapping[str, Path] | None = None) -> None:
+    def __init__(self, device: torch.device, *, assets: Mapping[str, Path] | None = None,
+                 shape: Mapping[str, int] | None = None) -> None:
         self.device = device
         self.assets: Mapping[str, Path] = MappingProxyType(dict(assets or {}))
+        self.shape: Mapping[str, int] = MappingProxyType(dict(shape or {}))
         self.allocations: dict[ScratchKey, torch.Tensor] = {}
         self.owners: dict[ScratchKey, int | None] = {}
         self.current: int | None = None

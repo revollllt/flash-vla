@@ -4,7 +4,8 @@ import json
 import pytest
 import torch
 
-from flash_vla.inference import declare
+from flash_vla.hardware.nvidia.rtx5090.pi05.backends.row_buckets import bucket_rows, has_short_bucket
+from flash_vla.inference import declare, get_target
 
 _UP = "llm_backbone_norm_gated_ffn"
 _DOWN = "llm_backbone_ffn_down_residual"
@@ -90,16 +91,24 @@ def test_saved_outproj_control_and_explicit_candidate_route(tmp_path):
     assert candidate.identity.plan[_MASKED_OUT] == "bucketed-backbone"
 
 
-def test_the_buckets_run_only_the_prefix_they_were_built_for():
-    """The shipped plan names the bucketed backbone first and full-row CUTLASS
-    after it: the three-view 968-row prefix takes the buckets, the two-view
-    712-row one falls back, and a plan with no fallback is refused there."""
-    robodojo = declare("rtx5090/pi05", workload="robodojo").identity.plan
-    libero = declare("rtx5090/pi05", workload="libero").identity.plan
-    for site in (_MASKED_UP, _MASKED_DOWN, _MASKED_OUT):
-        assert (robodojo[site], libero[site]) == ("bucketed-backbone", "cutlass-backbone")
-    only_buckets = {site: "bucketed-backbone" for site in (_MASKED_UP, _MASKED_DOWN, _MASKED_OUT)}
-    assert declare("rtx5090/pi05", only_buckets, workload="robodojo").identity.plan[_MASKED_OUT] \
-        == "bucketed-backbone"
+def test_the_buckets_follow_the_prefix() -> None:
+    """The short bucket ends at the first tile boundary past the image tokens:
+    M896/M968 with three views, M640/M712 with two, so both workloads take the
+    buckets. A prefix with no tile to skip falls back to full-row CUTLASS, and a
+    plan with no fallback is refused there."""
+    shapes = {workload: declare("rtx5090/pi05", workload=workload).shape
+              for workload in ("robodojo", "libero")}
+    assert {workload: bucket_rows(shape) for workload, shape in shapes.items()} \
+        == {"robodojo": (896, 968), "libero": (640, 712)}
+    for workload in shapes:
+        routes = declare("rtx5090/pi05", workload=workload).identity.plan
+        assert {routes[site] for site in (_MASKED_UP, _MASKED_DOWN, _MASKED_OUT)} \
+            == {"bucketed-backbone"}
+    unbucketed = {"visual_tokens": 768, "prefix_len": 868}
+    assert not has_short_bucket(unbucketed)
+    only_buckets = {site: ("bucketed-backbone",) for site in (_MASKED_UP, _MASKED_DOWN, _MASKED_OUT)}
     with pytest.raises(ValueError, match="supports shape"):
-        declare("rtx5090/pi05", only_buckets, workload="libero")
+        get_target("rtx5090/pi05").registry.resolve(only_buckets, only_buckets, unbucketed)
+    fallback = {site: ("bucketed-backbone", "cutlass-backbone") for site in only_buckets}
+    assert get_target("rtx5090/pi05").registry.resolve(fallback, fallback, unbucketed) \
+        == {site: "cutlass-backbone" for site in only_buckets}

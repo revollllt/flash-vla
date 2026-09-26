@@ -6,7 +6,10 @@ All rows are contiguous; K/V may be slices of the layer KV cache. Two scratch
 buffers belong to the runner. Warmup builds the library and allocates them;
 subsequent calls are CUDA Graph safe on the current stream. The action output
 wrapper uses weight(1024,32), bias(32), and out(M,32); it privately computes the
-BF16 RMS factor and leaves its norm_factor argument unchanged.
+BF16 RMS factor and leaves its norm_factor argument unchanged. Its GEMM is
+cuBLAS, or `cutlass_backbone`'s small stream-K tile at the geometries of
+`CUTLASS_GEOMETRIES`, where cuBLAS runs one CTA along K
+(`lab/pi05/geometry_screen.py`).
 """
 from __future__ import annotations
 
@@ -17,9 +20,15 @@ from pathlib import Path
 import torch
 
 from flash_vla.hardware.nvidia.native import NativeLibrary
-from flash_vla.runtime.registry import Backend
+from flash_vla.runtime.registry import Backend, Wrapper
+from flash_vla.runtime.workspace import Scratch
+
+from . import cutlass_backbone
 
 NAMES = frozenset({"action_expert_norm_qkv_rope", "action_expert_action_out_proj"})
+#: (M, K, N) -> family tile: a 10-row chunk, 5.0 against 14.0 us per step
+#: (`results/pi05-rtx5090/workload-generalization/g1/geometry-screen.json`).
+CUTLASS_GEOMETRIES = {(10, 1024, 32): 9}
 
 
 SOURCE = Path(__file__).with_suffix(".cu")
@@ -70,7 +79,10 @@ def action_expert_norm_qkv_rope(
         raise RuntimeError(f"pi05_qkv_finish blocks={m * 5}, threads=256: CUDA error {rc}")
 
 
-def action_expert_action_out_proj(x, weight, bias, out, norm_factor, *, scratch):
+def action_expert_action_out_proj(
+        x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, out: torch.Tensor,
+        norm_factor: torch.Tensor, *, scratch: Scratch,
+        plans: dict[tuple[int, int, int, int, float], cutlass_backbone.GemmPlan]) -> torch.Tensor:
     """Update BF16 actions after FP32 factor/bias/residual; do not write norm_factor."""
     rows = x.shape[0]
     factor = scratch("pi05_action_out_factor", (rows,), x.dtype, x.device)
@@ -80,7 +92,12 @@ def action_expert_action_out_proj(x, weight, bias, out, norm_factor, *, scratch)
     rc = lib.pi05_action_out_factor_launch(x.data_ptr(), factor.data_ptr(), rows, stream)
     if rc:
         raise RuntimeError(f"pi05_action_out_factor rows={rows}, threads=256: CUDA error {rc}")
-    torch.mm(x, weight, out=projected)
+    tile = CUTLASS_GEOMETRIES.get((rows, *weight.shape))
+    if tile is None:
+        torch.mm(x, weight, out=projected)
+    else:
+        cutlass_backbone.run_gemm(plans, scratch, x, weight, projected, beta=0.0, stream=stream,
+                                  config=tile)
     rc = lib.pi05_action_out_update_launch(
         projected.data_ptr(), factor.data_ptr(), bias.data_ptr(), out.data_ptr(), rows, stream)
     if rc:
@@ -88,12 +105,15 @@ def action_expert_action_out_proj(x, weight, bias, out, norm_factor, *, scratch)
     return out
 
 
-def make_wrappers(scratch, selected_names=None) -> dict:
+def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
+                  ) -> dict[str, Wrapper]:
     """Bind the selected expert projection wrappers to this runner's scratch allocator."""
     names = NAMES if selected_names is None else selected_names
-    wrappers = {"action_expert_norm_qkv_rope": action_expert_norm_qkv_rope,
-                "action_expert_action_out_proj": action_expert_action_out_proj}
-    return {name: partial(wrappers[name], scratch=scratch) for name in names}
+    wrappers = {"action_expert_norm_qkv_rope": partial(action_expert_norm_qkv_rope,
+                                                       scratch=scratch),
+                "action_expert_action_out_proj": partial(action_expert_action_out_proj,
+                                                         scratch=scratch, plans={})}
+    return {name: wrappers[name] for name in names}
 
 
 #: What the Target's registry routes to (`flash_vla.runtime.registry`).

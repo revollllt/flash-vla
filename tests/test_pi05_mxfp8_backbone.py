@@ -1,7 +1,7 @@
 """The MXFP8 backbone FFN computes its fake-quant reference at Pi0.5's shapes,
 per layer, replayed from one CUDA graph as the runner replays it: at the
-three-view prefix while the mask switches between the two row buckets, and at
-the unbucketed two-view prefix."""
+three-view and at the two-view prefix, while the mask switches between the two
+row buckets."""
 import pytest
 import torch
 
@@ -22,9 +22,11 @@ def random_bf16(*shape: int, scale: float, seed: int) -> torch.Tensor:
     return (torch.randn(*shape, device="cuda", generator=generator) * scale).to(torch.bfloat16)
 
 
-# Prefix rows (three views, two views) and the valid rows each replay masks in.
-@pytest.mark.parametrize("rows, valid_rows_cases", [(968, (968, 896)), (712, (712,))])
-def test_mxfp8_backbone_matches_fake_quant_reference(rows: int,
+# Image tokens and prefix rows (three views, two views) and the valid rows each
+# replay masks in: the full bucket, then the short one.
+@pytest.mark.parametrize("visual_tokens, rows, valid_rows_cases",
+                         [(768, 968, (968, 896)), (512, 712, (712, 640))])
+def test_mxfp8_backbone_matches_fake_quant_reference(visual_tokens: int, rows: int,
                                                     valid_rows_cases: tuple[int, ...]) -> None:
     x = random_bf16(rows, WIDTH, scale=3.0, seed=1)
     residual = random_bf16(rows, WIDTH, scale=1.0, seed=2)
@@ -33,7 +35,9 @@ def test_mxfp8_backbone_matches_fake_quant_reference(rows: int,
     down_w = random_bf16(LAYERS, HIDDEN, WIDTH, scale=0.01, seed=5)
     mask = torch.zeros(rows, device="cuda", dtype=torch.bfloat16)   # additive, 0 = valid
     graphs, summed = {}, {}
-    for name, wrappers in (("kernels", mxfp8_backbone.make_wrappers(Scratch(torch.device("cuda")))),
+    shape = {"visual_tokens": visual_tokens, "prefix_len": rows}
+    for name, wrappers in (("kernels", mxfp8_backbone.make_wrappers(
+                               Scratch(torch.device("cuda"), shape=shape))),
                            ("reference", FakeQuantFFN("mxfp8").make_wrappers(
                                Scratch(torch.device("cuda"))))):
         gated, down = (wrappers["llm_backbone_norm_gated_ffn_masked"],

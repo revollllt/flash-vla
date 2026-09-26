@@ -92,7 +92,7 @@ def screen(cg, label, calls, configs, samples_ms, l2_bytes):
                 from flash_vla.hardware.nvidia.rtx5090.pi05.backends import cutlass_backbone as cb
                 from flash_vla.runtime.runner import Scratch
                 native = cb.library()
-                plans = [cb._Plan(native, Scratch(a.device), a, b, output, 0.0, cg._stream())
+                plans = [cb.GemmPlan(Scratch(a.device), a, b, output, 0.0, cg._stream(), 0)
                          for (a, b), output in zip(calls, outputs)]
                 functions = [
                     lambda plan=plan: cb.check(
