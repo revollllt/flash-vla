@@ -12,7 +12,7 @@ from typing import Mapping
 import torch
 
 from flash_vla.runtime.graph import Graph
-from flash_vla.runtime.vla import CheckpointReader, ConfigValue, Input, ModelDefinition
+from flash_vla.runtime.vla import CheckpointReader, ConfigValue, Input, ModelDefinition, Workload
 
 from . import graph
 from .ops import OPS
@@ -67,6 +67,12 @@ class Pi0Model(ModelDefinition[Pi0Config, None]):
         "chunk", "expert_tokens", "state_dim", "action_dim", "steps", "layers",
         "encoder_dim", "encoder_ffn_dim", "query_heads", "kv_heads", "head_dim",
         "qkv_width", "expert_dim", "expert_ffn_dim",
+    )
+    workloads = (
+        # RoboDojo's official Pi0 baseline: XPolicyLab `pi0_base_aloha_full_sim_arx-x5`,
+        # three cameras; the prompt is its longest task instruction's 37 tokens
+        # (docs/workloads.md).
+        Workload("robodojo", {"num_views": 3, "chunk_size": 50, "prompt_len": 37}),
     )
     inputs = (
         Input("images", lambda s: (s["num_views"], IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS),

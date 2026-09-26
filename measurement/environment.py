@@ -63,6 +63,7 @@ def report_context(engine: Engine, environment: Mapping[str, object]) -> dict[st
             "power_policy": environment.get("power_policy"), "capture_regime": "cuda_graph",
             "clock_observation": environment.get("clock_observation"),
         },
+        workload=engine.workload,
         hostname=environment.get("node"), slurm_job_id=environment.get("job"),
         timestamp=time.time(),
     ).as_dict()

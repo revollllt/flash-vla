@@ -1,27 +1,24 @@
-"""GR00T N1.7 LIBERO: the fixed workload's constants, without importing the model.
+"""GR00T N1.7: the model's constants, without importing the model.
 
-Values are the official `libero_10` checkpoint's (see README.md): two 256x256
-views become 512 patches of width 1536 and 128 visual tokens; a 16-layer
+Values are the official `libero_10` checkpoint's (see README.md): each 256x256
+view becomes 256 patches of width 1536 and 64 visual tokens; a 16-layer
 Qwen3-VL backbone; a 32-block DiT action head denoising a 40x132 chunk in four
-steps.
+steps. The number of views and the text sequence belong to the workload
+(`definition.GrootModel.workloads`).
 """
 from __future__ import annotations
 
 MODEL_REVISION = "groot-n17-libero-v1"
 INFERENCE_SIGNATURE = "groot-n17-qwen3vl16-dit32-libero-bf16-v1"
 
-VIEWS = 2
 IMAGE_SIZE = 256
-#: Each view's patch grid (frames, rows, columns), the processor's `image_grid_thw`.
-GRID = ((1, 16, 16),) * VIEWS
-#: Vision patches of all views, and their flattened width.
-PATCHES = 512
-PATCH_WIDTH = 1536
-#: Patches per view (a 16x16 grid).
+#: One view's patch grid (frames, rows, columns), a row of the processor's `image_grid_thw`.
+VIEW_GRID = (1, 16, 16)
+#: Patches per view (a 16x16 grid), and their flattened width.
 PATCHES_PER_VIEW = 256
-VISUAL_TOKENS = 128
-#: The prepared fixture's text sequence; a different length needs another fixture.
-SEQUENCE_LENGTH = 156
+PATCH_WIDTH = 1536
+#: Visual tokens per view after the 2x2 patch merger.
+VISUAL_TOKENS_PER_VIEW = 64
 
 VISION_BLOCKS = 24
 VISION_DIM = 1024
@@ -51,7 +48,7 @@ STEPS = 4
 
 
 __all__ = ["ACTION_DIM", "BACKBONE_DIM", "BACKBONE_FFN", "CHUNK", "DEEPSTACK_BLOCKS", "DEEPSTACK_LAYERS",
-           "DIT_BLOCKS", "DIT_DIM", "DIT_FFN", "GRID", "HEAD_HIDDEN", "IMAGE_SIZE",
-           "INFERENCE_SIGNATURE", "KV_DIM", "LAYERS", "MODEL_REVISION", "PATCHES", "PATCHES_PER_VIEW",
-           "PATCH_WIDTH", "SEQUENCE_LENGTH", "STATE_DIM", "STEPS", "TIMESTEP_CHANNELS", "VIEWS",
-           "VISION_BLOCKS", "VISION_DIM", "VISION_FFN", "VISUAL_TOKENS"]
+           "DIT_BLOCKS", "DIT_DIM", "DIT_FFN", "HEAD_HIDDEN", "IMAGE_SIZE",
+           "INFERENCE_SIGNATURE", "KV_DIM", "LAYERS", "MODEL_REVISION", "PATCHES_PER_VIEW",
+           "PATCH_WIDTH", "STATE_DIM", "STEPS", "TIMESTEP_CHANNELS", "VIEW_GRID",
+           "VISION_BLOCKS", "VISION_DIM", "VISION_FFN", "VISUAL_TOKENS_PER_VIEW"]

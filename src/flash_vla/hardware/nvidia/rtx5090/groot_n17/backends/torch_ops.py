@@ -14,7 +14,7 @@ import torch
 from flash_vla.models.groot_n17.ops import CALL_SITES as NAMES, WEIGHTS
 from flash_vla.models.groot_n17.reference import PREFIXES, VisionTables, make_reference
 from flash_vla.models.official import bind_parts
-from flash_vla.models.groot_n17.spec import GRID, STEPS
+from flash_vla.models.groot_n17.spec import PATCHES_PER_VIEW, STEPS, VIEW_GRID
 from flash_vla.runtime.registry import Backend, Wrapper
 from flash_vla.runtime.workspace import Scratch
 
@@ -22,7 +22,8 @@ from flash_vla.runtime.workspace import Scratch
 def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None) -> dict[str, Wrapper]:
     reference = make_reference()
     bound: set[str] = set()
-    tables: VisionTables | None = None
+    #: Per view count, the tables staged into workspace.
+    tables: dict[int, VisionTables] = {}
 
     def bind_once(part: str, tensors: tuple[torch.Tensor, ...]) -> None:
         if part in bound:
@@ -31,21 +32,21 @@ def make_wrappers(scratch: Scratch, selected_names: frozenset[str] | None = None
                    weights=dict(zip(WEIGHTS[part], tensors)), precision="bfloat16")
         bound.add(part)
 
-    def staged_tables() -> VisionTables:
-        nonlocal tables
-        if tables is not None:
-            return tables
-        built = reference.vision.tables(GRID)
-        tables = replace(built, **{
+    def staged_tables(views: int) -> VisionTables:
+        if views in tables:
+            return tables[views]
+        built = reference.vision.tables((VIEW_GRID,) * views)
+        tables[views] = replace(built, **{
             role: scratch(f"groot_vision_{role}", table.shape, table.dtype, table.device).copy_(table)
             for role, table in (("position", built.position), ("cos", built.cos), ("sin", built.sin))})
-        return tables
+        return tables[views]
 
     @torch.no_grad()
     def vision(pixels: torch.Tensor, out: torch.Tensor, deepstack: torch.Tensor,
                *weights: torch.Tensor) -> None:
         bind_once("vision", weights)
-        merged, features = reference.vision(pixels, tables=staged_tables())
+        merged, features = reference.vision(
+            pixels, tables=staged_tables(pixels.shape[0] // PATCHES_PER_VIEW))
         out.copy_(merged)
         for slot, feature in enumerate(features):
             deepstack[slot].copy_(feature)

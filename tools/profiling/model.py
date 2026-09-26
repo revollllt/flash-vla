@@ -55,7 +55,7 @@ from flash_vla.inference import PLAN_NAMES, build, resolve
 from flash_vla.runtime.engine import segments
 from flash_vla.runtime.identity import Identity
 from flash_vla.runtime.registry import GraphContract
-from measurement.cli import parse_options
+from measurement.cli import WORKLOAD_HELP, parse_options
 from measurement.environment import collect_environment, report_context, require_cuda
 from measurement.provenance import MeasurementContext
 from measurement.timing import event_samples
@@ -463,6 +463,7 @@ def main(argv=None) -> int:
     parser.add_argument("--plan", action="append", default=None,
                         help=f"one of {PLAN_NAMES}, a JSON object or a lab/plans/*.json path; "
                              "repeat for A/B (default: shipped)")
+    parser.add_argument("--workload", default=None, help=WORKLOAD_HELP)
     parser.add_argument("--option", action="append", default=[],
                         help="target-local option key=value applied to every leg")
     parser.add_argument("--seed", type=int, default=0)
@@ -482,6 +483,7 @@ def main(argv=None) -> int:
     overrides = {k: v for k, v in (("steps", args.steps), ("layers", args.layers))
                  if v is not None}
     overrides.update(parse_options(args.option))
+    overrides["workload"] = args.workload
     if args.overview:
         if args.plan and len(args.plan) != 1:
             parser.error("--overview profiles one version per process")

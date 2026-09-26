@@ -33,8 +33,13 @@ class Pi05LiberoPolicy:
 
         directory = Path(checkpoint)
         config = json.loads((directory / "config.json").read_text())
-        if config["discrete_state_input"] or config["action_horizon"] != 10 or not config["pi05"]:
-            raise ValueError("This evaluation requires OpenPI pi05_libero: pi05=True, chunk=10, discrete_state_input=False")
+        from flash_vla.inference import get_target
+        libero = get_target(target).model.workload("libero")
+        if (config["discrete_state_input"] or not config["pi05"]
+                or config["action_horizon"] != libero.options["chunk_size"]
+                or config["max_token_len"] != libero.options["prompt_len"]):
+            raise ValueError("This evaluation requires an OpenPI pi05_libero checkpoint: pi05=True, "
+                             "discrete_state_input=False and the libero workload's chunk and prompt")
         self.stats = json.loads((directory / "assets/physical-intelligence/libero/norm_stats.json").read_text())["norm_stats"]
         self.engine = engine
         self.steps = steps
@@ -42,18 +47,24 @@ class Pi05LiberoPolicy:
                              steps=steps, torch=torch.__version__, gpu=torch.cuda.get_device_name(),
                              exact_rope=exact_rope if engine == "official" else None)
         if engine == "flashvla":
-            from flash_vla.inference import get_target
+            from flash_vla.models.pi05 import sources
             from flash_vla.models.pi05.weights import fold
             from flash_vla.provenance import git_revision
             from flash_vla.runtime import ModelRunner
 
-            weights = fold(converted_checkpoint(directory), steps=steps)
-            self.runner = ModelRunner(get_target(target), weights, engine_revision=git_revision(),
-                                      plan=plan, num_views=2, chunk_size=10, steps=steps,
-                                      prompt_len=config["max_token_len"], discrete_state=False,
-                                      prompt="pick up the object",
-                                      assets={"tokenizer": Path(tokenizer)})
-            self.metadata.update(target=target, plan=plan, views=2)
+            # The runner is built here rather than by `build_runner`: the checkpoint
+            # has no digest to name, so it declares no weights provenance. Its
+            # configuration is the libero workload's, derived as `build_runner` does.
+            declared = sources.runner_source(get_target(target), device="cpu", declare=True,
+                                             steps=steps, prompt="pick up the object",
+                                             **libero.options)
+            self.runner = ModelRunner(get_target(target), fold(converted_checkpoint(directory),
+                                                               steps=steps),
+                                      workload=libero.name, engine_revision=git_revision(),
+                                      plan=plan, assets={"tokenizer": Path(tokenizer)},
+                                      **declared.config)
+            self.metadata.update(target=target, plan=plan, workload=libero.name,
+                                 views=self.runner.shape["num_views"])
         else:
             from eval.pi05 import official
             from safetensors.torch import load_model

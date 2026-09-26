@@ -25,6 +25,7 @@ class _Engine:
             "fixture": {"id": "inputs", "digest": "inputs"},
         }
         self.implementation_source = None
+        self.workload = None
 
     def capture(self):
         raise AssertionError("measurement must use the initial capture")

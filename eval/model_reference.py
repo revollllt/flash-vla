@@ -44,7 +44,7 @@ from eval.tolerances import tolerances
 from flash_vla.inference import PLAN_NAMES, TARGETS, build, resolve
 from flash_vla.models.official import Precision
 from flash_vla.runtime.vla import ConfigValue
-from measurement.cli import parse_options
+from measurement.cli import WORKLOAD_HELP, parse_options
 
 
 class WeightsSource(Protocol):
@@ -94,7 +94,7 @@ class ReferenceReport(TypedDict):
 
 
 def run(target: str, plan: str = "shipped", *, steps: int | None = 1, layers: int | None = 1,
-        seed: int = 0, reference_precision: Precision = "float32",
+        seed: int = 0, reference_precision: Precision = "float32", workload: str | None = None,
         **options: ConfigValue) -> ReferenceReport:
     """Compare Target `target` on `plan` with its model's reference, stage by stage."""
     if not torch.cuda.is_available():
@@ -102,11 +102,12 @@ def run(target: str, plan: str = "shipped", *, steps: int | None = 1, layers: in
     entry = TARGETS[resolve(target)]
     shape_options = {name: value for name, value in (("steps", steps), ("layers", layers))
                      if value is not None}
-    engine = build(target, plan, seed=seed, **shape_options, **options)
+    engine = build(target, plan, workload=workload, seed=seed, **shape_options, **options)
     inputs = engine.sample_inputs(seed)
     engine.forward(**inputs)
     torch.cuda.synchronize()
     identity, context, device = engine.identity, engine.measurement_context, str(engine.device)
+    ran_workload = engine.workload
     # Keep what the engine computed and release its weights and graphs: a
     # float32 reference of a 4B model needs that device memory.
     buffers = {name: tensor.clone() for name, tensor in engine.buffers.items()}
@@ -141,7 +142,8 @@ def run(target: str, plan: str = "shipped", *, steps: int | None = 1, layers: in
     return {
         "identity": identity.as_dict(),
         "measurement_context": context,
-        "config": {"plan": plan, "steps": steps, "layers": layers, "seed": seed,
+        "config": {"plan": plan, "workload": ran_workload, "steps": steps, "layers": layers,
+                   "seed": seed,
                    "reference_precision": reference_precision, "options": options,
                    "oracle": "model_reference"},
         "stages": stages,
@@ -167,13 +169,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="float32 throughout, the gate (the reference then holds a float32 "
                              "copy of the weights: about twice their memory), or upstream's "
                              "bfloat16 inference dtypes, a report")
+    parser.add_argument("--workload", default=None, help=WORKLOAD_HELP)
     parser.add_argument("--option", action="append", default=[],
                         help="target construction option as key=value")
     parser.add_argument("--out", default=None, help="write the JSON report here")
     args = parser.parse_args(argv)
     report = run(args.target, args.plan, steps=args.steps or None, layers=args.layers or None,
                  seed=args.seed, reference_precision=args.reference_precision,
-                 **parse_options(args.option))
+                 workload=args.workload, **parse_options(args.option))
     text = json.dumps(report, indent=2)
     print(text)
     status = 0 if report["passed"] else 1

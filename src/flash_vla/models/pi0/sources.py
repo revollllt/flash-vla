@@ -36,8 +36,8 @@ def fixture_prompt(seed: int, prompt_len: int) -> torch.Tensor:
 
 
 def runner_source(target: Target[Pi0Config, None], *, device: str, declare: bool,
-                  seed: int = 0, num_views: int = 3, chunk_size: int = 50, steps: int = 10,
-                  layers: int = 18, prompt_len: int = 0, converted_checkpoint: str | None = None,
+                  num_views: int, chunk_size: int, prompt_len: int, seed: int = 0, steps: int = 10,
+                  layers: int = 18, converted_checkpoint: str | None = None,
                   checkpoint_id: str | None = None,
                   checkpoint_digest: str | None = None) -> RunnerSource:
     """The weights, fixture and configuration of one Pi0 construction;

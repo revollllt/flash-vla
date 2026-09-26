@@ -64,6 +64,7 @@ TARGET = Target(
         "vision_encoder_out_proj_residual": "cuda",
         "vision_encoder_ffn_down_residual": "cuda",
     },
+    workloads=("robodojo",),
     # The numerical reference stays all-torch, so `eval.correctness` compares
     # the hand-written kernels against the implementation they replaced rather
     # than against themselves.

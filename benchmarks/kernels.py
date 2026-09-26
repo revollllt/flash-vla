@@ -39,7 +39,7 @@ import torch
 from flash_vla.inference import PLAN_NAMES, build, resolve
 from flash_vla.runtime.cuda.timing import graph_samples
 from flash_vla.runtime.engine import segments
-from measurement.cli import parse_options
+from measurement.cli import WORKLOAD_HELP, parse_options
 from measurement.environment import require_cuda
 from measurement.kernel_bench import KernelResult, bench_gpu_time, render_table, write_csv
 
@@ -133,6 +133,7 @@ def main(argv=None) -> int:
     parser.add_argument("--target", required=True)
     parser.add_argument("--plan", default=None,
                         help=f"one of {PLAN_NAMES}, a JSON object or a lab/plans/*.json path")
+    parser.add_argument("--workload", default=None, help=WORKLOAD_HELP)
     parser.add_argument("--option", action="append", default=[])
     parser.add_argument("--segment", action="append", default=None, help="restrict to a segment")
     parser.add_argument("--site", action="append", default=None, help="restrict to a call site")
@@ -147,7 +148,7 @@ def main(argv=None) -> int:
     results = run(args.target, args.plan, seed=args.seed, only_segments=args.segment,
                   only_sites=args.site, timer=args.timer, reps=args.reps, n_inner=args.n_inner,
                   repeat_time_ms=args.repeat_time_ms, dry_run_time_ms=args.dry_run_time_ms,
-                  **parse_options(args.option))
+                  workload=args.workload, **parse_options(args.option))
     if not results:
         print("no call sites selected", file=sys.stderr)
         return 1

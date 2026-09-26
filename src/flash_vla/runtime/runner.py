@@ -81,6 +81,10 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
     for this runner's input sampler, host state and backend factories. It is
     not part of configuration, shape, graph arguments or identity.
 
+    `workload` names the model workload the construction options came from
+    (`Target.workloads`), `None` when a caller composed them itself; it labels
+    reports and changes nothing the runner does.
+
     `weights_provenance`, `fixture_provenance` and `implementation_source`
     are the provenance the caller names (`flash_vla.provenance`), and
     `engine_revision` the source revision the identity records (`git_revision`
@@ -105,6 +109,7 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
 
     def __init__(self, target: Target[ConfigT, HostStateT],
                  checkpoint: CheckpointReader | Mapping[str, torch.Tensor] | None = None, *,
+                 workload: str | None = None,
                  weights_provenance: WeightsProvenance | None = None,
                  fixture_provenance: FixtureProvenance | None = None,
                  implementation_source: ImplementationProvenance | None = None,
@@ -125,6 +130,7 @@ class ModelRunner(Generic[ConfigT, HostStateT]):
         reader = (checkpoint if checkpoint is None or isinstance(checkpoint, CheckpointReader)
                   else TensorCheckpoint(checkpoint))
         self.target = target
+        self.workload = workload
         self.weights_provenance = weights_provenance
         self.fixture_provenance = fixture_provenance
         self.implementation_source = implementation_source

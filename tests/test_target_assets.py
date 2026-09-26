@@ -211,9 +211,11 @@ def test_converted_pi05_checkpoint_states_the_provenance_it_cannot_resolve():
 
     from flash_vla.models.pi05.sources import runner_source
 
-    # A stub Target: the source reads only its model's default chunk.
-    stub = SimpleNamespace(model=SimpleNamespace(configure=lambda: SimpleNamespace(chunk_size=50)))
-    source = partial(runner_source, stub, device="cpu", declare=True)
+    from flash_vla.inference import get_target
+
+    target = get_target("rtx5090/pi05")
+    source = partial(runner_source, target, device="cpu", declare=True,
+                     **target.model.workload("robodojo").options)
     with pytest.raises(ValueError, match="not both"):
         source(checkpoint="a", converted_checkpoint="b")
     with pytest.raises(ValueError, match="checkpoint_id and checkpoint_digest"):

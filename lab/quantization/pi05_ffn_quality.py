@@ -34,6 +34,7 @@ from eval.libero.policy import Pi05LiberoPolicy
 from flash_vla.models.pi05.session import set_task
 from eval.metrics import error_metrics
 from flash_vla.hardware.nvidia.rtx5090.pi05.target import TARGET
+from flash_vla.models.pi05 import sources
 from flash_vla.models.pi05.openpi import converted_checkpoint
 from flash_vla.models.pi05.spec import ENCODER_LAYERS
 from flash_vla.models.pi05.weights import fold
@@ -128,6 +129,10 @@ def normalized_actions(runner: ModelRunner, stats: dict,
 def compare(args: argparse.Namespace) -> None:
     directory = Path(args.checkpoint)
     config = json.loads((directory / "config.json").read_text())
+    workload = TARGET.model.workload("libero").options
+    if (config["action_horizon"], config["max_token_len"]) != (workload["chunk_size"],
+                                                               workload["prompt_len"]):
+        raise ValueError("the checkpoint's action horizon and prompt length are not the libero workload's")
     stats = json.loads((directory / "assets/physical-intelligence/libero/norm_stats.json")
                        .read_text())["norm_stats"]
     dataset = np.load(args.dataset)
@@ -141,12 +146,15 @@ def compare(args: argparse.Namespace) -> None:
         recipe_path = args.out / "recipes" / f"{name}.json"
         recipe_path.parent.mkdir(exist_ok=True)
         recipe_path.write_text(json.dumps(variant.recipe) + "\n")
-        runner = ModelRunner(TARGET, weights, engine_revision=git_revision(),
+        # The LIBERO checkpoint's shape is the libero workload's, derived as `build_runner` does.
+        libero = sources.runner_source(TARGET, device="cpu", declare=True, steps=10,
+                                       prompt="pick up the object",
+                                       **TARGET.model.workload("libero").options)
+        runner = ModelRunner(TARGET, weights, workload="libero", engine_revision=git_revision(),
                              plan=variant.plan, quantization=variant.quantization,
-                             num_views=2, chunk_size=10, steps=10, prompt_len=config["max_token_len"],
-                             discrete_state=False, prompt="pick up the object",
                              assets={"tokenizer": Path(args.tokenizer)} if variant.recipe is None
-                             else {"tokenizer": Path(args.tokenizer), "quantization_recipe": recipe_path})
+                             else {"tokenizer": Path(args.tokenizer), "quantization_recipe": recipe_path},
+                             **libero.config)
         actions = normalized_actions(runner, stats, dataset)
         del runner
         torch.cuda.empty_cache()

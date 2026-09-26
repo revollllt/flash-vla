@@ -1,12 +1,17 @@
 # Architecture
 
-Flash-VLA specializes inference for a fixed model workload and GPU.
+Flash-VLA specializes inference for a model's declared workloads on a GPU.
 
 ```text
-Target   = hardware × inference-compatible architecture × shape profile
-Workload = Target × execution policy
+Target      = hardware × inference-compatible architecture
+workload    = one of the model's declared deployments: its shape profile
+measurement = Target × workload × execution policy   (Identity.same_workload)
 ```
 
+A workload ([docs/workloads.md](docs/workloads.md)) is a benchmark deployment's
+cameras, action chunk and prompt capacity, named and selected with
+`--workload`; the identity records its shape numbers, so two measurements are
+of the same workload exactly when their shapes and execution variants agree.
 A model definition owns the graph, shapes, buffers and host work; a Target
 composes it with one device's layout choices, backends and kernel routing. Execution policy
 covers precision/quantization and cache behavior. Checkpoint values and input
@@ -17,7 +22,7 @@ Quantization is a build-time choice among the Target's approved recipes
 (`Target.quantization`, `quantization=<recipe>`). A recipe fixes the math and the
 call sites it quantizes, routes those call sites to its kernels in the shipped
 plan and to its fake-quant reference in the reference plan, and is recorded in
-the identity's execution variant, so each recipe is its own workload. The
+the identity's execution variant, so each recipe is its own execution variant. The
 runner rejects a plan that runs a recipe's call sites on other backends or a
 recipe's backends anywhere else.
 
@@ -100,11 +105,16 @@ deployed inference. Model loading and capture are setup work.
 A model is a `runtime.vla.ModelDefinition` subclass in
 `models/<model>/definition.py`: identity, configuration, shape numbers, weight
 schema, forward inputs and stage outputs, the extension ops its graph uses,
-host slots, and `build`, which writes the graph (`models/<model>/graph.py`)
-against the op vocabulary. A Target is a `runtime.vla.Target` value in
-`hardware/<vendor>/<device>/<model>/target.py`: the model object with its
-layout, a backend registry, two plans (`shipped` and `reference`), quantization
-recipes, measured ceilings and the logical IDs of its assets. Candidate
+host slots, its `workloads`, and `build`, which writes the graph
+(`models/<model>/graph.py`) against the op vocabulary. A Target is a
+`runtime.vla.Target` value in `hardware/<vendor>/<device>/<model>/target.py`:
+the model object with its layout, a backend registry, two plans (`shipped` and
+`reference`), the workloads it is built and checked for (its default first),
+quantization recipes, measured ceilings and the logical IDs of its assets.
+`build_runner` constructs one workload: its options fix the shape profile, and
+a harness's own options (seed, checkpoint, depth cut for bisection) may not
+override them. A Target declares any workload its model declares, for its graph
+and floor, but builds only the ones it names. Candidate
 plans stay under `lab/plans/`. OpenPI loading/conversion belongs to
 `models/pi0/openpi.py` and `models/pi05/openpi.py`; evaluation adds official
 forward adapters.

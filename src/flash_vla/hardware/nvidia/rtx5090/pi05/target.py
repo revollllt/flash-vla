@@ -45,6 +45,7 @@ TARGET = Target(
         "action_expert_ffn_down_residual": "cutlass-expert-residual",
         "action_expert_action_out_proj": "fused-qkv",
     },
+    workloads=("robodojo", "libero"),
     reference_plan={},
     quantization={
         # The backbone FFN's three GEMMs in MXFP8 on every layer, approved on

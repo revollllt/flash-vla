@@ -49,11 +49,15 @@ class PrefixInputs:
     """Pinned host staging for one inference's prompt-dependent inputs.
 
     `build(state)` fills the buffers and returns the number of valid prefix
-    rows. `copy_into(buffers)` issues the four copies on the current stream.
+    rows; a state-carrying prompt (`Pi05Tokenizer`) carries the first
+    `robot_state_dim` state values, a task-only one (`TaskTokenizer`) none.
+    `copy_into(buffers)` issues the four copies on the current stream.
     """
 
-    def __init__(self, tokenizer: PromptTokenizer, num_views: int, chunk_size: int) -> None:
+    def __init__(self, tokenizer: PromptTokenizer, num_views: int, chunk_size: int, *,
+                 robot_state_dim: int) -> None:
         self.tokenizer = tokenizer
+        self.robot_state_dim = robot_state_dim
         self.prompt_len = tokenizer.max_token_len
         self.image_tokens = num_views * VISION_TOKENS
         self.encoder_seq_len = self.image_tokens + self.prompt_len
@@ -119,14 +123,14 @@ class PrefixInputs:
     def build(self, state: torch.Tensor | np.ndarray) -> int:
         """Tokenize `state` into the staging buffers; return the valid prefix length.
 
-        Tokenization is host arithmetic over 32 table lookups; everything after
+        Tokenization is one table lookup per carried state value; everything after
         it is a selection from `tabulate`'s rows and a contiguous copy, so the
         slot performs no elementwise work whose size could reach torch's
         intra-op thread pool.
         """
         if isinstance(state, torch.Tensor):
             state = state.detach().to("cpu", torch.float32).numpy()
-        tokens, valid = self.tokenizer.encode(np.asarray(state))
+        tokens, valid = self.tokenizer.encode(np.asarray(state)[:self.robot_state_dim])
         n_tokens = int(valid.sum())
 
         self.token_view[:] = tokens

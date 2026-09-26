@@ -52,7 +52,7 @@ from flash_vla.runtime.engine import host_slots, segments
 
 from flash_vla.inference import PLAN_NAMES, resolve
 from measurement.attribution import Attribution, LoopTrace, summary as attribution_summary
-from measurement.cli import parse_options
+from measurement.cli import WORKLOAD_HELP, parse_options
 from measurement.environment import collect_environment, device_selector, require_cuda, report_context
 from measurement.provenance import MeasurementContext
 from measurement.source_checkout import build
@@ -297,6 +297,7 @@ def main(argv=None) -> int:
                         help="run the first plan three times and report the spread")
     parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--layers", type=int, default=None)
+    parser.add_argument("--workload", default=None, help=WORKLOAD_HELP)
     parser.add_argument("--option", action="append", default=[],
                         help="target-local construction option as key=value, every leg")
     parser.add_argument("--breakdown", action="store_true",
@@ -311,6 +312,7 @@ def main(argv=None) -> int:
     overrides = {k: v for k, v in (("steps", args.steps), ("layers", args.layers))
                  if v is not None}
     overrides.update(parse_options(args.option))
+    overrides["workload"] = args.workload
     report = run(args.target, args.plan or [None], reps=args.reps, warmup=args.warmup,
                  seed=args.seed, calibrate=args.calibrate, attribution=args.attribution,
                  soak_s=args.soak_seconds, breakdown=args.breakdown,

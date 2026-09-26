@@ -52,6 +52,7 @@ from flash_vla.hardware.roofline import Roofline
 from flash_vla.inference import PLAN_NAMES, build, resolve
 from flash_vla.runtime.cost import Invocation, total
 from flash_vla.runtime.engine import segments
+from measurement.cli import WORKLOAD_HELP, parse_options
 from measurement.environment import collect_environment, record_path, report_context, require_cuda
 from measurement.timing import event_samples, summarize
 
@@ -272,9 +273,9 @@ def main(argv=None) -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--option", action="append", default=[])
     parser.add_argument("--out", default=None)
+    parser.add_argument("--workload", default=None, help=WORKLOAD_HELP)
     args = parser.parse_args(argv)
-    from measurement.cli import parse_options
-    report = run(args.target, args.plan, reps=args.reps, seed=args.seed,
+    report = run(args.target, args.plan, reps=args.reps, seed=args.seed, workload=args.workload,
                  **parse_options(args.option))
     text = json.dumps(report, indent=2)
     print(text)

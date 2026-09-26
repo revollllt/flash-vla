@@ -15,7 +15,7 @@ from safetensors.torch import load_file
 import torch
 
 from flash_vla.runtime.graph import Graph
-from flash_vla.runtime.vla import CheckpointReader, ConfigValue, Input, ModelDefinition
+from flash_vla.runtime.vla import CheckpointReader, ConfigValue, Input, ModelDefinition, Workload
 
 from . import graph
 from .ops import OPS
@@ -84,6 +84,12 @@ class LingBotModel(ModelDefinition[LingBotConfig, None]):
         "language_slots", "prefix_len", "state_dim", "action_dim", "chunk",
         "suffix_len", "steps", "layers", "backbone_dim", "backbone_ffn_dim",
         "expert_dim", "expert_ffn_dim", "query_heads", "kv_heads", "head_dim",
+    )
+    workloads = (
+        # RoboDojo: XPolicyLab `LingBot_VLA` (`train_multinode_robodojo.sh`): three
+        # 224x224 cameras, 72 language slots, chunk 50 -- the shapes `spec` fixes,
+        # so the workload names no option (docs/workloads.md).
+        Workload("robodojo", {}),
     )
     inputs = (
         Input("pixel_values", lambda s: (VIEWS, PATCH_ROWS_PER_VIEW, PATCH_WIDTH),

@@ -113,13 +113,14 @@ def lingbot_target(checkout: str | Path) -> tuple[Target, ImplementationProvenan
     return target, provenance
 
 
-def build(name: str, plan: PlanSpec = "shipped", *, source_checkout: str | None = None,
-          **options: ConfigValue) -> ModelRunner:
-    """The runner of Target `name` on `plan`; with `source_checkout`, its
-    backends come from that checkout, which only the LingBot Target supports."""
+def build(name: str, plan: PlanSpec = "shipped", *, workload: str | None = None,
+          source_checkout: str | None = None, **options: ConfigValue) -> ModelRunner:
+    """The runner of Target `name` on `plan` for `workload`; with `source_checkout`,
+    its backends come from that checkout, which only the LingBot Target supports."""
     if source_checkout is None:
-        return build_registered(name, plan, **options)
+        return build_registered(name, plan, workload=workload, **options)
     if resolve(name) != resolve("lingbot_vla"):
         raise ValueError(f"only LingBot loads its backends from a source checkout, not {name}")
     target, provenance = lingbot_target(source_checkout)
-    return build_runner(target, plan, implementation_source=provenance, **options)
+    return build_runner(target, plan, workload=workload, implementation_source=provenance,
+                        **options)

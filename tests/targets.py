@@ -1,7 +1,7 @@
 """Declaration check of every Target, without a device: python -m tests.targets.
 
-Builds each Target's graph through the runner's declaration path (no
-checkpoint, no capture, no CUDA) and checks what can be checked on a login
+Builds each Target's graph, once per workload it runs, through the runner's
+declaration path (no checkpoint, no capture, no CUDA) and checks what can be checked on a login
 node: the identity's shape keys, that every node's call site has a spec and
 the right argument count, that every output and every weight reference is
 declared, that the canonical stage outputs exist with the exposed shape their
@@ -22,7 +22,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from flash_vla.inference import TARGETS, declare, resolve
+from flash_vla.inference import TARGETS, declare, get_target, resolve
 from flash_vla.runtime.graph import BufRef, WeightRef
 
 REPO = Path(__file__).resolve().parent.parent
@@ -33,41 +33,43 @@ def _check(results: list[dict[str, Any]], name: str, ok: bool, detail: Any = Non
 
 
 def check_target(target: str) -> list[dict[str, Any]]:
+    """Every check below, once per workload the Target builds (`Target.workloads`)."""
     results: list[dict[str, Any]] = []
-    runner = declare(target)
-    graph = runner.graph
-    _check(results, "identity.shape keys",
-           tuple(runner.identity.shape) == runner.target.model.shape_axes,
-           tuple(runner.identity.shape))
-    _check(results, "stages non-empty",
-           all(graph.nodes_of(s) for s in graph.segment_names), graph.segment_names)
-    bad_arity = [n.index for n in graph.nodes
-                 if not n.is_copy and len(n.args) != len(graph.vocabulary[n.call_site].params)]
-    _check(results, "node arity matches spec", not bad_arity, bad_arity[:5])
-    undeclared = [n.index for n in graph.nodes for r in n.refs()
-                  if (isinstance(r, BufRef) and r.name not in graph.buffers)
-                  or (isinstance(r, WeightRef) and r.name not in graph.weight_shapes)]
-    _check(results, "references declared", not undeclared, undeclared[:5])
-    outputs_ok = True
-    for stage, outputs in runner.stage_outputs.items():
-        for buffer, axis in outputs:
-            spec = graph.buffers.get(buffer)
-            if spec is None:
-                outputs_ok = False
-                continue
-            exposed = graph.buf(buffer).shape
-            if axis is not None and (axis >= len(exposed) or exposed[axis] < 1):
-                outputs_ok = False
-    _check(results, "stage outputs declared", outputs_ok)
-    costs = runner.costs
-    _check(results, "costs non-zero per stage",
-           all(sum(i.bytes for i in rows) > 0 and sum(i.flops for i in rows) > 0
-               for rows in costs.values()),
-           {s: len(rows) for s, rows in costs.items()})
-    for plan in ("shipped", "reference"):
-        routed = declare(target, plan).identity.plan
-        _check(results, f"plan {plan} routes every call site",
-               set(routed) == set(graph.call_sites), sorted(set(routed.values())))
+    for workload in get_target(target).workloads:
+        runner = declare(target, workload=workload)
+        graph = runner.graph
+        _check(results, f"[{workload}] identity.shape keys",
+               tuple(runner.identity.shape) == runner.target.model.shape_axes,
+               tuple(runner.identity.shape))
+        _check(results, f"[{workload}] stages non-empty",
+               all(graph.nodes_of(s) for s in graph.segment_names), graph.segment_names)
+        bad_arity = [n.index for n in graph.nodes
+                     if not n.is_copy and len(n.args) != len(graph.vocabulary[n.call_site].params)]
+        _check(results, f"[{workload}] node arity matches spec", not bad_arity, bad_arity[:5])
+        undeclared = [n.index for n in graph.nodes for r in n.refs()
+                      if (isinstance(r, BufRef) and r.name not in graph.buffers)
+                      or (isinstance(r, WeightRef) and r.name not in graph.weight_shapes)]
+        _check(results, f"[{workload}] references declared", not undeclared, undeclared[:5])
+        outputs_ok = True
+        for stage, outputs in runner.stage_outputs.items():
+            for buffer, axis in outputs:
+                spec = graph.buffers.get(buffer)
+                if spec is None:
+                    outputs_ok = False
+                    continue
+                exposed = graph.buf(buffer).shape
+                if axis is not None and (axis >= len(exposed) or exposed[axis] < 1):
+                    outputs_ok = False
+        _check(results, f"[{workload}] stage outputs declared", outputs_ok)
+        costs = runner.costs
+        _check(results, f"[{workload}] costs non-zero per stage",
+               all(sum(i.bytes for i in rows) > 0 and sum(i.flops for i in rows) > 0
+                   for rows in costs.values()),
+               {s: len(rows) for s, rows in costs.items()})
+        for plan in ("shipped", "reference"):
+            routed = declare(target, plan, workload=workload).identity.plan
+            _check(results, f"[{workload}] plan {plan} routes every call site",
+                   set(routed) == set(graph.call_sites), sorted(set(routed.values())))
     return results
 
 

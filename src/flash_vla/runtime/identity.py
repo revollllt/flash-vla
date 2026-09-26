@@ -129,6 +129,8 @@ class Identity:
                    schema_version=version)
 
     def same_workload(self, other: Identity) -> bool:
+        """The same model and hardware at the same shape (the declared workload,
+        depth included) and execution variant: measurements that compare."""
         return (self.model_revision is not None and other.model_revision is not None
                 and self.schema_version == other.schema_version
                 and self.hardware == other.hardware and self.model == other.model

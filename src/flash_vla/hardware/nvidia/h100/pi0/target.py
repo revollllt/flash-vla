@@ -34,6 +34,7 @@ TARGET = Target(
         "vision_encoder_norm_ffn_up": "siglip-cuda",
         "vision_encoder_attention": "siglip-cuda",
     },
+    workloads=("robodojo",),
     # The reference route: every call site on the unfused TileLang wrappers.
     reference_plan={},
 )

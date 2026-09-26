@@ -41,6 +41,8 @@ class Engine(Protocol):
     device: torch.device
     #: The quantization recipe in force (`Target.quantization`), or the precision policy.
     quantization: str
+    #: The model workload the construction ran (`Target.workloads`), or `None`.
+    workload: str | None
     #: The shape numbers of the identity, and derived numbers (a prefix length).
     shape: Mapping[str, int]
     derived: Mapping[str, int]

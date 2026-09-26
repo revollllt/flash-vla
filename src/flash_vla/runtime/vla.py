@@ -45,7 +45,7 @@ from typing import Callable, Generic, Mapping, TypeVar
 
 import torch
 
-from .cost import Ceiling, Pricing
+from .cost import Ceiling, Pricing as CallSitePricing
 from .graph import Graph
 from .ops import OpSpec, Vocabulary
 from .registry import Registry
@@ -72,6 +72,25 @@ PlanSpec = str | Mapping[str, str] | None
 
 ConfigT = TypeVar("ConfigT")
 HostStateT = TypeVar("HostStateT")
+
+
+@dataclass(frozen=True)
+class Workload:
+    """One deployment workload of a model: the construction options that fix its
+    shape profile, and the fixture parameters that shape depends on (how many
+    state values a Pi0.5 prompt carries).
+
+    `options` are keyword options of the model's `runner_source`
+    (`models/<model>/sources.py`). A harness adds its own (seed, checkpoint,
+    and depth, which stays the model's and is cut only to bisect) but never
+    overrides these. `docs/workloads.md` records where every value comes from:
+    the benchmark, the upstream configuration and revision.
+    """
+    name: str
+    options: Mapping[str, ConfigValue]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
 
 
 @dataclass(frozen=True)
@@ -115,12 +134,25 @@ class TensorCheckpoint(CheckpointReader):
 
 
 @dataclass(frozen=True)
+class Pricing:
+    """How a quantization recipe prices its call sites in the work of a forward
+    (`measurement.work`): their FLOPs run in the `tensor` format; the weights
+    they read cost `weight_itemsize` bytes per element, and the activations one of
+    them passes another `activation_itemsize`, block scales included (MXFP8:
+    1 + 1/32). Everything else keeps the Target's precision."""
+    call_sites: frozenset[str]
+    tensor: str
+    weight_itemsize: float
+    activation_itemsize: float
+
+
+@dataclass(frozen=True)
 class QuantizationRecipe:
     """A human-approved quantization of some call sites, selected at build time.
 
     `spec` fixes the math (formats, scale granularity, rounding points) and is
     recorded, with the call sites, as the Identity's
-    `execution_variant.quantization`, so every recipe is its own workload;
+    `execution_variant.quantization`, so every recipe is its own execution variant;
     `spec["mode"]` names the tolerance tier its kernels meet against its
     reference. `plan` routes each quantized call site to its kernel backend over
     the Target's shipped plan; `reference_plan` routes it to the backend that
@@ -135,7 +167,7 @@ class QuantizationRecipe:
     plan: Mapping[str, str]
     reference_plan: Mapping[str, str]
     backends: frozenset[str]
-    pricing: Mapping[str, Pricing] = field(default_factory=dict)
+    pricing: Mapping[str, CallSitePricing] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if set(self.plan) != set(self.reference_plan):
@@ -166,6 +198,8 @@ class ModelDefinition(ABC, Generic[ConfigT, HostStateT]):
     inference_signature: str
     #: Ordered graph-static axes returned by `shape`.
     shape_axes: tuple[str, ...]
+    #: The deployment workloads this model is used with, the primary first.
+    workloads: tuple[Workload, ...]
     #: The forward inputs, in the order `sample_inputs` draws them.
     inputs: tuple[Input, ...] = ()
     #: The buffer `forward` returns.
@@ -174,6 +208,14 @@ class ModelDefinition(ABC, Generic[ConfigT, HostStateT]):
     stage_outputs: Mapping[str, tuple[tuple[str, int | None], ...]] = STAGE_OUTPUTS
     #: The op specs this model's graph uses beyond the standard vocabulary.
     ops: tuple[OpSpec, ...] = ()
+
+    def workload(self, name: str) -> Workload:
+        """The declared workload called `name`."""
+        for workload in self.workloads:
+            if workload.name == name:
+                return workload
+        raise KeyError(f"{self.name} declares no workload {name!r}; it declares "
+                       f"{[workload.name for workload in self.workloads]}")
 
     @abstractmethod
     def configure(self, **config: ConfigValue) -> ConfigT:
@@ -247,6 +289,9 @@ class Target(Generic[ConfigT, HostStateT]):
     the floor model uses in place of the constants' rule. `call_site_aliases`
     maps call-site names a saved plan may still use to this Target's names (a
     device whose layout renames call sites keeps its old plans binding).
+    `workloads` names the model's workloads this Target is built and checked
+    for, its default first; another workload of the model can be declared
+    here -- its graph and its floor (`measurement.work`) -- but not built.
     Every mapping is frozen on construction.
     """
     name: str
@@ -254,6 +299,7 @@ class Target(Generic[ConfigT, HostStateT]):
     model: ModelDefinition[ConfigT, HostStateT]
     registry: Registry
     plan: Mapping[str, str]
+    workloads: tuple[str, ...]
     reference_plan: Mapping[str, str] = field(default_factory=dict)
     precision: str = "bf16"
     quantization: Mapping[str, QuantizationRecipe] = field(default_factory=dict)
@@ -262,6 +308,10 @@ class Target(Generic[ConfigT, HostStateT]):
     call_site_aliases: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        declared = {workload.name for workload in self.model.workloads}
+        if not self.workloads or not set(self.workloads) <= declared:
+            raise ValueError(f"{self.name} must name at least one of its model's workloads "
+                             f"{sorted(declared)}; it names {list(self.workloads)}")
         # A frozen dataclass still hands out its dicts; freeze their contents too.
         object.__setattr__(self, "plan", MappingProxyType(dict(self.plan)))
         object.__setattr__(self, "reference_plan", MappingProxyType(dict(self.reference_plan)))
@@ -338,4 +388,4 @@ class Target(Generic[ConfigT, HostStateT]):
 
 
 __all__ = ["CheckpointReader", "ConfigT", "ConfigValue", "HostStateT", "DTYPES", "Input", "ModelDefinition", "PlanSpec",
-           "QuantizationRecipe", "STAGES", "STAGE_OUTPUTS", "Target", "TensorCheckpoint"]
+           "Pricing", "QuantizationRecipe", "STAGES", "STAGE_OUTPUTS", "Target", "TensorCheckpoint", "Workload"]

@@ -1,12 +1,17 @@
 """Command-line conventions every measuring harness shares.
 
-A harness passes Target construction options through as repeated
-`--option key=value` (`flash_vla.inference.build`); `parse_options` turns them
-into the keyword arguments `build` takes.
+A harness names the workload with `--workload` and passes further Target
+construction options as repeated `--option key=value`
+(`flash_vla.inference.build`); `parse_options` turns those into the keyword
+arguments `build` takes.
 """
 from __future__ import annotations
 
 from flash_vla.runtime.vla import ConfigValue
+
+
+#: The help text of every harness's `--workload`.
+WORKLOAD_HELP = "one of the Target's workloads (docs/workloads.md); default: the Target's first"
 
 
 def parse_options(items: list[str]) -> dict[str, ConfigValue]:
@@ -20,4 +25,4 @@ def parse_options(items: list[str]) -> dict[str, ConfigValue]:
     return out
 
 
-__all__ = ["parse_options"]
+__all__ = ["WORKLOAD_HELP", "parse_options"]

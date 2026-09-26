@@ -22,7 +22,8 @@ from .weights import CHECKPOINT_ID, Checkpoint, weight_shapes
 
 
 def runner_source(target: Target[GrootConfig, None], *, device: str, declare: bool,
-                  seed: int = 0, steps: int = 4, layers: int = 16, sequence_length: int = 156,
+                  views: int, sequence_length: int, seed: int = 0, steps: int = 4,
+                  layers: int = 16,
                   checkpoint: str | None = None, fixture: str | None = None,
                   checkpoint_id: str | None = None, fixture_id: str | None = None,
                   asset_config: str | None = None) -> RunnerSource:
@@ -38,7 +39,7 @@ def runner_source(target: Target[GrootConfig, None], *, device: str, declare: bo
     named_weights = WeightsProvenance(checkpoint_id=identifiers["checkpoint"],
                                       checkpoint_digest=identifiers["checkpoint"])
     named_fixture = FixtureProvenance(id=fixture_context, digest=fixture_context)
-    config = dict(sequence_length=sequence_length, steps=steps, layers=layers)
+    config = dict(views=views, sequence_length=sequence_length, steps=steps, layers=layers)
     if declare:
         return RunnerSource(checkpoint=None, weights_provenance=named_weights,
                             fixture_provenance=named_fixture, assets={}, config=config)

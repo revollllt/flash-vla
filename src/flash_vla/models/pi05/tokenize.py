@@ -19,8 +19,8 @@ piece, and digits are individual pieces::
     _ 1 2 8 | _ 6 4 | _ 2 4 3 | _- 1                  the state values
     ; \\n Action : _                                   tail, fixed forever
 
-So the per-inference work reduces to 32 lookups in a 257-entry table plus a
-concatenation. `Pi05Tokenizer.encode` is that; `Pi05Tokenizer.reference` is the
+So the per-inference work reduces to one lookup per state value in a 257-entry
+table plus a concatenation. `Pi05Tokenizer.encode` is that; `Pi05Tokenizer.reference` is the
 upstream implementation verbatim, kept here so the two can be compared. They
 must agree exactly -- `tests.pi05.tokenize` is the gate, and
 it also pins the closed form in `discretize`.

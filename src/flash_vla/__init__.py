@@ -1,20 +1,12 @@
 """Extreme-latency VLA inference: one runner, a model definition per model, a Target per device.
 
-    import torch
-    from flash_vla import ModelRunner
-    from flash_vla.hardware.nvidia.h100.pi0 import TARGET
-    from flash_vla.models.pi0 import random_checkpoint, random_checkpoint_revision
-    from flash_vla.provenance import WeightsProvenance
+    from flash_vla.inference import build
 
-    revision = random_checkpoint_revision(0)
-    runner = ModelRunner(TARGET, random_checkpoint(0, prompt_ids=torch.empty(0, dtype=torch.long)),
-                         weights_provenance=WeightsProvenance(checkpoint_id=revision,
-                                                              checkpoint_digest=revision),
-                         num_views=3, chunk_size=50)
-    actions = runner.forward(images=images, state=state, noise=noise)
+    runner = build("rtx5090/pi05", workload="robodojo")   # seeded weights and fixture
+    actions = runner.forward(**runner.sample_inputs(0))
 
-A harness builds a Target by name instead (`flash_vla.inference.build`), with
-the weights and fixture its model's `sources` module resolves.
+`build` names a Target and one of its workloads (`docs/workloads.md`); the
+weights and fixture come from its model's `sources` module.
 
 A model (`flash_vla.models.<model>`) writes its computation graph against the
 framework's op vocabulary; a Target (`flash_vla.hardware.<vendor>.<device>`)

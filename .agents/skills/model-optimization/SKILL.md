@@ -26,7 +26,10 @@ it, the time it should recover, and the cheapest experiment separating it from
 the alternative; an ambiguous result revises it rather than adding a candidate.
 
 1. **Prepare.** Project root, target GPU, the model's own Python environment,
-   real checkpoint, fixed inputs and run parameters. Use an existing Target;
+   real checkpoint, fixed inputs and run parameters. The workload is the
+   Target's default unless the run names another (`--workload`,
+   [workloads](../../../docs/workloads.md)); every measurement of a run uses
+   the same one. Use an existing Target;
    onboard a new one with [target-onboarding](../target-onboarding/SKILL.md).
    LingBot resolves checkpoint and fixture through `FLASH_VLA_ASSETS`, a JSON
    map of asset ids to local paths; synthetic-weight Targets need none.

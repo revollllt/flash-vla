@@ -17,6 +17,9 @@ TARGET = Target(
     model=GrootModel(),
     registry=REGISTRY,
     plan={},
+    # Only the LIBERO observation is prepared as a fixture; RoboDojo is declared
+    # by the model for its floor (docs/workloads.md).
+    workloads=("libero",),
     reference_plan={},
     assets={"checkpoint": CHECKPOINT_ID, "fixture": FIXTURE_ID},
 )

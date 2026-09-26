@@ -32,10 +32,13 @@ class Roofline:
     to its peak. `constant_tags` maps each floor role (`stream`, `burst`,
     `tensor`, ...) to the tag of the `constants_file` row that fills it;
     `burst` is optional, and without a measured burst curve the ceiling falls
-    back to the stream model at every size.
+    back to the stream model at every size. `l2_bytes` is how much a repeated
+    pass (a denoising step) can find in cache rather than in DRAM
+    (`measurement.work`).
     """
     spec: type
     dram_bytes_per_second: int
+    l2_bytes: int
     tensor_peaks: Mapping[str, TensorPeak]
     constants_file: Path
     constant_tags: Mapping[str, str]

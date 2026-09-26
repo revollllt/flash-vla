@@ -20,11 +20,15 @@ class MeasurementContext:
     """Checkpoint/fixture identity and the environment of an observation.
 
     `weights` and `fixture` are the report forms of `WeightsProvenance` and
-    `FixtureProvenance`; saved reports may carry a `None` digest.
+    `FixtureProvenance`; saved reports may carry a `None` digest. `workload`
+    names the declared workload the engine ran (`docs/workloads.md`), `None` in
+    reports older than workloads; the identity's shape numbers already tell
+    workloads apart, so it labels and never takes part in a comparison.
     """
     weights: Mapping[str, str | None]
     fixture: Mapping[str, str | None]
     environment: Mapping[str, object]
+    workload: str | None = None
     hostname: str | None = None
     slurm_job_id: str | None = None
     timestamp: float | None = None
@@ -48,7 +52,8 @@ class MeasurementContext:
 
     def as_dict(self) -> dict[str, object]:
         return dict(weights=dict(self.weights), fixture=dict(self.fixture),
-                    environment=dict(self.environment), hostname=self.hostname,
+                    environment=dict(self.environment), workload=self.workload,
+                    hostname=self.hostname,
                     slurm_job_id=self.slurm_job_id, timestamp=self.timestamp,
                     reference_provenance=dict(self.reference_provenance))
 

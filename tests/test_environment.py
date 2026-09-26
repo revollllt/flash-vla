@@ -45,7 +45,7 @@ def test_environment_stamps_selected_device_power_without_claiming_clock_lock(fr
     }
     assert env["runtime_observation"]["clocks.sm"] == "1590"
     assert env["runtime_observation"]["clocks_event_reasons.active"] == "0x4"
-    engine = SimpleNamespace(measurement_context={
+    engine = SimpleNamespace(workload=None, measurement_context={
         "weights": {"checkpoint_id": "a", "checkpoint_digest": "a"},
         "fixture": {"id": "inputs", "digest": "inputs"},
     })

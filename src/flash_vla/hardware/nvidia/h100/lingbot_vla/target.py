@@ -25,6 +25,7 @@ TARGET = Target(
         "lingbot_prefix": "vision-attention",
         "lingbot_action": "vision-attention",
     },
+    workloads=("robodojo",),
     reference_plan={},
     assets={
         "checkpoint": CHECKPOINT_REVISION,

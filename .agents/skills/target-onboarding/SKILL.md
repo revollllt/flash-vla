@@ -10,7 +10,10 @@ loop begins after that model's semantics and correctness reference are understoo
 
 1. Read [architecture](../../../ARCHITECTURE.md) and the upstream forward,
    checkpoint format and preprocessing. State the intended shapes, precision,
-   inputs/outputs and unresolved compatibility questions.
+   inputs/outputs and unresolved compatibility questions. The shapes come from
+   the benchmark deployments the model is used with: declare each as a
+   workload in the model's `workloads` (the primary first) and record its
+   source and every axis in [docs/workloads.md](../../../docs/workloads.md).
 2. Write the model's end-to-end reference first:
    `src/flash_vla/models/<model>/reference.py`, the whole model -- vision
    encoder, backbone and the action expert's full denoising loop -- translated

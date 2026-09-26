@@ -1,0 +1,38 @@
+== leg 0: hardware/nvidia/rtx5090/pi05 plan=shipped options={}
+[profile] marker kernels unavailable (RuntimeError: Ninja is required to load C++ extensions (pip install ninja to get it)); attributing by correlation only
+USDT:2026-09-26 21:48:13 3062839:3062839 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-26 21:48:13 3062839:3062839 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-09-26 21:48:13 3062839:3062839 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-26 21:48:13 3062839:3062839 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-09-26 21:48:13 3062839:3062839 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-26 21:48:13 3062839:3062839 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-09-26 21:48:13 3062839:3062839 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-26 21:48:13 3062839:3062839 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-09-26 21:48:13 3062839:3062839 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-26 21:48:13 3062839:3062839 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-09-26 21:48:13 3062839:3062839 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-26 21:48:13 3062839:3062839 SyncActivityProfilerHandler.cpp:59] profiler_stop
+== leg 0 plan=shipped options={} contract=ok
+  -- vision_encoder: wall 4.088 ms, attributed 4.046 ms, trace union 4.046 ms, 302 launches, copies 0.043 ms
+        1.263 ms  31.2%  x81    vision_encoder_norm_ffn_up       ctas_min=340 under_wave=0
+        1.018 ms  25.2%  x54    vision_encoder_ffn_down_residual ctas_min=170 under_wave=0
+        0.927 ms  22.9%  x54    vision_encoder_norm_qkv          ctas_min=324 under_wave=0
+        0.415 ms  10.3%  x54    vision_encoder_out_proj_residual ctas_min=170 under_wave=0
+        0.403 ms  10.0%  x54    vision_encoder_attention         ctas_min=96 under_wave=27
+        0.020 ms   0.5%  x5     vision_encoder_patch_embed       ctas_min=192 under_wave=0
+  -- llm_backbone: wall 8.235 ms, attributed 8.224 ms, trace union 8.210 ms, 285 launches, copies 4.845 ms
+        3.436 ms  41.8%  x68    llm_backbone_norm_gated_ffn_masked ctas_min=968 under_wave=0
+        1.797 ms  21.9%  x51    llm_backbone_ffn_down_residual_masked ctas_min=128 under_wave=17
+        1.146 ms  13.9%  x68    llm_backbone_attention           ctas_min=122 under_wave=17
+        1.111 ms  13.5%  x54    llm_backbone_norm_qkv_rope       ctas_min=160 under_wave=18
+        0.688 ms   8.4%  x34    llm_backbone_out_proj_residual_masked ctas_min=128 under_wave=17
+        0.042 ms   0.5%  x8     llm_backbone_projector           ctas_min=3 under_wave=2
+        0.004 ms   0.0%  x2     llm_backbone_embed_prompt        ctas_min=200 under_wave=0
+  -- action_expert: wall 9.698 ms, attributed 9.385 ms, trace union 9.385 ms, 1870 launches, copies 0.007 ms
+        2.764 ms  29.5%  x360   action_expert_norm_gated_ffn     ctas_min=50 under_wave=180
+        2.038 ms  21.7%  x720   action_expert_attention          ctas_min=168 under_wave=180
+        1.785 ms  19.0%  x360   action_expert_norm_qkv_rope      ctas_min=50 under_wave=180
+        1.528 ms  16.3%  x180   action_expert_ffn_down_residual  ctas_min=298 under_wave=0
+        1.170 ms  12.5%  x180   action_expert_out_proj_residual  ctas_min=298 under_wave=0
+        0.050 ms   0.5%  x40    action_expert_action_out_proj    ctas_min=4 under_wave=40
+        0.049 ms   0.5%  x30    action_expert_action_in_proj     ctas_min=64 under_wave=30

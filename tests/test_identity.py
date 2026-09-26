@@ -150,8 +150,8 @@ def test_signature_canonicalization_and_semantic_sensitivity():
 @pytest.mark.parametrize("target", ["h100/pi0", "h100/pi05"])
 def test_signature_excludes_shape_profile_and_candidate_plan(target):
     from flash_vla.inference import declare
-    first = declare(target, "reference", steps=10, chunk_size=50)
-    other = declare(target, "shipped", steps=5, chunk_size=32)
+    first = declare(target, "reference", steps=10)
+    other = declare(target, "shipped", steps=5)
     assert first.identity.inference_signature == other.identity.inference_signature
     assert not first.identity.same_workload(other.identity)
 
@@ -181,7 +181,7 @@ def test_runner_rejects_incompatible_weight_schema_before_allocation(target):
     }
     name = next(iter(weights))
     weights[name] = torch.empty((1,), device="meta")
-    config = {"prompt_len": 0} if target == "h100/pi0" else {}
+    config = {"prompt_len": declaration.shape["prompt_len"]} if target == "h100/pi0" else {}
     with patch.object(torch, "empty", side_effect=AssertionError("allocated before ABI check")):
         with pytest.raises(ValueError, match="inference signature mismatch"):
             ModelRunner(declaration.target, weights,
@@ -248,7 +248,7 @@ def test_profile_rejects_cross_context_delta(field):
         if plan == "b":
             provenance[field]["checkpoint_digest" if field == "weights" else "digest"] = "changed"
         return SimpleNamespace(
-            identity=Identity.from_dict(payload()), measurement_context=provenance,
+            identity=Identity.from_dict(payload()), measurement_context=provenance, workload=None,
             sample_inputs=lambda seed: {}, forward=lambda **kwargs: observed.append(plan),
             graph_contract=GraphContract(),
         )

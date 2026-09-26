@@ -19,7 +19,7 @@ from typing import Mapping
 import torch
 
 from flash_vla.runtime.graph import Graph
-from flash_vla.runtime.vla import CheckpointReader, ConfigValue, Input, ModelDefinition
+from flash_vla.runtime.vla import CheckpointReader, ConfigValue, Input, ModelDefinition, Workload
 
 from . import graph
 from .graph import Pi05Layout
@@ -66,6 +66,17 @@ class Pi05Config:
     #: Whether the prompt carries the discretized state (OpenPI's
     #: `discrete_state_input`); a task-only checkpoint such as pi05_libero sets False.
     discrete_state: bool = True
+    #: How many state values the prompt carries: the robot's own state width.
+    #: OpenPI tokenizes the state before padding it to `STATE_DIM`
+    #: (`TokenizePrompt` precedes `PadStatesAndActions`), so a 14-dim ALOHA
+    #: state puts 14 values in the prompt, not 32.
+    robot_state_dim: int = STATE_DIM
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.robot_state_dim <= STATE_DIM:
+            raise ValueError(f"robot_state_dim must be in [1, {STATE_DIM}]")
+        if not self.discrete_state and self.robot_state_dim != STATE_DIM:
+            raise ValueError("a task-only prompt carries no state; robot_state_dim does not apply")
 
 
 class Pi05Model(ModelDefinition[Pi05Config, PrefixInputs]):
@@ -86,6 +97,15 @@ class Pi05Model(ModelDefinition[Pi05Config, PrefixInputs]):
         "chunk", "expert_tokens", "state_dim", "action_dim", "steps", "layers",
         "encoder_dim", "encoder_ffn_dim", "query_heads", "kv_heads", "head_dim",
         "qkv_width", "expert_dim", "expert_ffn_dim",
+    )
+    workloads = (
+        # RoboDojo's official Pi0.5 baseline: XPolicyLab `pi05_base_aloha_full_sim_arx-x5`,
+        # three cameras and a 14-dim ALOHA state (docs/workloads.md).
+        Workload("robodojo", {"num_views": 3, "chunk_size": 50, "prompt_len": MAX_TOKEN_LEN,
+                              "discrete_state": True, "robot_state_dim": 14}),
+        # OpenPI `pi05_libero`: two cameras, action horizon 10, task-only prompt.
+        Workload("libero", {"num_views": 2, "chunk_size": 10, "prompt_len": MAX_TOKEN_LEN,
+                            "discrete_state": False}),
     )
     inputs = (
         Input("images", lambda s: (s["num_views"], IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS),
@@ -146,7 +166,8 @@ class Pi05Model(ModelDefinition[Pi05Config, PrefixInputs]):
                    assets: Mapping[str, Path]) -> PrefixInputs:
         tokenizer_type = Pi05Tokenizer if config.discrete_state else TaskTokenizer
         tokenizer = tokenizer_type(assets["tokenizer"], max_token_len=config.prompt_len)
-        prefix = PrefixInputs(tokenizer, config.num_views, config.chunk_size)
+        prefix = PrefixInputs(tokenizer, config.num_views, config.chunk_size,
+                              robot_state_dim=config.robot_state_dim)
         if config.prompt is None:
             return prefix
         tokenizer.set_task(config.prompt)

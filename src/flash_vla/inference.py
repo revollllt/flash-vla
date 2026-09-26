@@ -13,6 +13,8 @@ registry is where they enter.
 A plan is `"shipped"` (the Target's one deployed plan, the default),
 `"reference"` (its correctness oracle route), a JSON object, or a path to a
 JSON file (the candidate plans of the optimization workspace, `lab/plans/`).
+A workload is one the model declares and the Target runs
+(`Target.workloads`, the default first; `docs/workloads.md`).
 """
 from __future__ import annotations
 
@@ -100,23 +102,37 @@ def get_target(name: str) -> Target:
     return import_module(TARGETS[resolve(name)].target_module).TARGET
 
 
-def build_runner(target: Target, plan: PlanSpec = "shipped", *, quantization: str | None = None,
-                 device: str = "cuda", declare: bool = False, capture: bool = True,
+def build_runner(target: Target, plan: PlanSpec = "shipped", *, workload: str | None = None,
+                 quantization: str | None = None, device: str = "cuda", declare: bool = False,
+                 capture: bool = True,
                  implementation_source: ImplementationProvenance | None = None,
                  **options: ConfigValue) -> ModelRunner:
-    """Construct a runner of `target` on `plan`.
+    """Construct a runner of `target` on `plan` for `workload`.
 
     `target` is a registered Target or a variant of one under its name, such
     as one whose backends another checkout provides (`measurement.source_checkout`); that
     checkout is its `implementation_source`, and its revision the engine
-    revision. `options` are the model's (its `runner_source`). With `declare`
-    the runner stops at its graph: no weights, no assets, no capture.
+    revision. `workload` is one of the model's workloads, `target.workloads[0]`
+    by default; its options fix the shape, and `options` add the rest of the
+    model's (its `runner_source`: seed, depth, checkpoint) without overriding
+    them. With `declare` the runner stops at its graph -- no weights, no
+    assets, no capture -- and any workload the model declares can be declared;
+    a runner is built only for the workloads the Target names.
     """
+    workload_name = target.workloads[0] if workload is None else workload
+    declared = target.model.workload(workload_name)
+    if not declare and workload_name not in target.workloads:
+        raise ValueError(f"{target.name} runs the workloads {list(target.workloads)}, "
+                         f"not {workload_name!r}; it can only declare it")
+    fixed = sorted(set(declared.options) & set(options))
+    if fixed:
+        raise ValueError(f"workload {workload_name!r} fixes {fixed}; name another workload instead")
     source = import_module(TARGETS[target.name].sources_module).runner_source(
-        target, device=device, declare=declare, **options)
+        target, device=device, declare=declare, **declared.options, **options)
     engine_revision = (git_revision() if implementation_source is None
                        else implementation_source.revision)
-    return ModelRunner(target, source.checkpoint, weights_provenance=source.weights_provenance,
+    return ModelRunner(target, source.checkpoint, workload=workload_name,
+                       weights_provenance=source.weights_provenance,
                        fixture_provenance=source.fixture_provenance,
                        implementation_source=implementation_source,
                        engine_revision=engine_revision, plan=plan, quantization=quantization,
@@ -124,14 +140,17 @@ def build_runner(target: Target, plan: PlanSpec = "shipped", *, quantization: st
                        **source.config)
 
 
-def build(name: str, plan: PlanSpec = "shipped", **options: ConfigValue) -> ModelRunner:
-    """Construct the runner of Target `name` on `plan`."""
-    return build_runner(get_target(name), plan, **options)
+def build(name: str, plan: PlanSpec = "shipped", *, workload: str | None = None,
+          **options: ConfigValue) -> ModelRunner:
+    """Construct the runner of Target `name` on `plan` for `workload`."""
+    return build_runner(get_target(name), plan, workload=workload, **options)
 
 
-def declare(name: str, plan: PlanSpec = "shipped", **options: ConfigValue) -> ModelRunner:
+def declare(name: str, plan: PlanSpec = "shipped", *, workload: str | None = None,
+            **options: ConfigValue) -> ModelRunner:
     """Construct the runner of Target `name` up to its graph: no weights, no device."""
-    return build_runner(get_target(name), plan, declare=True, device="cpu", **options)
+    return build_runner(get_target(name), plan, workload=workload, declare=True, device="cpu",
+                        **options)
 
 
 __all__ = ["ALIASES", "PLAN_NAMES", "TARGETS", "TargetEntry", "build", "build_runner", "declare",

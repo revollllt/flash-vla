@@ -14,21 +14,20 @@ from .spec import (
     CHUNK,
     DEEPSTACK_LAYERS,
     PATCH_WIDTH,
-    PATCHES,
+    PATCHES_PER_VIEW,
     STATE_DIM,
-    VISUAL_TOKENS,
 )
 
 
 def build(g: Graph, shape: Mapping[str, int]) -> None:
-    length = shape["sequence_length"]
+    length, visual_tokens = shape["sequence_length"], shape["visual_tokens"]
     # The runtime warms up before the first observation is staged. Integer
     # gather/category indices must already be valid on a reused allocator.
-    pixels = g.buf("pixel_values", (PATCHES, PATCH_WIDTH), init="zero")
+    pixels = g.buf("pixel_values", (shape["views"] * PATCHES_PER_VIEW, PATCH_WIDTH), init="zero")
     ids = g.buf("input_ids", (1, length), dtype=torch.int64, init="zero")
     mask = g.buf("attention_mask", (1, length), dtype=torch.int64, init="zero")
     positions = g.buf("position_ids", (3, 1, length), dtype=torch.int64, init="zero")
-    image_indices = g.buf("image_indices", (VISUAL_TOKENS,), dtype=torch.int64, init="zero")
+    image_indices = g.buf("image_indices", (visual_tokens,), dtype=torch.int64, init="zero")
     state = g.buf("state", (1, 1, STATE_DIM), init="zero")
     embodiment = g.buf("embodiment_id", (1,), dtype=torch.int64, init="zero")
     noise = g.buf("noise", (1, CHUNK, ACTION_DIM), init="zero")
@@ -36,8 +35,8 @@ def build(g: Graph, shape: Mapping[str, int]) -> None:
                for part, names in WEIGHTS.items()}
 
     g.stage("vision_encoder")
-    vision = g.buf("vision_embeddings", (VISUAL_TOKENS, BACKBONE_DIM))
-    deepstack = g.buf("deepstack", (DEEPSTACK_LAYERS, VISUAL_TOKENS, BACKBONE_DIM))
+    vision = g.buf("vision_embeddings", (visual_tokens, BACKBONE_DIM))
+    deepstack = g.buf("deepstack", (DEEPSTACK_LAYERS, visual_tokens, BACKBONE_DIM))
     g.op("groot_vision", pixels=pixels, out=vision, deepstack=deepstack, **weights["vision"])
 
     g.stage("llm_backbone")

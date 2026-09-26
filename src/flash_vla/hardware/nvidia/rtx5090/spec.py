@@ -243,6 +243,7 @@ class RTX5090Spec:
 ROOFLINE = Roofline(
     spec=RTX5090Spec,
     dram_bytes_per_second=RTX5090Spec.DRAM_BANDWIDTH_BYTES_PER_SECOND,
+    l2_bytes=RTX5090Spec.L2_CACHE_SIZE_BYTES,
     tensor_peaks=MappingProxyType({
         "bf16": TensorPeak(
             flops_per_second=RTX5090Spec.TENSOR_CORE_DENSE_PEAK_FLOPS["bf16_acc_fp32"],

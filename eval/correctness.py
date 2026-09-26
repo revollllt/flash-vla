@@ -35,6 +35,7 @@ from typing import Any
 import torch
 
 from flash_vla.inference import PLAN_NAMES, build, get_target, resolve
+from measurement.cli import WORKLOAD_HELP, parse_options
 from measurement.environment import collect_environment, report_context
 from measurement.provenance import MeasurementContext
 from eval.tolerances import tolerances
@@ -198,13 +199,13 @@ def main(argv=None) -> int:
                         help="inject the reference's stage outputs into the candidate")
     parser.add_argument("--option", action="append", default=[],
                         help="target construction option as key=value, both implementations")
+    parser.add_argument("--workload", default=None, help=WORKLOAD_HELP)
     args = parser.parse_args(argv)
-    from measurement.cli import parse_options
     options = parse_options(args.option)
     if {"steps", "layers"} & options.keys():
         parser.error("set check depth with --steps/--layers; --option is for other construction parameters")
     report = run(args.target, args.plan, steps=args.steps or None, layers=args.layers or None,
-                 seed=args.seed, isolate=args.isolate, **options)
+                 seed=args.seed, isolate=args.isolate, workload=args.workload, **options)
     print(json.dumps(report, indent=2))
     return 0 if report["passed"] else 1
 

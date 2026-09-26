@@ -29,6 +29,7 @@ TARGET = Target(
         "action_expert_norm_gated_ffn": "cuda-pdl",
         "action_expert_ffn_down_residual": "cuda-pdl",
     },
+    workloads=("robodojo",),
     # The reference route: every call site on TileLang, the backbone attention
     # on the torch chain.
     reference_plan={},

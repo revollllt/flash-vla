@@ -2,7 +2,7 @@
 
 Each stage takes every weight of its module as a numbered parameter
 (`PARAMS`), bound to the checkpoint names of `WEIGHTS`. The FLOP formulas
-count dense matmuls and attention of the fixed workload, excluding pointwise
+count dense matmuls and attention at the workload's shapes, excluding pointwise
 ops; they are what the floor model prices.
 """
 from __future__ import annotations
@@ -25,11 +25,10 @@ from .spec import (
     STATE_DIM,
     STEPS,
     TIMESTEP_CHANNELS,
-    VIEWS,
     VISION_BLOCKS,
     VISION_DIM,
     VISION_FFN,
-    VISUAL_TOKENS,
+    VISUAL_TOKENS_PER_VIEW,
 )
 from .weights import weight_shapes
 
@@ -45,10 +44,12 @@ PARAMS = {part: tuple(f"w{i}" for i in range(len(names))) for part, names in WEI
 def vision_flops(shapes: Shapes) -> int:
     rows, patch = shapes["pixels"]
     dim, ffn = VISION_DIM, VISION_FFN
+    # Attention is per view: each of the rows // PATCHES_PER_VIEW views attends within itself.
     blocks = VISION_BLOCKS * (8 * rows * dim * dim + 4 * rows * dim * ffn
-                              + 4 * VIEWS * PATCHES_PER_VIEW**2 * dim)
+                              + 4 * rows * PATCHES_PER_VIEW * dim)
     merged = 4 * VISION_DIM
-    mergers = 4 * 2 * VISUAL_TOKENS * (merged**2 + merged * BACKBONE_DIM)
+    visual_tokens = rows // PATCHES_PER_VIEW * VISUAL_TOKENS_PER_VIEW
+    mergers = 4 * 2 * visual_tokens * (merged**2 + merged * BACKBONE_DIM)
     return 2 * rows * patch * dim + blocks + mergers
 
 

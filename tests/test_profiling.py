@@ -14,7 +14,7 @@ from tests.test_latency import _Identity
 @pytest.fixture
 def engine(monkeypatch):
     calls = []
-    engine = SimpleNamespace(identity=_Identity(), device="cuda:0",
+    engine = SimpleNamespace(identity=_Identity(), device="cuda:0", workload=None,
                              measurement_context={"weights": {"checkpoint_id": "a"},
                                                   "fixture": {"id": "inputs"}}, graph_contract=GraphContract(),
                              sample_inputs=lambda seed: {},

@@ -9,6 +9,7 @@ stage output in its documented shape. Numerical agreement with the engine is
 """
 from importlib import import_module
 
+import pytest
 import torch
 
 from flash_vla.inference import TARGETS
@@ -168,26 +169,32 @@ def test_groot_reference_casts_its_rope_buffers_with_the_model() -> None:
         assert {model.vision.inverse_frequency.dtype, model.backbone.inverse_frequency.dtype} == {dtype}
 
 
-def test_groot_reference_produces_every_stage_on_meta() -> None:
+@pytest.mark.parametrize("workload", ["robodojo", "libero"])
+def test_groot_reference_produces_every_stage_on_meta(workload: str) -> None:
     from flash_vla.models.groot_n17 import reference
-    from flash_vla.models.groot_n17.spec import GRID
+    from flash_vla.models.groot_n17.definition import GrootModel
+    from flash_vla.models.groot_n17.spec import PATCH_WIDTH, PATCHES_PER_VIEW, VIEW_GRID, VISUAL_TOKENS_PER_VIEW
 
+    options = GrootModel().workload(workload).options
+    views, length = options["views"], options["sequence_length"]
+    visual_tokens = views * VISUAL_TOKENS_PER_VIEW
     meta = torch.device("meta")
     schema = official_schema(reference.make_reference().parts(), prefixes=reference.PREFIXES)
     model = reference.load({name: torch.empty(shape, dtype=torch.bfloat16, device=meta)
                             for name, shape in schema.items()})
     outputs = model(
-        torch.empty(512, 1536, dtype=torch.bfloat16, device=meta), grid=GRID,
-        input_ids=torch.zeros(1, 156, dtype=torch.long, device=meta),
-        attention_mask=torch.ones(1, 156, dtype=torch.long, device=meta),
-        position_ids=torch.zeros(3, 1, 156, dtype=torch.long, device=meta),
-        image_indices=torch.zeros(128, dtype=torch.long, device=meta),
+        torch.empty(views * PATCHES_PER_VIEW, PATCH_WIDTH, dtype=torch.bfloat16, device=meta),
+        grid=(VIEW_GRID,) * views,
+        input_ids=torch.zeros(1, length, dtype=torch.long, device=meta),
+        attention_mask=torch.ones(1, length, dtype=torch.long, device=meta),
+        position_ids=torch.zeros(3, 1, length, dtype=torch.long, device=meta),
+        image_indices=torch.zeros(visual_tokens, dtype=torch.long, device=meta),
         state=torch.empty(1, 1, 132, dtype=torch.bfloat16, device=meta),
         embodiment_id=torch.zeros(1, dtype=torch.long, device=meta),
         noise=torch.empty(1, 40, 132, dtype=torch.bfloat16, device=meta), steps=2)
-    assert outputs.vision_embeddings.shape == (128, 2048)
-    assert [tuple(feature.shape) for feature in outputs.deepstack] == [(128, 2048)] * 3
-    assert outputs.backbone_features.shape == (1, 156, 2048)
+    assert outputs.vision_embeddings.shape == (visual_tokens, 2048)
+    assert [tuple(feature.shape) for feature in outputs.deepstack] == [(visual_tokens, 2048)] * 3
+    assert outputs.backbone_features.shape == (1, length, 2048)
     assert outputs.actions.shape == outputs.velocity_step_0.shape == (1, 40, 132)
 
 

@@ -255,6 +255,7 @@ class H100Spec:
 ROOFLINE = Roofline(
     spec=H100Spec,
     dram_bytes_per_second=H100Spec.HBM_BANDWIDTH_BYTES_PER_SECOND,
+    l2_bytes=H100Spec.L2_CACHE_SIZE_BYTES,
     tensor_peaks=MappingProxyType({
         "bf16": TensorPeak(flops_per_second=H100Spec.TENSOR_CORE_DENSE_PEAK_FLOPS["bf16"],
                            role="tensor"),

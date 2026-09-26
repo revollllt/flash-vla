@@ -162,13 +162,18 @@ def test_random_weights_cannot_be_relabelled_as_a_real_checkpoint():
         targets.declare("pi05", checkpoint_id="trained", checkpoint_digest="manifest")
 
 
-def test_checkpoint_horizon_defaults_from_source_config_and_conflicts_fail(checkpoint_options, monkeypatch):
+def test_checkpoint_config_must_agree_with_the_workload(checkpoint_options, monkeypatch):
+    """The workload fixes the chunk; a checkpoint whose OpenPI config names
+    another horizon belongs to another workload and is rejected."""
+    monkeypatch.setattr(openpi05, "resolve_config",
+                        lambda checkpoint, name: SimpleNamespace(action_horizon=50, max_token_len=200))
+    assert targets.declare("pi05", **checkpoint_options).shape["chunk"] == 50
     monkeypatch.setattr(openpi05, "resolve_config",
                         lambda checkpoint, name: SimpleNamespace(action_horizon=15, max_token_len=200))
-    declared = targets.declare("pi05", **checkpoint_options)
-    assert declared.shape["chunk"] == 15
     with pytest.raises(ValueError, match="chunk_size"):
-        targets.declare("pi05", **checkpoint_options, chunk_size=50)
+        targets.declare("pi05", **checkpoint_options)
+    with pytest.raises(ValueError, match="fixes"):
+        targets.declare("pi05", **checkpoint_options, chunk_size=15)
 
 
 def test_real_values_are_converted_and_folded_for_each_construction(checkpoint_options, monkeypatch):
