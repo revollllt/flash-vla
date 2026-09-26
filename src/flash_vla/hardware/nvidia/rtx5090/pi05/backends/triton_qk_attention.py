@@ -4,6 +4,8 @@ BF16 Q/out(queries,256), K/V(keys,256), and additive mask(keys) use the existing
 runner-owned FP32 logits and BF16 probability scratch. Out may alias Q.
 Only QK changes: one 32x32x64 tile writes the same FP32 score layout.
 Warmup compiles before graph capture; wrapper declaration does not use CUDA.
+No route runs it since `split_kv_attention`; it stays as that kernel's baseline
+in `lab/pi05/attention_screen.py`.
 """
 from __future__ import annotations
 

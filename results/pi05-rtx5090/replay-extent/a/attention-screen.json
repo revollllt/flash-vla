@@ -1,0 +1,448 @@
+{
+  "reps": 30,
+  "flashinfer": "0.6.18.post1",
+  "workloads": {
+    "robodojo": {
+      "vision": [
+        {
+          "views": 3,
+          "candidates": {
+            "torch (compiled scaled_dot_product_attention)": {
+              "us": 16.871111260520085,
+              "max_abs": 0.0019838809967041016,
+              "mean_abs": 0.00016754659058549782,
+              "rms_error": 0.0002208479753333379,
+              "rel_rms": 0.002155692856725583,
+              "p99_abs": 0.0006496854126453403,
+              "cosine_similarity": 0.9999976764915661,
+              "within": 1.0
+            },
+            "triton-vision-attention (64 + masked 16 columns)": {
+              "us": 12.840889118335864,
+              "max_abs": 0.002219557762145996,
+              "mean_abs": 0.00016623258535977757,
+              "rms_error": 0.00021936018330467107,
+              "rel_rms": 0.0021411705472335015,
+              "p99_abs": 0.0006469435989856723,
+              "cosine_similarity": 0.9999977076933805,
+              "within": 1.0
+            }
+          }
+        }
+      ],
+      "backbone": [
+        {
+          "physical_rows": 968,
+          "bucket_rows": 832,
+          "valid_rows": 811,
+          "candidates": {
+            "torch (all physical rows)": {
+              "us": 67.71199901898703,
+              "max_abs": 0.004392653703689575,
+              "mean_abs": 0.0001905180152045427,
+              "rms_error": 0.00024808823925086493,
+              "rel_rms": 0.004219756656008947,
+              "p99_abs": 0.0006984243728220462,
+              "cosine_similarity": 0.9999910968180372,
+              "within": 1.0
+            },
+            "torch (bucket rows)": {
+              "us": 48.56799874040815,
+              "max_abs": 0.004392653703689575,
+              "mean_abs": 0.00019051833262211869,
+              "rms_error": 0.00024808841982535833,
+              "rel_rms": 0.004219759727417824,
+              "p99_abs": 0.0006984243728220462,
+              "cosine_similarity": 0.999991096804674,
+              "within": 1.0
+            },
+            "flashinfer single_prefill (valid rows)": {
+              "us": 35.75644393761953,
+              "max_abs": 0.0015659928321838379,
+              "mean_abs": 0.00011969667936928799,
+              "rms_error": 0.0001577170957232222,
+              "rel_rms": 0.0026826252080877173,
+              "p99_abs": 0.0004688014090061185,
+              "cosine_similarity": 0.9999964017708979,
+              "within": 1.0
+            },
+            "flashinfer ragged, planned per inference (valid rows)": {
+              "us": 40.551112757788765,
+              "max_abs": 0.0015659928321838379,
+              "mean_abs": 0.00011969667936928799,
+              "rms_error": 0.0001577170957232222,
+              "rel_rms": 0.0026826252080877173,
+              "p99_abs": 0.0004688014090061185,
+              "cosine_similarity": 0.9999964017708979,
+              "within": 1.0
+            }
+          }
+        },
+        {
+          "physical_rows": 968,
+          "bucket_rows": 896,
+          "valid_rows": 869,
+          "candidates": {
+            "torch (all physical rows)": {
+              "us": 68.43910945786371,
+              "max_abs": 0.0060367584228515625,
+              "mean_abs": 0.0001845620641006264,
+              "rms_error": 0.000240938464546306,
+              "rel_rms": 0.004278594577500306,
+              "p99_abs": 0.0006769332662224766,
+              "cosine_similarity": 0.999990846918002,
+              "within": 1.0
+            },
+            "torch (bucket rows)": {
+              "us": 53.53066656324598,
+              "max_abs": 0.0060367584228515625,
+              "mean_abs": 0.0001845614470287491,
+              "rms_error": 0.00024093748225145078,
+              "rel_rms": 0.004278577133870254,
+              "p99_abs": 0.0006769266724586456,
+              "cosine_similarity": 0.9999908469932302,
+              "within": 1.0
+            },
+            "flashinfer single_prefill (valid rows)": {
+              "us": 39.82133335537381,
+              "max_abs": 0.0018063783645629883,
+              "mean_abs": 0.00011501633482383124,
+              "rms_error": 0.00015131882844559815,
+              "rel_rms": 0.0026871256114301555,
+              "p99_abs": 0.00044676661491394043,
+              "cosine_similarity": 0.9999963896740719,
+              "within": 1.0
+            },
+            "flashinfer ragged, planned per inference (valid rows)": {
+              "us": 44.552889135148796,
+              "max_abs": 0.0018063783645629883,
+              "mean_abs": 0.00011501633482383124,
+              "rms_error": 0.00015131882844559815,
+              "rel_rms": 0.0026871256114301555,
+              "p99_abs": 0.00044676661491394043,
+              "cosine_similarity": 0.9999963896740719,
+              "within": 1.0
+            }
+          }
+        }
+      ],
+      "expert": [
+        {
+          "physical_rows": 968,
+          "chunk": 50,
+          "valid_rows": 811,
+          "candidates": {
+            "triton-qk (every cache row)": {
+              "us": 12.335999972290464,
+              "max_abs": 0.0014051944017410278,
+              "mean_abs": 0.0001246762006622859,
+              "rms_error": 0.0001608493426109261,
+              "rel_rms": 0.002854936342316828,
+              "p99_abs": 0.00045247398316860187,
+              "cosine_similarity": 0.9999959254332965,
+              "within": 1.0
+            },
+            "split-kv (valid keys, one block per CTA, merged)": {
+              "us": 10.289777484205034,
+              "max_abs": 0.0016855299472808838,
+              "mean_abs": 0.00011389209201649208,
+              "rms_error": 0.0001471999453419996,
+              "rel_rms": 0.002612671377591188,
+              "p99_abs": 0.000415101796388626,
+              "cosine_similarity": 0.9999965869684233,
+              "within": 1.0
+            },
+            "flashinfer paged, one-row pages over both ranges": {
+              "us": 13.565333353148567,
+              "max_abs": 0.0016855299472808838,
+              "mean_abs": 0.0001322033891468166,
+              "rms_error": 0.000172498611202907,
+              "rel_rms": 0.0030617007575442054,
+              "p99_abs": 0.0005008581280708311,
+              "cosine_similarity": 0.9999953132231901,
+              "within": 1.0
+            },
+            "flashinfer single_prefill (contiguous valid keys)": {
+              "us": 16.652444170580967,
+              "max_abs": 0.0013613104820251465,
+              "mean_abs": 0.00011613748821570624,
+              "rms_error": 0.00015195573400922848,
+              "rel_rms": 0.002697082502200459,
+              "p99_abs": 0.00044269889593124374,
+              "cosine_similarity": 0.9999963628668176,
+              "within": 1.0
+            }
+          }
+        },
+        {
+          "physical_rows": 968,
+          "chunk": 50,
+          "valid_rows": 869,
+          "candidates": {
+            "triton-qk (every cache row)": {
+              "us": 12.286221815480125,
+              "max_abs": 0.0014911293983459473,
+              "mean_abs": 0.00012154003772295141,
+              "rms_error": 0.00015687479787194645,
+              "rel_rms": 0.0028717924573523563,
+              "p99_abs": 0.00044103033840656245,
+              "cosine_similarity": 0.9999958765431771,
+              "within": 1.0
+            },
+            "split-kv (valid keys, one block per CTA, merged)": {
+              "us": 10.381333529949188,
+              "max_abs": 0.0010842382907867432,
+              "mean_abs": 0.00011028099565677962,
+              "rms_error": 0.0001423887073840033,
+              "rel_rms": 0.002606606168897299,
+              "p99_abs": 0.0004009938240051251,
+              "cosine_similarity": 0.9999966028406495,
+              "within": 1.0
+            },
+            "flashinfer paged, one-row pages over both ranges": {
+              "us": 13.085333423482048,
+              "max_abs": 0.0014911293983459473,
+              "mean_abs": 0.00013102595017286945,
+              "rms_error": 0.00017106588574822835,
+              "rel_rms": 0.003131578348251144,
+              "p99_abs": 0.0004922274127602572,
+              "cosine_similarity": 0.9999950966021498,
+              "within": 1.0
+            },
+            "flashinfer single_prefill (contiguous valid keys)": {
+              "us": 17.45333274205526,
+              "max_abs": 0.0012158453464508057,
+              "mean_abs": 0.00011188634500186367,
+              "rms_error": 0.0001464859467824507,
+              "rel_rms": 0.0026816113409201038,
+              "p99_abs": 0.00042671348899602884,
+              "cosine_similarity": 0.99999640465401,
+              "within": 1.0
+            }
+          }
+        }
+      ]
+    },
+    "libero": {
+      "vision": [
+        {
+          "views": 2,
+          "candidates": {
+            "torch (compiled scaled_dot_product_attention)": {
+              "us": 16.43022232585483,
+              "max_abs": 0.0019838809967041016,
+              "mean_abs": 0.00016763752223279807,
+              "rms_error": 0.00022093571361429926,
+              "rel_rms": 0.0021429498099285924,
+              "p99_abs": 0.0006494373083114624,
+              "cosine_similarity": 0.9999977039015477,
+              "within": 1.0
+            },
+            "triton-vision-attention (64 + masked 16 columns)": {
+              "us": 7.76888871634448,
+              "max_abs": 0.0021216273307800293,
+              "mean_abs": 0.00016678672408593028,
+              "rms_error": 0.00022004544942727137,
+              "rel_rms": 0.0021343147575001373,
+              "p99_abs": 0.0006476457417011264,
+              "cosine_similarity": 0.9999977223598056,
+              "within": 1.0
+            }
+          }
+        }
+      ],
+      "backbone": [
+        {
+          "physical_rows": 712,
+          "bucket_rows": 576,
+          "valid_rows": 518,
+          "candidates": {
+            "torch (all physical rows)": {
+              "us": 39.86222214168973,
+              "max_abs": 0.008992135524749756,
+              "mean_abs": 0.00023625034124653772,
+              "rms_error": 0.00031361014874999374,
+              "rel_rms": 0.004272024453297594,
+              "p99_abs": 0.0008930565975606435,
+              "cosine_similarity": 0.9999908753054728,
+              "within": 1.0
+            },
+            "torch (bucket rows)": {
+              "us": 25.576889514923096,
+              "max_abs": 0.008992135524749756,
+              "mean_abs": 0.00023625000616182615,
+              "rms_error": 0.0003136098417753147,
+              "rel_rms": 0.004272020271662081,
+              "p99_abs": 0.0008930565975606435,
+              "cosine_similarity": 0.9999908753254885,
+              "within": 1.0
+            },
+            "flashinfer single_prefill (valid rows)": {
+              "us": 24.812444216675228,
+              "max_abs": 0.003028571605682373,
+              "mean_abs": 0.0001475192984259256,
+              "rms_error": 0.0001949753742377604,
+              "rel_rms": 0.0026559713384740353,
+              "p99_abs": 0.0005862282216548866,
+              "cosine_similarity": 0.9999964729111699,
+              "within": 1.0
+            },
+            "flashinfer ragged, planned per inference (valid rows)": {
+              "us": 24.621333512994976,
+              "max_abs": 0.002783060073852539,
+              "mean_abs": 0.00015287157397350616,
+              "rms_error": 0.00020142782246737847,
+              "rel_rms": 0.0027438671439204967,
+              "p99_abs": 0.0006005819141864759,
+              "cosine_similarity": 0.9999962355894815,
+              "within": 1.0
+            }
+          }
+        },
+        {
+          "physical_rows": 712,
+          "bucket_rows": 576,
+          "valid_rows": 534,
+          "candidates": {
+            "torch (all physical rows)": {
+              "us": 40.31822085380554,
+              "max_abs": 0.007152855396270752,
+              "mean_abs": 0.00023136887697168047,
+              "rms_error": 0.0003053087287410605,
+              "rel_rms": 0.0042341970955381515,
+              "p99_abs": 0.0008693738281726829,
+              "cosine_similarity": 0.9999910357535917,
+              "within": 1.0
+            },
+            "torch (bucket rows)": {
+              "us": 25.979555315441555,
+              "max_abs": 0.007152855396270752,
+              "mean_abs": 0.00023136897139583768,
+              "rms_error": 0.00030530864458949,
+              "rel_rms": 0.004234195928475759,
+              "p99_abs": 0.0008693738281726829,
+              "cosine_similarity": 0.9999910357583797,
+              "within": 1.0
+            },
+            "flashinfer single_prefill (valid rows)": {
+              "us": 26.671999858485325,
+              "max_abs": 0.002964019775390625,
+              "mean_abs": 0.00014518707165049515,
+              "rms_error": 0.00019198707356009464,
+              "rel_rms": 0.0026625871870780055,
+              "p99_abs": 0.0005781776458024974,
+              "cosine_similarity": 0.9999964553558043,
+              "within": 1.0
+            },
+            "flashinfer ragged, planned per inference (valid rows)": {
+              "us": 24.61688882774777,
+              "max_abs": 0.002964019775390625,
+              "mean_abs": 0.0001509495980848697,
+              "rms_error": 0.00019877236010697565,
+              "rel_rms": 0.002756689444513182,
+              "p99_abs": 0.0005901753902435303,
+              "cosine_similarity": 0.9999962003309217,
+              "within": 1.0
+            }
+          }
+        }
+      ],
+      "expert": [
+        {
+          "physical_rows": 712,
+          "chunk": 10,
+          "valid_rows": 518,
+          "candidates": {
+            "triton-qk (every cache row)": {
+              "us": 9.60177762640847,
+              "max_abs": 0.0009137988090515137,
+              "mean_abs": 0.0001280211612538551,
+              "rms_error": 0.0001665746559847192,
+              "rel_rms": 0.0023529031023927062,
+              "p99_abs": 0.0004889227449893951,
+              "cosine_similarity": 0.9999972327159656,
+              "within": 1.0
+            },
+            "split-kv (valid keys, one block per CTA, merged)": {
+              "us": 5.505777895450592,
+              "max_abs": 0.0010393261909484863,
+              "mean_abs": 0.0001444093401516966,
+              "rms_error": 0.00018619804660831624,
+              "rel_rms": 0.0026300877461476425,
+              "p99_abs": 0.0005244006216526027,
+              "cosine_similarity": 0.9999965417612808,
+              "within": 1.0
+            },
+            "flashinfer paged, one-row pages over both ranges": {
+              "us": 12.996444271670448,
+              "max_abs": 0.0013622045516967773,
+              "mean_abs": 0.00015232319843221377,
+              "rms_error": 0.00019894627412291965,
+              "rel_rms": 0.0028101592215578636,
+              "p99_abs": 0.0005710728466510772,
+              "cosine_similarity": 0.9999960515765592,
+              "within": 1.0
+            },
+            "flashinfer single_prefill (contiguous valid keys)": {
+              "us": 13.576000101036497,
+              "max_abs": 0.0010128170251846313,
+              "mean_abs": 0.0001444007202053399,
+              "rms_error": 0.0001892323692558336,
+              "rel_rms": 0.0026729482108972078,
+              "p99_abs": 0.000554814115166664,
+              "cosine_similarity": 0.9999964276727147,
+              "within": 1.0
+            }
+          }
+        },
+        {
+          "physical_rows": 712,
+          "chunk": 10,
+          "valid_rows": 534,
+          "candidates": {
+            "triton-qk (every cache row)": {
+              "us": 9.593777772453096,
+              "max_abs": 0.0010309815406799316,
+              "mean_abs": 0.00012748486389853043,
+              "rms_error": 0.00016576814801870767,
+              "rel_rms": 0.0023624844119402156,
+              "p99_abs": 0.0004885885119438169,
+              "cosine_similarity": 0.9999972103144189,
+              "within": 1.0
+            },
+            "split-kv (valid keys, one block per CTA, merged)": {
+              "us": 5.491555564933353,
+              "max_abs": 0.0009655654430389404,
+              "mean_abs": 0.0001418193742750873,
+              "rms_error": 0.00018338942358183871,
+              "rel_rms": 0.0026136182355002277,
+              "p99_abs": 0.0005260404944419856,
+              "cosine_similarity": 0.9999965845948884,
+              "within": 1.0
+            },
+            "flashinfer paged, one-row pages over both ranges": {
+              "us": 12.9448887374666,
+              "max_abs": 0.0014266371726989746,
+              "mean_abs": 0.0001509952630414091,
+              "rms_error": 0.0001978800642940573,
+              "rel_rms": 0.002820135067658956,
+              "p99_abs": 0.0005793290585279448,
+              "cosine_similarity": 0.9999960234458002,
+              "within": 1.0
+            },
+            "flashinfer single_prefill (contiguous valid keys)": {
+              "us": 14.369777507252165,
+              "max_abs": 0.0009875595569610596,
+              "mean_abs": 0.00014387804905311442,
+              "rms_error": 0.00018935882397553178,
+              "rel_rms": 0.0026986925730450866,
+              "p99_abs": 0.000562392473220825,
+              "cosine_similarity": 0.999996358554941,
+              "within": 1.0
+            }
+          }
+        }
+      ]
+    }
+  }
+}

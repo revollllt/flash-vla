@@ -1,0 +1,3519 @@
+{
+  "reps": 30,
+  "cases": {
+    "robodojo": [
+      3,
+      968,
+      50,
+      869
+    ],
+    "libero": [
+      2,
+      712,
+      10,
+      534
+    ]
+  },
+  "workloads": {
+    "robodojo": {
+      "expert": [
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 10.286221901575724,
+          "rel_rms": 0.0026586354054555996,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            102,
+            168
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 10.287111004193623,
+          "rel_rms": 0.002606606168897299,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            110,
+            166
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 10.288000106811523,
+          "rel_rms": 0.002658649980581166,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            102,
+            86
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 10.288888795508278,
+          "rel_rms": 0.0026586654658446117,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            160,
+            86
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 10.289777484205034,
+          "rel_rms": 0.002606651022279853,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            110,
+            166
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 10.289777484205034,
+          "rel_rms": 0.0026586654658446117,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            238,
+            86
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 10.289777898126177,
+          "rel_rms": 0.002658649980581166,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            133,
+            86
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 10.291555689440834,
+          "rel_rms": 0.0026586354054555996,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            133,
+            168
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 10.292444378137589,
+          "rel_rms": 0.0026586671656056455,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            238,
+            168
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 10.292444378137589,
+          "rel_rms": 0.0026586654658446117,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            238,
+            86
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 10.293333066834343,
+          "rel_rms": 0.002658649980581166,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            133,
+            86
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 10.294222169452242,
+          "rel_rms": 0.0026586654658446117,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            160,
+            86
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 10.295111272070143,
+          "rel_rms": 0.002658649980581166,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            102,
+            86
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 10.354666660229364,
+          "rel_rms": 0.0026586671656056455,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            160,
+            168
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 10.968000110652712,
+          "rel_rms": 0.002658672184276504,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            160,
+            40
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 10.969777901967365,
+          "rel_rms": 0.0026586654658446117,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            148,
+            86
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 10.969777901967365,
+          "rel_rms": 0.002658672184276504,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            238,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 10.970666590664122,
+          "rel_rms": 0.002658627444438631,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            133,
+            40
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 10.970667004585266,
+          "rel_rms": 0.002658627444438631,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            102,
+            40
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 10.972444381978777,
+          "rel_rms": 0.002658649980581166,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            92,
+            86
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 10.974222587214577,
+          "rel_rms": 0.002606606168897299,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            87,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 10.974222587214577,
+          "rel_rms": 0.0026586354054555996,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            92,
+            168
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 10.974222587214577,
+          "rel_rms": 0.002658649980581166,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            92,
+            86
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 10.975111275911331,
+          "rel_rms": 0.0026586671656056455,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            148,
+            168
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 10.978666858540642,
+          "rel_rms": 0.002658627444438631,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            102,
+            48
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 10.983111129866707,
+          "rel_rms": 0.002606651022279853,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            87,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 10.985777609878115,
+          "rel_rms": 0.0026586654658446117,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            148,
+            86
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 11.004444625642565,
+          "rel_rms": 0.0026066712468848377,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            110,
+            64
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 11.071999867757162,
+          "rel_rms": 0.002658627444438631,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            133,
+            48
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 11.087111300892301,
+          "rel_rms": 0.002658672184276504,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            238,
+            48
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 11.175110936164856,
+          "rel_rms": 0.002658672184276504,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            160,
+            48
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 11.605333536863327,
+          "rel_rms": 0.0026066712468848377,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            110,
+            80
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 11.649777491887411,
+          "rel_rms": 0.002658627444438631,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            92,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 11.65066659450531,
+          "rel_rms": 0.002606651022279853,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            183,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 11.653333074516722,
+          "rel_rms": 0.002658672184276504,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            148,
+            40
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 11.653333074516722,
+          "rel_rms": 0.0026066044785712675,
+          "spills": [
+            0,
+            22
+          ],
+          "registers": [
+            110,
+            255
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 11.653333074516722,
+          "rel_rms": 0.002606606168897299,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            183,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 11.65422217713462,
+          "rel_rms": 0.002658672184276504,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            148,
+            48
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 11.665777613719303,
+          "rel_rms": 0.002606651022279853,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            78,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 11.66577802764045,
+          "rel_rms": 0.002606606168897299,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            78,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 11.733333269755047,
+          "rel_rms": 0.0026066712468848377,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            87,
+            64
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 11.754666765530905,
+          "rel_rms": 0.002658627444438631,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            92,
+            48
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 11.766222202115587,
+          "rel_rms": 0.002606651022279853,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            80,
+            166
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 11.773333367374208,
+          "rel_rms": 0.002606606168897299,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            80,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 11.901333100265928,
+          "rel_rms": 0.0026066712468848377,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            87,
+            80
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 11.926222178671095,
+          "rel_rms": 0.0026066044785712675,
+          "spills": [
+            0,
+            22
+          ],
+          "registers": [
+            87,
+            255
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 12.343111137549082,
+          "rel_rms": 0.0026066712468848377,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            183,
+            64
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 12.376000069909624,
+          "rel_rms": 0.0026066712468848377,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            78,
+            64
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 12.441777934630712,
+          "rel_rms": 0.002658620458147631,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            102,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 12.450666477282843,
+          "rel_rms": 0.002658620458147631,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            133,
+            40
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 12.455999851226807,
+          "rel_rms": 0.0026066712468848377,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            80,
+            64
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 12.456888953844706,
+          "rel_rms": 0.0026066042755272007,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            110,
+            40
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 12.474666866991255,
+          "rel_rms": 0.0026066712468848377,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            78,
+            80
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 12.51377786199252,
+          "rel_rms": 0.0026586443031367474,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            238,
+            40
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 12.560000022252401,
+          "rel_rms": 0.0026066044785712675,
+          "spills": [
+            0,
+            22
+          ],
+          "registers": [
+            78,
+            255
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 12.560000022252401,
+          "rel_rms": 0.0026066712468848377,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            183,
+            80
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 12.56622208489312,
+          "rel_rms": 0.0026066044785712675,
+          "spills": [
+            0,
+            22
+          ],
+          "registers": [
+            183,
+            255
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 12.568888978825674,
+          "rel_rms": 0.0026586443031367474,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            160,
+            40
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 13.01511087351375,
+          "rel_rms": 0.0026066712468848377,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            80,
+            80
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 13.023111141390272,
+          "rel_rms": 0.0026066044785712675,
+          "spills": [
+            0,
+            22
+          ],
+          "registers": [
+            80,
+            255
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 13.027555412716337,
+          "rel_rms": 0.002606651022279853,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            112,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 13.06044434507688,
+          "rel_rms": 0.0026586443031367474,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            148,
+            40
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 13.130666481124031,
+          "rel_rms": 0.002658620458147631,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            92,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 13.140444540315203,
+          "rel_rms": 0.002606606168897299,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            112,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 13.142222331629858,
+          "rel_rms": 0.0026066042755272007,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            87,
+            40
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 13.741333451535967,
+          "rel_rms": 0.0026066042755272007,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            78,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 13.812444276279875,
+          "rel_rms": 0.0026066042755272007,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            183,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 13.815999858909182,
+          "rel_rms": 0.0026066712468848377,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            112,
+            64
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 13.931555052598316,
+          "rel_rms": 0.0026066042755272007,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            80,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 14.385778043005201,
+          "rel_rms": 0.0026066712468848377,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            112,
+            80
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 14.388444523016611,
+          "rel_rms": 0.0026066044785712675,
+          "spills": [
+            0,
+            22
+          ],
+          "registers": [
+            112,
+            255
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 15.285332997639973,
+          "rel_rms": 0.0026066042755272007,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            112,
+            40
+          ]
+        }
+      ],
+      "vision": [
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 3,
+          "us": 12.759703176992911,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 130
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 3,
+          "us": 12.836741076575386,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 132
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 3,
+          "us": 12.846814813437284,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 223
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 3,
+          "us": 12.930963326383521,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 175
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 2,
+          "us": 13.211259135493526,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 169
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 3,
+          "us": 13.214814442175406,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 252
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 2,
+          "us": 13.796740659960994,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 132
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 1,
+          "us": 13.850666858531811,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 18,
+          "registers": 255
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 2,
+          "us": 14.121481665858516,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 170
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 1,
+          "us": 14.125036972540396,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 20,
+          "registers": 255
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 1,
+          "us": 14.129185566195735,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 175
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 2,
+          "us": 14.381629449349862,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 0,
+          "registers": 191
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 2,
+          "us": 14.58666666790291,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 250
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 1,
+          "us": 14.59200017982059,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 200
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 3,
+          "us": 14.59792587492201,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 170
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 2,
+          "us": 15.213629713764897,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 221
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 1,
+          "us": 15.55970366354342,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 130
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 3,
+          "us": 15.565037175461097,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 0,
+          "registers": 191
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 1,
+          "us": 15.94666639963786,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 22,
+          "registers": 255
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 2,
+          "us": 16.12799973399551,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 130
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 2,
+          "us": 16.42370389567481,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 0,
+          "registers": 191
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 2,
+          "us": 17.3309627506468,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 136
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 1,
+          "us": 17.332740403987746,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 130
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 3,
+          "us": 17.335703527485883,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 168
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 3,
+          "us": 17.38370403095528,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 134
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 1,
+          "us": 17.457777703249896,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 132
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 2,
+          "us": 17.78903713932744,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 6,
+          "registers": 168
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 2,
+          "us": 18.222814908734076,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 108,
+          "registers": 255
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 1,
+          "us": 18.378666705555386,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 224
+        },
+        {
+          "block_m": 32,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 1,
+          "us": 19.131258681968408,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 0,
+          "registers": 254
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 1,
+          "us": 19.59585260461878,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 176
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 1,
+          "us": 20.49836957896197,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 182,
+          "registers": 255
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 3,
+          "us": 21.406813904091162,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 130
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 3,
+          "us": 21.554962352470117,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 165
+        },
+        {
+          "block_m": 32,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 3,
+          "us": 22.68977849571793,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 0,
+          "registers": 198
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 1,
+          "us": 23.24859301249186,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 128
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 3,
+          "us": 23.415111833148533,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 0,
+          "registers": 196
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 1,
+          "us": 24.145777578707097,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 22,
+          "registers": 255
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 2,
+          "us": 24.153482030939173,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 0,
+          "registers": 191
+        },
+        {
+          "block_m": 32,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 2,
+          "us": 24.273777449572528,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 0,
+          "registers": 191
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 2,
+          "us": 24.59496259689331,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 164
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 1,
+          "us": 25.52000019285414,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 196
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 2,
+          "us": 27.327407289434362,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 136
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 3,
+          "us": 30.067555330417772,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 134
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 3,
+          "us": 31.44059247440762,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 164
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 1,
+          "us": 32.91022225662514,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 128
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 2,
+          "us": 33.30725872958148,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 164
+        },
+        {
+          "block_m": 32,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 3,
+          "us": 33.38962903729191,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 0,
+          "registers": 191
+        },
+        {
+          "block_m": 32,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 2,
+          "us": 34.59555572933621,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 0,
+          "registers": 191
+        },
+        {
+          "block_m": 32,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 1,
+          "us": 34.603259077778574,
+          "rel_rms": 0.0021735340054771083,
+          "spills": 24,
+          "registers": 255
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 1,
+          "us": 36.00711182311729,
+          "rel_rms": 0.0021534521144806773,
+          "spills": 0,
+          "registers": 178
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 2,
+          "us": 39.18518622716268,
+          "rel_rms": 0.0021411705472335015,
+          "spills": 0,
+          "registers": 134
+        }
+      ]
+    },
+    "libero": {
+      "expert": [
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 5.511111269394557,
+          "rel_rms": 0.0026136182355002277,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            87,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 5.511111269394557,
+          "rel_rms": 0.0026136182355002277,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            78,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 5.512889060709212,
+          "rel_rms": 0.0026136182355002277,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            78,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 5.521777810321914,
+          "rel_rms": 0.0026136182355002277,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            87,
+            166
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 5.73866648806466,
+          "rel_rms": 0.0026136182355002277,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            110,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 5.74222207069397,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            92,
+            86
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 5.883555652366744,
+          "rel_rms": 0.0026139437406441464,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            87,
+            64
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 6.190222170617845,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            148,
+            86
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 6.190222170617845,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            148,
+            168
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 6.190222170617845,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            148,
+            86
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 6.1919999619325,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            92,
+            86
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 6.1928888575898275,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            148,
+            40
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 6.194666648904482,
+          "rel_rms": 0.0026139437406441464,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            87,
+            80
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 6.194666648904482,
+          "rel_rms": 0.0026139437406441464,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            78,
+            64
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 6.194666648904482,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            92,
+            168
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 6.19555554456181,
+          "rel_rms": 0.0026139440589439534,
+          "spills": [
+            0,
+            22
+          ],
+          "registers": [
+            78,
+            255
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 6.19555554456181,
+          "rel_rms": 0.0026136182355002277,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            110,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 6.197333335876465,
+          "rel_rms": 0.0026139437406441464,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            78,
+            80
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 6.2008889185057745,
+          "rel_rms": 0.002613618169654153,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            78,
+            40
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 6.2195557273096505,
+          "rel_rms": 0.0026139440589439534,
+          "spills": [
+            0,
+            22
+          ],
+          "registers": [
+            87,
+            255
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 6.237333226535056,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            92,
+            48
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 6.240888809164366,
+          "rel_rms": 0.002613618169654153,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            87,
+            40
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 6.299555508626832,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            148,
+            48
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 6.301333299941487,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            92,
+            40
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 6.34044429494275,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            148,
+            40
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 6.390222244792515,
+          "rel_rms": 0.0026136182355002277,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            80,
+            166
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 6.4088888466358185,
+          "rel_rms": 0.0026139437406441464,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            110,
+            64
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 6.426666759782368,
+          "rel_rms": 0.002613618169654153,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            110,
+            40
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 6.459555485182339,
+          "rel_rms": 0.0026136182355002277,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            80,
+            166
+          ]
+        },
+        {
+          "block_m": 16,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 6.872889068391587,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            92,
+            40
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 6.873777964048915,
+          "rel_rms": 0.0026139437406441464,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            110,
+            80
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 6.876444444060326,
+          "rel_rms": 0.0026139440589439534,
+          "spills": [
+            0,
+            22
+          ],
+          "registers": [
+            110,
+            255
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 6.876444651020898,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            160,
+            86
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 6.876444651020898,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            102,
+            86
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 6.877333339717652,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            160,
+            168
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 6.879110924071736,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            160,
+            40
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 6.881777611043717,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            160,
+            86
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 6.946666580107476,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            102,
+            86
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 6.964444700214599,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            102,
+            168
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 6.985777782069312,
+          "rel_rms": 0.0026136182355002277,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            183,
+            166
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 7.098666495747037,
+          "rel_rms": 0.0026139437406441464,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            80,
+            64
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 7.1048889723089,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            102,
+            40
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 7.110222346252865,
+          "rel_rms": 0.002613618169654153,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            80,
+            40
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 7.158222297827403,
+          "rel_rms": 0.0026139440589439534,
+          "spills": [
+            0,
+            22
+          ],
+          "registers": [
+            80,
+            255
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 7.273777905437682,
+          "rel_rms": 0.0026139437406441464,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            80,
+            80
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 7.55555596616533,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            160,
+            48
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 7.556444654862085,
+          "rel_rms": 0.0026136182355002277,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            183,
+            166
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 7.560888926188151,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            160,
+            40
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 7.576889048020044,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            102,
+            48
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 7.672888537247975,
+          "rel_rms": 0.0026139437406441464,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            183,
+            64
+          ]
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 7.681777907742394,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            102,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 7.780444290902879,
+          "rel_rms": 0.0026139437406441464,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            183,
+            80
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 7.78311077091429,
+          "rel_rms": 0.002613618169654153,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            183,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 7.789333247476154,
+          "rel_rms": 0.0026139440589439534,
+          "spills": [
+            0,
+            22
+          ],
+          "registers": [
+            183,
+            255
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 7.799999995364083,
+          "rel_rms": 0.0026136182355002277,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            112,
+            166
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 8.241777618726095,
+          "rel_rms": 0.0026136182355002277,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            112,
+            166
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 8.470222353935242,
+          "rel_rms": 0.0026139437406441464,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            112,
+            64
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 8.919110728634728,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            133,
+            86
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 8.919999831252627,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            133,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 8.922666311264038,
+          "rel_rms": 0.002613618169654153,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            112,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 8.922666725185183,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            238,
+            86
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 2,
+          "us": 8.923555413881939,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            238,
+            86
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 4,
+          "us": 8.923555413881939,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            133,
+            86
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 8.924444516499838,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            238,
+            168
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 2,
+          "us": 8.925333205196592,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            238,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 8.926221893893349,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            133,
+            168
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 8.927110996511248,
+          "rel_rms": 0.0026139437406441464,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            112,
+            80
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "merge_rows": 4,
+          "merge_warps": 2,
+          "us": 8.927110996511248,
+          "rel_rms": 0.0026139440589439534,
+          "spills": [
+            0,
+            22
+          ],
+          "registers": [
+            112,
+            255
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 9.60355583164427,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            238,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 1,
+          "merge_warps": 4,
+          "us": 9.60533320903778,
+          "rel_rms": 0.002667272228471186,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            133,
+            40
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 9.60711141427358,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            238,
+            48
+          ]
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "merge_rows": 2,
+          "merge_warps": 4,
+          "us": 9.60711141427358,
+          "rel_rms": 0.002667272060385866,
+          "spills": [
+            0,
+            0
+          ],
+          "registers": [
+            133,
+            48
+          ]
+        }
+      ],
+      "vision": [
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 3,
+          "us": 7.7653331337151705,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 132
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 3,
+          "us": 7.77066664563285,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 170
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 3,
+          "us": 8.358518558519858,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 0,
+          "registers": 191
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 1,
+          "us": 8.679110970762041,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 175
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 2,
+          "us": 8.71407406197654,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 169
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 2,
+          "us": 8.759111166000366,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 0,
+          "registers": 191
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 1,
+          "us": 9.116444598745415,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 18,
+          "registers": 255
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 2,
+          "us": 9.58696338865492,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 132
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 1,
+          "us": 10.218073924382526,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 130
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 3,
+          "us": 10.575407081180147,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 130
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 3,
+          "us": 11.033481469860783,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 165
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 3,
+          "us": 11.10518530563072,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 223
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 3,
+          "us": 11.403852038913302,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 175
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 3,
+          "us": 11.407407345595184,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 130
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 1,
+          "us": 11.410370469093323,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 176
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 3,
+          "us": 11.482074304863257,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 134
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 3,
+          "us": 11.488000551859537,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 252
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 2,
+          "us": 11.85422197536186,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 170
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 2,
+          "us": 11.858370569017199,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 136
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 2,
+          "us": 11.864888999197218,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 0,
+          "registers": 191
+        },
+        {
+          "block_m": 32,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 1,
+          "us": 11.941926346884834,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 0,
+          "registers": 254
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 1,
+          "us": 11.943703448330915,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 196
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 1,
+          "us": 12.314666752462033,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 132
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 3,
+          "us": 12.318222611038774,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 0,
+          "registers": 196
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 3,
+          "us": 12.322370652799252,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 168
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 2,
+          "us": 12.325925959481133,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 0,
+          "registers": 191
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 1,
+          "us": 12.360889050695631,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 20,
+          "registers": 255
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 1,
+          "us": 12.393481201595732,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 22,
+          "registers": 255
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 2,
+          "us": 12.39407393667433,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 221
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 2,
+          "us": 12.39525940683153,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 250
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 2,
+          "us": 12.475851509306166,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 164
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 1,
+          "us": 12.76562942398919,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 200
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 2,
+          "us": 12.770370200828271,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 6,
+          "registers": 168
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 2,
+          "us": 12.779851754506428,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 136
+        },
+        {
+          "block_m": 32,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 2,
+          "us": 13.230814977928443,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 0,
+          "registers": 191
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 2,
+          "us": 13.27644454108344,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 130
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 1,
+          "us": 13.68474077295374,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 128
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 1,
+          "us": 13.897481339949149,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 130
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "warps": 4,
+          "stages": 1,
+          "us": 14.132740872877616,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 22,
+          "registers": 255
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "warps": 4,
+          "stages": 1,
+          "us": 14.638814661237928,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 224
+        },
+        {
+          "block_m": 32,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 3,
+          "us": 15.580444424240678,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 0,
+          "registers": 198
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 2,
+          "us": 16.558814931798864,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 108,
+          "registers": 255
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "warps": 4,
+          "stages": 1,
+          "us": 19.133036887204206,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 182,
+          "registers": 255
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 3,
+          "us": 19.598221337353742,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 134
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 1,
+          "us": 20.508443867718732,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 128
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 3,
+          "us": 20.96533333813703,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 164
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 2,
+          "us": 21.879111175183894,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 164
+        },
+        {
+          "block_m": 32,
+          "block_n": 64,
+          "warps": 8,
+          "stages": 1,
+          "us": 22.333629705287795,
+          "rel_rms": 0.0021467614233184836,
+          "spills": 0,
+          "registers": 178
+        },
+        {
+          "block_m": 32,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 3,
+          "us": 22.786962765234488,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 0,
+          "registers": 191
+        },
+        {
+          "block_m": 32,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 1,
+          "us": 23.2385187237351,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 24,
+          "registers": 255
+        },
+        {
+          "block_m": 32,
+          "block_n": 32,
+          "warps": 8,
+          "stages": 2,
+          "us": 23.33866666864466,
+          "rel_rms": 0.0021343147575001373,
+          "spills": 0,
+          "registers": 134
+        },
+        {
+          "block_m": 32,
+          "block_n": 128,
+          "warps": 8,
+          "stages": 2,
+          "us": 23.369482269993537,
+          "rel_rms": 0.0021672550626216443,
+          "spills": 0,
+          "registers": 191
+        }
+      ]
+    }
+  }
+}

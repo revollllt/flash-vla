@@ -105,8 +105,9 @@ class Pi05Model(ModelDefinition[Pi05Config, PrefixInputs]):
     work_rules = work.RULES
     reference_run = staticmethod(work.reference_run)
     #: The valid prompt tokens the host slot's tokenizer fills, after the image
-    #: tokens: the backbone runs a bucket's rows. The action expert's graph does
-    #: not follow it (it attends over the cache under the mask).
+    #: tokens: the backbone runs a bucket's rows. The action expert's graph is not
+    #: captured per bucket; its attention attends over the cache under the mask,
+    #: or reads the exact length through `Scratch.on_replay`.
     replay_axis = ReplayAxis(name="prompt_tokens", limit="prompt_len", offset="visual_tokens",
                              slot="prompt", stages=("llm_backbone",),
                              extent=lambda host_state, inputs: (host_state.n_valid

@@ -39,6 +39,7 @@ TARGET = Target(
     # Native pointwise fusion around the existing bf16 GEMMs.
     plan={
         "vision_encoder_norm_qkv": ("cutlass-vision",),
+        "vision_encoder_attention": ("triton-vision-attention",),
         "vision_encoder_out_proj_residual": ("cutlass-vision",),
         "vision_encoder_norm_ffn_up": ("cutlass-vision",),
         "vision_encoder_ffn_down_residual": ("cutlass-vision",),
@@ -48,7 +49,8 @@ TARGET = Target(
         "llm_backbone_out_proj_residual": ("cutlass-backbone",),
         "llm_backbone_norm_gated_ffn": ("cutlass-backbone",),
         "llm_backbone_ffn_down_residual": ("cutlass-backbone",),
-        "action_expert_attention": ("triton-qk-attention",),
+        # Over the valid keys only, split along them (split_kv_attention.py).
+        "action_expert_attention": ("split-kv-attention",),
         "action_expert_out_proj_residual": ("cutlass-expert-residual",),
         "action_expert_ffn_down_residual": ("cutlass-expert-residual",),
         "action_expert_action_out_proj": ("fused-qkv",),
