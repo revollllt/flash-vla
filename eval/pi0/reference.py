@@ -78,11 +78,12 @@ def run(checkpoint: str, *, checkpoint_id: str, seed: int = 0, device: str = "cu
 
     # A full forward on the checkpoint against the official implementation:
     # the registry's full-depth tolerance of the runner's precision policy.
-    tolerance = tolerances(engine.identity.precision)["deepest"]
+    tolerance = {**tolerances(engine.identity.precision)["deepest"],
+                 **tolerances(engine.identity.precision)["end_to_end"]}
     metrics = error_metrics(reference, output)
     report = {"identity": engine.identity.as_dict(),
               "measurement_context": engine.measurement_context, **metrics,
-              "threshold_key": "deepest", "tolerance": dict(tolerance),
+              "threshold_key": "end_to_end", "tolerance": dict(tolerance),
               "passed": bool(torch.isfinite(output).all().item()
                              and metrics["cosine_similarity"] > tolerance["cosine_min"]
                              and metrics["rel_rms"] < tolerance["rel_rms_max"])}

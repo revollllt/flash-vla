@@ -21,6 +21,7 @@ line-by-line translation.
 import json
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -90,6 +91,32 @@ def test_target_passes_its_model_reference_gate(target: str, plan: str,
 
     report = run(target, plan, **options)
     assert report["mode"] == "gate" and report["passed"], report["stages"]
+
+
+@pytest.mark.skipif(DEVICE != (12, 0), reason="needs an RTX 5090")
+@pytest.mark.parametrize("quantization,cosine,passed", [
+    (None, 0.999, False),
+    (None, 0.999001, True),
+    ("mxfp8-llm-ffn", 0.99, False),
+    ("mxfp8-llm-ffn", 0.990001, True),
+])
+def test_full_depth_action_cosine_gate(quantization: str | None,
+                                     cosine: float, passed: bool) -> None:
+    from eval import model_reference
+
+    error_metrics = model_reference.error_metrics
+
+    def _action_error(expected: torch.Tensor, observed: torch.Tensor) -> dict[str, float]:
+        metrics = error_metrics(expected, observed)
+        if expected.shape == (50, 32):
+            return {**metrics, "cosine_similarity": cosine}
+        else:
+            return metrics
+
+    with patch.object(model_reference, "error_metrics", _action_error):
+        report = model_reference.run("rtx5090/pi05", steps=10, layers=18,
+                                     reference_precision="bfloat16", quantization=quantization)
+    assert report["mode"] == "gate" and report["passed"] is passed
 
 
 def test_exempt_targets_are_registered() -> None:

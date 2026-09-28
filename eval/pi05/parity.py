@@ -13,8 +13,8 @@ environment is the pinned flash-vla one -- the same comparison splits in two, as
 `OPENPI_PI05_MODULE` names where the official forward came from and the oracle
 records it. Compared: the prefix KV cache over valid rows -- padded rows attend
 normally here and are zeroed upstream, so only their finiteness is checked --
-and the action chunk, at the registry's `deepest` pair since it is read at full
-depth. The oracle keeps OpenPI's half-split K layout and `compare` permutes it
+and the action chunk, at the precision policy's end-to-end cosine limit.
+The oracle keeps OpenPI's half-split K layout and `compare` permutes it
 (`flash_vla.models.pi0.openpi.pair_layout`). Fixture inputs are bf16-representable, so a
 rounding difference cannot masquerade as a model difference.
 """
@@ -236,6 +236,7 @@ def compare(oracle: str, checkpoint: str, *, target: str = "rtx5090/pi05",
                                   f"oracle {metadata['layers_captured']}")
 
     tol = tolerances(engine.identity.precision)
+    action_tolerance = {**tol["deepest"], **tol["end_to_end"]}
     worst = lambda row: (row["k"] if row["k"]["cosine_similarity"] <= row["v"]["cosine_similarity"]  # noqa: E731
                          else row["v"])
     within = lambda m, pair: bool(m["cosine_similarity"] > pair["cosine_min"]  # noqa: E731
@@ -247,13 +248,13 @@ def compare(oracle: str, checkpoint: str, *, target: str = "rtx5090/pi05",
                         "worst_step": max(cosine_steps) if cosine_steps else 0.0}
     report["tolerance"] = {"layer0": dict(tol["layer0"]), "deepest": dict(tol["deepest"]),
                            "step": tol["max_cosine_step"],
-                           "actions": dict(tol["deepest"]) if full_depth else None}
+                           "actions": action_tolerance if full_depth else None}
     report["passed"] = bool(
         report["padded_rows_finite"] and report["actions_finite"]
         and within(worst(per_layer[0]), tol["layer0"])
         and within(worst(per_layer[-1]), tol["deepest"])
         and (not cosine_steps or max(cosine_steps) < tol["max_cosine_step"])
-        and (not full_depth or within(report["actions"], tol["deepest"])))
+        and (not full_depth or within(report["actions"], action_tolerance)))
     print(json.dumps(report, indent=2))
     return report
 

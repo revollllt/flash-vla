@@ -82,12 +82,15 @@ def run(plan: str = "reference", oracle: Path | None = None,
     first = engine.forward(**inputs).clone()
     second = engine.forward(**inputs).clone()
     torch.cuda.synchronize()
-    threshold = tolerances("bf16")["deepest"]
+    limits = tolerances(engine.identity.precision)
+    threshold = limits["deepest"]
+    action_threshold = {**threshold, **limits["end_to_end"]}
     passed = all(
         row["cosine_similarity"] > threshold["cosine_min"]
         and row["rel_rms"] < threshold["rel_rms_max"]
         for row in metrics.values()
-    ) and torch.equal(first, second)
+    ) and all(metrics[name]["cosine_similarity"] > action_threshold["cosine_min"]
+              for name in ("actions", "physical_actions")) and torch.equal(first, second)
     return {
         "identity": engine.identity.as_dict(),
         "implementation_source": (None if engine.implementation_source is None
@@ -102,6 +105,7 @@ def run(plan: str = "reference", oracle: Path | None = None,
         "bitwise_equal": equal,
         "replay_identical": torch.equal(first, second),
         "threshold": threshold,
+        "action_threshold": action_threshold,
         "passed": passed,
     }
 

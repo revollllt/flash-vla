@@ -25,6 +25,15 @@ numerical thresholds. Use the configured upstream environment and real asset
 options for official comparisons; missing assets are reported as unavailable.
 Synthetic checks do not establish policy quality.
 
+Final end-to-end actions must have cosine similarity strictly greater than
+0.999 for BF16, or 0.99 for a quantized workload, against the unquantized
+model reference on the same weights, observation and noise. In
+`model_reference.py`, `--steps 0 --layers 0` selects this full-depth gate;
+intermediate tensors remain diagnostics, and all compared tensors must be finite.
+Official parity keeps its existing relative RMS checks alongside the action
+cosine requirement. A kernel's fake-quant reference does not establish
+end-to-end quantization quality.
+
 `pi05/reference.py` runs OpenPI and the Target in one process, which needs the
 whole upstream stack importable beside `flash_vla`. `pi05/parity.py` is the same
 comparison split across two interpreters, for a machine whose environment is the

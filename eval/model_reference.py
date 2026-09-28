@@ -23,10 +23,9 @@ enable it for matmuls (LingBot's policy does).
 `--reference-precision bfloat16` runs upstream's own inference dtypes instead
 and reports how far the engine is from upstream's numerics, which sit about as
 far from the float32 math as the engine does. At one step and one layer
-against the float32 reference the shared tolerances gate, and every compared
-tensor must be finite; other runs report, because two implementations of a
-deep denoising loop that are not bit-identical drift apart. The runner
-contains no model or stage names.
+against the float32 reference the shared tolerances gate. At full depth the
+final action cosine gates at the precision policy's end-to-end limit. Every
+compared tensor must be finite; partial-depth runs only report drift.
 """
 from __future__ import annotations
 
@@ -108,6 +107,8 @@ def run(target: str, plan: str = "shipped", *, steps: int | None = 1, layers: in
     torch.cuda.synchronize()
     identity, context, device = engine.identity, engine.measurement_context, str(engine.device)
     ran_workload = engine.workload
+    model = engine.target.model
+    full_shape = model.shape(model.configure(**model.workload(ran_workload).options), None)
     # Keep what the engine computed and release its weights and graphs: a
     # float32 reference of a 4B model needs that device memory.
     buffers = {name: tensor.clone() for name, tensor in engine.buffers.items()}
@@ -133,12 +134,19 @@ def run(target: str, plan: str = "shipped", *, steps: int | None = 1, layers: in
     # A non-finite value makes its metrics NaN, which `min` and `max` would skip.
     finite = all(bool(torch.isfinite(expected).all() and torch.isfinite(observed).all())
                  for expected, observed in pairs.values())
-    tolerance = tolerances(identity.precision)["shallow"]
     min_cosine = min(metrics["cosine_similarity"] for metrics in stages.values())
     max_rel_rms = max(metrics["rel_rms"] for metrics in stages.values())
-    gate = steps == 1 and layers == 1 and reference_precision == "float32"
-    within = finite and bool(min_cosine > tolerance["cosine_min"]
-                             and max_rel_rms < tolerance["rel_rms_max"])
+    shallow = steps == 1 and layers == 1 and reference_precision == "float32"
+    end_to_end = (identity.shape["steps"] == full_shape["steps"]
+                  and identity.shape["layers"] == full_shape["layers"])
+    if end_to_end:
+        tolerance = tolerances(identity.precision)["end_to_end"]
+        within = finite and stages["actions"]["cosine_similarity"] > tolerance["cosine_min"]
+    else:
+        tolerance = tolerances(identity.precision)["shallow"]
+        within = finite and bool(min_cosine > tolerance["cosine_min"]
+                                 and max_rel_rms < tolerance["rel_rms_max"])
+    gate = shallow or end_to_end
     return {
         "identity": identity.as_dict(),
         "measurement_context": context,
@@ -153,7 +161,7 @@ def run(target: str, plan: str = "shipped", *, steps: int | None = 1, layers: in
         "tolerance": dict(tolerance),
         "within_tolerance": within,
         "mode": "gate" if gate else "report",
-        "passed": within or not gate,
+        "passed": finite and (within or not gate),
     }
 
 

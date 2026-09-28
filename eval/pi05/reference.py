@@ -94,7 +94,7 @@ from flash_vla.models.pi05 import openpi as openpi05
 from eval.pi05 import official as official_pi05
 from eval.metrics import error_metrics
 from flash_vla.models.pi0.openpi import pair_layout
-from flash_vla.models.pi05.spec import VISION_TOKENS
+from flash_vla.models.pi05.spec import DEFAULT_FLOW_STEPS, ENCODER_LAYERS, VISION_TOKENS
 from flash_vla.models.pi05.tokenize import Pi05Tokenizer
 from flash_vla.models.pi05.weights import fold
 
@@ -353,13 +353,18 @@ def run_expert(tokenizer_path: str | None = None, checkpoint: str | None = None,
         "reference_provenance": provenance,
         "metrics": error_metrics(reference, output),
     }
-    shallow = tolerances(engine.identity.precision)["shallow"]
-    report["gated"] = steps == 1 and not full
-    report["tolerance"] = dict(shallow) if report["gated"] else None
+    limits = tolerances(engine.identity.precision)
+    end_to_end = full and steps == DEFAULT_FLOW_STEPS and layers == ENCODER_LAYERS
+    if end_to_end:
+        tolerance = {**limits["deepest"], **limits["end_to_end"]}
+    else:
+        tolerance = limits["shallow"]
+    report["gated"] = end_to_end or (steps == 1 and not full)
+    report["tolerance"] = dict(tolerance) if report["gated"] else None
     report["passed"] = bool(
         engine_n_valid == n_valid
         and torch.isfinite(output).all().item()
-        and (not report["gated"] or _within(report["metrics"], shallow)))
+        and (not report["gated"] or _within(report["metrics"], tolerance)))
     print(json.dumps(report, indent=2))
     return report
 
