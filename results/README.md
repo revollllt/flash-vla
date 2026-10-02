@@ -27,3 +27,7 @@ Each run is its own comparison context. A different GPU, checkpoint, fixture or
 timing condition starts a new run directory, and those curves are never joined
 into one speedup: an RTX 5090 number and an H100 number in the list above answer
 different questions and do not compare.
+
+The [Pi0.5 / RTX 5090 integrated route](pi05-rtx5090/README.md) links its
+performance recipe, BF16 control, workload and replay ablations, raw results,
+and saved progress figures.

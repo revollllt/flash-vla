@@ -1,5 +1,13 @@
 # Pi0.5 / RTX 5090: the prompt's valid length at replay time
 
+![Paired ABBA progress for replay-time changes](progress.svg)
+
+The figure plots the retained N/A/T step comparisons, using the mean of two
+fresh-process medians for each side. Step A uses the final BF16 pair in
+`abba/a-final-bf16/`; it was not measured for MXFP8. Blue is BF16, orange is
+MXFP8. Separate steps are not one paired start-to-finish measurement; raw
+samples and measurement conditions remain in `abba/`.
+
 The prompt's valid length changes with every inference. The backbone is
 captured once per 64-row bucket of the rows a workload's prompts reach, and
 the host picks the bucket after tokenizing (`runtime/replay.py`). Attentions

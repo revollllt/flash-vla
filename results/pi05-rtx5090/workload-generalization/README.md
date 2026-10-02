@@ -1,5 +1,12 @@
 # Pi0.5 / RTX 5090: workload generalization
 
+![Paired ABBA progress by workload and recipe](progress.svg)
+
+The figure plots the final G-total A/B pair for each workload and recipe,
+using the mean of two fresh-process medians for each side. Blue is BF16,
+orange is MXFP8; it does not compare their different numerical recipes to
+each other. Earlier G1/G2 trials, raw samples and conditions remain in `abba/`.
+
 `robodojo` is the workload the Target is optimized for; `libero` is the
 workload this round generalizes to ([docs/workloads.md](../../../docs/workloads.md)).
 The diagnosis that chose the work is G0 in
