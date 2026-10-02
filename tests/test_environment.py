@@ -66,10 +66,28 @@ def test_environment_stamps_selected_device_power_without_claiming_clock_lock(fr
 ])
 def test_missing_or_ambiguous_power_evidence_is_not_silently_accepted(stdout):
     with patch.object(metrics, "device_selector", return_value="GPU-selected"), \
-         patch.object(metrics, "env_block", return_value={}), \
+         patch.object(metrics, "env_block", return_value={"gpu": "H100"}), \
          patch.object(latency.subprocess, "run", return_value=SimpleNamespace(stdout=stdout)):
         with pytest.raises(ValueError):
             latency.collect_environment()
+
+
+def test_thor_environment_records_nvpmodel_and_unavailable_nvml_fields() -> None:
+    with patch.object(metrics, "device_selector", return_value="GPU-thor"), \
+         patch.object(metrics, "env_block", return_value={"gpu": "NVIDIA Thor"}), \
+         patch.object(metrics.subprocess, "run", side_effect=[
+             SimpleNamespace(stdout="595.78, [N/A], [N/A], [Deprecated], [Deprecated], "
+                             "[N/A], [N/A], [N/A], 38, 2.37, [N/A]\n"),
+             SimpleNamespace(stdout="NV Power Mode: 120W\n1\n"),
+         ]) as query:
+        environment = metrics.collect_environment()
+    assert environment["power_policy"] == {
+        "requested_limit_w": None, "enforced_limit_w": None,
+        "nvpmodel": "NV Power Mode: 120W\n1",
+    }
+    assert environment["runtime_observation"]["clocks.sm"] == "[N/A]"
+    assert query.call_args.args[0] == ["nvpmodel", "-q"]
+    assert query.call_args.kwargs["check"] is True
 
 
 def test_environment_query_error_propagates():

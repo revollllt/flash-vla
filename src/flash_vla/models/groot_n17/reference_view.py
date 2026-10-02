@@ -19,7 +19,7 @@ import torch
 
 from ..official import Precision
 from .reference import GrootOutputs, load
-from .spec import VIEW_GRID
+from .spec import PATCH_SIZE
 
 
 def reference_outputs(weights: Mapping[str, torch.Tensor], inputs: Mapping[str, torch.Tensor],
@@ -31,7 +31,8 @@ def reference_outputs(weights: Mapping[str, torch.Tensor], inputs: Mapping[str, 
     computed on the device, and the noise is already drawn. In `float32` the
     reference holds a float32 copy of the weights beside `weights`."""
     reference = load(weights, precision=precision)
-    return reference(inputs["pixel_values"], grid=(VIEW_GRID,) * shape["views"],
+    grid = (1, shape["image_height"] // PATCH_SIZE, shape["image_width"] // PATCH_SIZE)
+    return reference(inputs["pixel_values"], grid=(grid,) * shape["views"],
                      input_ids=inputs["input_ids"],
                      attention_mask=inputs["attention_mask"], position_ids=inputs["position_ids"],
                      image_indices=inputs["image_indices"], state=inputs["state"],

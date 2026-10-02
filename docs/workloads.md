@@ -116,25 +116,38 @@ tokens = len(tokenizer.encode(instruction, add_bos=True) + tokenizer.encode("\n"
 | | `robodojo` (primary) | `libero` |
 |---|---|---|
 | Source | XPolicyLab `GR00T_N17`, `configs/robodojo_arx_x5_config.py` | GR00T-N1.7-LIBERO `libero_10` |
-| Cameras | 3: front, left and right wrist, 256x256 | 2 |
-| Vision patches / visual tokens | 768 / 192 | 512 / 128 |
-| Text sequence (construction-time) | 206-237; declared 237, the longest instruction | 141-157 over the 40 tasks; declared 156, the prepared fixture's |
+| Cameras | 3: front, left and right wrist; the official 640x480 observations become 256x352 after aspect-preserving processing | 2 at 256x256 |
+| Vision patches / visual tokens | 1056 / 264; patch grid `(1, 16, 22)` per camera | 512 / 128 |
+| Text sequence (construction-time) | 280 for the prepared official demo frame 0 | 141-157 over the 40 tasks; declared 156, the prepared fixture's |
 | Action horizon | 40 model rows. The data's 16-step horizon is padded to the model's `action_horizon=40` (`Gr00tN1d7.get_action` samples `[B, 40, action_dim]`) | 40 |
 | Replay-time axis | `valid_sequence_tokens`, the valid tokens of `attention_mask`; no Target buckets it | same |
 
-No Target builds `robodojo`: only the LIBERO observation is prepared as a
-fixture. `robodojo` is declared for its graph and floor.
+Thor builds `robodojo` with the official seed-0 checkpoint and a prepared
+observation from `RoboDojo-Benchmark/RoboDojo@35efbc7d`,
+`data/demo/arx_x5/data/episode_0000000.hdf5`, frame 0. NVIDIA's processor at
+`Isaac-GR00T@51d4c89` uses the checkpoint's statistics and `new_embodiment`
+projector 10. The XPolicyLab adapter at `bb9a0b5` passes RGB images without
+square resizing; the processor preserves their aspect ratio.
 
 Sequence lengths come from the Cosmos-Reason2-2B tokenizer. Each is the visual
-tokens (views x 64), plus the chat template's 9 tokens, plus the instruction's
-tokens. The template's 9 tokens are the prepared LIBERO fixture's 28 non-visual
+tokens, plus the chat template's `5 + 2 * views` tokens, plus the instruction's
+tokens. The LIBERO template's 9 tokens are the prepared fixture's 28 non-visual
 tokens less its instruction's 19:
 
 ```python
 from transformers import AutoTokenizer
+import re
 tokenizer = AutoTokenizer.from_pretrained(cosmos_reason2_2b, local_files_only=True)
-sequence = views * 64 + 9 + len(tokenizer(instruction, add_special_tokens=False)["input_ids"])
+# RoboDojo's checkpoint has formalize_language=True.
+instruction = re.sub(r"[^\w\s]", "", instruction.lower())
+sequence = 264 + 11 + len(tokenizer(instruction, add_special_tokens=False)["input_ids"])
 ```
+
+The documented shortest/longest instructions use 4/31 instruction tokens,
+giving 279/306 sequence tokens. The prepared demo has 5 instruction tokens,
+so this fixed-shape target currently runs that 280-token observation. Other
+instructions require their own sequence-length construction; padding changes
+the unmasked vision-language refiner's result.
 
 ## LingBot-VLA
 
@@ -149,6 +162,9 @@ sequence = views * 64 + 9 + len(tokenizer(instruction, add_special_tokens=False)
 These are the shapes `models/lingbot/spec.py` already fixes, so the workload
 names no option. The recorded fixture (`synthetic=False`) and the seeded one
 share them.
+The official pretrained and Robotwin post-trained LingBot-VLA checkpoints
+load at this shape. RoboDojo's published `Lingbot_VA` checkpoint is a different
+model; no RoboDojo-official LingBot-VLA fine-tune is available in that dataset.
 
 ## Adding a workload
 

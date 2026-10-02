@@ -11,7 +11,8 @@ import torch
 from flash_vla.runtime.cuda.timing import graph_samples
 from eval.metrics import error_metrics
 from eval.tolerances import tolerances
-from flash_vla.hardware.nvidia.rtx5090.pi05.backends import fused_vision, torch_ops
+from flash_vla.hardware.nvidia.rtx5090.pi05.backends import fused_vision
+from flash_vla.hardware.nvidia.torch.pi05 import layer_norm
 from flash_vla.inference import build, resolve
 from flash_vla.runtime.runner import Scratch
 
@@ -47,7 +48,7 @@ def main():
             if layer in (0, 13, 26):
                 expected = out.clone()
                 candidates[name](*call)
-                expected_norm = torch_ops._ln(snapshot.view(-1, 1152), norm_w, norm_b)
+                expected_norm = layer_norm(snapshot.view(-1, 1152), norm_w, norm_b)
                 actual_norm = scratch(
                     "pi05_vision_normalized", expected_norm.shape, x.dtype, x.device)
                 metrics = {"output": error_metrics(expected, out),

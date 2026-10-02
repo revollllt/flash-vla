@@ -57,11 +57,11 @@ def main() -> int:
     # -- RMSNorm ------------------------------------------------------------
     x = torch.randn(M, K, device=DEV, dtype=DT) * 0.1
     out = torch.empty_like(x)
-    ref = tt._rms(x)
+    ref = tt.rms(x)
     cu.rms_norm(x, out)
     torch.cuda.synchronize()
     ok.append(report("rms_norm", ref, out,
-                     time_us(lambda: tt._rms(x)),
+                     time_us(lambda: tt.rms(x)),
                      time_us(lambda: cu.rms_norm(x, out))))
 
     # -- RoPE scatter -------------------------------------------------------
@@ -72,23 +72,23 @@ def main() -> int:
     k = torch.zeros(M, HEAD_DIM, device=DEV, dtype=DT)
     v = torch.zeros(M, HEAD_DIM, device=DEV, dtype=DT)
     qr, kr, vr = (torch.zeros_like(t) for t in (q, k, v))
-    tt._scatter_qkv(packed, rope, qr, kr, vr, HEAD_DIM, HEADS)
+    tt.scatter_qkv(packed, rope, qr, kr, vr, HEAD_DIM, HEADS)
     cu.rope_scatter(packed, rope, q, k, v)
     torch.cuda.synchronize()
     ok.append(report("rope_scatter", torch.cat([qr.flatten(), kr.flatten(), vr.flatten()]),
                      torch.cat([q.flatten(), k.flatten(), v.flatten()]),
-                     time_us(lambda: tt._scatter_qkv(packed, rope, qr, kr, vr, HEAD_DIM, HEADS)),
+                     time_us(lambda: tt.scatter_qkv(packed, rope, qr, kr, vr, HEAD_DIM, HEADS)),
                      time_us(lambda: cu.rope_scatter(packed, rope, q, k, v))))
 
     # -- Gated activation ---------------------------------------------------
     gate = torch.randn(M, FFN, device=DEV, dtype=DT) * 0.1
     up = torch.randn(M, FFN, device=DEV, dtype=DT) * 0.1
     go = torch.empty_like(gate)
-    gref = tt._gelu(gate) * up
+    gref = tt.gelu(gate) * up
     cu.gelu_mul(gate, up, go)
     torch.cuda.synchronize()
     ok.append(report("gelu_mul", gref, go,
-                     time_us(lambda: tt._gelu(gate) * up),
+                     time_us(lambda: tt.gelu(gate) * up),
                      time_us(lambda: cu.gelu_mul(gate, up, go))))
 
     print(f"\n{sum(ok)}/{len(ok)} correct")

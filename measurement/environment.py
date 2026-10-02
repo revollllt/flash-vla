@@ -69,7 +69,7 @@ def report_context(engine: Engine, environment: Mapping[str, object]) -> dict[st
     ).as_dict()
 
 
-def collect_environment(device: torch.device | None = None) -> dict[str, Any]:
+def collect_environment(device: torch.device | None = None) -> dict[str, object]:
     observation_fields = ("clocks.sm", "clocks.mem", "pstate", "temperature.gpu",
                           "power.draw", "clocks_event_reasons.active")
     fields = ("driver_version", "power.limit", "enforced.power.limit",
@@ -86,6 +86,16 @@ def collect_environment(device: torch.device | None = None) -> dict[str, Any]:
         raise ValueError("expected one complete nvidia-smi row for the current CUDA device")
     driver, requested, enforced, graphics, memory, *observations = rows[0]
     env = env_block(device)
+    if env["gpu"] == "NVIDIA Thor":
+        power_mode = subprocess.run(["nvpmodel", "-q"], capture_output=True,
+                                    text=True, timeout=10, check=True).stdout.strip()
+        power_policy: dict[str, object] = {
+            "requested_limit_w": None, "enforced_limit_w": None,
+            "nvpmodel": power_mode,
+        }
+    else:
+        power_policy = {"requested_limit_w": float(requested),
+                        "enforced_limit_w": float(enforced)}
     env.update({
         "gpu_uuid": uuid,
         "runtime_observation": dict(zip(observation_fields, observations)),
@@ -102,8 +112,7 @@ def collect_environment(device: torch.device | None = None) -> dict[str, Any]:
         },
         "clock_observation": {"application_graphics_mhz": graphics,
                               "application_memory_mhz": memory},
-        "power_policy": {"requested_limit_w": float(requested),
-                         "enforced_limit_w": float(enforced)},
+        "power_policy": power_policy,
     })
     return env
 

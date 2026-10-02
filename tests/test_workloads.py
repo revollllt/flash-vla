@@ -38,5 +38,6 @@ def test_a_workload_fixes_its_options_and_labels_the_runner(target: str) -> None
 
 def test_a_target_declares_every_model_workload_but_builds_only_its_own() -> None:
     assert declare("rtx5090/groot_n17", workload="robodojo").shape["views"] == 3
+    assert declare("thor/groot_n17", workload="robodojo").shape["visual_tokens"] == 264
     with pytest.raises(ValueError, match="runs the workloads"):
         build("h100/pi05", workload="libero", device="cpu")

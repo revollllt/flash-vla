@@ -1,7 +1,7 @@
 """GR00T N1.7 as a model definition: identity, configuration, shapes, inputs.
 
 The checkpoint fixes four denoising steps and sixteen backbone layers; the
-workload fixes the number of 256x256 views and the text sequence. Inputs come
+workload fixes the views' dimensions and the text sequence. Inputs come
 from a prepared fixture (the `fixture` asset); only the noise is drawn, from
 the seed.
 """
@@ -27,11 +27,9 @@ from .spec import (
     LAYERS,
     MODEL_REVISION,
     PATCH_WIDTH,
-    PATCHES_PER_VIEW,
+    PATCH_SIZE,
     STATE_DIM,
     STEPS,
-    VIEW_GRID,
-    VISUAL_TOKENS_PER_VIEW,
 )
 from .weights import weight_shapes
 
@@ -41,6 +39,8 @@ class GrootConfig:
     #: Cameras and the text sequence (visual tokens included): the workload's.
     views: int
     sequence_length: int
+    image_height: int = IMAGE_SIZE
+    image_width: int = IMAGE_SIZE
     steps: int = STEPS
     layers: int = LAYERS
 
@@ -48,7 +48,9 @@ class GrootConfig:
         if self.steps != STEPS or self.layers != LAYERS:
             raise ValueError(f"The checkpoint runs {STEPS} denoising steps and "
                              f"{LAYERS} backbone layers")
-        visual_tokens = self.views * VISUAL_TOKENS_PER_VIEW
+        if self.image_height % (PATCH_SIZE * 2) or self.image_width % (PATCH_SIZE * 2):
+            raise ValueError("Image dimensions must be divisible by the 2x2 patch merge")
+        visual_tokens = self.views * (self.image_height // PATCH_SIZE) * (self.image_width // PATCH_SIZE) // 4
         if self.sequence_length < visual_tokens:
             raise ValueError(f"The sequence must contain all {visual_tokens} visual tokens")
 
@@ -69,14 +71,15 @@ class GrootModel(ModelDefinition[GrootConfig, None]):
                              extent=lambda host_state, inputs: int(inputs["attention_mask"].sum()))
     workloads = (
         # RoboDojo: XPolicyLab `GR00T_N17` with `robodojo_arx_x5_config`, three
-        # cameras; the sequence holds its longest task instruction (docs/workloads.md).
-        Workload("robodojo", {"views": 3, "sequence_length": 237}),
+        # cameras; the sequence matches official demo frame 0 (docs/workloads.md).
+        Workload("robodojo", {"views": 3, "sequence_length": 280,
+                              "image_height": 256, "image_width": 352}),
         # The official GR00T-N1.7-LIBERO `libero_10` checkpoint's two cameras, at
         # the prepared fixture's sequence.
         Workload("libero", {"views": 2, "sequence_length": 156}),
     )
     inputs = (
-        Input("pixel_values", lambda s: (s["views"] * PATCHES_PER_VIEW, PATCH_WIDTH),
+        Input("pixel_values", lambda s: (4 * s["visual_tokens"], PATCH_WIDTH),
               torch.bfloat16, "pixel_values"),
         Input("input_ids", lambda s: (1, s["sequence_length"]), torch.int64, "input_ids"),
         Input("attention_mask", lambda s: (1, s["sequence_length"]), torch.int64, "attention_mask"),
@@ -99,9 +102,9 @@ class GrootModel(ModelDefinition[GrootConfig, None]):
         return GrootConfig(**config)
 
     def shape(self, config: GrootConfig, checkpoint: CheckpointReader | None) -> dict[str, int]:
-        return dict(batch=1, views=config.views, image_height=IMAGE_SIZE, image_width=IMAGE_SIZE,
+        return dict(batch=1, views=config.views, image_height=config.image_height, image_width=config.image_width,
                     sequence_length=config.sequence_length,
-                    visual_tokens=config.views * VISUAL_TOKENS_PER_VIEW,
+                    visual_tokens=config.views * (config.image_height // PATCH_SIZE) * (config.image_width // PATCH_SIZE) // 4,
                     state_dim=STATE_DIM, action_dim=ACTION_DIM, chunk=CHUNK,
                     steps=config.steps, layers=config.layers)
 
@@ -115,8 +118,9 @@ class GrootModel(ModelDefinition[GrootConfig, None]):
                       device: torch.device, assets: Mapping[str, Path]) -> dict[str, torch.Tensor]:
         """The prepared fixture's observation with noise drawn from `seed`."""
         values = torch.load(assets["fixture"], map_location="cpu", weights_only=True)["inputs"]
-        if not torch.equal(values["image_grid_thw"], torch.tensor((VIEW_GRID,) * shape["views"])):
-            raise ValueError(f"This workload requires {shape['views']} {IMAGE_SIZE}x{IMAGE_SIZE} "
+        grid = (1, shape["image_height"] // PATCH_SIZE, shape["image_width"] // PATCH_SIZE)
+        if not torch.equal(values["image_grid_thw"], torch.tensor((grid,) * shape["views"])):
+            raise ValueError(f"This workload requires {shape['views']} {shape['image_height']}x{shape['image_width']} "
                              "views after preprocessing")
         dims = {spec.name: spec.dims(shape) for spec in self.inputs}
         observed = {name: values[name].to(device=device) for name in dims if name != "noise"}

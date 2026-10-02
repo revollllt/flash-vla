@@ -1,4 +1,4 @@
-"""Load the inference tensors from the two official LIBERO safetensors shards."""
+"""Load inference tensors from an official GR00T N1.7 checkpoint's shards."""
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
@@ -25,7 +25,7 @@ def weight_shapes() -> dict[str, tuple[int, ...]]:
 
 
 class Checkpoint(CheckpointReader, Mapping[str, torch.Tensor]):
-    """The official LIBERO shards, validated on open and streamed shard by shard."""
+    """The official checkpoint shards, validated and streamed shard by shard."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)

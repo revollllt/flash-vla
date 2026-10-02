@@ -19,7 +19,7 @@ The three stages:
                     patch embedding plus bilinearly interpolated learned
                     positions, 24 blocks with 2D RoPE attending within each
                     image, and 2x2 patch mergers -- the final one's visual
-                    tokens [128, 2048], and one DeepStack feature from each of
+                    tokens [views * patches / 4, 2048], and one DeepStack feature from each of
                     blocks 5, 11 and 17
     LLM backbone    the token embeddings with the visual tokens written in,
                     then 16 Qwen3 layers (interleaved M-RoPE, causal over the
@@ -35,7 +35,7 @@ The three stages:
                     the embodiment's decoder reads the velocity
 
 The inputs are already prepared, as the model receives them after GR00T's
-processor: the patches [512, 1536] and each image's patch grid, the token ids
+processor: the patches [views * patches, 1536] and each image's patch grid, the token ids
 and mask, the M-RoPE position ids [3, 1, tokens], the visual tokens'
 positions, the state [1, 1, 132], the embodiment id and the noise
 [1, 40, 132]. Weights are the official checkpoint's tensors by their official

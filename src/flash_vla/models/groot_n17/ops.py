@@ -20,7 +20,7 @@ PARAMS = {part: tuple(f"w{i}" for i in range(len(names))) for part, names in WEI
 
 
 OPS = (
-    OpSpec("groot_vision", ("pixels", "out", "deepstack") + PARAMS["vision"],
+    OpSpec("groot_vision", ("pixels", "out", "deepstack", "grid_rows", "grid_columns") + PARAMS["vision"],
            outputs=("out", "deepstack"), weights=PARAMS["vision"]),
     OpSpec("groot_backbone", ("input_ids", "attention_mask", "position_ids", "image_indices",
            "vision", "deepstack", "out") + PARAMS["backbone"], outputs=("out",),

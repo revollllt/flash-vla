@@ -1,17 +1,18 @@
 """GR00T N1.7: the model's constants, without importing the model.
 
-Values are the official `libero_10` checkpoint's (see README.md): each 256x256
-view becomes 256 patches of width 1536 and 64 visual tokens; a 16-layer
+Values shared by the official LIBERO and RoboDojo checkpoints: each view's
+patches have width 1536 and every 2x2 patch group becomes one visual token; a 16-layer
 Qwen3-VL backbone; a 32-block DiT action head denoising a 40x132 chunk in four
 steps. The number of views and the text sequence belong to the workload
 (`definition.GrootModel.workloads`).
 """
 from __future__ import annotations
 
-MODEL_REVISION = "groot-n17-libero-v1"
-INFERENCE_SIGNATURE = "groot-n17-qwen3vl16-dit32-libero-bf16-v1"
+MODEL_REVISION = "groot-n17-v1"
+INFERENCE_SIGNATURE = "groot-n17-qwen3vl16-dit32-bf16-v1"
 
 IMAGE_SIZE = 256
+PATCH_SIZE = 16
 #: One view's patch grid (frames, rows, columns), a row of the processor's `image_grid_thw`.
 VIEW_GRID = (1, 16, 16)
 #: Patches per view (a 16x16 grid), and their flattened width.
@@ -49,5 +50,5 @@ STEPS = 4
 __all__ = ["ACTION_DIM", "BACKBONE_DIM", "BACKBONE_FFN", "CHUNK", "DEEPSTACK_BLOCKS", "DEEPSTACK_LAYERS",
            "DIT_BLOCKS", "DIT_DIM", "HEAD_HIDDEN", "IMAGE_SIZE",
            "INFERENCE_SIGNATURE", "KV_DIM", "LAYERS", "MODEL_REVISION", "PATCHES_PER_VIEW",
-           "PATCH_WIDTH", "STATE_DIM", "STEPS", "TIMESTEP_CHANNELS", "VIEW_GRID",
+           "PATCH_SIZE", "PATCH_WIDTH", "STATE_DIM", "STEPS", "TIMESTEP_CHANNELS", "VIEW_GRID",
            "VISION_BLOCKS", "VISION_DIM", "VISION_FFN", "VISUAL_TOKENS_PER_VIEW"]

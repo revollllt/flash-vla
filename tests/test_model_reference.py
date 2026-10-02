@@ -169,22 +169,29 @@ def test_groot_reference_casts_its_rope_buffers_with_the_model() -> None:
         assert {model.vision.inverse_frequency.dtype, model.backbone.inverse_frequency.dtype} == {dtype}
 
 
-@pytest.mark.parametrize("workload", ["robodojo", "libero"])
-def test_groot_reference_produces_every_stage_on_meta(workload: str) -> None:
+@pytest.mark.parametrize(("workload", "expected_grid", "expected_visual_tokens"), [
+    ("robodojo", (1, 16, 22), 264), ("libero", (1, 16, 16), 128),
+])
+def test_groot_reference_produces_every_stage_on_meta(
+    workload: str, expected_grid: tuple[int, int, int], expected_visual_tokens: int,
+) -> None:
     from flash_vla.models.groot_n17 import reference
     from flash_vla.models.groot_n17.definition import GrootModel
-    from flash_vla.models.groot_n17.spec import PATCH_WIDTH, PATCHES_PER_VIEW, VIEW_GRID, VISUAL_TOKENS_PER_VIEW
+    from flash_vla.models.groot_n17.spec import PATCH_WIDTH, PATCH_SIZE
 
-    options = GrootModel().workload(workload).options
-    views, length = options["views"], options["sequence_length"]
-    visual_tokens = views * VISUAL_TOKENS_PER_VIEW
+    definition = GrootModel()
+    shape = definition.shape(definition.configure(**definition.workload(workload).options), None)
+    views, length, visual_tokens = shape["views"], shape["sequence_length"], shape["visual_tokens"]
+    grid = (1, shape["image_height"] // PATCH_SIZE, shape["image_width"] // PATCH_SIZE)
+    assert grid == expected_grid
+    assert visual_tokens == expected_visual_tokens
     meta = torch.device("meta")
     schema = official_schema(reference.make_reference().parts(), prefixes=reference.PREFIXES)
     model = reference.load({name: torch.empty(shape, dtype=torch.bfloat16, device=meta)
                             for name, shape in schema.items()})
     outputs = model(
-        torch.empty(views * PATCHES_PER_VIEW, PATCH_WIDTH, dtype=torch.bfloat16, device=meta),
-        grid=(VIEW_GRID,) * views,
+        torch.empty(4 * visual_tokens, PATCH_WIDTH, dtype=torch.bfloat16, device=meta),
+        grid=(grid,) * views,
         input_ids=torch.zeros(1, length, dtype=torch.long, device=meta),
         attention_mask=torch.ones(1, length, dtype=torch.long, device=meta),
         position_ids=torch.zeros(3, 1, length, dtype=torch.long, device=meta),

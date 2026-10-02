@@ -12,11 +12,11 @@ R = lambda *s: torch.randn(*s, device=DEV, dtype=DT)*0.1
 # layer_norm kernel alone
 x = R(768, 1152); w = R(1152); b = R(1152); o = torch.empty_like(x)
 cu.layer_norm(x, w, b, o); torch.cuda.synchronize()
-cmp("layer_norm kernel", tt._ln(x, w, b), o)
+cmp("layer_norm kernel", tt.layer_norm(x, w, b), o)
 
 # gelu_ kernel alone
 g = R(768, 4304); g2 = g.clone(); cu.gelu_(g2); torch.cuda.synchronize()
-cmp("gelu_ kernel", tt._gelu(g), g2)
+cmp("gelu_ kernel", tt.gelu(g), g2)
 
 # residual addmm, out aliasing input
 x = R(51, 1024); ww = R(1024, 1024)

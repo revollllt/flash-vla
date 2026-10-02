@@ -51,6 +51,14 @@ class TargetEntry:
 
 #: Full Target name -> its entry. Short aliases resolve through `resolve`.
 TARGETS: dict[str, TargetEntry] = {
+    "hardware/nvidia/thor/pi0": TargetEntry(
+        "flash_vla.hardware.nvidia.thor.pi0", "flash_vla.models.pi0"),
+    "hardware/nvidia/thor/lingbot_vla": TargetEntry(
+        "flash_vla.hardware.nvidia.thor.lingbot_vla", "flash_vla.models.lingbot"),
+    "hardware/nvidia/thor/groot_n17": TargetEntry(
+        "flash_vla.hardware.nvidia.thor.groot_n17", "flash_vla.models.groot_n17"),
+    "hardware/nvidia/thor/pi05": TargetEntry(
+        "flash_vla.hardware.nvidia.thor.pi05", "flash_vla.models.pi05"),
     "hardware/nvidia/rtx5090/groot_n17": TargetEntry(
         "flash_vla.hardware.nvidia.rtx5090.groot_n17", "flash_vla.models.groot_n17"),
     "hardware/nvidia/h100/lingbot_vla": TargetEntry(
@@ -65,7 +73,15 @@ TARGETS: dict[str, TargetEntry] = {
         "flash_vla.hardware.nvidia.rtx5090.pi05", "flash_vla.models.pi05"),
 }
 #: Short name -> full Target name.
-ALIASES = {"rtx5090/groot_n17": "hardware/nvidia/rtx5090/groot_n17",
+ALIASES = {"thor/pi05": "hardware/nvidia/thor/pi05",
+           "thor/pi0": "hardware/nvidia/thor/pi0",
+           "thor/lingbot_vla": "hardware/nvidia/thor/lingbot_vla",
+           "thor/groot_n17": "hardware/nvidia/thor/groot_n17",
+           "thor_pi0": "hardware/nvidia/thor/pi0",
+           "thor_lingbot_vla": "hardware/nvidia/thor/lingbot_vla",
+           "thor_groot_n17": "hardware/nvidia/thor/groot_n17",
+           "thor_pi05": "hardware/nvidia/thor/pi05",
+           "rtx5090/groot_n17": "hardware/nvidia/rtx5090/groot_n17",
            "5090/groot_n17": "hardware/nvidia/rtx5090/groot_n17",
            "groot-n17": "hardware/nvidia/rtx5090/groot_n17",
            "rtx5090_groot_n17": "hardware/nvidia/rtx5090/groot_n17",
